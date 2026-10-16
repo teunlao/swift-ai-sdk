@@ -12,7 +12,7 @@ import Testing
 struct ConvertToXAIResponsesInputTests {
     @Test("converts system messages")
     func convertsSystemMessages() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "you are a helpful assistant", providerOptions: nil)
         ]
 
@@ -29,7 +29,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts user single text part")
     func convertsUserSingleTextPart() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
         ]
 
@@ -50,7 +50,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts user multiple text parts")
     func convertsUserMultipleTextParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "hello ")),
                 .text(.init(text: "world"))
@@ -78,7 +78,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts image file parts with URL")
     func convertsImageFilePartsWithURL() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "what is in this image")),
                 .file(.init(
@@ -110,7 +110,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts image file parts with base64 data")
     func convertsImageFilePartsWithBase64Data() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "describe this")),
                 .file(.init(
@@ -141,7 +141,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("throws for unsupported file types")
     func throwsForUnsupportedFileTypes() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "check this file")),
                 .file(.init(
@@ -158,7 +158,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts assistant text content")
     func convertsAssistantTextContent() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.text(.init(text: "hi there"))], providerOptions: nil)
         ]
 
@@ -174,7 +174,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("handles client-side tool-call parts")
     func handlesClientSideToolCallParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [
                 .toolCall(.init(
                     toolCallId: "call_123",
@@ -200,7 +200,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("skips server-side tool-call parts")
     func skipsServerSideToolCallParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [
                 .toolCall(.init(
                     toolCallId: "ws_123",
@@ -217,7 +217,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("converts tool-result to function_call_output with json")
     func convertsToolResultToFunctionCallOutputJSON() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [
                 .toolResult(.init(
                     toolCallId: "call_123",
@@ -240,7 +240,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("handles tool-result text output")
     func handlesToolResultTextOutput() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [
                 .toolResult(.init(
                     toolCallId: "call_123",
@@ -263,7 +263,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("handles full conversation with client-side tool calls")
     func handlesFullConversationClientSideTools() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "whats the weather"))], providerOptions: nil),
             .assistant(content: [
                 .toolCall(.init(
@@ -315,7 +315,7 @@ struct ConvertToXAIResponsesInputTests {
 
     @Test("handles conversation with server-side tool calls and item references")
     func handlesConversationServerSideTools() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "search for ai news"))], providerOptions: nil),
             .assistant(content: [
                 .toolCall(.init(

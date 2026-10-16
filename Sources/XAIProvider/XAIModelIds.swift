@@ -1,103 +1,31 @@
 import Foundation
 
-/// Wrapper types for xAI model identifiers.
-/// Mirrors `packages/xai/src/xai-chat-options.ts`, `xai-image-settings.ts`,
-/// and `xai-video-settings.ts`.
-public struct XAIChatModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: StringLiteralType) {
-        self.init(rawValue: value)
-    }
-}
-
 public struct XAIImageModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
     public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: StringLiteralType) {
-        self.init(rawValue: value)
-    }
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.rawValue = value }
+    public static let grokImagineImage: Self = "grok-imagine-image"
+    public static let grokImagineImage20: Self = "grok-imagine-image-2.0"
+    public static let grokImagineImagePro: Self = "grok-imagine-image-pro"
 }
 
 public struct XAIVideoModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
     public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: StringLiteralType) {
-        self.init(rawValue: value)
-    }
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.rawValue = value }
+    public static let grokImagineVideo: Self = "grok-imagine-video"
+    public static let grokImagineVideo15: Self = "grok-imagine-video-1.5"
 }
 
 public struct XAIResponsesModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
     public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: StringLiteralType) {
-        self.init(rawValue: value)
-    }
-}
-
-// MARK: - Known model identifiers (mirrors packages/xai/src/xai-chat-options.ts)
-
-public extension XAIChatModelId {
-    static let grok41FastReasoning: Self = "grok-4-1-fast-reasoning"
-    static let grok41FastNonReasoning: Self = "grok-4-1-fast-non-reasoning"
-    static let grok4FastNonReasoning: Self = "grok-4-fast-non-reasoning"
-    static let grok4FastReasoning: Self = "grok-4-fast-reasoning"
-    static let grokCodeFast1: Self = "grok-code-fast-1"
-    static let grok4: Self = "grok-4"
-    static let grok40709: Self = "grok-4-0709"
-    static let grok4Latest: Self = "grok-4-latest"
-    static let grok3: Self = "grok-3"
-    static let grok3Latest: Self = "grok-3-latest"
-    static let grok3Fast: Self = "grok-3-fast"
-    static let grok3FastLatest: Self = "grok-3-fast-latest"
-    static let grok3Mini: Self = "grok-3-mini"
-    static let grok3MiniLatest: Self = "grok-3-mini-latest"
-    static let grok3MiniFast: Self = "grok-3-mini-fast"
-    static let grok3MiniFastLatest: Self = "grok-3-mini-fast-latest"
-    static let grok2Vision1212: Self = "grok-2-vision-1212"
-    static let grok2Vision: Self = "grok-2-vision"
-    static let grok2VisionLatest: Self = "grok-2-vision-latest"
-    static let grok2Image1212: Self = "grok-2-image-1212"
-    static let grok2Image: Self = "grok-2-image"
-    static let grok2ImageLatest: Self = "grok-2-image-latest"
-    static let grok21212: Self = "grok-2-1212"
-    static let grok2: Self = "grok-2"
-    static let grok2Latest: Self = "grok-2-latest"
-    static let grokVisionBeta: Self = "grok-vision-beta"
-    static let grokBeta: Self = "grok-beta"
-}
-
-public extension XAIImageModelId {
-    static let grok2Image: Self = "grok-2-image"
-    static let grokImagineImage: Self = "grok-imagine-image"
-}
-
-public extension XAIVideoModelId {
-    static let grokImagineVideo: Self = "grok-imagine-video"
-}
-
-// MARK: - Known responses identifiers (mirrors packages/xai/src/responses/xai-responses-options.ts)
-
-public extension XAIResponsesModelId {
-    static let grok41FastReasoning: Self = "grok-4-1-fast-reasoning"
-    static let grok41FastNonReasoning: Self = "grok-4-1-fast-non-reasoning"
-    static let grok4: Self = "grok-4"
-    static let grok4Fast: Self = "grok-4-fast"
-    static let grok4FastNonReasoning: Self = "grok-4-fast-non-reasoning"
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.rawValue = value }
+    public static let grok420NonReasoning: Self = "grok-4.20-non-reasoning"
+    public static let grok420Reasoning: Self = "grok-4.20-reasoning"
+    public static let grok43: Self = "grok-4.3"
+    public static let grok45: Self = "grok-4.5"
+    public static let grok46: Self = "grok-4.6"
+    public static let grok47: Self = "grok-4.7"
+    public static let grokLatest: Self = "grok-latest"
 }

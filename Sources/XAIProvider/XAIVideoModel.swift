@@ -79,10 +79,10 @@ private let resolutionMap: [String: String] = [
     "640x480": "480p",
 ]
 
-public final class XAIVideoModel: VideoModelV3 {
+public final class XAIVideoModel: VideoModelV4 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(1) }
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(1) }
 
     private let modelIdentifier: XAIVideoModelId
     private let config: XAIVideoModelConfig
@@ -92,9 +92,9 @@ public final class XAIVideoModel: VideoModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
+    public func doGenerate(options: VideoModelV4CallOptions) async throws -> VideoModelV4GenerateResult {
         let currentDate = config.currentDate()
-        var warnings: [SharedV3Warning] = []
+        var warnings: [SharedV4Warning] = []
 
         let xaiOptions = try await parseProviderOptions(
             provider: "xai",
@@ -181,7 +181,7 @@ public final class XAIVideoModel: VideoModelV3 {
 
         if let image = options.image {
             switch image {
-            case .url(let url, _):
+            case .url(let url, _, _):
                 body["image"] = .object(["url": .string(url)])
             case .file(let mediaType, let data, _):
                 let base64Data: String
@@ -282,7 +282,7 @@ public final class XAIVideoModel: VideoModelV3 {
                     xaiMetadata["duration"] = .number(duration)
                 }
 
-                return VideoModelV3GenerateResult(
+                return VideoModelV4GenerateResult(
                     videos: [
                         .url(url: videoUrl, mediaType: "video/mp4")
                     ],
@@ -290,7 +290,7 @@ public final class XAIVideoModel: VideoModelV3 {
                     providerMetadata: [
                         "xai": xaiMetadata
                     ],
-                    response: VideoModelV3ResponseInfo(
+                    response: VideoModelV4ResponseInfo(
                         timestamp: currentDate,
                         modelId: modelIdentifier.rawValue,
                         headers: responseHeaders

@@ -1,0 +1,26 @@
+import Foundation
+import AISDKProvider
+import AISDKProviderUtils
+
+public struct XAIImageGenerationArgs: Codable, Sendable, Equatable {
+    public enum Action: String, Codable, Sendable { case auto, generate, edit }
+    public var action: Action?
+    public init(action: Action? = nil) { self.action = action }
+}
+
+let xaiImageGenerationArgsSchema = FlexibleSchema(Schema<XAIImageGenerationArgs>.codable(
+    XAIImageGenerationArgs.self, jsonSchema: .object(["type": .string("object")])
+))
+
+let xaiImageGenerationToolFactory = createProviderExecutedToolFactory(
+    id: "xai.image_generation", name: "image_generation",
+    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object([:])]))),
+    outputSchema: FlexibleSchema(jsonSchema(.object([
+        "type": .string("object"), "required": .array([.string("result")]),
+        "properties": .object(["result": .object(["type": .string("string")]), "prompt": .object(["type": .string("string")])])
+    ])))
+) { (args: XAIImageGenerationArgs) in
+    ProviderExecutedToolFactoryOptions(args: args.action.map { ["action": .string($0.rawValue)] } ?? [:])
+}
+
+public func imageGeneration(_ args: XAIImageGenerationArgs = .init()) -> Tool { xaiImageGenerationToolFactory(args) }

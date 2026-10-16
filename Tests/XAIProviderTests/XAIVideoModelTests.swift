@@ -119,7 +119,7 @@ struct XAIVideoModelTests {
         ]
     }
 
-    private var defaultProviderOptions: SharedV3ProviderOptions {
+    private var defaultProviderOptions: SharedV4ProviderOptions {
         [
             "xai": [
                 "pollIntervalMs": 10,
@@ -128,8 +128,8 @@ struct XAIVideoModelTests {
         ]
     }
 
-    private var defaultOptions: VideoModelV3CallOptions {
-        VideoModelV3CallOptions(
+    private var defaultOptions: VideoModelV4CallOptions {
+        VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: defaultProviderOptions
@@ -158,7 +158,7 @@ struct XAIVideoModelTests {
         let model = makeModel()
         #expect(model.provider == "xai.video")
         #expect(model.modelId == "grok-imagine-video")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
 
         switch model.maxVideosPerCall {
         case .value(let value):
@@ -215,7 +215,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             duration: 10,
@@ -237,7 +237,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             aspectRatio: "9:16",
@@ -259,7 +259,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             resolution: "1280x720",
@@ -281,7 +281,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             resolution: "854x480",
@@ -302,7 +302,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "xai": [
                 "resolution": "480p",
                 "pollIntervalMs": 10,
@@ -311,7 +311,7 @@ struct XAIVideoModelTests {
         ]
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             resolution: "1280x720",
@@ -333,7 +333,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
+        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             resolution: "1920x1080",
@@ -353,7 +353,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             image: .url(url: "https://example.com/image.png", providerOptions: nil),
@@ -377,7 +377,7 @@ struct XAIVideoModelTests {
         let imageData = Data([137, 80, 78, 71]) // PNG magic bytes
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             image: .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil),
@@ -399,7 +399,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             image: .file(mediaType: "image/jpeg", data: .base64("aGVsbG8="), providerOptions: nil),
@@ -420,7 +420,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "POST", url: createEditsURL, body: createVideoResponse)
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "xai": [
                 "videoUrl": "https://example.com/source-video.mp4",
                 "pollIntervalMs": 10,
@@ -429,7 +429,7 @@ struct XAIVideoModelTests {
         ]
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: providerOptions
@@ -450,7 +450,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "POST", url: createEditsURL, body: createVideoResponse)
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "xai": [
                 "videoUrl": "https://example.com/source-video.mp4",
                 "pollIntervalMs": 10,
@@ -459,7 +459,7 @@ struct XAIVideoModelTests {
         ]
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
+        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             aspectRatio: "16:9",
@@ -493,7 +493,7 @@ struct XAIVideoModelTests {
             fetch: { request in try await stub.handle(request) }
         )
 
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: defaultProviderOptions,
@@ -574,7 +574,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
+        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             fps: 30,
@@ -591,7 +591,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
+        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 1,
             seed: 42,
@@ -608,7 +608,7 @@ struct XAIVideoModelTests {
         try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
 
         let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
+        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
             prompt: prompt,
             n: 3,
             providerOptions: defaultProviderOptions
@@ -721,7 +721,7 @@ struct XAIVideoModelTests {
             "model": "grok-imagine-video",
         ])
 
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "xai": [
                 "pollIntervalMs": 10,
                 "pollTimeoutMs": 50,
@@ -731,7 +731,7 @@ struct XAIVideoModelTests {
         let model = makeModel(fetch: { request in try await stub.handle(request) })
 
         do {
-            _ = try await model.doGenerate(options: VideoModelV3CallOptions(
+            _ = try await model.doGenerate(options: VideoModelV4CallOptions(
                 prompt: prompt,
                 n: 1,
                 providerOptions: providerOptions

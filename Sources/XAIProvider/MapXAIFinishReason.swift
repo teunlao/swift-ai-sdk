@@ -1,8 +1,8 @@
 import AISDKProvider
 
-/// Maps xAI finish reasons to LanguageModelV3 finish reasons.
+/// Maps xAI finish reasons to LanguageModelV4 finish reasons.
 /// Mirrors `packages/xai/src/map-xai-finish-reason.ts`.
-public func mapXaiFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
+public func mapXaiFinishReason(_ finishReason: String?) -> LanguageModelV4FinishReason.Unified {
     switch finishReason {
     case "stop":
         return .stop

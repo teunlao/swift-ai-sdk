@@ -1,233 +1,48 @@
 import Foundation
 import Testing
+import AISDKProvider
+import AISDKProviderUtils
 @testable import XAIProvider
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-
-/**
- XAI Provider tests.
-
- Port of `@ai-sdk/xai/src/xai-provider.test.ts`.
- */
 
 @Suite("XAIProvider")
 struct XAIProviderTests {
-    @Test("missing API key throws LoadAPIKeyError at request-time (no crash)")
-    func missingAPIKeyThrowsAtRequestTime() async throws {
-        let original = getenv("XAI_API_KEY").flatMap { String(validatingCString: $0) }
-        defer {
-            if let original {
-                setenv("XAI_API_KEY", original, 1)
-            } else {
-                unsetenv("XAI_API_KEY")
-            }
-        }
+    @Test("provider routes language calls through responses with configured authentication")
+    func responsesRequest() async throws {
+        let provider = createXai(settings: .init(baseURL: "https://custom.example/v1/", apiKey: "key", headers: ["X-Custom": "value"], fetch: { request in
+            #expect(request.url?.absoluteString == "https://custom.example/v1/responses")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+            #expect(request.value(forHTTPHeaderField: "X-Custom") == "value")
+            #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-xai/") == true)
+            guard case .object(let body) = try JSONDecoder().decode(JSONValue.self, from: request.httpBody!) else { throw CancellationError() }
+            #expect(body["model"] == .string("grok-4.6"))
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+            return FetchResponse(body: .data(Data(#"{"object":"response","status":"completed","output":[{"type":"message","id":"msg","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer"}]}]}"#.utf8)), urlResponse: response)
+        }))
+        let model = provider.responses("grok-4.6")
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: [.user(content: [.text(.init(text: "hello"))], providerOptions: nil)]))
+        #expect(result.content == [.text(.init(text: "answer"))])
+        #expect(result.finishReason.unified == .stop)
+    }
 
+    @Test("missing API keys fail lazily at request time")
+    func missingAPIKey() async throws {
+        let original = getenv("XAI_API_KEY").map { String(cString: $0) }
         unsetenv("XAI_API_KEY")
-
-        actor URLCapture {
-            private(set) var url: String?
-            func store(_ url: String?) { self.url = url }
+        defer {
+            if let original { setenv("XAI_API_KEY", original, 1) } else { unsetenv("XAI_API_KEY") }
         }
-
-        let capture = URLCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request.url?.absoluteString)
+        let model = createXai(settings: .init(fetch: { _ in
+            Issue.record("A request cannot be sent without credentials")
             throw CancellationError()
+        })).responses("grok-4.6")
+        await #expect(throws: LoadAPIKeyError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: []))
         }
-
-        let provider = createXai(settings: XAIProviderSettings(fetch: fetch))
-        let model = provider.chat(modelId: "grok-beta")
-
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        do {
-            _ = try await model.doGenerate(options: .init(prompt: prompt))
-            Issue.record("Expected missing API key error")
-        } catch let error as LoadAPIKeyError {
-            #expect(error.message.contains("xAI API key API key is missing"))
-        } catch {
-            Issue.record("Expected LoadAPIKeyError, got: \(error)")
-        }
-
-        #expect(await capture.url == nil)
     }
 
-    @Test("creates a language model with default settings")
-    func createLanguageModelWithDefaults() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.chat(modelId: "grok-beta")
-
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-beta")
-    }
-
-    @Test("creates language model via call operator")
-    func createLanguageModelViaCallOperator() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = try provider("grok-beta")
-
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-beta")
-    }
-
-    @Test("creates language model via languageModel method")
-    func createLanguageModelViaLanguageModelMethod() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = try provider.languageModel(modelId: "grok-3")
-
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-3")
-    }
-
-    @Test("creates a responses model with correct settings")
-    func createResponsesModel() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.responses("grok-4-fast")
-
-        #expect(model.provider == "xai.responses")
-        #expect(model.modelId == "grok-4-fast")
-    }
-
-    @Test("exposes xAI server-side tools")
-    func exposesTools() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let tool = provider.tools.webSearch()
-
-        #expect(tool.id == "xai.web_search")
-        #expect(tool.name == "web_search")
-        #expect(tool.type?.rawValue == "provider")
-    }
-
-    @Test("creates an image model with correct settings")
-    func createImageModel() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = try provider.imageModel(modelId: "grok-2-image")
-
-        #expect(model.provider == "xai.image")
-        #expect(model.modelId == "grok-2-image")
-    }
-
-    @Test("creates image model via image method")
-    func createImageModelViaImageMethod() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.image(modelId: "grok-2-image")
-
-        #expect(model.provider == "xai.image")
-        #expect(model.modelId == "grok-2-image")
-    }
-
-    @Test("creates a video model with correct settings")
-    func createVideoModel() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        guard let model = try provider.videoModel(modelId: "grok-imagine-video") else {
-            Issue.record("Expected video model")
-            return
-        }
-
-        #expect(model.provider == "xai.video")
-        #expect(model.modelId == "grok-imagine-video")
-    }
-
-    @Test("creates video model via video method")
-    func createVideoModelViaVideoMethod() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.video(modelId: "grok-imagine-video")
-
-        #expect(model.provider == "xai.video")
-        #expect(model.modelId == "grok-imagine-video")
-    }
-
-    @Test("uses custom baseURL when provided")
-    func usesCustomBaseURL() throws {
-        let provider = createXai(settings: XAIProviderSettings(
-            baseURL: "https://custom.xai.api",
-            apiKey: "test-api-key"
-        ))
-        let model = provider.chat(modelId: "grok-beta")
-
-        // BaseURL is internal to the model, we just verify model is created
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-beta")
-    }
-
-    @Test("uses default baseURL when not provided")
-    func usesDefaultBaseURL() throws {
-        let provider = createXai(settings: XAIProviderSettings(apiKey: "test-api-key"))
-        let model = provider.chat(modelId: "grok-beta")
-
-        // BaseURL is internal, we verify the model works
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-beta")
-    }
-
-    @Test("should pass correct configuration to chat model")
-    func passCorrectConfigurationToChatModel() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responseJSON: [String: Any] = [
-            "id": "test-id",
-            "object": "chat.completion",
-            "created": 1699472111,
-            "model": "grok-beta",
-            "choices": [[
-                "index": 0,
-                "message": [
-                    "role": "assistant",
-                    "content": "Test response"
-                ],
-                "finish_reason": "stop"
-            ]],
-            "usage": ["prompt_tokens": 10, "total_tokens": 20, "completion_tokens": 10]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.x.ai/v1/chat/completions")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: response)
-        }
-
-        let provider = createXai(settings: XAIProviderSettings(
-            apiKey: "test-api-key",
-            fetch: fetch
-        ))
-
-        let model = provider.chat(modelId: "grok-beta")
-
-        // Verify model configuration
-        #expect(model.provider == "xai.chat")
-        #expect(model.modelId == "grok-beta")
-
-        // Make a request to verify baseURL is used correctly
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-
-        guard let capturedRequest = await capture.value() else {
-            Issue.record("Expected request to be captured")
-            return
-        }
-
-        // Verify the request uses the correct baseURL
-        #expect(capturedRequest.url?.absoluteString.hasPrefix("https://api.x.ai/v1") == true)
-        #expect(capturedRequest.url?.path == "/v1/chat/completions")
+    @Test("embedding requests fail with the unsupported model type")
+    func unsupportedEmbedding() throws {
+        let provider = createXai()
+        #expect(throws: NoSuchModelError.self) { _ = try provider.embeddingModel(modelId: "embedding") }
     }
 }

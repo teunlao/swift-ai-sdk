@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 /// Converts xAI responses usage info into unified usage representation.
 /// Mirrors `packages/xai/src/responses/convert-xai-responses-usage.ts`.
-func convertXaiResponsesUsage(_ usage: XAIResponsesUsage) -> LanguageModelV3Usage {
+func convertXaiResponsesUsage(_ usage: XAIResponsesUsage) -> LanguageModelV4Usage {
     let cacheReadTokens = usage.inputTokensDetails?.cachedTokens ?? 0
     let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
 
@@ -18,7 +18,7 @@ func convertXaiResponsesUsage(_ usage: XAIResponsesUsage) -> LanguageModelV3Usag
         ? usage.inputTokens - cacheReadTokens
         : usage.inputTokens
 
-    return LanguageModelV3Usage(
+    return LanguageModelV4Usage(
         inputTokens: .init(
             total: totalInputTokens,
             noCache: noCacheInputTokens,
@@ -30,14 +30,6 @@ func convertXaiResponsesUsage(_ usage: XAIResponsesUsage) -> LanguageModelV3Usag
             text: usage.outputTokens - reasoningTokens,
             reasoning: reasoningTokens
         ),
-        raw: try? JSONEncoder().encodeToJSONValue(usage)
+        raw: usage.raw
     )
-}
-
-private extension JSONEncoder {
-    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
-        let data = try encode(value)
-        let raw = try JSONSerialization.jsonObject(with: data, options: [])
-        return try jsonValue(from: raw)
-    }
 }

@@ -52,9 +52,9 @@ private let xaiImageResponseSchema = FlexibleSchema(
     )
 )
 
-public final class XAIImageModel: ImageModelV3 {
-    public let specificationVersion: String = "v3"
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
+public final class XAIImageModel: ImageModelV4 {
+    public let specificationVersion: String = "v4"
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
 
     private let modelIdentifier: XAIImageModelId
     private let config: XAIImageModelConfig
@@ -67,8 +67,8 @@ public final class XAIImageModel: ImageModelV3 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        var warnings: [SharedV4Warning] = []
 
         if options.size != nil {
             warnings.append(.unsupported(
@@ -168,15 +168,15 @@ public final class XAIImageModel: ImageModelV3 {
             return .object(object)
         }
 
-        let providerMetadata: ImageModelV3ProviderMetadata = [
-            "xai": ImageModelV3ProviderMetadataValue(images: metadataImages)
+        let providerMetadata: ImageModelV4ProviderMetadata = [
+            "xai": ImageModelV4ProviderMetadataValue(images: metadataImages)
         ]
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .binary(downloadedImages),
             warnings: warnings,
             providerMetadata: providerMetadata,
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: timestamp,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders

@@ -90,7 +90,7 @@ struct XAIImageModelTests {
 
         #expect(model.provider == "xai.image")
         #expect(model.modelId == "grok-2-image")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
 
         switch model.maxImagesPerCall {
         case .value(let value):
@@ -142,7 +142,6 @@ struct XAIImageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: "Turn the cat into a dog",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(
                     mediaType: "image/png",
@@ -180,7 +179,6 @@ struct XAIImageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: "Edit this image",
             n: 1,
-            providerOptions: [:],
             files: [
                 .url(url: "https://example.com/input.png", providerOptions: nil)
             ]
@@ -212,7 +210,6 @@ struct XAIImageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: "Edit this image",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(
                     mediaType: "image/png",
@@ -402,7 +399,6 @@ struct XAIImageModelTests {
         let maskResult = try await model.doGenerate(options: .init(
             prompt: "Edit this",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
             ],
@@ -413,7 +409,6 @@ struct XAIImageModelTests {
         let multiFileResult = try await model.doGenerate(options: .init(
             prompt: "Edit images",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
                 .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),

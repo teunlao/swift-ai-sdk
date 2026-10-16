@@ -68,7 +68,7 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
                 }
 
                 let allowedXHandles: [String]?
-                switch parseStringArray("allowedXHandles", max: 10) {
+                switch parseStringArray("allowedXHandles", max: 20) {
                 case .success(let value):
                     allowedXHandles = value
                 case .failure(let error):
@@ -76,7 +76,7 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
                 }
 
                 let excludedXHandles: [String]?
-                switch parseStringArray("excludedXHandles", max: 10) {
+                switch parseStringArray("excludedXHandles", max: 20) {
                 case .success(let value):
                     excludedXHandles = value
                 case .failure(let error):

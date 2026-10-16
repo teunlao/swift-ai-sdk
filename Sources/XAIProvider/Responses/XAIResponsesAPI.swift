@@ -28,6 +28,42 @@ public struct XAIResponsesUsage: Codable, Sendable, Equatable {
     public let outputTokensDetails: OutputTokensDetails?
     public let numSourcesUsed: Int?
     public let numServerSideToolsUsed: Int?
+    public let costInUsdTicks: Double?
+    public let raw: JSONValue
+
+    public init(from decoder: Decoder) throws {
+        raw = try JSONValue(from: decoder)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
+        outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens)
+        inputTokensDetails = try container.decodeIfPresent(InputTokensDetails.self, forKey: .inputTokensDetails)
+        outputTokensDetails = try container.decodeIfPresent(OutputTokensDetails.self, forKey: .outputTokensDetails)
+        numSourcesUsed = try container.decodeIfPresent(Int.self, forKey: .numSourcesUsed)
+        numServerSideToolsUsed = try container.decodeIfPresent(Int.self, forKey: .numServerSideToolsUsed)
+        costInUsdTicks = try container.decodeIfPresent(Double.self, forKey: .costInUsdTicks)
+    }
+
+    public init(inputTokens: Int, outputTokens: Int, totalTokens: Int?, inputTokensDetails: InputTokensDetails?, outputTokensDetails: OutputTokensDetails?, numSourcesUsed: Int?, numServerSideToolsUsed: Int?, costInUsdTicks: Double? = nil) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.totalTokens = totalTokens
+        self.inputTokensDetails = inputTokensDetails
+        self.outputTokensDetails = outputTokensDetails
+        self.numSourcesUsed = numSourcesUsed
+        self.numServerSideToolsUsed = numServerSideToolsUsed
+        self.costInUsdTicks = costInUsdTicks
+        var data: [String: JSONValue] = ["input_tokens": .number(Double(inputTokens)), "output_tokens": .number(Double(outputTokens))]
+        if let totalTokens { data["total_tokens"] = .number(Double(totalTokens)) }
+        if let inputTokensDetails { data["input_tokens_details"] = .object(inputTokensDetails.cachedTokens.map { ["cached_tokens": .number(Double($0))] } ?? [:]) }
+        if let outputTokensDetails { data["output_tokens_details"] = .object(outputTokensDetails.reasoningTokens.map { ["reasoning_tokens": .number(Double($0))] } ?? [:]) }
+        if let numSourcesUsed { data["num_sources_used"] = .number(Double(numSourcesUsed)) }
+        if let numServerSideToolsUsed { data["num_server_side_tools_used"] = .number(Double(numServerSideToolsUsed)) }
+        if let costInUsdTicks { data["cost_in_usd_ticks"] = .number(costInUsdTicks) }
+        raw = .object(data)
+    }
+
+    public func encode(to encoder: Encoder) throws { try raw.encode(to: encoder) }
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens"
@@ -37,6 +73,7 @@ public struct XAIResponsesUsage: Codable, Sendable, Equatable {
         case outputTokensDetails = "output_tokens_details"
         case numSourcesUsed = "num_sources_used"
         case numServerSideToolsUsed = "num_server_side_tools_used"
+        case costInUsdTicks = "cost_in_usd_ticks"
     }
 }
 
@@ -48,15 +85,17 @@ public struct XAIResponsesResponse: Codable, Sendable, Equatable {
     public let output: [XAIResponsesOutputItem]
     public let usage: XAIResponsesUsage?
     public let status: String
+    public let serviceTier: String?
+    public let promptCacheKey: String?
+    public let safetyIdentifier: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt = "created_at"
-        case model
-        case object
-        case output
-        case usage
-        case status
+        case model, object, output, usage, status
+        case serviceTier = "service_tier"
+        case promptCacheKey = "prompt_cache_key"
+        case safetyIdentifier = "safety_identifier"
     }
 }
 
@@ -140,6 +179,8 @@ public struct XAIResponsesToolCall: Codable, Sendable, Equatable {
     public let input: String?
     public let callId: String?
     public let action: JSONValue?
+    public let prompt: String?
+    public let result: String?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -151,7 +192,7 @@ public struct XAIResponsesToolCall: Codable, Sendable, Equatable {
         case arguments
         case input
         case callId = "call_id"
-        case action
+        case action, prompt, result
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +207,8 @@ public struct XAIResponsesToolCall: Codable, Sendable, Equatable {
         input = try container.decodeIfPresent(String.self, forKey: .input)
         callId = try container.decodeIfPresent(String.self, forKey: .callId)
         action = try container.decodeIfPresent(JSONValue.self, forKey: .action)
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
+        result = try container.decodeIfPresent(String.self, forKey: .result)
     }
 }
 
@@ -233,13 +276,14 @@ public struct XAIResponsesReasoning: Codable, Sendable, Equatable {
     public let type: String
     public let id: String
     public let summary: [XAIResponsesReasoningSummaryPart]
+    public let content: [XAIResponsesReasoningSummaryPart]?
     public let status: String
     public let encryptedContent: String?
 
     enum CodingKeys: String, CodingKey {
         case type
         case id
-        case summary
+        case summary, content
         case status
         case encryptedContent = "encrypted_content"
     }
@@ -278,6 +322,7 @@ public enum XAIResponsesOutputItem: Codable, Sendable, Equatable {
              "view_image_call",
              "view_x_video_call",
              "file_search_call",
+             "image_generation_call",
              "custom_tool_call":
             self = .toolCall(try XAIResponsesToolCall(from: decoder))
         case "mcp_call":
@@ -310,6 +355,24 @@ public enum XAIResponsesOutputItem: Codable, Sendable, Equatable {
         case .reasoning(let value):
             try value.encode(to: encoder)
         }
+    }
+}
+
+public struct XAIResponsesTerminalResponse: Codable, Sendable, Equatable {
+    public struct IncompleteDetails: Codable, Sendable, Equatable { public let reason: String }
+    public struct Failure: Codable, Sendable, Equatable { public let code: String?; public let message: String }
+    public let incompleteDetails: IncompleteDetails?
+    public let error: Failure?
+    public let usage: XAIResponsesUsage?
+    public let serviceTier: String?
+    public let promptCacheKey: String?
+    public let safetyIdentifier: String?
+    enum CodingKeys: String, CodingKey {
+        case incompleteDetails = "incomplete_details"
+        case error, usage
+        case serviceTier = "service_tier"
+        case promptCacheKey = "prompt_cache_key"
+        case safetyIdentifier = "safety_identifier"
     }
 }
 
@@ -348,6 +411,10 @@ public enum XAIResponsesChunk: Codable, Sendable, Equatable {
 
     case responseDone(response: XAIResponsesResponse)
     case responseCompleted(response: XAIResponsesResponse)
+    case responseIncomplete(response: XAIResponsesTerminalResponse)
+    case responseFailed(response: XAIResponsesTerminalResponse)
+    case error(code: String?, message: String)
+    case responseImageGenerationStatus(type: String, itemId: String, outputIndex: Int)
 
     // Status/progress events (ignored by the model implementation but validated)
     case responseWebSearchCallStatus(type: String, itemId: String, outputIndex: Int)
@@ -373,7 +440,7 @@ public enum XAIResponsesChunk: Codable, Sendable, Equatable {
         case part
         case delta
         case text
-        case code
+        case code, message
         case input
         case arguments
         case output
@@ -553,6 +620,15 @@ public enum XAIResponsesChunk: Codable, Sendable, Equatable {
 
         case "response.completed":
             self = .responseCompleted(response: try container.decode(XAIResponsesResponse.self, forKey: .response))
+
+        case "response.incomplete":
+            self = .responseIncomplete(response: try container.decode(XAIResponsesTerminalResponse.self, forKey: .response))
+        case "response.failed":
+            self = .responseFailed(response: try container.decode(XAIResponsesTerminalResponse.self, forKey: .response))
+        case "error":
+            self = .error(code: try container.decodeIfPresent(String.self, forKey: .code), message: try container.decode(String.self, forKey: .message))
+        case "response.image_generation_call.in_progress", "response.image_generation_call.generating", "response.image_generation_call.completed":
+            self = .responseImageGenerationStatus(type: type, itemId: try container.decode(String.self, forKey: .itemId), outputIndex: try container.decode(Int.self, forKey: .outputIndex))
 
         case "response.web_search_call.in_progress",
              "response.web_search_call.searching",
@@ -793,6 +869,20 @@ public enum XAIResponsesChunk: Codable, Sendable, Equatable {
             try container.encode("response.completed", forKey: .type)
             try container.encode(response, forKey: .response)
 
+        case .responseIncomplete(let response):
+            try container.encode("response.incomplete", forKey: .type)
+            try container.encode(response, forKey: .response)
+        case .responseFailed(let response):
+            try container.encode("response.failed", forKey: .type)
+            try container.encode(response, forKey: .response)
+        case .error(let code, let message):
+            try container.encode("error", forKey: .type)
+            try container.encodeIfPresent(code, forKey: .code)
+            try container.encode(message, forKey: .message)
+        case .responseImageGenerationStatus(let type, let itemId, let outputIndex):
+            try container.encode(type, forKey: .type)
+            try encodeItemId(itemId)
+            try encodeOutputIndex(outputIndex)
         case .responseWebSearchCallStatus(let type, let itemId, let outputIndex):
             try container.encode(type, forKey: .type)
             try encodeItemId(itemId)

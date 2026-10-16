@@ -6,15 +6,18 @@ public struct XAIWebSearchArgs: Sendable, Equatable {
     public var allowedDomains: [String]?
     public var excludedDomains: [String]?
     public var enableImageUnderstanding: Bool?
+    public var enableImageSearch: Bool?
 
     public init(
         allowedDomains: [String]? = nil,
         excludedDomains: [String]? = nil,
-        enableImageUnderstanding: Bool? = nil
+        enableImageUnderstanding: Bool? = nil,
+        enableImageSearch: Bool? = nil
     ) {
         self.allowedDomains = allowedDomains
         self.excludedDomains = excludedDomains
         self.enableImageUnderstanding = enableImageUnderstanding
+        self.enableImageSearch = enableImageSearch
     }
 }
 
@@ -83,10 +86,16 @@ public let xaiWebSearchArgsSchema = FlexibleSchema(
                     enableImageUnderstanding = bool
                 }
 
+                var enableImageSearch: Bool?
+                if let raw = dict["enableImageSearch"] {
+                    guard case .bool(let value) = raw else { throw InvalidArgumentError(argument: "enableImageSearch", message: "Expected a boolean") }
+                    enableImageSearch = value
+                }
                 return .success(value: XAIWebSearchArgs(
                     allowedDomains: allowed,
                     excludedDomains: excluded,
-                    enableImageUnderstanding: enableImageUnderstanding
+                    enableImageUnderstanding: enableImageUnderstanding,
+                    enableImageSearch: enableImageSearch
                 ))
             } catch {
                 return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -103,23 +112,24 @@ private let emptyObjectJSONSchema: JSONValue = .object([
 
 private let webSearchOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "required": .array([.string("query"), .string("sources")]),
-    "additionalProperties": .bool(false),
     "properties": .object([
-        "query": .object(["type": .string("string")]),
-        "sources": .object([
-            "type": .string("array"),
-            "items": .object([
-                "type": .string("object"),
-                "required": .array([.string("title"), .string("url"), .string("snippet")]),
-                "additionalProperties": .bool(false),
-                "properties": .object([
-                    "title": .object(["type": .string("string")]),
-                    "url": .object(["type": .string("string")]),
-                    "snippet": .object(["type": .string("string")])
-                ])
-            ])
-        ])
+        "action": .object(["oneOf": .array([
+            .object(["type": .string("object"), "required": .array([.string("type")]), "properties": .object([
+                "type": .object(["const": .string("search")]), "query": .object(["type": .string("string")]),
+                "queries": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
+            ])]),
+            .object(["type": .string("object"), "required": .array([.string("type")]), "properties": .object([
+                "type": .object(["const": .string("openPage")]), "url": .object(["type": .array([.string("string"), .string("null")])])
+            ])]),
+            .object(["type": .string("object"), "required": .array([.string("type")]), "properties": .object([
+                "type": .object(["const": .string("findInPage")]), "url": .object(["type": .array([.string("string"), .string("null")])]),
+                "pattern": .object(["type": .array([.string("string"), .string("null")])])
+            ])])
+        ])]),
+        "sources": .object(["type": .string("array"), "items": .object([
+            "type": .string("object"), "required": .array([.string("type"), .string("url")]),
+            "properties": .object(["type": .object(["const": .string("url")]), "url": .object(["type": .string("string")])])
+        ])])
     ])
 ])
 
@@ -142,6 +152,7 @@ public let xaiWebSearchToolFactory = createProviderExecutedToolFactory(
         payload["enableImageUnderstanding"] = .bool(enable)
     }
 
+    if let enable = args.enableImageSearch { payload["enableImageSearch"] = .bool(enable) }
     options.args = payload
     return options
 }

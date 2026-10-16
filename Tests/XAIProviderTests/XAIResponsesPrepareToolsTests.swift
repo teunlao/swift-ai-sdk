@@ -10,7 +10,7 @@ import Testing
  */
 @Suite("prepareXAIResponsesTools")
 struct XAIResponsesPrepareToolsTests {
-    private func providerTool(id: String, name: String, args: [String: JSONValue] = [:]) -> LanguageModelV3Tool {
+    private func providerTool(id: String, name: String, args: [String: JSONValue] = [:]) -> LanguageModelV4Tool {
         .provider(.init(id: id, name: name, args: args))
     }
 
@@ -18,7 +18,7 @@ struct XAIResponsesPrepareToolsTests {
         name: String,
         description: String? = nil,
         inputSchema: JSONValue = .object(["type": .string("object"), "properties": .object([:])])
-    ) -> LanguageModelV3Tool {
+    ) -> LanguageModelV4Tool {
         .function(.init(name: name, inputSchema: inputSchema, description: description))
     }
 
@@ -341,7 +341,7 @@ struct XAIResponsesPrepareToolsTests {
         let required = try await prepareXAIResponsesTools(tools: tools, toolChoice: .required)
         #expect(required.toolChoice == .string("required"))
 
-        let none = try await prepareXAIResponsesTools(tools: tools, toolChoice: LanguageModelV3ToolChoice.none)
+        let none = try await prepareXAIResponsesTools(tools: tools, toolChoice: LanguageModelV4ToolChoice.none)
         #expect(none.toolChoice == .string("none"))
     }
 

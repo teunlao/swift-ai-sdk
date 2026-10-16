@@ -4,9 +4,9 @@ import AISDKProviderUtils
 
 public struct XAIFileSearchArgs: Sendable, Equatable {
     public var vectorStoreIds: [String]
-    public var maxNumResults: Int?
+    public var maxNumResults: Double?
 
-    public init(vectorStoreIds: [String], maxNumResults: Int? = nil) {
+    public init(vectorStoreIds: [String], maxNumResults: Double? = nil) {
         self.vectorStoreIds = vectorStoreIds
         self.maxNumResults = maxNumResults
     }
@@ -52,7 +52,7 @@ public let xaiFileSearchArgsSchema = FlexibleSchema(
                     vectorStoreIds.append(value)
                 }
 
-                var maxNumResults: Int? = nil
+                var maxNumResults: Double? = nil
                 if let rawMax = dict["maxNumResults"], rawMax != .null {
                     guard case .number(let value) = rawMax else {
                         let error = SchemaValidationIssuesError(
@@ -61,7 +61,7 @@ public let xaiFileSearchArgsSchema = FlexibleSchema(
                         )
                         return .failure(error: TypeValidationError.wrap(value: rawMax, cause: error))
                     }
-                    maxNumResults = Int(value)
+                    maxNumResults = value
                 }
 
                 return .success(value: XAIFileSearchArgs(
@@ -102,7 +102,7 @@ private let fileSearchOutputJSONSchema: JSONValue = .object([
                         "properties": .object([
                             "fileId": .object(["type": .string("string")]),
                             "filename": .object(["type": .string("string")]),
-                            "score": .object(["type": .string("number")]),
+                            "score": .object(["type": .string("number"), "minimum": .number(0), "maximum": .number(1)]),
                             "text": .object(["type": .string("string")])
                         ])
                     ])

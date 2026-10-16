@@ -11,7 +11,7 @@ import Testing
  */
 @Suite("XAIResponsesLanguageModel")
 struct XAIResponsesLanguageModelTests {
-    private static let testPrompt: LanguageModelV3Prompt = [
+    private static let testPrompt: LanguageModelV4Prompt = [
         .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
     ]
 
@@ -67,8 +67,8 @@ struct XAIResponsesLanguageModelTests {
         payloads.map { "data: \($0)\n\n" } + ["data: [DONE]\n\n"]
     }
 
-    private static func collect(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-        var parts: [LanguageModelV3StreamPart] = []
+    private static func collect(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream {
             parts.append(part)
         }
@@ -287,7 +287,7 @@ struct XAIResponsesLanguageModelTests {
 
         let model = Self.makeModel(modelId: "grok-4-fast", fetch: fetch)
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "you are helpful", providerOptions: nil),
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil)
         ]
@@ -536,7 +536,7 @@ struct XAIResponsesLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         })
 
-        let tools: [LanguageModelV3Tool] = [
+        let tools: [LanguageModelV4Tool] = [
             .provider(.init(
                 id: "xai.file_search",
                 name: "file_search",
@@ -651,14 +651,14 @@ struct XAIResponsesLanguageModelTests {
         })
 
         let toolSchema: JSONValue = .object(["type": .string("object"), "properties": .object([:])])
-        let tools: [LanguageModelV3Tool] = [
+        let tools: [LanguageModelV4Tool] = [
             .function(.init(name: "weather", inputSchema: toolSchema, description: "get weather"))
         ]
 
         let result = try await model.doStream(options: .init(prompt: Self.testPrompt, tools: tools))
         let parts = try await Self.collect(result.stream)
 
-        #expect(parts.contains(where: { if case .toolInputStart(let id, let toolName, _, _, _, _) = $0 { return id == "call_123" && toolName == "weather" } else { return false } }))
+        #expect(parts.contains(where: { if case .toolInputStart(let id, let toolName, _, _, _, _, _) = $0 { return id == "call_123" && toolName == "weather" } else { return false } }))
         #expect(parts.contains(where: { if case .toolInputDelta(let id, let delta, _) = $0 { return id == "call_123" && delta == "{\"location\"" } else { return false } }))
         #expect(parts.contains(where: { if case .toolInputDelta(let id, let delta, _) = $0 { return id == "call_123" && delta == ":\"sf\"}" } else { return false } }))
         #expect(parts.contains(where: { if case .toolInputEnd(let id, _) = $0 { return id == "call_123" } else { return false } }))
@@ -681,7 +681,7 @@ struct XAIResponsesLanguageModelTests {
             FetchResponse(body: .stream(Self.makeStream(from: events)), urlResponse: httpResponse)
         })
 
-        let tools: [LanguageModelV3Tool] = [
+        let tools: [LanguageModelV4Tool] = [
             .provider(.init(
                 id: "xai.file_search",
                 name: "file_search",
@@ -692,7 +692,7 @@ struct XAIResponsesLanguageModelTests {
         let result = try await model.doStream(options: .init(prompt: Self.testPrompt, tools: tools))
         let parts = try await Self.collect(result.stream)
 
-        #expect(parts.contains(where: { if case .toolInputStart(let id, let toolName, _, _, _, _) = $0 { return id == "fs_stream_123" && toolName == "file_search" } else { return false } }))
+        #expect(parts.contains(where: { if case .toolInputStart(let id, let toolName, _, _, _, _, _) = $0 { return id == "fs_stream_123" && toolName == "file_search" } else { return false } }))
         #expect(parts.contains(where: { if case .toolInputDelta(let id, let delta, _) = $0 { return id == "fs_stream_123" && delta == "" } else { return false } }))
         #expect(parts.contains(where: { if case .toolInputEnd(let id, _) = $0 { return id == "fs_stream_123" } else { return false } }))
         #expect(parts.contains(where: { if case .toolCall(let call) = $0 { return call.toolCallId == "fs_stream_123" && call.toolName == "file_search" && call.providerExecuted == true } else { return false } }))

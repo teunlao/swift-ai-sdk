@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 /// xAI Responses language model implementation.
 /// Mirrors `packages/xai/src/responses/xai-responses-language-model.ts`.
-public final class XAIResponsesLanguageModel: LanguageModelV3 {
+public final class XAIResponsesLanguageModel: LanguageModelV4 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
@@ -15,12 +15,13 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
     fileprivate struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
         let webSearchToolName: String?
         let xSearchToolName: String?
         let codeExecutionToolName: String?
         let mcpToolName: String?
         let fileSearchToolName: String?
+        let imageGenerationToolName: String?
     }
 
     private let modelIdentifier: XAIResponsesModelId
@@ -35,17 +36,17 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
         self.config = config
     }
 
-    public let specificationVersion: String = "v3"
+    public let specificationVersion: String = "v4"
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
     public var supportedUrls: [String: [NSRegularExpression]] {
         get async throws {
-            ["image/*": [httpRegex]]
+            ["image/*": [httpRegex], "application/pdf": [httpRegex], "text/*": [httpRegex]]
         }
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options)
 
         let response = try await postJsonToAPI(
@@ -58,7 +59,8 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        var content: [LanguageModelV3Content] = []
+        var content: [LanguageModelV4Content] = []
+        var hasFunctionCall = false
 
         let webSearchSubTools: Set<String> = ["web_search", "web_search_with_snippets", "browse_page"]
         let xSearchSubTools: Set<String> = ["x_user_search", "x_keyword_search", "x_semantic_search", "x_thread_fetch"]
@@ -66,10 +68,16 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
         for item in response.value.output {
             switch item {
             case .toolCall(let part):
+                if part.type == "image_generation_call" {
+                    let toolName = prepared.imageGenerationToolName ?? "image_generation"
+                    content.append(.toolCall(.init(toolCallId: part.id, toolName: toolName, input: "{}", providerExecuted: true)))
+                    content.append(.toolResult(imageGenerationResult(part, toolName: toolName)))
+                    continue
+                }
                 if part.type == "file_search_call" {
                     let toolName = prepared.fileSearchToolName ?? "file_search"
 
-                    content.append(.toolCall(LanguageModelV3ToolCall(
+                    content.append(.toolCall(LanguageModelV4ToolCall(
                         toolCallId: part.id,
                         toolName: toolName,
                         input: "",
@@ -91,7 +99,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                         results = .null
                     }
 
-                    content.append(.toolResult(LanguageModelV3ToolResult(
+                    content.append(.toolResult(LanguageModelV4ToolResult(
                         toolCallId: part.id,
                         toolName: toolName,
                         result: .object([
@@ -130,12 +138,15 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                         toolInput = part.arguments ?? ""
                     }
 
-                    content.append(.toolCall(LanguageModelV3ToolCall(
+                    content.append(.toolCall(LanguageModelV4ToolCall(
                         toolCallId: toolCallId,
                         toolName: toolName,
                         input: toolInput,
                         providerExecuted: true
                     )))
+                    if part.type == "web_search_call" {
+                        content.append(.toolResult(.init(toolCallId: part.id, toolName: toolName, result: mapWebSearchAction(part.action))))
+                    }
 
                     continue
                 }
@@ -148,7 +159,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
                 let toolInput = part.arguments ?? ""
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     input: toolInput,
@@ -160,7 +171,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             case .message(let part):
                 for contentPart in part.content {
                     if let text = contentPart.text, !text.isEmpty {
-                        content.append(.text(LanguageModelV3Text(text: text)))
+                        content.append(.text(LanguageModelV4Text(text: text)))
                     }
 
                     if let annotations = contentPart.annotations {
@@ -177,19 +188,19 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                 }
 
             case .functionCall(let part):
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                hasFunctionCall = true
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: part.callId,
                     toolName: part.name,
                     input: part.arguments
                 )))
 
             case .reasoning(let part):
-                let summaryTexts = part.summary.map(\.text).filter { !$0.isEmpty }
-                guard !summaryTexts.isEmpty else { break }
+                let texts = part.summary.isEmpty ? (part.content ?? []) : part.summary
+                let reasoningText = texts.map(\.text).filter { !$0.isEmpty }.joined()
+                guard !reasoningText.isEmpty || part.encryptedContent?.isEmpty == false else { break }
 
-                let reasoningText = summaryTexts.joined()
-
-                var providerMetadata: SharedV3ProviderMetadata? = nil
+                var providerMetadata: SharedV4ProviderMetadata? = nil
                 if !part.id.isEmpty || (part.encryptedContent?.isEmpty == false) {
                     var xai: [String: JSONValue] = [:]
                     if !part.id.isEmpty {
@@ -201,25 +212,25 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                     providerMetadata = ["xai": xai]
                 }
 
-                content.append(.reasoning(LanguageModelV3Reasoning(
+                content.append(.reasoning(LanguageModelV4Reasoning(
                     text: reasoningText,
                     providerMetadata: providerMetadata
                 )))
             }
         }
 
-        let usage: LanguageModelV3Usage
+        let usage: LanguageModelV4Usage
         if let usageData = response.value.usage {
             usage = convertXaiResponsesUsage(usageData)
         } else {
-            usage = LanguageModelV3Usage(
+            usage = LanguageModelV4Usage(
                 inputTokens: .init(total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0),
                 outputTokens: .init(total: 0, text: 0, reasoning: 0)
             )
         }
 
-        let finishReason = LanguageModelV3FinishReason(
-            unified: mapXaiResponsesFinishReason(response.value.status),
+        let finishReason = LanguageModelV4FinishReason(
+            unified: hasFunctionCall ? .toolCalls : mapXaiResponsesFinishReason(response.value.status),
             raw: response.value.status
         )
 
@@ -229,13 +240,13 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             created: response.value.createdAt
         )
 
-        return LanguageModelV3GenerateResult(
+        return LanguageModelV4GenerateResult(
             content: content,
             finishReason: finishReason,
             usage: usage,
-            providerMetadata: nil,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
+            providerMetadata: responseProviderMetadata(cost: response.value.usage?.costInUsdTicks, tier: response.value.serviceTier, cacheKey: response.value.promptCacheKey, safety: response.value.safetyIdentifier),
+            request: LanguageModelV4RequestInfo(body: prepared.body),
+            response: LanguageModelV4ResponseInfo(
                 id: metadata.id,
                 timestamp: metadata.timestamp,
                 modelId: metadata.modelId,
@@ -246,7 +257,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
         )
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         let prepared = try await prepareRequest(options: options)
 
         var streamBody = prepared.body
@@ -262,14 +273,16 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
-            Task {
-                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
-                var usage: LanguageModelV3Usage? = nil
+            let producer = Task {
+                var hasFunctionCall = false
+                var providerMetadata: SharedV4ProviderMetadata?
+                var finishReason = LanguageModelV4FinishReason(unified: .other, raw: nil)
+                var usage: LanguageModelV4Usage? = nil
                 var isFirstChunk = true
-                var contentBlocks: Set<String> = []
+                var contentBlocks: [String] = []
                 var seenToolCalls: Set<String> = []
                 var ongoingToolCalls: [Int: (toolName: String, toolCallId: String)?] = [:]
                 var activeReasoning: Set<String> = []
@@ -285,7 +298,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
                         switch parseResult {
                         case .failure(let error, _):
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                            continuation.yield(.error(error: .error(error)))
                             continue
 
                         case .success(let event, _):
@@ -299,11 +312,9 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
                             case .responseReasoningSummaryPartAdded(let itemId, _, _, _):
                                 let blockId = "reasoning-\(itemId)"
-                                activeReasoning.insert(itemId)
-                                continuation.yield(.reasoningStart(
-                                    id: blockId,
-                                    providerMetadata: ["xai": ["itemId": .string(itemId)]]
-                                ))
+                                if activeReasoning.insert(itemId).inserted {
+                                    continuation.yield(.reasoningStart(id: blockId, providerMetadata: ["xai": ["itemId": .string(itemId)]]))
+                                }
 
                             case .responseReasoningSummaryTextDelta(let itemId, _, _, let delta):
                                 let blockId = "reasoning-\(itemId)"
@@ -337,7 +348,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                             case .responseOutputTextDelta(let itemId, _, _, let delta):
                                 let blockId = "text-\(itemId)"
                                 if !contentBlocks.contains(blockId) {
-                                    contentBlocks.insert(blockId)
+                                    contentBlocks.append(blockId)
                                     continuation.yield(.textStart(id: blockId, providerMetadata: nil))
                                 }
                                 continuation.yield(.textDelta(id: blockId, delta: delta, providerMetadata: nil))
@@ -368,10 +379,30 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                                 if let usageInfo = response.usage {
                                     usage = convertXaiResponsesUsage(usageInfo)
                                 }
-                                finishReason = .init(
-                                    unified: mapXaiResponsesFinishReason(response.status),
-                                    raw: response.status
-                                )
+                                finishReason = .init(unified: hasFunctionCall ? .toolCalls : mapXaiResponsesFinishReason(response.status), raw: response.status)
+                                providerMetadata = responseProviderMetadata(cost: response.usage?.costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
+
+                            case .responseIncomplete(let response):
+                                usage = response.usage.map(convertXaiResponsesUsage)
+                                let reason = response.incompleteDetails?.reason
+                                finishReason = .init(unified: reason.map(mapXaiResponsesFinishReason) ?? .other, raw: reason ?? "incomplete")
+                                providerMetadata = responseProviderMetadata(cost: response.usage?.costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
+
+                            case .responseFailed(let response):
+                                usage = response.usage.map(convertXaiResponsesUsage)
+                                let reason = response.incompleteDetails?.reason
+                                finishReason = .init(unified: reason.map(mapXaiResponsesFinishReason) ?? .error, raw: reason ?? "error")
+                                if let error = response.error {
+                                    continuation.yield(.error(error: .providerStreamError(xaiStreamError(message: error.message, code: error.code, eventType: "response.failed", data: parseResult.rawJSONValue ?? .null))))
+                                }
+
+                            case .error(let code, let message):
+                                continuation.yield(.error(error: .providerStreamError(xaiStreamError(message: message, code: code, eventType: "error", data: parseResult.rawJSONValue ?? .null))))
+
+                            case .responseImageGenerationStatus(_, let itemId, _):
+                                if seenToolCalls.insert(itemId).inserted {
+                                    emitImageGenerationCall(id: itemId, toolName: prepared.imageGenerationToolName ?? "image_generation", continuation: continuation)
+                                }
 
                             case .responseCustomToolCallInputDelta, .responseCustomToolCallInputDone:
                                 break
@@ -401,6 +432,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                                 )
 
                             case .responseOutputItemDone(let item, let outputIndex):
+                                if case .functionCall = item { hasFunctionCall = true }
                                 try await handleOutputItem(
                                     phase: OutputItemPhase.done,
                                     item: item,
@@ -428,11 +460,11 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
 
                     continuation.yield(.finish(
                         finishReason: finishReason,
-                        usage: usage ?? LanguageModelV3Usage(
+                        usage: usage ?? LanguageModelV4Usage(
                             inputTokens: .init(total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0),
                             outputTokens: .init(total: 0, text: 0, reasoning: 0)
                         ),
-                        providerMetadata: nil
+                        providerMetadata: providerMetadata
                     ))
 
                     continuation.finish()
@@ -440,19 +472,20 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in producer.cancel() }
         }
 
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: streamBody),
-            response: LanguageModelV3StreamResponseInfo(headers: streamResponse.responseHeaders)
+            request: LanguageModelV4RequestInfo(body: streamBody),
+            response: LanguageModelV4StreamResponseInfo(headers: streamResponse.responseHeaders)
         )
     }
 
     // MARK: - Preparation
 
-    private func prepareRequest(options: LanguageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: LanguageModelV4CallOptions) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
 
         let providerOptions = try await parseProviderOptions(
             provider: "xai",
@@ -460,6 +493,8 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             schema: xaiLanguageModelResponsesOptionsSchema
         ) ?? XAILanguageModelResponsesOptions()
 
+        if options.frequencyPenalty != nil { warnings.append(.unsupported(feature: "frequencyPenalty", details: nil)) }
+        if options.presencePenalty != nil { warnings.append(.unsupported(feature: "presencePenalty", details: nil)) }
         if options.stopSequences != nil {
             warnings.append(.unsupported(feature: "stopSequences", details: nil))
         }
@@ -495,19 +530,17 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             return providerTool.name
         }.first
 
-        let inputConversion = try await convertToXAIResponsesInput(
-            prompt: options.prompt,
-            store: true
-        )
+        let imageGenerationToolName = tools?.compactMap { tool -> String? in
+            guard case .provider(let tool) = tool, tool.id == "xai.image_generation" else { return nil }
+            return tool.name
+        }.first
+        let inputConversion = try await convertToXAIResponsesInput(prompt: options.prompt, store: providerOptions.store ?? true)
         warnings.append(contentsOf: inputConversion.warnings)
 
         let preparedTools = try await prepareXAIResponsesTools(tools: options.tools, toolChoice: options.toolChoice)
         warnings.append(contentsOf: preparedTools.warnings)
 
-        var includeValues: [String]? = nil
-        if let include = providerOptions.include, !include.isEmpty {
-            includeValues = include
-        }
+        var includeValues = providerOptions.include
 
         if providerOptions.store == false {
             if includeValues == nil {
@@ -531,9 +564,17 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
         if let topP = options.topP {
             body["top_p"] = .number(topP)
         }
-        if let seed = options.seed {
-            body["seed"] = .number(Double(seed))
-        }
+        if let seed = options.seed { body["seed"] = .number(Double(seed)) }
+        if let topK = options.topK { body["top_k"] = .number(Double(topK)) }
+        if providerOptions.logprobs == true || providerOptions.topLogprobs != nil { body["logprobs"] = .bool(true) }
+        if let value = providerOptions.topLogprobs { body["top_logprobs"] = .number(Double(value)) }
+        if let value = providerOptions.minP { body["min_p"] = .number(value) }
+        if let value = providerOptions.maxTurns { body["max_turns"] = .number(Double(value)) }
+        if let value = providerOptions.parallelToolCalls { body["parallel_tool_calls"] = .bool(value) }
+        if let value = providerOptions.promptCacheKey { body["prompt_cache_key"] = .string(value) }
+        if let value = providerOptions.safetyIdentifier { body["safety_identifier"] = .string(value) }
+        if let value = providerOptions.serviceTier { body["service_tier"] = .string(value) }
+        if let value = providerOptions.user { body["user"] = .string(value) }
 
         if let responseFormat = options.responseFormat {
             switch responseFormat {
@@ -563,11 +604,21 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             }
         }
 
-        if let reasoningEffort = providerOptions.reasoningEffort {
-            body["reasoning"] = .object([
-                "effort": .string(reasoningEffort.rawValue)
-            ])
+        var effort = providerOptions.reasoningEffort?.rawValue
+        if effort == nil, let reasoning = options.reasoning, reasoning != .providerDefault {
+            if !supportsReasoningEffort(modelId) {
+                warnings.append(.unsupported(feature: "reasoning", details: "reasoning \"\(reasoning.rawValue)\" is not supported by this model."))
+            } else {
+                if reasoning == .none { effort = "none" }
+                else {
+                    effort = mapReasoningToProviderEffort(reasoning: reasoning, effortMap: [
+                        .minimal: "low", .low: "low", .medium: "medium", .high: "high",
+                        .xhigh: modelId == "grok-4.6" ? "xhigh" : "high", .max: modelId == "grok-4.6" ? "xhigh" : "high"
+                    ], warnings: &warnings)
+                }
+            }
         }
+        if let effort { body["reasoning"] = .object(["effort": .string(effort)]) }
 
         if providerOptions.store == false {
             body["store"] = .bool(false)
@@ -596,7 +647,8 @@ public final class XAIResponsesLanguageModel: LanguageModelV3 {
             xSearchToolName: xSearchToolName,
             codeExecutionToolName: codeExecutionToolName,
             mcpToolName: mcpToolName,
-            fileSearchToolName: fileSearchToolName
+            fileSearchToolName: fileSearchToolName,
+            imageGenerationToolName: imageGenerationToolName
         )
     }
 }
@@ -610,8 +662,8 @@ private func handleOutputItem(
     phase: OutputItemPhase,
     item: XAIResponsesOutputItem,
     outputIndex: Int,
-    continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation,
-    contentBlocks: inout Set<String>,
+    continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation,
+    contentBlocks: inout [String],
     seenToolCalls: inout Set<String>,
     ongoingToolCalls: inout [Int: (toolName: String, toolCallId: String)?],
     activeReasoning: inout Set<String>,
@@ -645,6 +697,12 @@ private func handleOutputItem(
         activeReasoning.remove(part.id)
 
     case .toolCall(let part):
+        if part.type == "image_generation_call" {
+            let name = prepared.imageGenerationToolName ?? "image_generation"
+            if seenToolCalls.insert(part.id).inserted { emitImageGenerationCall(id: part.id, toolName: name, continuation: continuation) }
+            if phase == .done { continuation.yield(.toolResult(imageGenerationResult(part, toolName: name))) }
+            return
+        }
         if part.type == "file_search_call" {
             let toolName = prepared.fileSearchToolName ?? "file_search"
 
@@ -661,7 +719,7 @@ private func handleOutputItem(
                 ))
                 continuation.yield(.toolInputDelta(id: part.id, delta: "", providerMetadata: nil))
                 continuation.yield(.toolInputEnd(id: part.id, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                continuation.yield(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: part.id,
                     toolName: toolName,
                     input: "",
@@ -685,7 +743,7 @@ private func handleOutputItem(
                     results = .null
                 }
 
-                continuation.yield(.toolResult(LanguageModelV3ToolResult(
+                continuation.yield(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: part.id,
                     toolName: toolName,
                     result: .object([
@@ -733,7 +791,7 @@ private func handleOutputItem(
                 ))
                 continuation.yield(.toolInputDelta(id: part.id, delta: toolInput, providerMetadata: nil))
                 continuation.yield(.toolInputEnd(id: part.id, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                continuation.yield(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: part.id,
                     toolName: toolName,
                     input: toolInput,
@@ -741,6 +799,9 @@ private func handleOutputItem(
                 )))
             }
 
+            if phase == .done {
+                continuation.yield(.toolResult(.init(toolCallId: part.id, toolName: toolName, result: part.type == "web_search_call" ? mapWebSearchAction(part.action) : .object([:]))))
+            }
             return
         }
 
@@ -764,20 +825,21 @@ private func handleOutputItem(
             ))
             continuation.yield(.toolInputDelta(id: part.id, delta: toolInput, providerMetadata: nil))
             continuation.yield(.toolInputEnd(id: part.id, providerMetadata: nil))
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: part.id,
                 toolName: toolName,
                 input: toolInput,
                 providerExecuted: true
             )))
         }
+        if phase == .done { continuation.yield(.toolResult(.init(toolCallId: part.id, toolName: toolName, result: .object([:])))) }
 
     case .message(let part):
         for contentPart in part.content {
             if let text = contentPart.text, !text.isEmpty {
                 let blockId = "text-\(part.id)"
                 if !contentBlocks.contains(blockId) {
-                    contentBlocks.insert(blockId)
+                    contentBlocks.append(blockId)
                     continuation.yield(.textStart(id: blockId, providerMetadata: nil))
                     continuation.yield(.textDelta(id: blockId, delta: text, providerMetadata: nil))
                 }
@@ -810,11 +872,83 @@ private func handleOutputItem(
         } else {
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolInputEnd(id: part.callId, providerMetadata: nil))
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: part.callId,
                 toolName: part.name,
                 input: part.arguments
             )))
         }
     }
+}
+
+private func responseProviderMetadata(cost: Double?, tier: String?, cacheKey: String?, safety: String?) -> SharedV4ProviderMetadata? {
+    var data: [String: JSONValue] = [:]
+    if let cost { data["costInUsdTicks"] = .number(cost) }
+    if let tier { data["serviceTier"] = .string(tier) }
+    if let cacheKey { data["promptCacheKey"] = .string(cacheKey) }
+    if let safety { data["safetyIdentifier"] = .string(safety) }
+    return data.isEmpty ? nil : ["xai": data]
+}
+
+private func imageGenerationResult(_ part: XAIResponsesToolCall, toolName: String) -> LanguageModelV4ToolResult {
+    if let result = part.result {
+        var data: [String: JSONValue] = ["result": .string(result)]
+        if let prompt = part.prompt { data["prompt"] = .string(prompt) }
+        return .init(toolCallId: part.id, toolName: toolName, result: .object(data))
+    }
+    return .init(toolCallId: part.id, toolName: toolName, result: .string("Image generation failed (status: \(part.status))."), isError: true)
+}
+
+private func emitImageGenerationCall(id: String, toolName: String, continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation) {
+    continuation.yield(.toolInputStart(id: id, toolName: toolName, providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil))
+    continuation.yield(.toolInputDelta(id: id, delta: "{}", providerMetadata: nil))
+    continuation.yield(.toolInputEnd(id: id, providerMetadata: nil))
+    continuation.yield(.toolCall(.init(toolCallId: id, toolName: toolName, input: "{}", providerExecuted: true)))
+}
+
+private func mapWebSearchAction(_ action: JSONValue?) -> JSONValue {
+    guard case .object(let data) = action, case .string(let type) = data["type"], ["search", "open_page", "find_in_page"].contains(type) else { return .object([:]) }
+    let stringKeys = type == "search" ? ["query"] : type == "open_page" ? ["url"] : ["url", "pattern"]
+    for key in stringKeys {
+        if let value = data[key], value != .null, case .string = value {} else if data[key] != nil && data[key] != .null { return .object([:]) }
+    }
+    if let queries = data["queries"], queries != .null {
+        guard case .array(let values) = queries, values.allSatisfy({ if case .string = $0 { true } else { false } }) else { return .object([:]) }
+    }
+    if let sources = data["sources"], sources != .null, case .array = sources {} else if data["sources"] != nil && data["sources"] != .null { return .object([:]) }
+    var resultAction: [String: JSONValue] = ["type": .string(type == "open_page" ? "openPage" : type == "find_in_page" ? "findInPage" : "search")]
+    for key in stringKeys where data[key] != nil && (type != "search" || data[key] != .null) { resultAction[key] = data[key] }
+    if type == "search", let queries = data["queries"], queries != .null { resultAction["queries"] = queries }
+    var result: [String: JSONValue] = ["action": .object(resultAction)]
+    if case .array(let sources) = data["sources"] {
+        let valid = sources.compactMap { source -> JSONValue? in
+            guard case .object(let data) = source, data["type"] == .string("url"), case .string(let url) = data["url"] else { return nil }
+            return .object(["type": .string("url"), "url": .string(url)])
+        }
+        if !valid.isEmpty { result["sources"] = .array(valid) }
+    }
+    return .object(result)
+}
+
+private func xaiStreamError(message: String, code: String?, eventType: String, data: JSONValue) -> ProviderStreamError {
+    var status: Int?
+    var retryable: Bool?
+    if let code, code.count == 3, let value = Int(code), (400...599).contains(value) {
+        status = value
+        retryable = [408, 409, 429].contains(value) || value >= 500
+    } else {
+        switch code {
+        case "rate_limit_exceeded", "rate_limit_error": status = 429; retryable = true
+        case "insufficient_quota": status = 429; retryable = false
+        case "api_error", "internal_server_error", "server_error": status = 500; retryable = true
+        case "overloaded_error", "service_unavailable": status = 503; retryable = true
+        case "timeout", "timeout_error": status = 504; retryable = true
+        case "authentication_error", "invalid_api_key": status = 401; retryable = false
+        case "permission_error": status = 403; retryable = false
+        case "not_found_error", "model_not_found": status = 404; retryable = false
+        case "bad_request", "context_length_exceeded", "invalid_request_error": status = 400; retryable = false
+        default: break
+        }
+    }
+    return createProviderStreamError(message: message, type: eventType, code: code.map(ProviderStreamError.Code.string), statusCode: status, isRetryable: retryable, data: data)
 }

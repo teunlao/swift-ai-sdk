@@ -3,11 +3,11 @@ import AISDKProvider
 
 /// Maps xAI responses status to unified finish reason.
 /// Mirrors `packages/xai/src/responses/map-xai-responses-finish-reason.ts`.
-func mapXaiResponsesFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
+func mapXaiResponsesFinishReason(_ finishReason: String?) -> LanguageModelV4FinishReason.Unified {
     switch finishReason {
     case "stop", "completed":
         return .stop
-    case "length":
+    case "length", "max_output_tokens":
         return .length
     case "tool_calls", "function_call":
         return .toolCalls

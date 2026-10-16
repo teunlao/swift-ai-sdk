@@ -7,22 +7,22 @@ import AISDKProviderUtils
 struct XAIResponsesPreparedTools {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let warnings: [SharedV3Warning]
+    let warnings: [SharedV4Warning]
 }
 
 func prepareXAIResponsesTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?
 ) async throws -> XAIResponsesPreparedTools {
     let normalizedTools = tools?.isEmpty == true ? nil : tools
-    var warnings: [SharedV3Warning] = []
+    var warnings: [SharedV4Warning] = []
 
     guard let normalizedTools else {
         return XAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: warnings)
     }
 
     var xaiTools: [JSONValue] = []
-    var toolByName: [String: LanguageModelV3Tool] = [:]
+    var toolByName: [String: LanguageModelV4Tool] = [:]
 
     for tool in normalizedTools {
         switch tool {
@@ -44,9 +44,8 @@ func prepareXAIResponsesTools(
                 if let excluded = args.excludedDomains {
                     payload["excluded_domains"] = .array(excluded.map(JSONValue.string))
                 }
-                if let enable = args.enableImageUnderstanding {
-                    payload["enable_image_understanding"] = .bool(enable)
-                }
+                if let enable = args.enableImageUnderstanding { payload["enable_image_understanding"] = .bool(enable) }
+                if let enable = args.enableImageSearch { payload["enable_image_search"] = .bool(enable) }
                 xaiTools.append(.object(payload))
 
             case "xai.x_search":
@@ -91,6 +90,12 @@ func prepareXAIResponsesTools(
                 xaiTools.append(.object([
                     "type": .string("view_x_video")
                 ]))
+
+            case "xai.image_generation":
+                let args = try await validateTypes(ValidateTypesOptions(value: jsonValueToFoundation(.object(providerTool.args)), schema: xaiImageGenerationArgsSchema))
+                var payload: [String: JSONValue] = ["type": .string("image_generation")]
+                if let action = args.action { payload["action"] = .string(action.rawValue) }
+                xaiTools.append(.object(payload))
 
             case "xai.file_search":
                 let args = try await validateTypes(
@@ -145,9 +150,8 @@ func prepareXAIResponsesTools(
                 "parameters": functionTool.inputSchema
             ]
 
-            if let description = functionTool.description {
-                payload["description"] = .string(description)
-            }
+            if let description = functionTool.description { payload["description"] = .string(description) }
+            if let strict = functionTool.strict { payload["strict"] = .bool(strict) }
 
             xaiTools.append(.object(payload))
         }
