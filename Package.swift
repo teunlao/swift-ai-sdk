@@ -87,7 +87,7 @@ let package = Package(
 
 	        // OpenAI-compatible provider package
 	        .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
-	        .target(name: "MoonshotAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+	        .target(name: "MoonshotAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 	        .target(name: "OpenResponsesProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 	        .target(name: "ByteDanceProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 	        .target(name: "AlibabaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
@@ -112,11 +112,11 @@ let package = Package(
         .target(name: "HumeProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "AssemblyAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "CerebrasProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
-        .target(name: "DeepSeekProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "DeepSeekProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "BasetenProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "BlackForestLabsProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "ReplicateProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
-        .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
+        .target(name: "XAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "LumaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "TogetherAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "ProdiaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),

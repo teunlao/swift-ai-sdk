@@ -21,7 +21,11 @@ private func compatibleSignature(_ options: SharedV4ProviderOptions?, key: Strin
     func string(_ value: JSONValue) -> String {
         switch value {
         case .string(let value): return value
-        case .number(let value): return Int(exactly: value).map(String.init) ?? String(value)
+        case .number(let value):
+            if value.isNaN { return "NaN" }
+            if value == .infinity { return "Infinity" }
+            if value == -.infinity { return "-Infinity" }
+            return Int(exactly: value).map(String.init) ?? String(value)
         case .bool(let value): return value ? "true" : "false"
         case .null: return "null"
         case .object: return "[object Object]"

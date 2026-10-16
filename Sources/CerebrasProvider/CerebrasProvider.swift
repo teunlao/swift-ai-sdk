@@ -88,7 +88,7 @@ private func createCerebrasAuthFetch(
     }
 }
 
-private func transformCerebrasRequestBody(_ args: [String: JSONValue]) -> [String: JSONValue] {
+private func transformCerebrasRequestBody(_ args: [String: JSONValue], _ warnings: inout [SharedV4Warning]) -> [String: JSONValue] {
     var result = args
     for (from, to) in [("max_tokens", "max_completion_tokens"), ("parallelToolCalls", "parallel_tool_calls"),
                        ("topLogprobs", "top_logprobs"), ("logitBias", "logit_bias"), ("serviceTier", "service_tier"),

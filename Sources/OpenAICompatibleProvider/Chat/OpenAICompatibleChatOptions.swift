@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public struct OpenAICompatibleChatProviderOptions: Sendable, Equatable {
+public struct OpenAICompatibleLanguageModelChatOptions: Codable, Sendable, Equatable {
     public var user: String?
     public var reasoningEffort: String?
     public var textVerbosity: String?
@@ -27,7 +27,7 @@ private let openAICompatibleProviderOptionsJSONSchema: JSONValue = .object([
 ])
 
 public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
-    Schema<OpenAICompatibleChatProviderOptions>(
+    Schema<OpenAICompatibleLanguageModelChatOptions>(
         jsonSchemaResolver: { openAICompatibleProviderOptionsJSONSchema },
         validator: { value in
             do {
@@ -37,9 +37,9 @@ public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var options = OpenAICompatibleChatProviderOptions()
+                var options = OpenAICompatibleLanguageModelChatOptions()
 
-                if let userValue = dict["user"], userValue != .null {
+                if let userValue = dict["user"] {
                     guard case .string(let user) = userValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "user must be a string")
                         return .failure(error: TypeValidationError.wrap(value: userValue, cause: error))
@@ -47,7 +47,7 @@ public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
                     options.user = user
                 }
 
-                if let reasoning = dict["reasoningEffort"], reasoning != .null {
+                if let reasoning = dict["reasoningEffort"] {
                     guard case .string(let effort) = reasoning else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "reasoningEffort must be a string")
                         return .failure(error: TypeValidationError.wrap(value: reasoning, cause: error))
@@ -55,7 +55,7 @@ public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
                     options.reasoningEffort = effort
                 }
 
-                if let verbosity = dict["textVerbosity"], verbosity != .null {
+                if let verbosity = dict["textVerbosity"] {
                     guard case .string(let text) = verbosity else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "textVerbosity must be a string")
                         return .failure(error: TypeValidationError.wrap(value: verbosity, cause: error))
@@ -63,7 +63,7 @@ public let openAICompatibleProviderOptionsSchema = FlexibleSchema(
                     options.textVerbosity = text
                 }
 
-                if let strictJsonSchemaValue = dict["strictJsonSchema"], strictJsonSchemaValue != .null {
+                if let strictJsonSchemaValue = dict["strictJsonSchema"] {
                     guard case .bool(let strictJsonSchema) = strictJsonSchemaValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "strictJsonSchema must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: strictJsonSchemaValue, cause: error))

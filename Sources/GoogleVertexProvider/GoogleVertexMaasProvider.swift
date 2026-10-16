@@ -16,7 +16,7 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.chat", headers: vertexCompatibleHeaders,
             url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch(),
-            transformRequestBody: { body in
+            transformRequestBody: { body, _ in
                 var result = body
                 if case .string(let model) = body["model"],
                    ["meta/llama-4-maverick-17b-128e-instruct-maas", "meta/llama-4-scout-17b-16e-instruct-maas"].contains(model),

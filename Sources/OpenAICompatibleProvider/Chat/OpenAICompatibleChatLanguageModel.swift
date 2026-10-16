@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 public struct OpenAICompatibleChatConfig: Sendable {
     public let provider: String
-    public let headers: @Sendable () throws -> [String: String]
+    public let headers: @Sendable () async throws -> [String: String]
     public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let includeUsage: Bool
@@ -13,12 +13,12 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public let supportsStructuredOutputs: Bool
     public let supportsMultiPartToolContent: Bool
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
-    public let transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
+    public let transformRequestBody: (@Sendable (_ body: [String: JSONValue], _ warnings: inout [SharedV4Warning]) -> [String: JSONValue])?
     public let convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)?
 
     public init(
         provider: String,
-        headers: @escaping @Sendable () throws -> [String: String],
+        headers: @escaping @Sendable () async throws -> [String: String],
         url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
@@ -27,7 +27,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         supportsStructuredOutputs: Bool = false,
         supportsMultiPartToolContent: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
-        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
+        transformRequestBody: (@Sendable (_ body: [String: JSONValue], _ warnings: inout [SharedV4Warning]) -> [String: JSONValue])? = nil,
         convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)? = nil
     ) {
         self.provider = provider
@@ -67,9 +67,9 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
     }
 
     public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
-        let prepared = try await prepareRequest(options: options)
-        let transformedBody = transformRequestBody(prepared.body)
-        let defaultHeaders = try config.headers().mapValues { Optional($0) }
+        var prepared = try await prepareRequest(options: options)
+        let transformedBody = transformRequestBody(prepared.body, warnings: &prepared.warnings)
+        let defaultHeaders = try await config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
@@ -150,15 +150,15 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
     }
 
     public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
-        let prepared = try await prepareRequest(options: options)
+        var prepared = try await prepareRequest(options: options)
         var body = prepared.body
         body["stream"] = .bool(true)
         if config.includeUsage {
             body["stream_options"] = .object(["include_usage": .bool(true)])
         }
-        let transformedBody = transformRequestBody(body)
+        let transformedBody = transformRequestBody(body, warnings: &prepared.warnings)
 
-        let defaultHeaders = try config.headers().mapValues { Optional($0) }
+        let defaultHeaders = try await config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
@@ -364,7 +364,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV4Warning]
+        var warnings: [SharedV4Warning]
         let metadataKey: String
     }
 
@@ -400,23 +400,23 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             provider: "openaiCompatible",
             providerOptions: options.providerOptions,
             schema: openAICompatibleProviderOptionsSchema
-        ) ?? OpenAICompatibleChatProviderOptions()
+        ) ?? OpenAICompatibleLanguageModelChatOptions()
 
         let providerSpecificOptions = try await parseProviderOptions(
             provider: providerOptionsName,
             providerOptions: options.providerOptions,
             schema: openAICompatibleProviderOptionsSchema
-        ) ?? OpenAICompatibleChatProviderOptions()
+        ) ?? OpenAICompatibleLanguageModelChatOptions()
 
-        let camelCaseProviderOptions: OpenAICompatibleChatProviderOptions
+        let camelCaseProviderOptions: OpenAICompatibleLanguageModelChatOptions
         camelCaseProviderOptions = try await parseProviderOptions(
             provider: camelCaseProviderOptionsName,
             providerOptions: options.providerOptions,
             schema: openAICompatibleProviderOptionsSchema
-        ) ?? OpenAICompatibleChatProviderOptions()
+        ) ?? OpenAICompatibleLanguageModelChatOptions()
 
         // V4 merge order matches upstream: deprecated -> compatible -> raw provider -> camel provider.
-        var mergedOptions = deprecatedOptions ?? OpenAICompatibleChatProviderOptions()
+        var mergedOptions = deprecatedOptions ?? OpenAICompatibleLanguageModelChatOptions()
         if let user = compatibleOptions.user { mergedOptions.user = user }
         if let reasoningEffort = compatibleOptions.reasoningEffort { mergedOptions.reasoningEffort = reasoningEffort }
         if let textVerbosity = compatibleOptions.textVerbosity { mergedOptions.textVerbosity = textVerbosity }
@@ -605,8 +605,8 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
         return usage
     }
 
-    private func transformRequestBody(_ body: [String: JSONValue]) -> [String: JSONValue] {
-        config.transformRequestBody?(body) ?? body
+    private func transformRequestBody(_ body: [String: JSONValue], warnings: inout [SharedV4Warning]) -> [String: JSONValue] {
+        config.transformRequestBody?(body, &warnings) ?? body
     }
 
     private func makeProviderMetadata(
@@ -806,40 +806,13 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
     }
 
     public init(from decoder: Decoder) throws {
-        let raw = try JSONValue(from: decoder)
-        guard case .object(let object) = raw else {
-            throw DecodingError.typeMismatch(
-                [String: JSONValue].self,
-                DecodingError.Context(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "Expected OpenAI-compatible usage to be an object."
-                )
-            )
-        }
-
-        promptTokens = Self.integer(object["prompt_tokens"])
-        completionTokens = Self.integer(object["completion_tokens"])
-        totalTokens = Self.integer(object["total_tokens"])
-
-        if case .object(let details)? = object["prompt_tokens_details"] {
-            promptTokensDetails = PromptTokensDetails(
-                cachedTokens: Self.integer(details["cached_tokens"])
-            )
-        } else {
-            promptTokensDetails = nil
-        }
-
-        if case .object(let details)? = object["completion_tokens_details"] {
-            completionTokensDetails = CompletionTokensDetails(
-                reasoningTokens: Self.integer(details["reasoning_tokens"]),
-                acceptedPredictionTokens: Self.integer(details["accepted_prediction_tokens"]),
-                rejectedPredictionTokens: Self.integer(details["rejected_prediction_tokens"])
-            )
-        } else {
-            completionTokensDetails = nil
-        }
-
-        self.raw = raw
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        promptTokens = try container.decodeIfPresent(Int.self, forKey: .promptTokens)
+        completionTokens = try container.decodeIfPresent(Int.self, forKey: .completionTokens)
+        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens)
+        promptTokensDetails = try container.decodeIfPresent(PromptTokensDetails.self, forKey: .promptTokensDetails)
+        completionTokensDetails = try container.decodeIfPresent(CompletionTokensDetails.self, forKey: .completionTokensDetails)
+        raw = try JSONValue(from: decoder)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -883,9 +856,12 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
         try JSONValue.object(object).encode(to: encoder)
     }
 
-    private static func integer(_ value: JSONValue?) -> Int? {
-        guard case .number(let number) = value else { return nil }
-        return Int(exactly: number)
+    private enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+        case promptTokensDetails = "prompt_tokens_details"
+        case completionTokensDetails = "completion_tokens_details"
     }
 
     private static func object(_ value: JSONValue?) -> [String: JSONValue] {

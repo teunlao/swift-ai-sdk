@@ -18,7 +18,7 @@ public final class GoogleVertexXaiProvider: ProviderV4 {
             url: { "\(try config.baseURL(.xai))\($0.path)" }, fetch: config.fetch(),
             includeUsage: true, supportsStructuredOutputs: true,
             supportedUrls: { ["image/*": [try NSRegularExpression(pattern: "^https?://.*$")]] },
-            transformRequestBody: { body in
+            transformRequestBody: { body, _ in
                 var result = body
                 result.removeValue(forKey: "reasoning_effort")
                 return result

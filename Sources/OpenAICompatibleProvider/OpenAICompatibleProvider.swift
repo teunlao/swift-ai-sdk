@@ -2,18 +2,33 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+public enum OpenAICompatibleHeaders: Sendable, ExpressibleByDictionaryLiteral {
+    case value([String: String])
+    case resolve(@Sendable () async throws -> [String: String])
+
+    public init(dictionaryLiteral elements: (String, String)...) {
+        self = .value(Dictionary(elements, uniquingKeysWith: { _, new in new }))
+    }
+    public func resolve() async throws -> [String: String] {
+        switch self {
+        case .value(let headers): return headers
+        case .resolve(let resolver): return try await resolver()
+        }
+    }
+}
+
 public struct OpenAICompatibleProviderSettings: Sendable {
     public var baseURL: String
     public var name: String
     public var apiKey: String?
-    public var headers: [String: String]?
+    public var headers: OpenAICompatibleHeaders?
     public var queryParams: [String: String]?
     public var fetch: FetchFunction?
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
     public var supportsMultiPartToolContent: Bool
     public var supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
-    public var transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
+    public var transformRequestBody: (@Sendable (_ body: [String: JSONValue], _ warnings: inout [SharedV4Warning]) -> [String: JSONValue])?
     public var metadataExtractor: OpenAICompatibleMetadataExtractor?
     public var convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)?
 
@@ -21,14 +36,14 @@ public struct OpenAICompatibleProviderSettings: Sendable {
         baseURL: String,
         name: String,
         apiKey: String? = nil,
-        headers: [String: String]? = nil,
+        headers: OpenAICompatibleHeaders? = nil,
         queryParams: [String: String]? = nil,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
         supportsStructuredOutputs: Bool = false,
         supportsMultiPartToolContent: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
-        transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
+        transformRequestBody: (@Sendable (_ body: [String: JSONValue], _ warnings: inout [SharedV4Warning]) -> [String: JSONValue])? = nil,
         metadataExtractor: OpenAICompatibleMetadataExtractor? = nil,
         convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)? = nil
     ) {
@@ -107,22 +122,11 @@ private func makeOpenAICompatibleModelFactories(
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? settings.baseURL
     let providerName = settings.name
 
-    var headerEntries: [String: String?] = [:]
-    if let apiKey = settings.apiKey, !apiKey.isEmpty {
-        headerEntries["Authorization"] = "Bearer \(apiKey)"
-    }
-    if let customHeaders = settings.headers {
-        for (key, value) in customHeaders {
-            headerEntries[key] = value
-        }
-    }
-    let baseHeaders = headerEntries
-
-    let headersClosure: @Sendable () -> [String: String] = {
-        withUserAgentSuffix(
-            baseHeaders,
-            "ai-sdk-openai-compatible/\(OPENAI_COMPATIBLE_VERSION)"
-        )
+    let headersClosure: @Sendable () async throws -> [String: String] = {
+        var headers: [String: String?] = [:]
+        if let key = settings.apiKey, !key.isEmpty { headers["Authorization"] = "Bearer \(key)" }
+        for (key, value) in try await settings.headers?.resolve() ?? [:] { headers[key] = value }
+        return withUserAgentSuffix(headers, "ai-sdk-openai-compatible/\(OPENAI_COMPATIBLE_VERSION)")
     }
 
     let queryItems = settings.queryParams

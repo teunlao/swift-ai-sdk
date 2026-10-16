@@ -4,13 +4,13 @@ import AISDKProviderUtils
 
 public struct OpenAICompatibleImageModelConfig: Sendable {
     public let provider: String
-    public let headers: @Sendable () throws -> [String: String]
+    public let headers: @Sendable () async throws -> [String: String]
     public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
     public let currentDate: @Sendable () -> Date
 
-    public init(provider: String, headers: @escaping @Sendable () throws -> [String: String] = { [:] },
+    public init(provider: String, headers: @escaping @Sendable () async throws -> [String: String] = { [:] },
                 url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String, fetch: FetchFunction? = nil,
                 errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
                 currentDate: @escaping @Sendable () -> Date = { Date() }) {
@@ -39,7 +39,7 @@ public final class OpenAICompatibleImageModel: ImageModelV4 {
         arguments.merge(options.providerOptions?[openAICompatibleCamelCase(key)] ?? [:]) { _, new in new }
         let editing = !(options.files?.isEmpty ?? true)
         let url = try config.url(.init(modelId: modelId, path: editing ? "/images/edits" : "/images/generations"))
-        let headers = combineHeaders(try config.headers().mapValues(Optional.some), options.headers?.mapValues(Optional.some)).compactMapValues { $0 }
+        let headers = combineHeaders(try await config.headers().mapValues(Optional.some), options.headers?.mapValues(Optional.some)).compactMapValues { $0 }
         let response: ResponseHandlerResult<CompatibleImageResponse>
         if editing {
             var images: [FormDataValue] = []
@@ -79,11 +79,11 @@ public final class OpenAICompatibleImageModel: ImageModelV4 {
             for item in response.value.data {
                 if let base64 = item.base64 { values.append(try convertBase64ToData(base64)) }
                 else if let imageURL = item.url {
-                    let download = try await getFromAPI(url: imageURL, headers: headers,
+                    let download = try await getFromAPI(url: imageURL, headers: headers.filter { $0.key.lowercased() == "user-agent" },
                                                          failedResponseHandler: createStatusCodeErrorResponseHandler(),
                                                          successfulResponseHandler: createBinaryResponseHandler(),
                                                          isAborted: options.abortSignal, fetch: config.fetch,
-                                                         validateUrl: true, credentialedOrigin: url, trustedOrigin: url)
+                                                         validateUrl: true, trustedOrigin: url)
                     values.append(download.value)
                 }
             }

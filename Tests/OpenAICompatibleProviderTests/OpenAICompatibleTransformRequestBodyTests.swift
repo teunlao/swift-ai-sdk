@@ -59,7 +59,7 @@ struct OpenAICompatibleTransformRequestBodyTests {
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch,
-            transformRequestBody: { body in
+            transformRequestBody: { body, _ in
                 var updated = body
                 updated["transformed"] = .bool(true)
                 return updated
@@ -98,7 +98,7 @@ struct OpenAICompatibleTransformRequestBodyTests {
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch,
-            transformRequestBody: { body in
+            transformRequestBody: { body, _ in
                 var updated = body
                 updated["transformed"] = .bool(true)
                 return updated

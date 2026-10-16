@@ -2,11 +2,11 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public struct OpenAICompatibleEmbeddingProviderOptions: Sendable, Equatable {
-    public var dimensions: Int?
+public struct OpenAICompatibleEmbeddingModelOptions: Codable, Sendable, Equatable {
+    public var dimensions: Double?
     public var user: String?
 
-    public init(dimensions: Int? = nil, user: String? = nil) {
+    public init(dimensions: Double? = nil, user: String? = nil) {
         self.dimensions = dimensions
         self.user = user
     }
@@ -18,7 +18,7 @@ private let openAICompatibleEmbeddingOptionsSchemaJSON: JSONValue = .object([
 ])
 
 public let openAICompatibleEmbeddingProviderOptionsSchema = FlexibleSchema(
-    Schema<OpenAICompatibleEmbeddingProviderOptions>(
+    Schema<OpenAICompatibleEmbeddingModelOptions>(
         jsonSchemaResolver: { openAICompatibleEmbeddingOptionsSchemaJSON },
         validator: { value in
             do {
@@ -28,17 +28,17 @@ public let openAICompatibleEmbeddingProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var options = OpenAICompatibleEmbeddingProviderOptions()
+                var options = OpenAICompatibleEmbeddingModelOptions()
 
-                if let dimensionsValue = dict["dimensions"], dimensionsValue != .null {
-                    guard case .number(let number) = dimensionsValue else {
+                if let dimensionsValue = dict["dimensions"] {
+                    guard case .number(let number) = dimensionsValue, number.isFinite else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "dimensions must be a number")
                         return .failure(error: TypeValidationError.wrap(value: dimensionsValue, cause: error))
                     }
-                    options.dimensions = Int(number)
+                    options.dimensions = number
                 }
 
-                if let userValue = dict["user"], userValue != .null {
+                if let userValue = dict["user"] {
                     guard case .string(let user) = userValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "user must be a string")
                         return .failure(error: TypeValidationError.wrap(value: userValue, cause: error))

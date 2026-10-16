@@ -7,9 +7,9 @@ import OpenAICompatibleProvider
 @Suite("Compatible image downloads")
 struct OpenAICompatibleImageDownloadTests {
     actor Capture {
-        var authorization: String?
-        func store(_ request: URLRequest) { authorization = request.value(forHTTPHeaderField: "Authorization") }
-        func value() -> String? { authorization }
+        var request: URLRequest?
+        func store(_ request: URLRequest) { self.request = request }
+        func value() -> URLRequest? { request }
     }
     @Test(arguments: [true, false])
     func mixedImagesPreserveOrderAndScopeCredentials(sameOrigin: Bool) async throws {
@@ -23,13 +23,18 @@ struct OpenAICompatibleImageDownloadTests {
             if request.httpMethod == "GET" {
                 await capture.store(request)
                 data = Data([3, 4])
-            } else { data = responseData }
+            } else {
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+                data = responseData
+            }
             return FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": request.httpMethod == "GET" ? "image/png" : "application/json"])!)
         }
-        let model = OpenAICompatibleImageModel(modelId: .init(rawValue: "image"), config: .init(provider: "custom.image", headers: { ["Authorization": "Bearer secret"] }, url: { _ in endpoint }, fetch: fetch))
+        let model = OpenAICompatibleImageModel(modelId: .init(rawValue: "image"), config: .init(provider: "custom.image", headers: { ["Authorization": "Bearer secret", "X-API-Key": "secret", "Cookie": "secret=session"] }, url: { _ in endpoint }, fetch: fetch))
         let result = try await model.doGenerate(options: .init(prompt: "Image", n: 2))
         #expect(result.images == .binary([Data([1, 2]), Data([3, 4])]))
-        #expect(await capture.value() == (sameOrigin ? "Bearer secret" : nil))
+        let download = try #require(await capture.value())
+        #expect(download.value(forHTTPHeaderField: "User-Agent") != nil)
+        #expect((download.allHTTPHeaderFields ?? [:]).keys.allSatisfy { $0.lowercased() == "user-agent" })
         #expect(result.usage?.inputTokens == 1)
         #expect(result.usage?.outputTokens == 2)
         #expect(result.usage?.totalTokens == 3)

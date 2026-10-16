@@ -4,14 +4,14 @@ import AISDKProviderUtils
 
 public struct OpenAICompatibleCompletionConfig: Sendable {
     public let provider: String
-    public let headers: @Sendable () throws -> [String: String]
+    public let headers: @Sendable () async throws -> [String: String]
     public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let includeUsage: Bool
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
 
-    public init(provider: String, headers: @escaping @Sendable () throws -> [String: String] = { [:] },
+    public init(provider: String, headers: @escaping @Sendable () async throws -> [String: String] = { [:] },
                 url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String, fetch: FetchFunction? = nil,
                 includeUsage: Bool = false, errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
                 supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil) {
@@ -34,7 +34,7 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV4 {
     public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let (body, warnings) = try await prepare(options)
         let response = try await postJsonToAPI(url: try config.url(.init(modelId: modelId, path: "/completions")),
-                                               headers: try headers(options.headers), body: JSONValue.object(body),
+                                               headers: try await headers(options.headers), body: JSONValue.object(body),
                                                failedResponseHandler: config.errorConfiguration.failedResponseHandler,
                                                successfulResponseHandler: createJsonResponseHandler(responseSchema: completionResponseSchema),
                                                isAborted: options.abortSignal, fetch: config.fetch)
@@ -52,7 +52,7 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV4 {
         body["stream"] = true
         if config.includeUsage { body["stream_options"] = ["include_usage": true] }
         let response = try await postJsonToAPI(url: try config.url(.init(modelId: modelId, path: "/completions")),
-                                               headers: try headers(options.headers), body: JSONValue.object(body),
+                                               headers: try await headers(options.headers), body: JSONValue.object(body),
                                                failedResponseHandler: config.errorConfiguration.failedResponseHandler,
                                                successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: completionChunkSchema(config.errorConfiguration)),
                                                isAborted: options.abortSignal, fetch: config.fetch)
@@ -134,8 +134,8 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV4 {
         if !stop.isEmpty { body["stop"] = .array(stop.map(JSONValue.string)) }
         return (body, warnings)
     }
-    private func headers(_ options: SharedV4Headers?) throws -> [String: String] {
-        combineHeaders(try config.headers().mapValues(Optional.some), options?.mapValues(Optional.some)).compactMapValues { $0 }
+    private func headers(_ options: SharedV4Headers?) async throws -> [String: String] {
+        combineHeaders(try await config.headers().mapValues(Optional.some), options?.mapValues(Optional.some)).compactMapValues { $0 }
     }
     private func usage(_ usage: CompletionUsage?) -> LanguageModelV4Usage {
         guard let usage else { return .init() }
