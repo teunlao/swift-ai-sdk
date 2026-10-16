@@ -201,7 +201,7 @@ public let openaiShellArgsSchema = FlexibleSchema<OpenAIShellArgs>(
     )
 )
 
-public let openaiShellTool = createProviderToolFactoryWithOutputSchema(
+public let openaiShellTool = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.shell",
     name: "shell",
     inputSchema: FlexibleSchema(jsonSchema(shellInputJSONSchema)),
@@ -209,7 +209,7 @@ public let openaiShellTool = createProviderToolFactoryWithOutputSchema(
 )
 
 public let openaiShellToolFactory: @Sendable (OpenAIShellArgs) -> Tool = { args in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
     if let environment = args.environment {
         options.args["environment"] = .object(environment)
     }

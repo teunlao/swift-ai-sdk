@@ -60,12 +60,17 @@ private let googleFileSearchInputSchema = FlexibleSchema(
     )
 )
 
-public let googleFileSearchToolFactory = createProviderToolFactory(
+public let googleFileSearchToolFactory = createProviderExecutedToolFactory(
     id: "google.file_search",
     name: "file_search",
-    inputSchema: googleFileSearchInputSchema
+    inputSchema: googleFileSearchInputSchema,
+    outputSchema: FlexibleSchema(jsonSchema(.object([
+        "type": .string("object"),
+        "properties": .object([:]),
+        "additionalProperties": .bool(false),
+    ])))
 ) { (args: GoogleFileSearchArgs) in
-    var options = ProviderToolFactoryOptions(args: args.extra)
+    var options = ProviderExecutedToolFactoryOptions(args: args.extra)
 
     options.args["fileSearchStoreNames"] = .array(args.fileSearchStoreNames.map { .string($0) })
 

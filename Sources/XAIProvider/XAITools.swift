@@ -16,17 +16,17 @@ public struct XAITools: Sendable {
     }
 
     @discardableResult
-    public func codeExecution(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func codeExecution(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
         xaiCodeExecutionToolFactory(options)
     }
 
     @discardableResult
-    public func viewImage(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func viewImage(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
         xaiViewImageToolFactory(options)
     }
 
     @discardableResult
-    public func viewXVideo(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func viewXVideo(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
         xaiViewXVideoToolFactory(options)
     }
 

@@ -34,7 +34,7 @@ struct StreamTextDeferredToolResultsTests {
             ])
         ))
 
-        let factory = createProviderToolFactoryWithOutputSchema(
+        let factory = createProviderExecutedToolFactory(
             id: "test.deferred_tool",
             name: "deferred_tool",
             inputSchema: inputSchema,
@@ -42,7 +42,7 @@ struct StreamTextDeferredToolResultsTests {
             supportsDeferredResults: true
         )
 
-        return factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+        return factory(ProviderExecutedToolFactoryOptions(args: [:]))
     }
 
     @Test("resolves deferred tool-error when tool-result arrives in a later step")

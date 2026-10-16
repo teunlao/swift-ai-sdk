@@ -186,13 +186,13 @@ private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiWebSearchPreviewToolFactory = createProviderToolFactoryWithOutputSchema(
+public let openaiWebSearchPreviewToolFactory = createProviderExecutedToolFactory(
     id: "openai.web_search_preview",
     name: "web_search_preview",
     inputSchema: FlexibleSchema(jsonSchema(webSearchPreviewInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(webSearchPreviewOutputJSONSchema))
 ) { (args: OpenAIWebSearchPreviewArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeOpenAIWebSearchPreviewArgs(args)
     return options
 }

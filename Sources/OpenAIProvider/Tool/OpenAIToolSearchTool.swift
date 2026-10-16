@@ -198,13 +198,13 @@ let openaiToolSearchOutputSchema = FlexibleSchema<OpenAIToolSearchOutput>(
     )
 )
 
-public let openaiToolSearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let openaiToolSearchToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.tool_search",
     name: "tool_search",
     inputSchema: FlexibleSchema(jsonSchema(toolSearchInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(toolSearchOutputJSONSchema))
 ) { (args: OpenAIToolSearchArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIToolSearchArgs(args)
     return options
 }

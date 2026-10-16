@@ -48,7 +48,7 @@ private let googleCodeExecutionOutputSchema = FlexibleSchema(
     )
 )
 
-public let googleCodeExecutionToolFactory = createProviderToolFactoryWithOutputSchema(
+public let googleCodeExecutionToolFactory = createProviderExecutedToolFactory(
     id: "google.code_execution",
     name: "code_execution",
     inputSchema: googleCodeExecutionInputSchema,
@@ -57,5 +57,5 @@ public let googleCodeExecutionToolFactory = createProviderToolFactoryWithOutputS
 
 @discardableResult
 public func googleCodeExecutionTool() -> Tool {
-    googleCodeExecutionToolFactory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+    googleCodeExecutionToolFactory(ProviderExecutedToolFactoryOptions(args: [:]))
 }

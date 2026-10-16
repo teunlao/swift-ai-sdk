@@ -21,7 +21,7 @@ private let viewImageOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiViewImageToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiViewImageToolFactory = createProviderExecutedToolFactory(
     id: "xai.view_image",
     name: "view_image",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),

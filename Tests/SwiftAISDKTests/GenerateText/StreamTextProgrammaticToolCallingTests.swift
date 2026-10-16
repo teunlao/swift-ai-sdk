@@ -67,7 +67,7 @@ struct StreamTextProgrammaticToolCallingTests {
             ])
         ))
 
-        let factory = createProviderToolFactoryWithOutputSchema(
+        let factory = createProviderExecutedToolFactory(
             id: "anthropic.code_execution_20250825",
             name: "code_execution",
             inputSchema: inputSchema,
@@ -75,7 +75,7 @@ struct StreamTextProgrammaticToolCallingTests {
             supportsDeferredResults: true
         )
 
-        return factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+        return factory(ProviderExecutedToolFactoryOptions(args: [:]))
     }
 
     private func rollDieTool(executions: LockedValue<[String]>) -> Tool {

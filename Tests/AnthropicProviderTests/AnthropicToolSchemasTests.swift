@@ -834,7 +834,6 @@ struct AnthropicToolSchemasTests {
 
         let args = try await anthropicAdvisor20260301ArgsSchema.resolve().jsonSchema()
         let input = try await tool.inputSchema.resolve().jsonSchema()
-        let output = try await tool.outputSchema?.resolve().jsonSchema()
 
         #expect(tool.id == "anthropic.advisor_20260301")
         #expect(tool.name == "advisor")
@@ -873,38 +872,27 @@ struct AnthropicToolSchemasTests {
             "properties": .object([:]),
             "additionalProperties": .bool(false),
         ]))
-        #expect(output == .object([
-            "type": .string("object"),
-            "oneOf": .array([
-                .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "type": .object(["const": .string("advisor_result")]),
-                        "text": .object(["type": .string("string")]),
-                    ]),
-                    "required": .array([.string("type"), .string("text")]),
-                    "additionalProperties": .bool(false),
-                ]),
-                .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "type": .object(["const": .string("advisor_redacted_result")]),
-                        "encryptedContent": .object(["type": .string("string")]),
-                    ]),
-                    "required": .array([.string("type"), .string("encryptedContent")]),
-                    "additionalProperties": .bool(false),
-                ]),
-                .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "type": .object(["const": .string("advisor_tool_result_error")]),
-                        "errorCode": .object(["type": .string("string")]),
-                    ]),
-                    "required": .array([.string("type"), .string("errorCode")]),
-                    "additionalProperties": .bool(false),
-                ]),
-            ]),
-        ]))
+        let outputSchema = try #require(tool.outputSchema)
+        let schema = try await outputSchema.resolve()
+        for result: JSONValue in [
+            .object(["type": .string("advisor_result"), "text": .string("advice"), "stopReason": .string("max_tokens")]),
+            .object(["type": .string("advisor_redacted_result"), "encryptedContent": .string("opaque"), "stopReason": .string("end_turn")]),
+            .object(["type": .string("advisor_tool_result_error"), "errorCode": .string("overloaded")]),
+        ] {
+            guard case .success(let validated) = await schema.validate(result) else {
+                Issue.record("Expected a valid advisor result")
+                continue
+            }
+            #expect(validated == result)
+        }
+        guard case .failure = await schema.validate(JSONValue.object([
+            "type": .string("advisor_result"),
+            "text": .string("advice"),
+            "stopReason": .number(1),
+        ])) else {
+            Issue.record("Expected advisor stopReason to require a string")
+            return
+        }
     }
 
     @Test("memory_20250818 tool input schema matches upstream shape")

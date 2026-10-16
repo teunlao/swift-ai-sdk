@@ -1,287 +1,131 @@
-/**
- Tests for provider tool factory helpers.
-
- Port of `@ai-sdk/provider-utils/src/provider-tool-factory.ts`.
- */
-
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-
-private actor Flag {
-    private var value = false
-
-    func set() {
-        value = true
-    }
-
-    func isSet() -> Bool {
-        value
-    }
-}
-
-private struct CustomProviderOptions: Sendable {
-    var execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
-    var outputSchema: FlexibleSchema<JSONValue>?
-    var needsApproval: NeedsApproval?
-    var maxUses: Int?
-    var allowedDomains: [String]?
-}
-
-private func mapCustomOptions(
-    _ options: CustomProviderOptions
-) -> ProviderToolFactoryOptions {
-    var args: [String: JSONValue] = [:]
-    if let maxUses = options.maxUses {
-        args["maxUses"] = JSONValue.number(Double(maxUses))
-    }
-    if let domains = options.allowedDomains {
-        args["allowedDomains"] = JSONValue.array(domains.map { JSONValue.string($0) })
-    }
-
-    return ProviderToolFactoryOptions(
-        execute: options.execute,
-        outputSchema: options.outputSchema,
-        needsApproval: options.needsApproval,
-        args: args
-    )
-}
+import AISDKProvider
+import AISDKProviderUtils
 
 @Suite("Provider tool factory")
 struct ProviderToolFactoryTests {
-    @Test("createProviderToolFactory builds provider Tool")
-    func createFactoryProducesTool() async throws {
-        let inputSchema = FlexibleSchema(
-            jsonSchema(
-                JSONValue.object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "prompt": .object(["type": .string("string")])
-                    ])
-                ])
-            )
-        )
-
-        let outputSchema = FlexibleSchema(
-            jsonSchema(
-                JSONValue.object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "result": .object(["type": .string("string")])
-                    ])
-                ])
-            )
-        )
-
-        let factory = createProviderToolFactory(
-            id: "provider.tool",
-            name: "provider-tool",
-            inputSchema: inputSchema
-        )
-
-        let onStart = Flag()
-        let onDelta = Flag()
-        let onAvailable = Flag()
-
-        let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { input, _ in
-            #expect(input == JSONValue.object(["prompt": JSONValue.string("hello")]))
-            return .value(JSONValue.object(["result": JSONValue.string("ok")]))
+    @Test("provider-defined tools execute and map client results", arguments: [false, true])
+    func definedToolsExecuteClientResults(predefinedOutput: Bool) async throws {
+        let inputSchema = FlexibleSchema(jsonSchema(.object(["type": .string("string")])))
+        let outputSchema = FlexibleSchema(jsonSchema(.object(["type": .string("number")])))
+        let execute: @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue> = { input, _ in
+            #expect(input == .string("run"))
+            return .value(.number(7))
+        }
+        let approval = NeedsApproval.conditional { input, _ in
+            input == .string("run")
+        }
+        let toModelOutput: @Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput = { options in
+            .json(value: .object(["result": options.output]))
         }
 
-        let tool = factory(
-            ProviderToolFactoryOptions(
+        let tool: Tool
+        if predefinedOutput {
+            let factory = createProviderDefinedToolFactoryWithOutputSchema(
+                id: "provider.client",
+                name: "client",
+                inputSchema: inputSchema,
+                outputSchema: outputSchema
+            )
+            tool = factory(.init(
+                execute: execute,
+                needsApproval: approval,
+                toModelOutput: toModelOutput
+            ))
+        } else {
+            let factory = createProviderDefinedToolFactory(
+                id: "provider.client",
+                name: "client",
+                inputSchema: inputSchema
+            )
+            tool = factory(.init(
                 execute: execute,
                 outputSchema: outputSchema,
-                needsApproval: .always,
-                toModelOutput: { options in
-                    #expect(options.output == JSONValue.object(["result": JSONValue.string("ok")]))
-                    return .json(value: options.output)
-                },
-                onInputStart: { _ in await onStart.set() },
-                onInputDelta: { _ in await onDelta.set() },
-                onInputAvailable: { _ in await onAvailable.set() },
-                args: [
-                    "mode": JSONValue.string("debug"),
-                    "version": JSONValue.string("v1")
-                ]
-            )
-        )
-
-        #expect(tool.type == ToolType.provider)
-        #expect(tool.id == "provider.tool")
-        #expect(tool.name == "provider-tool")
-        #expect(tool.args?["mode"] == JSONValue.string("debug"))
-        #expect(tool.args?["version"] == JSONValue.string("v1"))
-        #expect(tool.needsApproval != nil)
-        #expect(tool.onInputStart != nil)
-        #expect(tool.onInputDelta != nil)
-        #expect(tool.onInputAvailable != nil)
-        #expect(tool.execute != nil)
-        #expect(tool.outputSchema != nil)
-        #expect(tool.toModelOutput != nil)
-
-        let callOptions = ToolCallOptions(toolCallId: "call-1", messages: [])
-        try await tool.onInputStart?(callOptions)
-        try await tool.onInputDelta?(ToolCallDeltaOptions(inputTextDelta: "partial", toolCallId: "call-1", messages: []))
-        try await tool.onInputAvailable?(ToolCallInputOptions(input: JSONValue.object(["prompt": JSONValue.string("hello")]), toolCallId: "call-1", messages: []))
-
-        if let executeFn = tool.execute {
-            let result = try await executeFn(JSONValue.object(["prompt": JSONValue.string("hello")]), callOptions)
-            if case .value(let value) = result {
-                #expect(value == JSONValue.object(["result": JSONValue.string("ok")]))
-            } else {
-                Issue.record("Expected .value result")
-            }
-        } else {
-            Issue.record("Expected execute function")
+                needsApproval: approval,
+                toModelOutput: toModelOutput
+            ))
         }
 
-        #expect(await onStart.isSet())
-        #expect(await onDelta.isSet())
-        #expect(await onAvailable.isSet())
-
-        let resolvedInput = try await tool.inputSchema.resolve().jsonSchema()
-        let resolvedOutput = try await tool.outputSchema?.resolve().jsonSchema()
-
-        #expect(resolvedInput == JSONValue.object([
-            "type": .string("object"),
-            "properties": .object([
-                "prompt": .object(["type": .string("string")])
-            ])
-        ]))
-        #expect(resolvedOutput == JSONValue.object([
-            "type": .string("object"),
-            "properties": .object([
-                "result": .object(["type": .string("string")])
-            ])
-        ]))
+        #expect(tool.isProviderExecuted == false)
+        let input = JSONValue.string("run")
+        guard case .conditional(let requiresApproval)? = tool.needsApproval else {
+            Issue.record("Expected conditional client approval")
+            return
+        }
+        #expect(try await requiresApproval(input, ToolCallApprovalOptions(toolCallId: "call-1", messages: [])))
+        let executeFn = try #require(tool.execute)
+        let output = try await executeFn(input, ToolExecutionOptions(toolCallId: "call-1", messages: [])).resolve()
+        #expect(output == .number(7))
+        let mapper = try #require(tool.toModelOutput)
+        let modelOutput = try await mapper(.init(toolCallId: "call-1", input: input, output: output))
+        #expect(modelOutput == .json(value: .object(["result": .number(7)])))
     }
 
-    @Test("factory defaults omit optional components")
-    func factoryDefaults() throws {
-        let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
+    @Test("custom provider-defined options keep fixed output validation and execution")
+    func customDefinedOptions() async throws {
+        struct Options: Sendable {
+            let result: JSONValue
+        }
 
-        let factory = createProviderToolFactory(
-            id: "provider.simple",
-            name: "simple",
-            inputSchema: inputSchema
-        )
-
-        let tool = factory(ProviderToolFactoryOptions())
-
-        #expect(tool.type == ToolType.provider)
-        #expect(tool.id == "provider.simple")
-        #expect(tool.name == "simple")
-        #expect(tool.execute == nil)
-        #expect(tool.outputSchema == nil)
-        #expect(tool.onInputStart == nil)
-        #expect(tool.onInputDelta == nil)
-        #expect(tool.onInputAvailable == nil)
-        #expect(tool.args == [:])
-        #expect(tool.toModelOutput == nil)
-    }
-
-    @Test("custom options support provider-specific top-level fields")
-    func customOptionsExposeProviderArgs() async throws {
-        let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-        let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-
-        let factory = createProviderToolFactory(
+        let schema = FlexibleSchema(jsonSchema(.object(["type": .string("string")])))
+        let factory = createProviderDefinedToolFactoryWithOutputSchema(
             id: "provider.custom",
-            name: "custom-tool",
-            inputSchema: inputSchema,
-            mapOptions: mapCustomOptions
+            name: "custom",
+            inputSchema: schema,
+            outputSchema: schema,
+            mapOptions: { (options: Options) in
+                ProviderDefinedToolFactoryWithOutputSchemaOptions(execute: { _, _ in
+                    .value(options.result)
+                })
+            }
         )
-
-        let tool = factory(
-            CustomProviderOptions(
-                execute: nil,
-                outputSchema: outputSchema,
-                needsApproval: .always,
-                maxUses: 5,
-                allowedDomains: ["example.com", "vercel.com"]
-            )
-        )
-
-        #expect(tool.id == "provider.custom")
-        #expect(tool.name == "custom-tool")
-        switch tool.needsApproval {
-        case .always?:
-            break
-        default:
-            Issue.record("Expected needsApproval to be .always")
+        let tool = factory(Options(result: .string("done")))
+        let execute = try #require(tool.execute)
+        let result = try await execute(.string("run"), ToolExecutionOptions(toolCallId: "call-1", messages: [])).resolve()
+        #expect(result == .string("done"))
+        let outputSchema = try #require(tool.outputSchema)
+        let resolved = try await outputSchema.resolve()
+        guard case .success(let validated) = await resolved.validate(result) else {
+            Issue.record("Expected valid client tool result")
+            return
         }
-        #expect(tool.args?["maxUses"] == JSONValue.number(5))
-        #expect(tool.args?["allowedDomains"] == JSONValue.array([JSONValue.string("example.com"), JSONValue.string("vercel.com")]))
-        let resolved = try await tool.outputSchema?.resolve().jsonSchema()
-        let expected = try await outputSchema.resolve().jsonSchema()
-        #expect(resolved == expected)
+        #expect(validated == .string("done"))
+        guard case .failure = await resolved.validate(JSONValue.number(7)) else {
+            Issue.record("Expected output schema to reject a numeric result")
+            return
+        }
     }
 
-    @Test("factory with predefined output schema ignores overrides")
-    func factoryWithOutputSchemaEnforcesSchema() async throws {
-        let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-        let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-
-        let factory = createProviderToolFactoryWithOutputSchema(
-            id: "provider.output",
-            name: "output-tool",
-            inputSchema: inputSchema,
-            outputSchema: outputSchema
-        )
-
-        let tool = factory(
-            ProviderToolFactoryWithOutputSchemaOptions(
-                args: ["mode": JSONValue.string("strict")]
-            )
-        )
-
-        #expect(tool.id == "provider.output")
-        #expect(tool.name == "output-tool")
-        #expect(tool.args?["mode"] == JSONValue.string("strict"))
-        let resolved = try await tool.outputSchema?.resolve().jsonSchema()
-        let expected = try await outputSchema.resolve().jsonSchema()
-        #expect(resolved == expected)
-    }
-
-    @Test("custom mapping for predefined output schema")
-    func customMappingWithOutputSchema() async throws {
-        struct CustomOutputOptions: Sendable {
-            var execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
-            var args: [String: JSONValue]
-        }
-
-        let inputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-        let outputSchema = FlexibleSchema(jsonSchema(JSONValue.object(["type": .string("string")])))
-
-        let factory = createProviderToolFactoryWithOutputSchema(
-            id: "provider.custom-output",
-            name: "custom-output-tool",
+    @Test("provider-executed tools keep deferred classification and validate provider results", arguments: [false, true])
+    func executedToolsValidateProviderResults(deferred: Bool) async throws {
+        let inputSchema = FlexibleSchema(jsonSchema(.object(["type": .string("object")])))
+        let outputSchema = FlexibleSchema(jsonSchema(.object([
+            "type": .string("object"),
+            "properties": .object(["result": .object(["type": .string("string")])]),
+            "required": .array([.string("result")]),
+            "additionalProperties": .bool(false),
+        ])))
+        let factory = createProviderExecutedToolFactory(
+            id: "provider.server",
+            name: "server",
             inputSchema: inputSchema,
             outputSchema: outputSchema,
-            mapOptions: { (options: CustomOutputOptions) in
-                ProviderToolFactoryWithOutputSchemaOptions(
-                    execute: options.execute,
-                    args: options.args
-                )
-            }
+            supportsDeferredResults: deferred
         )
-
-        let tool = factory(
-            CustomOutputOptions(
-                execute: { input, _ in
-                    #expect(input == JSONValue.string("data"))
-                    return .value(JSONValue.string("ok"))
-                },
-                args: ["mode": JSONValue.string("test")]
-            )
-        )
-
-        #expect(tool.type == ToolType.provider)
-        #expect(tool.id == "provider.custom-output")
-        #expect(tool.args?["mode"] == JSONValue.string("test"))
-        let resolved = try await tool.outputSchema?.resolve().jsonSchema()
-        let expected = try await outputSchema.resolve().jsonSchema()
-        #expect(resolved == expected)
+        let tool = factory(.init())
+        #expect(tool.isProviderExecuted == true)
+        #expect(tool.supportsDeferredResults == deferred)
+        let resultSchema = try #require(tool.outputSchema)
+        let resolved = try await resultSchema.resolve()
+        let result = JSONValue.object(["result": .string("done")])
+        guard case .success(let validated) = await resolved.validate(result) else {
+            Issue.record("Expected valid provider tool result")
+            return
+        }
+        #expect(validated == result)
+        guard case .failure = await resolved.validate(JSONValue.object([:])) else {
+            Issue.record("Expected output schema to reject an incomplete provider result")
+            return
+        }
     }
 }

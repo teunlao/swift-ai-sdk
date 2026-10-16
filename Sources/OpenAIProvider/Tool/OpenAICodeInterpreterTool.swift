@@ -273,13 +273,13 @@ private func encodeCodeInterpreterArgs(_ args: OpenAICodeInterpreterArgs) -> [St
     }
 }
 
-public let openaiCodeInterpreterToolFactory = createProviderToolFactoryWithOutputSchema(
+public let openaiCodeInterpreterToolFactory = createProviderExecutedToolFactory(
     id: "openai.code_interpreter",
     name: "code_interpreter",
     inputSchema: FlexibleSchema(jsonSchema(codeInterpreterInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(codeInterpreterOutputJSONSchema))
 ) { (args: OpenAICodeInterpreterArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeCodeInterpreterArgs(args)
     return options
 }

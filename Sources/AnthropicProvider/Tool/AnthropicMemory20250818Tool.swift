@@ -88,7 +88,7 @@ private let anthropicMemory20250818InputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicMemory20250818Factory = createProviderToolFactory(
+private let anthropicMemory20250818Factory = createProviderDefinedToolFactory(
     id: "anthropic.memory_20250818",
     name: "memory",
     inputSchema: anthropicMemory20250818InputSchema
@@ -96,5 +96,5 @@ private let anthropicMemory20250818Factory = createProviderToolFactory(
 
 @discardableResult
 public func anthropicMemory20250818() -> Tool {
-    anthropicMemory20250818Factory(ProviderToolFactoryOptions(args: [:]))
+    anthropicMemory20250818Factory(ProviderDefinedToolFactoryOptions(args: [:]))
 }

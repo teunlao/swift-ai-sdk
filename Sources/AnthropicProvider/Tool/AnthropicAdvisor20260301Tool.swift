@@ -74,6 +74,7 @@ public let anthropicAdvisor20260301OutputSchema = FlexibleSchema(
                     "properties": .object([
                         "type": .object(["const": .string("advisor_result")]),
                         "text": .object(["type": .string("string")]),
+                        "stopReason": .object(["type": .string("string")]),
                     ]),
                     "required": .array([.string("type"), .string("text")]),
                     "additionalProperties": .bool(false),
@@ -83,6 +84,7 @@ public let anthropicAdvisor20260301OutputSchema = FlexibleSchema(
                     "properties": .object([
                         "type": .object(["const": .string("advisor_redacted_result")]),
                         "encryptedContent": .object(["type": .string("string")]),
+                        "stopReason": .object(["type": .string("string")]),
                     ]),
                     "required": .array([.string("type"), .string("encryptedContent")]),
                     "additionalProperties": .bool(false),
@@ -111,7 +113,7 @@ private let anthropicAdvisor20260301InputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicAdvisor20260301Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicAdvisor20260301Factory = createProviderExecutedToolFactory(
     id: "anthropic.advisor_20260301",
     name: "advisor",
     inputSchema: anthropicAdvisor20260301InputSchema,
@@ -134,6 +136,6 @@ public func anthropicAdvisor20260301(_ options: AnthropicAdvisor20260301Options)
         ])
     }
     return anthropicAdvisor20260301Factory(
-        ProviderToolFactoryWithOutputSchemaOptions(args: args)
+        ProviderExecutedToolFactoryOptions(args: args)
     )
 }

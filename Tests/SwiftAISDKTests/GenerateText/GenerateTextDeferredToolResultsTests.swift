@@ -34,7 +34,7 @@ struct GenerateTextDeferredToolResultsTests {
             ])
         ))
 
-        let factory = createProviderToolFactoryWithOutputSchema(
+        let factory = createProviderExecutedToolFactory(
             id: "test.deferred_tool",
             name: "deferred_tool",
             inputSchema: inputSchema,
@@ -42,7 +42,7 @@ struct GenerateTextDeferredToolResultsTests {
             supportsDeferredResults: true
         )
 
-        return factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+        return factory(ProviderExecutedToolFactoryOptions(args: [:]))
     }
 
     @Test("continues when provider tool result is deferred to a later step")

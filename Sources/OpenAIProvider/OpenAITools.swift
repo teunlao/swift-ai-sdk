@@ -26,12 +26,12 @@ public struct OpenAITools: Sendable {
     }
 
     @discardableResult
-    public func localShell(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func localShell(_ options: ProviderDefinedToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
         openaiLocalShellTool(options)
     }
 
     @discardableResult
-    public func shell(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func shell(_ options: ProviderDefinedToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
         openaiShellTool(options)
     }
 
@@ -41,7 +41,7 @@ public struct OpenAITools: Sendable {
     }
 
     @discardableResult
-    public func applyPatch(_ options: ProviderToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+    public func applyPatch(_ options: ProviderDefinedToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
         openaiApplyPatchTool(options)
     }
 

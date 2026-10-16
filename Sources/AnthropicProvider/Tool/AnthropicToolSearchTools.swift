@@ -76,7 +76,7 @@ private let anthropicToolSearchToolOutputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicToolSearchRegex20251119Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicToolSearchRegex20251119Factory = createProviderExecutedToolFactory(
     id: "anthropic.tool_search_regex_20251119",
     name: "tool_search_tool_regex",
     inputSchema: anthropicToolSearchRegex20251119InputSchema,
@@ -84,7 +84,7 @@ private let anthropicToolSearchRegex20251119Factory = createProviderToolFactoryW
     supportsDeferredResults: true
 )
 
-private let anthropicToolSearchBm2520251119Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicToolSearchBm2520251119Factory = createProviderExecutedToolFactory(
     id: "anthropic.tool_search_bm25_20251119",
     name: "tool_search_tool_bm25",
     inputSchema: anthropicToolSearchBm2520251119InputSchema,
@@ -94,10 +94,10 @@ private let anthropicToolSearchBm2520251119Factory = createProviderToolFactoryWi
 
 @discardableResult
 public func anthropicToolSearchRegex20251119() -> Tool {
-    anthropicToolSearchRegex20251119Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicToolSearchRegex20251119Factory(ProviderExecutedToolFactoryOptions(args: [:]))
 }
 
 @discardableResult
 public func anthropicToolSearchBm2520251119() -> Tool {
-    anthropicToolSearchBm2520251119Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicToolSearchBm2520251119Factory(ProviderExecutedToolFactoryOptions(args: [:]))
 }

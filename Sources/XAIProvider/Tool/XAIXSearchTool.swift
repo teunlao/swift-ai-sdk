@@ -177,13 +177,13 @@ private let xSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiXSearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiXSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.x_search",
     name: "x_search",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(xSearchOutputJSONSchema))
 ) { (args: XAIXSearchArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
 
     var payload: [String: JSONValue] = [:]
     if let allowed = args.allowedXHandles {

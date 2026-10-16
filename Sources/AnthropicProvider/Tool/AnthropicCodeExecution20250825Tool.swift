@@ -458,7 +458,7 @@ private let anthropicCodeExecution20250825ToolOutputSchema = FlexibleSchema(
     jsonSchema(anthropicCodeExecution20250825OutputJSONSchema)
 )
 
-private let anthropicCodeExecution20250825Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicCodeExecution20250825Factory = createProviderExecutedToolFactory(
     id: "anthropic.code_execution_20250825",
     name: "code_execution",
     inputSchema: anthropicCodeExecution20250825InputSchema,
@@ -468,7 +468,7 @@ private let anthropicCodeExecution20250825Factory = createProviderToolFactoryWit
 
 @discardableResult
 public func anthropicCodeExecution20250825() -> Tool {
-    anthropicCodeExecution20250825Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicCodeExecution20250825Factory(ProviderExecutedToolFactoryOptions(args: [:]))
 }
 
 private let anthropicCodeExecution20260120OutputJSONSchema: JSONValue = .object([
@@ -513,7 +513,7 @@ private let anthropicCodeExecution20260120ToolOutputSchema = FlexibleSchema(
     jsonSchema(anthropicCodeExecution20260120OutputJSONSchema)
 )
 
-private let anthropicCodeExecution20260120Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicCodeExecution20260120Factory = createProviderExecutedToolFactory(
     id: "anthropic.code_execution_20260120",
     name: "code_execution",
     inputSchema: anthropicCodeExecution20250825InputSchema,
@@ -523,5 +523,5 @@ private let anthropicCodeExecution20260120Factory = createProviderToolFactoryWit
 
 @discardableResult
 public func anthropicCodeExecution20260120() -> Tool {
-    anthropicCodeExecution20260120Factory(ProviderToolFactoryWithOutputSchemaOptions(args: [:]))
+    anthropicCodeExecution20260120Factory(ProviderExecutedToolFactoryOptions(args: [:]))
 }

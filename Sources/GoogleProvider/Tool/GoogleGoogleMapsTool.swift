@@ -12,14 +12,15 @@ private let googleGoogleMapsInputSchema = FlexibleSchema(
     )
 )
 
-public let googleGoogleMapsToolFactory = createProviderToolFactory(
+public let googleGoogleMapsToolFactory = createProviderExecutedToolFactory(
     id: "google.google_maps",
     name: "google_maps",
-    inputSchema: googleGoogleMapsInputSchema
+    inputSchema: googleGoogleMapsInputSchema,
+    outputSchema: googleGoogleMapsInputSchema
 )
 
 @discardableResult
 public func googleGoogleMapsTool() -> Tool {
-    googleGoogleMapsToolFactory(ProviderToolFactoryOptions(args: [:]))
+    googleGoogleMapsToolFactory(ProviderExecutedToolFactoryOptions(args: [:]))
 }
 

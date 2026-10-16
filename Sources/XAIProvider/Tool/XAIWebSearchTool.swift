@@ -123,13 +123,13 @@ private let webSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiWebSearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiWebSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.web_search",
     name: "web_search",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
 ) { (args: XAIWebSearchArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
 
     var payload: [String: JSONValue] = [:]
     if let allowed = args.allowedDomains {

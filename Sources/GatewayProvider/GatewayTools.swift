@@ -208,13 +208,13 @@ private let parallelSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let gatewayParallelSearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let gatewayParallelSearchToolFactory = createProviderExecutedToolFactory(
     id: "gateway.parallel_search",
     name: "parallel_search",
     inputSchema: FlexibleSchema(jsonSchema(parallelSearchInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(parallelSearchOutputJSONSchema))
 ) { (config: GatewayParallelSearchConfig) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeGatewayParallelSearchConfig(config)
     return options
 }
@@ -403,13 +403,13 @@ private let perplexitySearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let gatewayPerplexitySearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let gatewayPerplexitySearchToolFactory = createProviderExecutedToolFactory(
     id: "gateway.perplexity_search",
     name: "perplexity_search",
     inputSchema: FlexibleSchema(jsonSchema(perplexitySearchInputJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(perplexitySearchOutputJSONSchema))
 ) { (config: GatewayPerplexitySearchConfig) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeGatewayPerplexitySearchConfig(config)
     return options
 }

@@ -566,7 +566,7 @@ private let anthropicWebFetchInputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicWebFetchFactory = createProviderToolFactoryWithOutputSchema(
+private let anthropicWebFetchFactory = createProviderExecutedToolFactory(
     id: "anthropic.web_fetch_20250910",
     name: "web_fetch",
     inputSchema: anthropicWebFetchInputSchema,
@@ -592,10 +592,10 @@ public func anthropicWebFetch20250910(_ options: AnthropicWebFetchOptions = .ini
     if let maxTokens = options.maxContentTokens {
         args["maxContentTokens"] = .number(Double(maxTokens))
     }
-    return anthropicWebFetchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+    return anthropicWebFetchFactory(ProviderExecutedToolFactoryOptions(args: args))
 }
 
-private let anthropicWebFetch20260209Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicWebFetch20260209Factory = createProviderExecutedToolFactory(
     id: "anthropic.web_fetch_20260209",
     name: "web_fetch",
     inputSchema: anthropicWebFetchInputSchema,
@@ -621,7 +621,7 @@ public func anthropicWebFetch20260209(_ options: AnthropicWebFetchOptions = .ini
     if let maxTokens = options.maxContentTokens {
         args["maxContentTokens"] = .number(Double(maxTokens))
     }
-    return anthropicWebFetch20260209Factory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+    return anthropicWebFetch20260209Factory(ProviderExecutedToolFactoryOptions(args: args))
 }
 
 private let anthropicWebSearchInputSchema = FlexibleSchema(
@@ -637,7 +637,7 @@ private let anthropicWebSearchInputSchema = FlexibleSchema(
     )
 )
 
-private let anthropicWebSearchFactory = createProviderToolFactoryWithOutputSchema(
+private let anthropicWebSearchFactory = createProviderExecutedToolFactory(
     id: "anthropic.web_search_20250305",
     name: "web_search",
     inputSchema: anthropicWebSearchInputSchema,
@@ -665,10 +665,10 @@ public func anthropicWebSearch20250305(_ options: AnthropicWebSearchOptions = .i
         if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
         args["userLocation"] = .object(locationObject)
     }
-    return anthropicWebSearchFactory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+    return anthropicWebSearchFactory(ProviderExecutedToolFactoryOptions(args: args))
 }
 
-private let anthropicWebSearch20260209Factory = createProviderToolFactoryWithOutputSchema(
+private let anthropicWebSearch20260209Factory = createProviderExecutedToolFactory(
     id: "anthropic.web_search_20260209",
     name: "web_search",
     inputSchema: anthropicWebSearchInputSchema,
@@ -696,5 +696,5 @@ public func anthropicWebSearch20260209(_ options: AnthropicWebSearchOptions = .i
         if let timezone = location.timezone { locationObject["timezone"] = .string(timezone) }
         args["userLocation"] = .object(locationObject)
     }
-    return anthropicWebSearch20260209Factory(ProviderToolFactoryWithOutputSchemaOptions(args: args))
+    return anthropicWebSearch20260209Factory(ProviderExecutedToolFactoryOptions(args: args))
 }

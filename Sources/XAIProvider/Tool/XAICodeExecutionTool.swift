@@ -18,7 +18,7 @@ private let codeExecutionOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiCodeExecutionToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiCodeExecutionToolFactory = createProviderExecutedToolFactory(
     id: "xai.code_execution",
     name: "code_execution",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),

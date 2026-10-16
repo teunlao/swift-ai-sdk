@@ -138,12 +138,12 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
     )
 )
 
-public let openaiCustomToolFactory = createProviderToolFactory(
+public let openaiCustomToolFactory = createProviderDefinedToolFactory(
     id: "openai.custom",
     name: "custom",
     inputSchema: FlexibleSchema(jsonSchema(customInputJSONSchema))
 ) { (args: OpenAICustomToolArgs) in
-    var options = ProviderToolFactoryOptions()
+    var options = ProviderDefinedToolFactoryOptions()
     options.args = encodeOpenAICustomToolArgs(args)
     return options
 }

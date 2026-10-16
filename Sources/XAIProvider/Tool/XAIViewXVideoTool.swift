@@ -19,7 +19,7 @@ private let viewXVideoOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiViewXVideoToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiViewXVideoToolFactory = createProviderExecutedToolFactory(
     id: "xai.view_x_video",
     name: "view_x_video",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),

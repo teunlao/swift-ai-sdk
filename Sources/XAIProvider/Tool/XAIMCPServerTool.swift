@@ -170,13 +170,13 @@ private let mcpServerOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiMcpServerToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiMcpServerToolFactory = createProviderExecutedToolFactory(
     id: "xai.mcp",
     name: "mcp",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(mcpServerOutputJSONSchema))
 ) { (args: XAIMCPServerArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
 
     var payload: [String: JSONValue] = [
         "serverUrl": .string(args.serverUrl)

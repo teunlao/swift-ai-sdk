@@ -12,14 +12,15 @@ private let googleEnterpriseWebSearchInputSchema = FlexibleSchema(
     )
 )
 
-public let googleEnterpriseWebSearchToolFactory = createProviderToolFactory(
+public let googleEnterpriseWebSearchToolFactory = createProviderExecutedToolFactory(
     id: "google.enterprise_web_search",
     name: "enterprise_web_search",
-    inputSchema: googleEnterpriseWebSearchInputSchema
+    inputSchema: googleEnterpriseWebSearchInputSchema,
+    outputSchema: googleEnterpriseWebSearchInputSchema
 )
 
 @discardableResult
 public func googleEnterpriseWebSearchTool() -> Tool {
-    googleEnterpriseWebSearchToolFactory(ProviderToolFactoryOptions(args: [:]))
+    googleEnterpriseWebSearchToolFactory(ProviderExecutedToolFactoryOptions(args: [:]))
 }
 

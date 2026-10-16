@@ -40,12 +40,17 @@ private let googleSearchInputSchema = FlexibleSchema(
     )
 )
 
-public let googleSearchToolFactory = createProviderToolFactory(
+public let googleSearchToolFactory = createProviderExecutedToolFactory(
     id: "google.google_search",
     name: "google_search",
     inputSchema: googleSearchInputSchema,
+    outputSchema: FlexibleSchema(jsonSchema(.object([
+        "type": .string("object"),
+        "properties": .object([:]),
+        "additionalProperties": .bool(false),
+    ]))),
     mapOptions: { (args: GoogleSearchArgs) in
-        var payload = ProviderToolFactoryOptions(args: [:])
+        var payload = ProviderExecutedToolFactoryOptions(args: [:])
 
         // Apply defaults matching upstream (mode: MODE_UNSPECIFIED, dynamicThreshold: 1)
         let mode = args.mode ?? .modeUnspecified

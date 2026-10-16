@@ -29,12 +29,17 @@ private let googleVertexRAGStoreInputSchema = FlexibleSchema(
     )
 )
 
-public let googleVertexRAGStoreToolFactory = createProviderToolFactory(
+public let googleVertexRAGStoreToolFactory = createProviderExecutedToolFactory(
     id: "google.vertex_rag_store",
     name: "vertex_rag_store",
-    inputSchema: googleVertexRAGStoreInputSchema
+    inputSchema: googleVertexRAGStoreInputSchema,
+    outputSchema: FlexibleSchema(jsonSchema(.object([
+        "type": .string("object"),
+        "properties": .object([:]),
+        "additionalProperties": .bool(false),
+    ])))
 ) { (args: GoogleVertexRAGStoreArgs) in
-    var options = ProviderToolFactoryOptions(args: [
+    var options = ProviderExecutedToolFactoryOptions(args: [
         "ragCorpus": .string(args.ragCorpus),
     ])
     if let topK = args.topK {

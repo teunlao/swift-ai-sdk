@@ -1,22 +1,7 @@
 import Foundation
 import AISDKProvider
 
-/**
- Helpers for creating provider tools.
-
- Port of `@ai-sdk/provider-utils/src/provider-tool-factory.ts`.
- */
-
-// MARK: - Common option containers
-
-/**
- Convenience container that mirrors the upstream `ARGS & { ... }` shape.
-
- Provider-specific arguments are stored in `args` and forwarded to the resulting
- `Tool`. The remaining fields correspond to the shared factory options in the
- TypeScript implementation.
- */
-public struct ProviderToolFactoryOptions: Sendable {
+public struct ProviderDefinedToolFactoryOptions: Sendable {
     public var execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     public var outputSchema: FlexibleSchema<JSONValue>?
     public var needsApproval: NeedsApproval?
@@ -47,13 +32,7 @@ public struct ProviderToolFactoryOptions: Sendable {
     }
 }
 
-/**
- Variant used when the output schema is defined up front by the factory creator.
-
- Upstream omits `outputSchema` from the options type entirely; this Swift
- adaptation mirrors that contract.
- */
-public struct ProviderToolFactoryWithOutputSchemaOptions: Sendable {
+public struct ProviderDefinedToolFactoryWithOutputSchemaOptions: Sendable {
     public var execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     public var needsApproval: NeedsApproval?
     public var toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)?
@@ -81,21 +60,38 @@ public struct ProviderToolFactoryWithOutputSchemaOptions: Sendable {
     }
 }
 
-// MARK: - Factory type aliases
+public struct ProviderExecutedToolFactoryOptions: Sendable {
+    public var onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)?
+    public var onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)?
+    public var onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)?
+    public var args: [String: JSONValue]
 
-public typealias ProviderToolFactory = @Sendable (ProviderToolFactoryOptions) -> Tool
+    public init(
+        onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
+        onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+        onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+        args: [String: JSONValue] = [:]
+    ) {
+        self.onInputStart = onInputStart
+        self.onInputDelta = onInputDelta
+        self.onInputAvailable = onInputAvailable
+        self.args = args
+    }
+}
 
-public typealias ProviderToolFactoryWithOutputSchema =
-    @Sendable (ProviderToolFactoryWithOutputSchemaOptions) -> Tool
+public typealias ProviderDefinedToolFactory = @Sendable (ProviderDefinedToolFactoryOptions) -> Tool
 
-// MARK: - Factory creation (default options container)
+public typealias ProviderDefinedToolFactoryWithOutputSchema =
+    @Sendable (ProviderDefinedToolFactoryWithOutputSchemaOptions) -> Tool
 
-public func createProviderToolFactory(
+public typealias ProviderExecutedToolFactory = @Sendable (ProviderExecutedToolFactoryOptions) -> Tool
+
+public func createProviderDefinedToolFactory(
     id: String,
     name: String,
     inputSchema: FlexibleSchema<JSONValue>
-) -> ProviderToolFactory {
-    createProviderToolFactory(
+) -> ProviderDefinedToolFactory {
+    createProviderDefinedToolFactory(
         id: id,
         name: name,
         inputSchema: inputSchema,
@@ -103,14 +99,29 @@ public func createProviderToolFactory(
     )
 }
 
-public func createProviderToolFactoryWithOutputSchema(
+public func createProviderDefinedToolFactoryWithOutputSchema(
+    id: String,
+    name: String,
+    inputSchema: FlexibleSchema<JSONValue>,
+    outputSchema: FlexibleSchema<JSONValue>
+) -> ProviderDefinedToolFactoryWithOutputSchema {
+    createProviderDefinedToolFactoryWithOutputSchema(
+        id: id,
+        name: name,
+        inputSchema: inputSchema,
+        outputSchema: outputSchema,
+        mapOptions: { $0 }
+    )
+}
+
+public func createProviderExecutedToolFactory(
     id: String,
     name: String,
     inputSchema: FlexibleSchema<JSONValue>,
     outputSchema: FlexibleSchema<JSONValue>,
     supportsDeferredResults: Bool? = nil
-) -> ProviderToolFactoryWithOutputSchema {
-    createProviderToolFactoryWithOutputSchema(
+) -> ProviderExecutedToolFactory {
+    createProviderExecutedToolFactory(
         id: id,
         name: name,
         inputSchema: inputSchema,
@@ -120,25 +131,11 @@ public func createProviderToolFactoryWithOutputSchema(
     )
 }
 
-// MARK: - Factory creation (custom option types)
-
-/**
- Creates a provider tool factory using a custom option type.
-
- - Parameters:
-   - id: Provider tool identifier (`"<provider>.<tool-name>"`).
-   - name: Human-readable name for the tool.
-   - inputSchema: Input schema forwarded to the resulting `Tool`.
-   - mapOptions: Closure that transforms the caller's custom options into the
-     common `ProviderToolFactoryOptions` payload. This mirrors the
-     TypeScript spread operator (`...args`) and allows provider-specific fields
-     to be mapped into the `args` dictionary.
- */
-public func createProviderToolFactory<Options>(
+public func createProviderDefinedToolFactory<Options>(
     id: String,
     name: String,
     inputSchema: FlexibleSchema<JSONValue>,
-    mapOptions: @escaping @Sendable (Options) -> ProviderToolFactoryOptions
+    mapOptions: @escaping @Sendable (Options) -> ProviderDefinedToolFactoryOptions
 ) -> @Sendable (Options) -> Tool {
     {
         let options = mapOptions($0)
@@ -154,22 +151,18 @@ public func createProviderToolFactory<Options>(
             type: .provider,
             id: id,
             name: name,
-            args: options.args
+            args: options.args,
+            isProviderExecuted: false
         )
     }
 }
 
-/**
- Equivalent to `createProviderToolFactory` but for the variant where the
- output schema is predetermined by the factory creator.
- */
-public func createProviderToolFactoryWithOutputSchema<Options>(
+public func createProviderDefinedToolFactoryWithOutputSchema<Options>(
     id: String,
     name: String,
     inputSchema: FlexibleSchema<JSONValue>,
     outputSchema: FlexibleSchema<JSONValue>,
-    supportsDeferredResults: Bool? = nil,
-    mapOptions: @escaping @Sendable (Options) -> ProviderToolFactoryWithOutputSchemaOptions
+    mapOptions: @escaping @Sendable (Options) -> ProviderDefinedToolFactoryWithOutputSchemaOptions
 ) -> @Sendable (Options) -> Tool {
     {
         let options = mapOptions($0)
@@ -186,6 +179,32 @@ public func createProviderToolFactoryWithOutputSchema<Options>(
             id: id,
             name: name,
             args: options.args,
+            isProviderExecuted: false
+        )
+    }
+}
+
+public func createProviderExecutedToolFactory<Options>(
+    id: String,
+    name: String,
+    inputSchema: FlexibleSchema<JSONValue>,
+    outputSchema: FlexibleSchema<JSONValue>,
+    supportsDeferredResults: Bool? = nil,
+    mapOptions: @escaping @Sendable (Options) -> ProviderExecutedToolFactoryOptions
+) -> @Sendable (Options) -> Tool {
+    {
+        let options = mapOptions($0)
+        return Tool(
+            inputSchema: inputSchema,
+            onInputStart: options.onInputStart,
+            onInputDelta: options.onInputDelta,
+            onInputAvailable: options.onInputAvailable,
+            outputSchema: outputSchema,
+            type: .provider,
+            id: id,
+            name: name,
+            args: options.args,
+            isProviderExecuted: true,
             supportsDeferredResults: supportsDeferredResults
         )
     }

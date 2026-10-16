@@ -112,13 +112,13 @@ private let fileSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let xaiFileSearchToolFactory = createProviderToolFactoryWithOutputSchema(
+public let xaiFileSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.file_search",
     name: "file_search",
     inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
     outputSchema: FlexibleSchema(jsonSchema(fileSearchOutputJSONSchema))
 ) { (args: XAIFileSearchArgs) in
-    var options = ProviderToolFactoryWithOutputSchemaOptions()
+    var options = ProviderExecutedToolFactoryOptions()
 
     var payload: [String: JSONValue] = [
         "vectorStoreIds": .array(args.vectorStoreIds.map(JSONValue.string))
