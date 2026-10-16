@@ -10,20 +10,20 @@ import Security
 // Ported from packages/google-vertex/src/google-vertex-provider.ts
 // Ported from packages/google-vertex/src/google-vertex-provider-node.ts
 // Ported from packages/google-vertex/src/edge/google-vertex-auth-edge.ts
-// Upstream commit: 73d5c5920
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 private let GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google"
 private let GOOGLE_VERTEX_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 private let GOOGLE_VERTEX_OAUTH_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
-private let googleVertexHTTPRegex: NSRegularExpression = {
+let googleVertexHTTPRegex: NSRegularExpression = {
     try! NSRegularExpression(
         pattern: "^https?:\\/\\/.*$"
     )
 }()
 
-private let googleVertexGCSRegex: NSRegularExpression = {
+let googleVertexGCSRegex: NSRegularExpression = {
     try! NSRegularExpression(
         pattern: "^gs:\\/\\/.*$"
     )
@@ -77,12 +77,14 @@ private struct GoogleVertexAccessToken: Sendable {
     let expiresAt: Date
 }
 
-private actor GoogleVertexAccessTokenManager {
+actor GoogleVertexAccessTokenManager {
     private let credentialsOverride: GoogleVertexCredentials?
+    private let fetch: FetchFunction
     private var cached: GoogleVertexAccessToken?
 
-    init(credentials: GoogleVertexCredentials?) {
+    init(credentials: GoogleVertexCredentials?, fetch: FetchFunction?) {
         self.credentialsOverride = credentials
+        self.fetch = fetch ?? defaultFetchFunction()
     }
 
     func getToken(now: Date = Date()) async throws -> String {
@@ -104,7 +106,7 @@ private actor GoogleVertexAccessTokenManager {
 
         let headers = withUserAgentSuffix(
             ["Content-Type": "application/x-www-form-urlencoded"],
-            "ai-sdk/google-vertex/\(GOOGLE_VERTEX_VERSION)",
+            "ai-sdk-google-vertex/\(GOOGLE_VERTEX_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
         for (key, value) in headers {
@@ -117,8 +119,9 @@ private actor GoogleVertexAccessTokenManager {
         ])
         request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
+        let response = try await fetch(request)
+        let data = try await response.body.collectData()
+        guard let http = response.urlResponse as? HTTPURLResponse else {
             throw APICallError(
                 message: "Token request failed: invalid response type",
                 url: GOOGLE_VERTEX_OAUTH_TOKEN_URL,
@@ -168,6 +171,20 @@ private func loadGoogleVertexCredentials(_ override: GoogleVertexCredentials?) t
     }
 
     do {
+        if let path = ProcessInfo.processInfo.environment["GOOGLE_APPLICATION_CREDENTIALS"], !path.isEmpty {
+            struct ServiceAccount: Decodable {
+                let type: String
+                let client_email: String
+                let private_key: String
+                let private_key_id: String?
+            }
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let account = try JSONDecoder().decode(ServiceAccount.self, from: data)
+            guard account.type == "service_account", !account.client_email.isEmpty, !account.private_key.isEmpty else {
+                throw LoadSettingError(message: "GOOGLE_APPLICATION_CREDENTIALS must reference a service_account key file with client_email and private_key")
+            }
+            return .init(clientEmail: account.client_email, privateKey: account.private_key, privateKeyId: account.private_key_id)
+        }
         return GoogleVertexCredentials(
             clientEmail: try loadSetting(
                 settingValue: nil,
@@ -260,12 +277,12 @@ private func importRSAPrivateKey(pem: String) throws -> SecKey {
     // Environment variables often encode newlines as literal `\n`.
     let normalized = pem.replacingOccurrences(of: "\\n", with: "\n")
 
-    let pemHeader = "-----BEGIN PRIVATE KEY-----"
-    let pemFooter = "-----END PRIVATE KEY-----"
-
+    let isPKCS8 = normalized.contains("-----BEGIN PRIVATE KEY-----")
     let stripped = normalized
-        .replacingOccurrences(of: pemHeader, with: "")
-        .replacingOccurrences(of: pemFooter, with: "")
+        .replacingOccurrences(of: "-----BEGIN PRIVATE KEY-----", with: "")
+        .replacingOccurrences(of: "-----END PRIVATE KEY-----", with: "")
+        .replacingOccurrences(of: "-----BEGIN RSA PRIVATE KEY-----", with: "")
+        .replacingOccurrences(of: "-----END RSA PRIVATE KEY-----", with: "")
         .components(separatedBy: .whitespacesAndNewlines)
         .joined()
 
@@ -278,12 +295,48 @@ private func importRSAPrivateKey(pem: String) throws -> SecKey {
         kSecAttrKeyClass as String: kSecAttrKeyClassPrivate
     ]
 
+    let rsaData = try isPKCS8 ? unwrapPKCS8(keyData) : keyData
     var error: Unmanaged<CFError>?
-    guard let secKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
+    guard let secKey = SecKeyCreateWithData(rsaData as CFData, attributes as CFDictionary, &error) else {
         throw (error?.takeRetainedValue() ?? LoadSettingError(message: "Failed to load Google credentials: invalid private key"))
     }
 
     return secKey
+}
+
+private func unwrapPKCS8(_ data: Data) throws -> Data {
+    let bytes = [UInt8](data)
+    let invalid = LoadSettingError(message: "Failed to load Google credentials: invalid RSA PKCS8 private key")
+    func read(_ tag: UInt8, offset: inout Int, end: Int) throws -> Range<Int> {
+        guard offset + 2 <= end, bytes[offset] == tag else { throw invalid }
+        offset += 1
+        var length = Int(bytes[offset])
+        offset += 1
+        if length & 0x80 != 0 {
+            let count = length & 0x7f
+            guard count > 0, count <= 4, offset + count <= end else { throw invalid }
+            length = 0
+            for _ in 0..<count {
+                length = (length << 8) | Int(bytes[offset])
+                offset += 1
+            }
+        }
+        guard length <= end - offset else { throw invalid }
+        let range = offset..<(offset + length)
+        offset += length
+        return range
+    }
+    var offset = 0
+    let sequence = try read(0x30, offset: &offset, end: bytes.count)
+    guard offset == bytes.count else { throw invalid }
+    offset = sequence.lowerBound
+    _ = try read(0x02, offset: &offset, end: sequence.upperBound)
+    let algorithm = try read(0x30, offset: &offset, end: sequence.upperBound)
+    var algorithmOffset = algorithm.lowerBound
+    let oid = try read(0x06, offset: &algorithmOffset, end: algorithm.upperBound)
+    guard Array(bytes[oid]) == [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01] else { throw invalid }
+    let key = try read(0x04, offset: &offset, end: sequence.upperBound)
+    return Data(bytes[key])
 }
 
 private func formURLEncodedBody(_ fields: [String: String]) -> Data {
@@ -323,7 +376,25 @@ private func createBearerTokenFetch(
     }
 }
 
+func isVertexHostnamePart(_ value: String) -> Bool {
+    guard let range = value.range(of: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$", options: .regularExpression) else { return false }
+    return range == value.startIndex..<value.endIndex
+}
+
+func vertexHost(_ location: String) -> String {
+    switch location {
+    case "global": "aiplatform.googleapis.com"
+    case "eu", "us": "aiplatform.\(location).rep.googleapis.com"
+    default: "\(location)-aiplatform.googleapis.com"
+    }
+}
+
 public struct GoogleVertexProviderSettings: Sendable {
+    public struct ToolResultDownloads: Sendable {
+        public var maxBytes: Int
+        public init(maxBytes: Int = 7 * 1024 * 1024) { self.maxBytes = maxBytes }
+    }
+    public var toolResultDownloads: ToolResultDownloads?
     /// Optional. The API key for the Google Cloud project. If provided, the provider will use express mode with API key authentication.
     /// Defaults to the value of the `GOOGLE_VERTEX_API_KEY` environment variable.
     public var apiKey: String?
@@ -331,6 +402,8 @@ public struct GoogleVertexProviderSettings: Sendable {
     public var location: String?
     public var project: String?
     public var headers: [String: String]?
+    public var headersProvider: (@Sendable () async throws -> [String: String?])?
+    public var webSocket: GoogleWebSocketFactory?
     public var fetch: FetchFunction?
     public var generateId: @Sendable () -> String
     public var baseURL: String?
@@ -346,81 +419,92 @@ public struct GoogleVertexProviderSettings: Sendable {
         generateId: @escaping @Sendable () -> String = generateID,
         baseURL: String? = nil,
         googleCredentials: GoogleVertexCredentials? = nil,
-        accessTokenProvider: (@Sendable () async throws -> String)? = nil
+        accessTokenProvider: (@Sendable () async throws -> String)? = nil,
+        toolResultDownloads: ToolResultDownloads? = nil,
+        headersProvider: (@Sendable () async throws -> [String: String?])? = nil,
+        webSocket: GoogleWebSocketFactory? = nil
     ) {
         self.apiKey = apiKey
         self.location = location
         self.project = project
         self.headers = headers
+        self.headersProvider = headersProvider
+        self.webSocket = webSocket
         self.fetch = fetch
         self.generateId = generateId
         self.baseURL = baseURL
         self.googleCredentials = googleCredentials
         self.accessTokenProvider = accessTokenProvider
+        self.toolResultDownloads = toolResultDownloads
     }
 }
 
-public final class GoogleVertexProvider: ProviderV3 {
-    private let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel
+public final class GoogleVertexProvider: ProviderV4 {
+    private let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleLanguageModel
     private let embeddingFactory: @Sendable (GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel
     private let imageFactory: @Sendable (GoogleVertexImageModelId) -> GoogleVertexImageModel
     private let videoFactory: @Sendable (GoogleVertexVideoModelId) -> GoogleVertexVideoModel
+    private let speechFactory: @Sendable (String) -> any SpeechModelV4
+    private let transcriptionFactory: @Sendable (String) -> any TranscriptionModelV4
+    private let interactionsFactory: @Sendable (GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel
 
     public let tools: GoogleVertexTools
 
     init(
-        language: @escaping @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel,
+        language: @escaping @Sendable (GoogleVertexModelId) -> GoogleLanguageModel,
         embedding: @escaping @Sendable (GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel,
         image: @escaping @Sendable (GoogleVertexImageModelId) -> GoogleVertexImageModel,
         video: @escaping @Sendable (GoogleVertexVideoModelId) -> GoogleVertexVideoModel,
+        speech: @escaping @Sendable (String) -> any SpeechModelV4,
+        transcription: @escaping @Sendable (String) -> any TranscriptionModelV4,
+        interactions: @escaping @Sendable (GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel,
         tools: GoogleVertexTools
     ) {
         self.languageFactory = language
         self.embeddingFactory = embedding
         self.imageFactory = image
         self.videoFactory = video
+        self.speechFactory = speech
+        self.transcriptionFactory = transcription
+        self.interactionsFactory = interactions
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         return languageFactory(GoogleVertexModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        return embeddingFactory(GoogleVertexEmbeddingModelId(rawValue: modelId))
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        embeddingFactory(GoogleVertexEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func interactions(modelId: GoogleInteractionsModelId) -> GoogleInteractionsLanguageModel { interactionsFactory(.model(modelId.rawValue)) }
+    public func interactions(_ input: GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel { interactionsFactory(input) }
+
+    public func speech(modelId: String) -> any SpeechModelV4 { speechFactory(modelId) }
+    public func speechModel(modelId: String) throws -> (any SpeechModelV4)? { speechFactory(modelId) }
+    public func transcription(modelId: String) -> any TranscriptionModelV4 { transcriptionFactory(modelId) }
+    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? { transcriptionFactory(modelId) }
+
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         return imageFactory(GoogleVertexImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
         return videoFactory(GoogleVertexVideoModelId(rawValue: modelId))
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
     // MARK: - Convenience Accessors
 
-    public func languageModel(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
-        return languageFactory(modelId)
-    }
-
-    public func chat(modelId: GoogleVertexModelId) -> GoogleGenerativeAILanguageModel {
+    public func languageModel(modelId: GoogleVertexModelId) -> GoogleLanguageModel {
         return languageFactory(modelId)
     }
 
     public func embeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
-        return embeddingFactory(modelId)
-    }
-
-    public func textEmbeddingModel(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
-        return embeddingFactory(modelId)
-    }
-
-    public func textEmbedding(modelId: GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel {
         return embeddingFactory(modelId)
     }
 
@@ -445,9 +529,9 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     let apiKey = loadOptionalSetting(
         settingValue: settings.apiKey,
         environmentVariableName: "GOOGLE_VERTEX_API_KEY"
-    )
+    ).flatMap { $0.isEmpty ? nil : $0 }
 
-    let loadProject: () throws -> String = {
+    let loadProject: @Sendable () throws -> String = {
         try loadSetting(
             settingValue: settings.project,
             environmentVariableName: "GOOGLE_VERTEX_PROJECT",
@@ -456,42 +540,32 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         )
     }
 
-    let loadLocation: () throws -> String = {
-        try loadSetting(
+    let loadLocation: @Sendable () throws -> String = {
+        let location = try loadSetting(
             settingValue: settings.location,
             environmentVariableName: "GOOGLE_VERTEX_LOCATION",
             settingName: "location",
             description: "Google Vertex location"
         )
+        guard isVertexHostnamePart(location) else {
+            throw InvalidArgumentError(argument: "location", message: "Invalid Google Vertex location. Expected a single DNS label (letters, digits, and hyphens). Use `baseURL` for custom endpoints.")
+        }
+        return location
     }
 
-    let baseURLResolution: Result<String, any Error> = {
-        do {
-            if let baseURL = withoutTrailingSlash(settings.baseURL) {
-                return .success(baseURL)
-            }
+    let loadBaseURL: @Sendable (Bool) throws -> String = { endpoint in
+        if let baseURL = withoutTrailingSlash(settings.baseURL) { return baseURL }
+        if apiKey != nil { return GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL }
+        let location = try loadLocation()
+        let project = try loadProject()
+        let host = vertexHost(location)
+        return "https://\(host)/v1beta1/projects/\(project)/locations/\(location)\(endpoint ? "" : "/publishers/google")"
+    }
 
-            if apiKey != nil {
-                return .success(GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL)
-            }
-
-            let location = try loadLocation()
-            let project = try loadProject()
-
-            let hostPrefix = location == "global" ? "" : "\(location)-"
-            let baseHost = "\(hostPrefix)aiplatform.googleapis.com"
-            return .success("https://\(baseHost)/v1beta1/projects/\(project)/locations/\(location)/publishers/google")
-        } catch {
-            return .failure(error)
-        }
-    }()
-
-    let resolvedBaseURL: String = (try? baseURLResolution.get()) ?? GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
+    let resolvedBaseURL = withoutTrailingSlash(settings.baseURL) ?? GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL
 
     let headersClosure: @Sendable () throws -> [String: String?] = {
-        if case .failure(let error) = baseURLResolution {
-            throw error
-        }
+        _ = try loadBaseURL(false)
 
         var computed: [String: String?] = [:]
         if let provided = settings.headers {
@@ -500,9 +574,10 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             }
         }
 
+        if settings.headersProvider != nil { return computed }
         let withUA = withUserAgentSuffix(
             computed.compactMapValues { $0 },
-            "ai-sdk/google-vertex/\(GOOGLE_VERTEX_VERSION)"
+            "ai-sdk-google-vertex/\(GOOGLE_VERTEX_VERSION)"
         )
 
         return withUA.mapValues { Optional($0) }
@@ -514,40 +589,55 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
 
     let baseURLProvided = withoutTrailingSlash(settings.baseURL) != nil
 
-    let fetch: FetchFunction? = {
+    let tokenManager = GoogleVertexAccessTokenManager(credentials: settings.googleCredentials, fetch: settings.fetch)
+    let accessToken: @Sendable () async throws -> String = {
+        if let provider = settings.accessTokenProvider { return try await provider() }
+        return try await tokenManager.getToken()
+    }
+    let authenticatedFetch: FetchFunction? = {
         if let apiKey {
             return createExpressModeFetch(apiKey: apiKey, customFetch: settings.fetch)
         }
 
-        // Intentional deviation (baseURL bypass): when a custom baseURL is provided,
-        // do not require project/location and do not attempt to auto-inject OAuth.
-        if baseURLProvided {
+        // Custom gateways may own authentication; explicit credentials still apply.
+        if baseURLProvided && settings.googleCredentials == nil && settings.accessTokenProvider == nil {
             return settings.fetch
-        }
-
-        let tokenManager = GoogleVertexAccessTokenManager(credentials: settings.googleCredentials)
-        let accessToken: @Sendable () async throws -> String = {
-            if let provider = settings.accessTokenProvider {
-                return try await provider()
-            }
-            return try await tokenManager.getToken()
         }
 
         return createBearerTokenFetch(accessToken: accessToken, customFetch: settings.fetch)
     }()
 
+    let fetch: FetchFunction? = settings.headersProvider.map { resolveHeaders in
+        let baseFetch = authenticatedFetch ?? defaultFetchFunction()
+        return { request in
+            let dynamicHeaders = try await resolveHeaders()
+            var modified = request
+            let merged = combineHeaders(dynamicHeaders, request.allHTTPHeaderFields).compactMapValues { $0 }
+            modified.allHTTPHeaderFields = withUserAgentSuffix(merged, "ai-sdk-google-vertex/\(GOOGLE_VERTEX_VERSION)")
+            return try await baseFetch(modified)
+        }
+    } ?? authenticatedFetch
+
     let generateId = settings.generateId
 
-    let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleGenerativeAILanguageModel = { modelId in
-        GoogleGenerativeAILanguageModel(
-            modelId: GoogleGenerativeAIModelId(rawValue: modelId.rawValue),
-            config: GoogleGenerativeAILanguageModel.Config(
+    let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleLanguageModel = { modelId in
+        let endpoint = modelId.rawValue.hasPrefix("endpoints/")
+        return GoogleLanguageModel(
+            modelId: GoogleModelId(rawValue: modelId.rawValue),
+            config: GoogleLanguageModel.Config(
                 provider: "google.vertex.chat",
                 baseURL: resolvedBaseURL,
-                headers: headersClosure,
+                headers: {
+                    if endpoint && apiKey != nil {
+                        throw InvalidArgumentError(argument: "modelId", message: "Google Vertex tuned models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+                    }
+                    return try headersClosure()
+                },
                 fetch: fetch,
                 generateId: generateId,
-                supportedUrls: supportedURLs
+                supportedUrls: supportedURLs,
+                downloadToolResultFiles: .init(maxBytes: settings.toolResultDownloads?.maxBytes ?? 7 * 1024 * 1024, supportsGoogleCloudStorageUrls: true),
+                resolveBaseURL: { try loadBaseURL(endpoint) }
             )
         )
     }
@@ -557,7 +647,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             modelId: modelId,
             config: GoogleVertexEmbeddingConfig(
                 provider: "google.vertex.embedding",
-                baseURL: resolvedBaseURL,
+                baseURL: { try loadBaseURL(false) },
                 headers: headersClosure,
                 fetch: fetch
             )
@@ -569,7 +659,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             modelId: modelId,
             config: GoogleVertexImageModelConfig(
                 provider: "google.vertex.image",
-                baseURL: resolvedBaseURL,
+                baseURL: { try loadBaseURL(false) },
                 headers: headersClosure,
                 fetch: fetch,
                 generateId: generateId,
@@ -583,7 +673,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             modelId: modelId,
             config: GoogleVertexVideoModelConfig(
                 provider: "google.vertex.video",
-                baseURL: resolvedBaseURL,
+                baseURL: { try loadBaseURL(false) },
                 headers: headersClosure,
                 fetch: fetch,
                 generateId: generateId
@@ -591,18 +681,73 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         )
     }
 
+    let speechFactory: @Sendable (String) -> any SpeechModelV4 = { modelId in
+        if modelId.hasPrefix("chirp") {
+            return GoogleVertexCloudTTSSpeechModel(modelId: modelId, config: .init(
+                provider: "google.vertex.speech",
+                headers: {
+                    if apiKey != nil {
+                        throw InvalidArgumentError(argument: "modelId", message: "Google Vertex Chirp speech models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+                    }
+                    return try headersClosure()
+                }, fetch: fetch
+            ))
+        }
+        return GoogleSpeechModel(modelId: modelId, config: .init(
+            provider: "google.vertex.speech", baseURL: resolvedBaseURL, headers: headersClosure, fetch: fetch,
+            resolveBaseURL: { try loadBaseURL(false) }
+        ))
+    }
+    let transcriptionFactory: @Sendable (String) -> any TranscriptionModelV4 = { modelId in
+        let transcriptionHeaders: @Sendable () throws -> [String: String?] = {
+            if apiKey != nil {
+                throw InvalidArgumentError(argument: "modelId", message: "Google Vertex transcription models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+            }
+            return try headersClosure()
+        }
+        if modelId.hasPrefix("gemini") {
+            return GoogleVertexGeminiTranscriptionModel(modelId: modelId, config: .init(
+                provider: "google.vertex.transcription", baseURL: resolvedBaseURL, headers: transcriptionHeaders, fetch: fetch,
+                resolveBaseURL: { try loadBaseURL(false) }, webSocket: settings.webSocket,
+                liveRequest: { modelId, headers in
+                    let project = try loadProject()
+                    let location = try loadLocation()
+                    let host = vertexHost(location)
+                    var resolved = combineHeaders(try await settings.headersProvider?(), headers).compactMapValues { $0 }
+                    if !resolved.keys.contains(where: { $0.lowercased() == "authorization" }) {
+                        resolved["Authorization"] = "Bearer \(try await accessToken())"
+                    }
+                    let url = try requireURL("wss://\(host)/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent")
+                    return .init(url: url, model: "projects/\(project)/locations/\(location)/publishers/google/models/\(modelId)", headers: resolved)
+                }
+            ))
+        }
+        return GoogleVertexTranscriptionModel(modelId: modelId, config: .init(
+            provider: "google.vertex.transcription", project: loadProject, location: loadLocation,
+            headers: transcriptionHeaders, fetch: fetch
+        ))
+    }
+    let interactionsFactory: @Sendable (GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel = { input in
+        GoogleInteractionsLanguageModel(input: input, config: .init(
+            provider: "google.vertex.interactions", baseURL: resolvedBaseURL,
+            headers: {
+                if apiKey != nil {
+                    throw InvalidArgumentError(argument: "modelId", message: "Google Vertex Interactions models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+                }
+                return try headersClosure()
+            }, fetch: fetch, generateId: generateId, resolveBaseURL: { try loadBaseURL(true) }
+        ))
+    }
     return GoogleVertexProvider(
         language: languageFactory,
         embedding: embeddingFactory,
         image: imageFactory,
         video: videoFactory,
+        speech: speechFactory,
+        transcription: transcriptionFactory,
+        interactions: interactionsFactory,
         tools: googleVertexTools
     )
 }
 
-public func createVertex(settings: GoogleVertexProviderSettings = .init()) -> GoogleVertexProvider {
-    createGoogleVertex(settings: settings)
-}
-
 public let googleVertex = createGoogleVertex()
-public let vertex = createVertex()

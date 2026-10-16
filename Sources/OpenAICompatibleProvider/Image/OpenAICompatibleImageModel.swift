@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct OpenAICompatibleImageModelConfig: Sendable {
     public let provider: String
     public let headers: @Sendable () -> [String: String]
-    public let url: @Sendable (OpenAICompatibleURLOptions) -> String
+    public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
     public let currentDate: @Sendable () -> Date
@@ -13,7 +13,7 @@ public struct OpenAICompatibleImageModelConfig: Sendable {
     public init(
         provider: String,
         headers: @escaping @Sendable () -> [String: String],
-        url: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
+        url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         fetch: FetchFunction? = nil,
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
         currentDate: @escaping @Sendable () -> Date = { Date() }
@@ -95,7 +95,7 @@ private struct OpenAICompatibleImageModelCore: Sendable {
                 providerArguments: providerArguments
             )
             response = try await postToAPI(
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/edits")),
+                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/edits")),
                 headers: headers,
                 body: PostBody(
                     content: .multipartFormData(convertToFormData(formData)),
@@ -117,7 +117,7 @@ private struct OpenAICompatibleImageModelCore: Sendable {
                 contract: contract
             )
             response = try await postJsonToAPI(
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/generations")),
+                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/generations")),
                 headers: headers,
                 body: JSONValue.object(body),
                 failedResponseHandler: config.errorConfiguration.failedResponseHandler,

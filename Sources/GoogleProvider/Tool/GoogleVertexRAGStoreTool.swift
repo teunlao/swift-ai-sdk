@@ -19,11 +19,7 @@ private let googleVertexRAGStoreInputSchema = FlexibleSchema(
     jsonSchema(
         .object([
             "type": .string("object"),
-            "properties": .object([
-                "ragCorpus": .object(["type": .string("string")]),
-                "topK": .object(["type": .string("number")]),
-            ]),
-            "required": .array([.string("ragCorpus")]),
+            "properties": .object([:]),
             "additionalProperties": .bool(false),
         ])
     )

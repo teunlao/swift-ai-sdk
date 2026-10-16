@@ -1,0 +1,8 @@
+data: {"event_type":"step.start","index":1e40,"step":{"type":"model_output"}}
+
+data: {"event_type":"step.delta","index":1e40,"delta":{"type":"text","text":"wide index"}}
+
+data: {"event_type":"step.stop","index":1e40}
+
+data: {"event_type":"interaction.completed","interaction":{"status":"completed","usage":{"total_output_tokens":1}}}
+

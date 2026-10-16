@@ -1,0 +1,1 @@
+{"responseId":"last","candidates":[{"content":{"parts":[{"text":"last"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":1,"toolUsePromptTokenCount":3,"promptTokensDetails":[{"modality":"TEXT","tokenCount":12}]}}

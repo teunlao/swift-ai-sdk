@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct OpenAICompatibleChatConfig: Sendable {
     public let provider: String
     public let headers: @Sendable () -> [String: String]
-    public let url: @Sendable (OpenAICompatibleURLOptions) -> String
+    public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let includeUsage: Bool
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
@@ -19,7 +19,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public init(
         provider: String,
         headers: @escaping @Sendable () -> [String: String],
-        url: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
+        url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
@@ -166,7 +166,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
             headers: headers,
             body: JSONValue.object(transformedBody),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,
@@ -178,7 +178,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         guard let choice = response.value.choices.first else {
             throw APICallError(
                 message: "OpenAI-compatible response did not include choices.",
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
+                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
                 requestBodyValues: transformedBody
             )
         }
@@ -265,7 +265,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
         let eventStream = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
             headers: headers,
             body: JSONValue.object(transformedBody),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,

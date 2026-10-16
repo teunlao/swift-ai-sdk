@@ -1,0 +1,8 @@
+data: {"responseId":"stream-response","candidates":[{"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example","title":"Source"}}]},"content":{"parts":[{"text":"plan","thought":true,"thoughtSignature":"reasoning-signature"}]}}]}
+
+data: {"candidates":[{"content":{"parts":[{"text":"answer"},{"inlineData":{"mimeType":"image/png","data":"AQID"},"thought":true,"thoughtSignature":"file-signature"},{"toolCall":{"id":"server-id","toolType":"google_search","args":{"query":"q"}}},{"toolResponse":{"id":"ignored-response-id","toolType":"google_search","response":{"found":true}}},{"functionCall":{"id":"client-id","name":"lookup"},"thoughtSignature":"call-signature"}]}}]}
+
+data: {"candidates":[{"finishReason":"STOP","finishMessage":"done"}]}
+
+data: {"usageMetadata":{"promptTokenCount":5,"toolUsePromptTokenCount":2,"candidatesTokenCount":3,"serviceTier":"flex","custom":42}}
+

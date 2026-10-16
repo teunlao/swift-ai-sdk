@@ -1,0 +1,1 @@
+{"id":"chat-1","object":"chat.completion","created":1710000000,"model":"partner-model","choices":[{"index":0,"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details":{"reasoning_tokens":4},"future_usage":12}}

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import AISDKProvider
 import AISDKProviderUtils
-@testable import GoogleVertexProvider
+import GoogleVertexProvider
 
 @Suite("GoogleVertexProvider (chat baseURL)")
 struct GoogleVertexChatBaseURLTests {
@@ -50,7 +50,7 @@ struct GoogleVertexChatBaseURLTests {
         return FetchResponse(body: .data(data), urlResponse: response)
     }
 
-    private func makePrompt() -> LanguageModelV3Prompt {
+    private func makePrompt() -> LanguageModelV4Prompt {
         [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
@@ -127,26 +127,6 @@ struct GoogleVertexChatBaseURLTests {
 
     @Test("custom baseURL does not require project/location when apiKey is absent")
     func customBaseURL_doesNotRequireProjectLocationWhenApiKeyAbsent() async throws {
-        let originalProject = getenv("GOOGLE_VERTEX_PROJECT").flatMap { String(validatingCString: $0) }
-        let originalLocation = getenv("GOOGLE_VERTEX_LOCATION").flatMap { String(validatingCString: $0) }
-
-        defer {
-            if let originalProject {
-                setenv("GOOGLE_VERTEX_PROJECT", originalProject, 1)
-            } else {
-                unsetenv("GOOGLE_VERTEX_PROJECT")
-            }
-
-            if let originalLocation {
-                setenv("GOOGLE_VERTEX_LOCATION", originalLocation, 1)
-            } else {
-                unsetenv("GOOGLE_VERTEX_LOCATION")
-            }
-        }
-
-        unsetenv("GOOGLE_VERTEX_PROJECT")
-        unsetenv("GOOGLE_VERTEX_LOCATION")
-
         let capture = RequestCapture()
 
         let fetch: FetchFunction = { request in

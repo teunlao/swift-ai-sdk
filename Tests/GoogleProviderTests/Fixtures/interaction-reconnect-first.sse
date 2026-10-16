@@ -1,0 +1,6 @@
+data: {"event_type":"interaction.created","event_id":"event-1","interaction":{"id":"background-id"}}
+
+data: {"event_type":"step.start","index":0,"step":{"type":"model_output"}}
+
+data: {"event_type":"step.delta","event_id":"event-3","index":0,"delta":{"type":"text","text":"Answer"}}
+

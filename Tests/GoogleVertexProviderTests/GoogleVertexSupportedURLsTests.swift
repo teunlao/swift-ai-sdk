@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import GoogleVertexProvider
+import GoogleVertexProvider
 
 @Suite("GoogleVertex supportedUrls")
 struct GoogleVertexSupportedURLsTests {
@@ -18,7 +18,7 @@ struct GoogleVertexSupportedURLsTests {
             project: "test-project"
         ))
 
-        let model = provider.chat(modelId: GoogleVertexModelId(rawValue: "gemini-pro"))
+        let model = provider.languageModel(modelId: GoogleVertexModelId(rawValue: "gemini-pro"))
         let supported = try await model.supportedUrls
 
         guard let patterns = supported["*"] else {

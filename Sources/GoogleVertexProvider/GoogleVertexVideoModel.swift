@@ -2,30 +2,15 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/google-vertex/src/google-vertex-video-model.ts
-// Ported from packages/google-vertex/src/google-vertex-video-settings.ts
-// Upstream commit: c0fff03
-//===----------------------------------------------------------------------===//
-
 struct GoogleVertexVideoModelConfig: Sendable {
     let provider: String
-    let baseURL: String
+    let baseURL: @Sendable () throws -> String
     let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let generateId: @Sendable () -> String
     let currentDate: @Sendable () -> Date
 
-    init(
-        provider: String,
-        baseURL: String,
-        headers: @escaping @Sendable () throws -> [String: String?],
-        fetch: FetchFunction?,
-        generateId: @escaping @Sendable () -> String,
-        currentDate: @escaping @Sendable () -> Date = { Date() }
-    ) {
+    init(provider: String, baseURL: @escaping @Sendable () throws -> String, headers: @escaping @Sendable () throws -> [String: String?], fetch: FetchFunction?, generateId: @escaping @Sendable () -> String, currentDate: @escaping @Sendable () -> Date = { Date() }) {
         self.provider = provider
         self.baseURL = baseURL
         self.headers = headers
@@ -35,23 +20,20 @@ struct GoogleVertexVideoModelConfig: Sendable {
     }
 }
 
-public enum GoogleVertexVideoPersonGeneration: String, Sendable, Equatable {
-    case dontAllow = "dont_allow"
-    case allowAdult = "allow_adult"
-    case allowAll = "allow_all"
+public enum GoogleVertexVideoPersonGeneration: String, Sendable, Equatable, Codable {
+    case dontAllow = "dont_allow", allowAdult = "allow_adult", allowAll = "allow_all"
 }
 
-public struct GoogleVertexVideoReferenceImage: Sendable, Equatable {
+public struct GoogleVertexVideoReferenceImage: Sendable, Equatable, Codable {
     public var bytesBase64Encoded: String?
     public var gcsUri: String?
-
     public init(bytesBase64Encoded: String? = nil, gcsUri: String? = nil) {
         self.bytesBase64Encoded = bytesBase64Encoded
         self.gcsUri = gcsUri
     }
 }
 
-public struct GoogleVertexVideoModelOptions: Sendable, Equatable {
+public struct GoogleVertexVideoModelOptions: Sendable, Equatable, Codable {
     public var pollIntervalMs: Double?
     public var pollTimeoutMs: Double?
     public var personGeneration: GoogleVertexVideoPersonGeneration?
@@ -60,15 +42,7 @@ public struct GoogleVertexVideoModelOptions: Sendable, Equatable {
     public var gcsOutputDirectory: String?
     public var referenceImages: [GoogleVertexVideoReferenceImage]?
 
-    public init(
-        pollIntervalMs: Double? = nil,
-        pollTimeoutMs: Double? = nil,
-        personGeneration: GoogleVertexVideoPersonGeneration? = nil,
-        negativePrompt: String? = nil,
-        generateAudio: Bool? = nil,
-        gcsOutputDirectory: String? = nil,
-        referenceImages: [GoogleVertexVideoReferenceImage]? = nil
-    ) {
+    public init(pollIntervalMs: Double? = nil, pollTimeoutMs: Double? = nil, personGeneration: GoogleVertexVideoPersonGeneration? = nil, negativePrompt: String? = nil, generateAudio: Bool? = nil, gcsOutputDirectory: String? = nil, referenceImages: [GoogleVertexVideoReferenceImage]? = nil) {
         self.pollIntervalMs = pollIntervalMs
         self.pollTimeoutMs = pollTimeoutMs
         self.personGeneration = personGeneration
@@ -79,186 +53,22 @@ public struct GoogleVertexVideoModelOptions: Sendable, Equatable {
     }
 }
 
-private let googleVertexVideoModelOptionsSchema = FlexibleSchema(
-    Schema<GoogleVertexVideoModelOptions>(
-        jsonSchemaResolver: {
-            .object([
-                "type": .string("object"),
-                "additionalProperties": .bool(true)
-            ])
-        },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(
-                        vendor: "vertex",
-                        issues: "provider options must be an object"
-                    )
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                func positiveNumber(_ key: String) -> Result<Double?, TypeValidationError> {
-                    guard let rawValue = dict[key], rawValue != .null else {
-                        return .success(nil)
-                    }
-
-                    guard case .number(let number) = rawValue else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "\(key) must be a positive number"
-                        )
-                        return .failure(TypeValidationError.wrap(value: rawValue, cause: error))
-                    }
-
-                    guard number > 0 else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "\(key) must be a positive number"
-                        )
-                        return .failure(TypeValidationError.wrap(value: rawValue, cause: error))
-                    }
-
-                    return .success(number)
-                }
-
-                let pollIntervalMs: Double?
-                switch positiveNumber("pollIntervalMs") {
-                case .success(let value):
-                    pollIntervalMs = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let pollTimeoutMs: Double?
-                switch positiveNumber("pollTimeoutMs") {
-                case .success(let value):
-                    pollTimeoutMs = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                var personGeneration: GoogleVertexVideoPersonGeneration?
-                if let value = dict["personGeneration"], value != .null {
-                    guard case .string(let rawValue) = value,
-                          let parsed = GoogleVertexVideoPersonGeneration(rawValue: rawValue) else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "personGeneration must be one of 'dont_allow', 'allow_adult', 'allow_all'"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                    }
-                    personGeneration = parsed
-                }
-
-                var negativePrompt: String?
-                if let value = dict["negativePrompt"], value != .null {
-                    guard case .string(let stringValue) = value else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "negativePrompt must be a string"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                    }
-                    negativePrompt = stringValue
-                }
-
-                var generateAudio: Bool?
-                if let value = dict["generateAudio"], value != .null {
-                    guard case .bool(let boolValue) = value else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "generateAudio must be a boolean"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                    }
-                    generateAudio = boolValue
-                }
-
-                var gcsOutputDirectory: String?
-                if let value = dict["gcsOutputDirectory"], value != .null {
-                    guard case .string(let stringValue) = value else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "gcsOutputDirectory must be a string"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                    }
-                    gcsOutputDirectory = stringValue
-                }
-
-                var referenceImages: [GoogleVertexVideoReferenceImage]?
-                if let value = dict["referenceImages"], value != .null {
-                    guard case .array(let array) = value else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "vertex",
-                            issues: "referenceImages must be an array"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                    }
-
-                    var parsedImages: [GoogleVertexVideoReferenceImage] = []
-                    for item in array {
-                        guard case .object(let object) = item else {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "vertex",
-                                issues: "referenceImages entries must be objects"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: item, cause: error))
-                        }
-
-                        var bytesBase64Encoded: String?
-                        if let bytes = object["bytesBase64Encoded"], bytes != .null {
-                            guard case .string(let bytesValue) = bytes else {
-                                let error = SchemaValidationIssuesError(
-                                    vendor: "vertex",
-                                    issues: "referenceImages[].bytesBase64Encoded must be a string"
-                                )
-                                return .failure(error: TypeValidationError.wrap(value: bytes, cause: error))
-                            }
-                            bytesBase64Encoded = bytesValue
-                        }
-
-                        var gcsUri: String?
-                        if let gcs = object["gcsUri"], gcs != .null {
-                            guard case .string(let gcsValue) = gcs else {
-                                let error = SchemaValidationIssuesError(
-                                    vendor: "vertex",
-                                    issues: "referenceImages[].gcsUri must be a string"
-                                )
-                                return .failure(error: TypeValidationError.wrap(value: gcs, cause: error))
-                            }
-                            gcsUri = gcsValue
-                        }
-
-                        parsedImages.append(
-                            GoogleVertexVideoReferenceImage(
-                                bytesBase64Encoded: bytesBase64Encoded,
-                                gcsUri: gcsUri
-                            )
-                        )
-                    }
-
-                    referenceImages = parsedImages
-                }
-
-                return .success(
-                    value: GoogleVertexVideoModelOptions(
-                        pollIntervalMs: pollIntervalMs,
-                        pollTimeoutMs: pollTimeoutMs,
-                        personGeneration: personGeneration,
-                        negativePrompt: negativePrompt,
-                        generateAudio: generateAudio,
-                        gcsOutputDirectory: gcsOutputDirectory,
-                        referenceImages: referenceImages
-                    )
-                )
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+private let googleVertexVideoModelOptionsSchema = FlexibleSchema(Schema<GoogleVertexVideoModelOptions>(
+    jsonSchemaResolver: { .object(["type": .string("object")]) },
+    validator: { value in
+        do {
+            let json = try jsonValue(from: value)
+            let parsed = try JSONDecoder().decode(GoogleVertexVideoModelOptions.self, from: JSONEncoder().encode(json))
+            if let interval = parsed.pollIntervalMs, interval <= 0 {
+                throw InvalidArgumentError(argument: "pollIntervalMs", message: "pollIntervalMs must be positive")
             }
-        }
-    )
-)
+            if let timeout = parsed.pollTimeoutMs, timeout <= 0 {
+                throw InvalidArgumentError(argument: "pollTimeoutMs", message: "pollTimeoutMs must be positive")
+            }
+            return .success(value: parsed)
+        } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+    }
+))
 
 private struct GoogleVertexVideoOperation: Codable, Sendable {
     struct OperationError: Codable, Sendable {
@@ -266,344 +76,150 @@ private struct GoogleVertexVideoOperation: Codable, Sendable {
         let message: String
         let status: String?
     }
-
     struct OperationResponse: Codable, Sendable {
         struct Video: Codable, Sendable {
             let bytesBase64Encoded: String?
             let gcsUri: String?
             let mimeType: String?
         }
-
         let videos: [Video]?
         let raiMediaFilteredCount: Int?
     }
-
     let name: String?
     let done: Bool?
     let error: OperationError?
     let response: OperationResponse?
 }
 
-private let googleVertexVideoOperationSchema = FlexibleSchema(
-    Schema.codable(
-        GoogleVertexVideoOperation.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
+private let googleVertexVideoOperationSchema = FlexibleSchema(Schema.codable(
+    GoogleVertexVideoOperation.self, jsonSchema: .object(["type": .string("object")])
+))
 
-public final class GoogleVertexVideoModel: VideoModelV3 {
-    public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(4) }
-
+public final class GoogleVertexVideoModel: VideoModelV4Operations {
     private let modelIdentifier: GoogleVertexVideoModelId
     private let config: GoogleVertexVideoModelConfig
+    public var provider: String { config.provider }
+    public var modelId: String { modelIdentifier.rawValue }
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(4) }
 
     init(modelId: GoogleVertexVideoModelId, config: GoogleVertexVideoModelConfig) {
         self.modelIdentifier = modelId
         self.config = config
     }
 
-    public func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
-        let currentDate = config.currentDate()
-        var warnings: [SharedV3Warning] = []
-
-        let vertexOptions = try await parseProviderOptions(
-            provider: "vertex",
-            providerOptions: options.providerOptions,
-            schema: googleVertexVideoModelOptionsSchema
+    public func doStart(options: VideoModelV4CallOptions, webhookUrl: String? = nil) async throws -> VideoModelV4OperationStartResult {
+        let timestamp = config.currentDate()
+        let parsed = try await parseVertexOptions(options.providerOptions, schema: googleVertexVideoModelOptionsSchema)
+        let raw = options.providerOptions?["googleVertex"] ?? options.providerOptions?["vertex"] ?? [:]
+        var warnings: [SharedV4Warning] = []
+        var instance: JSONObject = [:]
+        if let prompt = options.prompt { instance["prompt"] = .string(prompt) }
+        let firstFrame = options.frameImages?.first { $0.frameType == .firstFrame }?.image
+        if let file = firstFrame ?? options.image, let image = convertImage(file, warnings: &warnings) {
+            instance["image"] = .object(image)
+        }
+        if let file = options.frameImages?.first(where: { $0.frameType == .lastFrame })?.image,
+           let image = convertImage(file, warnings: &warnings) {
+            instance["lastFrame"] = .object(image)
+        }
+        if options.frameImages?.isEmpty != false, let references = options.inputReferences, !references.isEmpty {
+            instance["referenceImages"] = .array(references.compactMap { file in
+                guard let image = convertImage(file, warnings: &warnings) else { return nil }
+                return .object(["image": .object(image), "referenceType": .string("asset")])
+            })
+        } else if parsed?.referenceImages != nil {
+            instance["referenceImages"] = raw["referenceImages"]
+        }
+        var parameters: JSONObject = ["sampleCount": .number(Double(options.n))]
+        if let ratio = options.aspectRatio, !ratio.isEmpty { parameters["aspectRatio"] = .string(ratio) }
+        if let resolution = options.resolution, !resolution.isEmpty {
+            let map = ["1280x720": "720p", "1920x1080": "1080p", "3840x2160": "4k"]
+            parameters["resolution"] = .string(map[resolution] ?? resolution)
+        }
+        if let duration = options.duration, duration != 0 { parameters["durationSeconds"] = .number(Double(duration)) }
+        if let seed = options.seed, seed != 0 { parameters["seed"] = .number(Double(seed)) }
+        if let audio = options.generateAudio ?? parsed?.generateAudio { parameters["generateAudio"] = .bool(audio) }
+        if let person = parsed?.personGeneration { parameters["personGeneration"] = .string(person.rawValue) }
+        if let prompt = parsed?.negativePrompt { parameters["negativePrompt"] = .string(prompt) }
+        if let directory = parsed?.gcsOutputDirectory { parameters["gcsOutputDirectory"] = .string(directory) }
+        let excluded: Set<String> = ["pollIntervalMs", "pollTimeoutMs", "personGeneration", "negativePrompt", "generateAudio", "gcsOutputDirectory", "referenceImages"]
+        for (key, value) in raw where !excluded.contains(key) { parameters[key] = value }
+        let response = try await postJsonToAPI(
+            url: "\(try config.baseURL())/models/\(modelId):predictLongRunning",
+            headers: combineHeaders(try config.headers(), options.headers).compactMapValues { $0 },
+            body: JSONValue.object(["instances": .array([.object(instance)]), "parameters": .object(parameters)]),
+            failedResponseHandler: googleVertexFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
+            isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        let rawVertexOptions = options.providerOptions?["vertex"] ?? [:]
-
-        var instance: [String: JSONValue] = [:]
-        if let prompt = options.prompt {
-            instance["prompt"] = .string(prompt)
+        guard let name = response.value.name, !name.isEmpty else {
+            throw GoogleVertexVideoModelError(name: "VERTEX_VIDEO_GENERATION_ERROR", message: "No operation name returned from API")
         }
+        return .init(operation: .object(["operationName": .string(name)]), warnings: warnings,
+                     response: .init(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders))
+    }
 
-        if let image = options.image {
-            switch image {
-            case .url:
-                warnings.append(
-                    .unsupported(
-                        feature: "URL-based image input",
-                        details: "Vertex AI video models require base64-encoded images or GCS URIs. URL will be ignored."
-                    )
-                )
-
-            case .file(let mediaType, let data, _):
-                let base64Data: String
-                switch data {
-                case .base64(let value):
-                    base64Data = value
-                case .binary(let value):
-                    base64Data = convertDataToBase64(value)
-                }
-
-                let imagePayload: [String: JSONValue] = [
-                    "bytesBase64Encoded": .string(base64Data),
-                    "mimeType": .string(mediaType)
-                ]
-                instance["image"] = .object(imagePayload)
-            }
+    public func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+        let timestamp = config.currentDate()
+        var body: JSONObject = [:]
+        if case .object(let operation) = options.operation { body["operationName"] = operation["operationName"] }
+        let response = try await postJsonToAPI(
+            url: "\(try config.baseURL())/models/\(modelId):fetchPredictOperation",
+            headers: combineHeaders(try config.headers(), options.headers).compactMapValues { $0 },
+            body: JSONValue.object(body), failedResponseHandler: googleVertexFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
+            isAborted: options.abortSignal, fetch: config.fetch
+        )
+        let info = VideoModelV4ResponseInfo(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders)
+        let operation = response.value
+        if operation.done != true { return .pending(warnings: nil, providerMetadata: nil, response: info) }
+        if let error = operation.error {
+            return .error(error: "Video generation failed: \(error.message)", providerMetadata: nil, response: info)
         }
-
-        if let referenceImages = vertexOptions?.referenceImages {
-            instance["referenceImages"] = .array(
-                referenceImages.map { image in
-                    var object: [String: JSONValue] = [:]
-                    if let bytes = image.bytesBase64Encoded {
-                        object["bytesBase64Encoded"] = .string(bytes)
-                    }
-                    if let gcsUri = image.gcsUri {
-                        object["gcsUri"] = .string(gcsUri)
-                    }
-                    return .object(object)
-                }
-            )
+        guard let responseVideos = operation.response?.videos, !responseVideos.isEmpty else {
+            let data = try JSONEncoder().encode(operation)
+            throw GoogleVertexVideoModelError(name: "VERTEX_VIDEO_GENERATION_ERROR", message: "No videos in response. Response: \(String(decoding: data, as: UTF8.self))")
         }
-
-        var parameters: [String: JSONValue] = [
-            "sampleCount": .number(Double(options.n))
-        ]
-
-        if let aspectRatio = options.aspectRatio {
-            parameters["aspectRatio"] = .string(aspectRatio)
-        }
-
-        if let resolution = options.resolution {
-            let mappedResolution: String
-            switch resolution {
-            case "1280x720":
-                mappedResolution = "720p"
-            case "1920x1080":
-                mappedResolution = "1080p"
-            case "3840x2160":
-                mappedResolution = "4k"
-            default:
-                mappedResolution = resolution
-            }
-            parameters["resolution"] = .string(mappedResolution)
-        }
-
-        if let duration = options.duration {
-            parameters["durationSeconds"] = .number(Double(duration))
-        }
-
-        if let seed = options.seed {
-            parameters["seed"] = .number(Double(seed))
-        }
-
-        if let personGeneration = vertexOptions?.personGeneration {
-            parameters["personGeneration"] = .string(personGeneration.rawValue)
-        }
-
-        if let negativePrompt = vertexOptions?.negativePrompt {
-            parameters["negativePrompt"] = .string(negativePrompt)
-        }
-
-        if let generateAudio = vertexOptions?.generateAudio {
-            parameters["generateAudio"] = .bool(generateAudio)
-        }
-
-        if let gcsOutputDirectory = vertexOptions?.gcsOutputDirectory {
-            parameters["gcsOutputDirectory"] = .string(gcsOutputDirectory)
-        }
-
-        let excludedPassthroughKeys: Set<String> = [
-            "pollIntervalMs",
-            "pollTimeoutMs",
-            "personGeneration",
-            "negativePrompt",
-            "generateAudio",
-            "gcsOutputDirectory",
-            "referenceImages"
-        ]
-
-        for (key, value) in rawVertexOptions where !excludedPassthroughKeys.contains(key) {
-            parameters[key] = value
-        }
-
-        let requestHeaders: @Sendable () throws -> [String: String] = { [self] in
-            combineHeaders(try self.config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
-        }
-
-        let operation: ResponseHandlerResult<GoogleVertexVideoOperation>
-        do {
-            operation = try await postJsonToAPI(
-                url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):predictLongRunning",
-                headers: requestHeaders(),
-                body: JSONValue.object([
-                    "instances": .array([.object(instance)]),
-                    "parameters": .object(parameters)
-                ]),
-                failedResponseHandler: googleVertexFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
-                isAborted: options.abortSignal,
-                fetch: config.fetch
-            )
-        } catch {
-            if isVideoGenerationAbort(error, abortSignal: options.abortSignal) {
-                throw googleVertexVideoGenerationAbortedError()
-            }
-            throw error
-        }
-
-        guard let operationName = operation.value.name, !operationName.isEmpty else {
-            throw GoogleVertexVideoModelError(
-                name: "VERTEX_VIDEO_GENERATION_ERROR",
-                message: "No operation name returned from API"
-            )
-        }
-
-        let pollIntervalMs = vertexOptions?.pollIntervalMs ?? 10_000
-        let pollTimeoutMs = vertexOptions?.pollTimeoutMs ?? 600_000
-
-        let startTime = Date()
-        var finalOperation = operation.value
-        var responseHeaders: [String: String]?
-
-        while finalOperation.done != true {
-            let elapsedMs = Date().timeIntervalSince(startTime) * 1000
-            if elapsedMs > pollTimeoutMs {
-                throw GoogleVertexVideoModelError(
-                    name: "VERTEX_VIDEO_GENERATION_TIMEOUT",
-                    message: "Video generation timed out after \(formatVertexMilliseconds(pollTimeoutMs))ms"
-                )
-            }
-
-            do {
-                let pollDelay = max(0, Int(pollIntervalMs.rounded(.towardZero)))
-                try await delay(pollDelay, abortSignal: options.abortSignal)
-
-                if options.abortSignal?() == true {
-                    throw googleVertexVideoGenerationAbortedError()
-                }
-
-                let statusOperation = try await postJsonToAPI(
-                    url: "\(config.baseURL)/models/\(modelIdentifier.rawValue):fetchPredictOperation",
-                    headers: requestHeaders(),
-                    body: JSONValue.object([
-                        "operationName": .string(operationName)
-                    ]),
-                    failedResponseHandler: googleVertexFailedResponseHandler,
-                    successfulResponseHandler: createJsonResponseHandler(responseSchema: googleVertexVideoOperationSchema),
-                    isAborted: options.abortSignal,
-                    fetch: config.fetch
-                )
-
-                finalOperation = statusOperation.value
-                responseHeaders = statusOperation.responseHeaders
-            } catch {
-                if isVideoGenerationAbort(error, abortSignal: options.abortSignal) {
-                    throw googleVertexVideoGenerationAbortedError()
-                }
-                throw error
-            }
-        }
-
-        if let operationError = finalOperation.error {
-            throw GoogleVertexVideoModelError(
-                name: "VERTEX_VIDEO_GENERATION_FAILED",
-                message: "Video generation failed: \(operationError.message)"
-            )
-        }
-
-        guard let responseVideos = finalOperation.response?.videos,
-              !responseVideos.isEmpty else {
-            throw GoogleVertexVideoModelError(
-                name: "VERTEX_VIDEO_GENERATION_ERROR",
-                message: "No videos in response. Response: \(googleVertexVideoJSONString(from: finalOperation))"
-            )
-        }
-
-        var videos: [VideoModelV3VideoData] = []
-        var videoMetadata: [JSONValue] = []
-
+        var videos: [VideoModelV4VideoData] = []
+        var metadata: [JSONValue] = []
         for video in responseVideos {
-            let resolvedMimeType = video.mimeType?.isEmpty == false ? video.mimeType! : "video/mp4"
-
-            if let bytesBase64Encoded = video.bytesBase64Encoded, !bytesBase64Encoded.isEmpty {
-                videos.append(.base64(data: bytesBase64Encoded, mediaType: resolvedMimeType))
-
-                var metadata: [String: JSONValue] = [:]
-                if let mimeType = video.mimeType {
-                    metadata["mimeType"] = .string(mimeType)
-                }
-                videoMetadata.append(.object(metadata))
-                continue
-            }
-
-            if let gcsUri = video.gcsUri, !gcsUri.isEmpty {
-                videos.append(.url(url: gcsUri, mediaType: resolvedMimeType))
-
-                var metadata: [String: JSONValue] = [
-                    "gcsUri": .string(gcsUri)
-                ]
-                if let mimeType = video.mimeType {
-                    metadata["mimeType"] = .string(mimeType)
-                }
-                videoMetadata.append(.object(metadata))
-            }
+            let type = video.mimeType.flatMap { $0.isEmpty ? nil : $0 } ?? "video/mp4"
+            var entry: JSONObject = [:]
+            if let mime = video.mimeType { entry["mimeType"] = .string(mime) }
+            if let bytes = video.bytesBase64Encoded, !bytes.isEmpty {
+                videos.append(.base64(data: bytes, mediaType: type))
+            } else if let uri = video.gcsUri, !uri.isEmpty {
+                videos.append(.url(url: uri, mediaType: type))
+                entry["gcsUri"] = .string(uri)
+            } else { continue }
+            metadata.append(.object(entry))
         }
-
-        if videos.isEmpty {
-            throw GoogleVertexVideoModelError(
-                name: "VERTEX_VIDEO_GENERATION_ERROR",
-                message: "No valid videos in response"
-            )
+        guard !videos.isEmpty else {
+            throw GoogleVertexVideoModelError(name: "VERTEX_VIDEO_GENERATION_ERROR", message: "No valid videos in response")
         }
-
-        return VideoModelV3GenerateResult(
-            videos: videos,
-            warnings: warnings,
-            providerMetadata: [
-                "google-vertex": [
-                    "videos": .array(videoMetadata)
-                ]
-            ],
-            response: VideoModelV3ResponseInfo(
-                timestamp: currentDate,
-                modelId: modelIdentifier.rawValue,
-                headers: responseHeaders
-            )
-        )
+        let payload: JSONObject = ["videos": .array(metadata)]
+        return .completed(videos: videos, warnings: [], providerMetadata: ["googleVertex": payload, "vertex": payload, "google-vertex": payload], response: info)
     }
-}
 
-private func googleVertexVideoJSONString(from operation: GoogleVertexVideoOperation) -> String {
-    do {
-        let data = try JSONEncoder().encode(operation)
-        return String(data: data, encoding: .utf8) ?? String(describing: operation)
-    } catch {
-        return String(describing: operation)
+    private func convertImage(_ file: VideoModelV4File, warnings: inout [SharedV4Warning]) -> JSONObject? {
+        switch file {
+        case .url(let url, _, _):
+            if url.hasPrefix("gs://") { return ["gcsUri": .string(url), "mimeType": .string("image/png")] }
+            warnings.append(.unsupported(feature: "URL-based image input", details: "Vertex AI video models require base64-encoded images or GCS URIs. URL will be ignored."))
+            return nil
+        case .file(let type, let data, _):
+            let bytes: String
+            switch data {
+            case .base64(let value): bytes = value
+            case .binary(let value): bytes = value.base64EncodedString()
+            }
+            return ["bytesBase64Encoded": .string(bytes), "mimeType": .string(type.isEmpty ? "image/png" : type)]
+        }
     }
-}
-
-private func formatVertexMilliseconds(_ value: Double) -> String {
-    if value.rounded(.towardZero) == value {
-        return String(Int(value))
-    }
-    return String(value)
-}
-
-private func isVideoGenerationAbort(
-    _ error: Error,
-    abortSignal: (@Sendable () -> Bool)?
-) -> Bool {
-    abortSignal?() == true && isAbortError(error)
-}
-
-private func googleVertexVideoGenerationAbortedError() -> GoogleVertexVideoModelError {
-    GoogleVertexVideoModelError(
-        name: "VERTEX_VIDEO_GENERATION_ABORTED",
-        message: "Video generation request was aborted"
-    )
 }
 
 private struct GoogleVertexVideoModelError: AISDKError, Sendable {
     static let errorDomain = "google.vertex.video.error"
-
     let name: String
     let message: String
     let cause: (any Error)? = nil

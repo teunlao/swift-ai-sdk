@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 public struct OpenAICompatibleEmbeddingConfig: Sendable {
     public let provider: String
-    public let url: @Sendable (OpenAICompatibleURLOptions) -> String
+    public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let headers: @Sendable () -> [String: String]
     public let fetch: FetchFunction?
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
@@ -13,7 +13,7 @@ public struct OpenAICompatibleEmbeddingConfig: Sendable {
 
     public init(
         provider: String,
-        url: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
+        url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         headers: @escaping @Sendable () -> [String: String],
         fetch: FetchFunction? = nil,
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
@@ -91,7 +91,7 @@ private struct OpenAICompatibleEmbeddingModelCore: Sendable {
         let combinedHeaders = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
             headers: combinedHeaders,
             body: JSONValue.object([
                 "model": .string(modelIdentifier.rawValue),

@@ -30,35 +30,11 @@ public struct GoogleFileSearchArgs: Sendable, Equatable {
     }
 }
 
-private let googleFileSearchInputSchema = FlexibleSchema(
-    jsonSchema(
-        .object([
-            "type": .string("object"),
-            "properties": .object([
-                "fileSearchStoreNames": .object([
-                    "type": .string("array"),
-                    "items": .object(["type": .string("string")]),
-                    "description": .string(
-                        "The names of the file_search_stores to retrieve from. Example: `fileSearchStores/my-file-search-store-123`"
-                    ),
-                ]),
-                "topK": .object([
-                    "type": .string("integer"),
-                    "minimum": .number(1),
-                    "description": .string("The number of file search retrieval chunks to retrieve."),
-                ]),
-                "metadataFilter": .object([
-                    "type": .string("string"),
-                    "description": .string(
-                        "Metadata filter to apply to the file search retrieval documents. See https://google.aip.dev/160 for the syntax of the filter expression."
-                    ),
-                ]),
-            ]),
-            "required": .array([.string("fileSearchStoreNames")]),
-            "additionalProperties": .bool(true),
-        ])
-    )
-)
+private let googleFileSearchInputSchema = FlexibleSchema(jsonSchema(.object([
+    "type": .string("object"),
+    "properties": .object([:]),
+    "additionalProperties": .bool(false)
+])))
 
 public let googleFileSearchToolFactory = createProviderExecutedToolFactory(
     id: "google.file_search",

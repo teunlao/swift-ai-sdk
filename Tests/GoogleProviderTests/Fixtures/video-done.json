@@ -1,0 +1,1 @@
+{"name":"operations/video-op","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://provider.example/download/video.mp4?alt=media"}},{"video":{"uri":"https://other.example/video.mp4"}}]}}}

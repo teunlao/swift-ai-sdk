@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import AISDKProvider
 import AISDKProviderUtils
-@testable import GoogleVertexProvider
+import GoogleVertexProvider
 
 @Suite("GoogleVertexProvider (chat streaming baseURL)")
 struct GoogleVertexChatStreamingBaseURLTests {
@@ -35,15 +35,15 @@ struct GoogleVertexChatStreamingBaseURLTests {
         return events
     }
 
-    private func collectStream(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-        var parts: [LanguageModelV3StreamPart] = []
+    private func collectStream(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream {
             parts.append(part)
         }
         return parts
     }
 
-    private func makePrompt() -> LanguageModelV3Prompt {
+    private func makePrompt() -> LanguageModelV4Prompt {
         [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]

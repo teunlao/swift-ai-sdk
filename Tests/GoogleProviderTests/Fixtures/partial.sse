@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"id":"partial-id","name":"lookup","willContinue":true}},{"functionCall":{"partialArgs":[{"jsonPath":"$.recipe.name","stringValue":"La","willContinue":true}],"willContinue":true}}]}}]}
+
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"partialArgs":[{"jsonPath":"$.recipe.name","stringValue":"sagna","willContinue":false},{"jsonPath":"$.ingredients[0]","stringValue":"noodles","willContinue":false}],"willContinue":false}}]},"finishReason":"STOP"}]}
+

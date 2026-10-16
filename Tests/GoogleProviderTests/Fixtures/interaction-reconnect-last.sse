@@ -1,0 +1,4 @@
+data: {"event_type":"step.stop","index":0}
+
+data: {"event_type":"interaction.completed","interaction":{"id":"background-id","status":"completed","usage":{"total_output_tokens":1}}}
+

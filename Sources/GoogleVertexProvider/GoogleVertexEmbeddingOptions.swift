@@ -7,18 +7,18 @@ import GoogleProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/google-vertex/src/google-vertex-embedding-options.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-public struct GoogleVertexEmbeddingProviderOptions: Sendable, Equatable {
+public struct GoogleVertexEmbeddingModelOptions: Sendable, Equatable {
     public var outputDimensionality: Double?
-    public var taskType: GoogleGenerativeAIEmbeddingTaskType?
+    public var taskType: GoogleEmbeddingTaskType?
     public var title: String?
     public var autoTruncate: Bool?
 
     public init(
         outputDimensionality: Double? = nil,
-        taskType: GoogleGenerativeAIEmbeddingTaskType? = nil,
+        taskType: GoogleEmbeddingTaskType? = nil,
         title: String? = nil,
         autoTruncate: Bool? = nil
     ) {
@@ -29,19 +29,16 @@ public struct GoogleVertexEmbeddingProviderOptions: Sendable, Equatable {
     }
 }
 
-/// Upstream naming parity alias.
-public typealias GoogleVertexEmbeddingModelOptions = GoogleVertexEmbeddingProviderOptions
-
 private let googleVertexEmbeddingOptionsJsonSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true)
 ])
 
-private func makeGoogleVertexEmbeddingProviderOptionsSchema(
+private func makeGoogleVertexEmbeddingModelOptionsSchema(
     vendor: String
-) -> FlexibleSchema<GoogleVertexEmbeddingProviderOptions> {
+) -> FlexibleSchema<GoogleVertexEmbeddingModelOptions> {
     FlexibleSchema(
-        Schema<GoogleVertexEmbeddingProviderOptions>(
+        Schema<GoogleVertexEmbeddingModelOptions>(
             jsonSchemaResolver: { googleVertexEmbeddingOptionsJsonSchema },
             validator: { value in
                 do {
@@ -75,7 +72,7 @@ private func makeGoogleVertexEmbeddingProviderOptionsSchema(
                         outputDimensionality = number
                     }
 
-                    var taskType: GoogleGenerativeAIEmbeddingTaskType? = nil
+                    var taskType: GoogleEmbeddingTaskType? = nil
                     if let taskTypeValue = dict["taskType"] {
                         if taskTypeValue == .null {
                             let error = SchemaValidationIssuesError(
@@ -86,7 +83,7 @@ private func makeGoogleVertexEmbeddingProviderOptionsSchema(
                         }
 
                         guard case .string(let raw) = taskTypeValue,
-                              let parsed = GoogleGenerativeAIEmbeddingTaskType(rawValue: raw) else {
+                              let parsed = GoogleEmbeddingTaskType(rawValue: raw) else {
                             let error = SchemaValidationIssuesError(
                                 vendor: vendor,
                                 issues: "taskType must be a valid enum value"
@@ -137,7 +134,7 @@ private func makeGoogleVertexEmbeddingProviderOptionsSchema(
                     }
 
                     return .success(
-                        value: GoogleVertexEmbeddingProviderOptions(
+                        value: GoogleVertexEmbeddingModelOptions(
                             outputDimensionality: outputDimensionality,
                             taskType: taskType,
                             title: title,
@@ -152,16 +149,9 @@ private func makeGoogleVertexEmbeddingProviderOptionsSchema(
     )
 }
 
-// Public schema: kept for compatibility with existing call sites (commonly used with provider="google").
-public let googleVertexEmbeddingProviderOptionsSchema = makeGoogleVertexEmbeddingProviderOptionsSchema(vendor: "google")
+public let googleVertexEmbeddingModelOptionsSchema = makeGoogleVertexEmbeddingModelOptionsSchema(vendor: "googleVertex")
 
-// Internal schema for parsing providerOptions in the "vertex" namespace.
-let googleVertexEmbeddingProviderOptionsSchemaVertex = makeGoogleVertexEmbeddingProviderOptionsSchema(vendor: "vertex")
-
-/// Upstream naming parity alias.
-public let googleVertexEmbeddingModelOptionsSchema = googleVertexEmbeddingProviderOptionsSchema
-
-extension GoogleVertexEmbeddingProviderOptions {
+extension GoogleVertexEmbeddingModelOptions {
     func toParametersDictionary() -> [String: JSONValue] {
         var parameters: [String: JSONValue] = [:]
         if let outputDimensionality {
@@ -174,7 +164,7 @@ extension GoogleVertexEmbeddingProviderOptions {
     }
 }
 
-extension GoogleVertexEmbeddingProviderOptions {
+extension GoogleVertexEmbeddingModelOptions {
     func toInstanceOverrides() -> [String: JSONValue] {
         var result: [String: JSONValue] = [:]
         if let taskType {

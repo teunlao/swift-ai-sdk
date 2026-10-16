@@ -1,69 +1,47 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
 public struct GoogleSearchArgs: Sendable, Equatable {
-    public enum Mode: String, Sendable, Equatable {
-        case modeDynamic = "MODE_DYNAMIC"
-        case modeUnspecified = "MODE_UNSPECIFIED"
+    public struct SearchTypes: Sendable, Equatable {
+        public var webSearch: Bool
+        public var imageSearch: Bool
+        public init(webSearch: Bool = false, imageSearch: Bool = false) { self.webSearch = webSearch; self.imageSearch = imageSearch }
     }
-
-    public var mode: Mode?
-    public var dynamicThreshold: Double?
-
-    public init(mode: Mode? = nil, dynamicThreshold: Double? = nil) {
-        self.mode = mode
-        self.dynamicThreshold = dynamicThreshold
+    public struct TimeRangeFilter: Sendable, Equatable {
+        public var startTime: String
+        public var endTime: String
+        public init(startTime: String, endTime: String) { self.startTime = startTime; self.endTime = endTime }
+    }
+    public var searchTypes: SearchTypes?
+    public var timeRangeFilter: TimeRangeFilter?
+    public var additional: [String: JSONValue]
+    public init(searchTypes: SearchTypes? = nil, timeRangeFilter: TimeRangeFilter? = nil, additional: [String: JSONValue] = [:]) {
+        self.searchTypes = searchTypes; self.timeRangeFilter = timeRangeFilter; self.additional = additional
     }
 }
 
-private let googleSearchInputSchema = FlexibleSchema(
-    jsonSchema(
-        .object([
-            "type": .string("object"),
-            "additionalProperties": .bool(false),
-            "properties": .object([
-                "mode": .object([
-                    "type": .string("string"),
-                    "enum": .array([
-                        .string(GoogleSearchArgs.Mode.modeDynamic.rawValue),
-                        .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
-                    ]),
-                    "default": .string(GoogleSearchArgs.Mode.modeUnspecified.rawValue)
-                ]),
-                "dynamicThreshold": .object([
-                    "type": .string("number"),
-                    "default": .number(1)
-                ])
-            ])
-        ])
-    )
-)
-
+private let googleSearchSchema = FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object([:]), "additionalProperties": .bool(false)])))
 public let googleSearchToolFactory = createProviderExecutedToolFactory(
     id: "google.google_search",
     name: "google_search",
-    inputSchema: googleSearchInputSchema,
-    outputSchema: FlexibleSchema(jsonSchema(.object([
-        "type": .string("object"),
-        "properties": .object([:]),
-        "additionalProperties": .bool(false),
-    ]))),
-    mapOptions: { (args: GoogleSearchArgs) in
-        var payload = ProviderExecutedToolFactoryOptions(args: [:])
-
-        // Apply defaults matching upstream (mode: MODE_UNSPECIFIED, dynamicThreshold: 1)
-        let mode = args.mode ?? .modeUnspecified
-        let threshold = args.dynamicThreshold ?? 1
-
-        payload.args["mode"] = .string(mode.rawValue)
-        payload.args["dynamicThreshold"] = .number(threshold)
-
-        return payload
-    }
+    inputSchema: googleSearchSchema,
+    outputSchema: googleSearchSchema,
+    mapOptions: { (args: GoogleSearchArgs) in ProviderExecutedToolFactoryOptions(args: args.toDictionary()) }
 )
 
-@discardableResult
-public func googleSearchTool(_ args: GoogleSearchArgs = .init()) -> Tool {
-    googleSearchToolFactory(args)
+public extension GoogleSearchArgs {
+    func toDictionary() -> JSONObject {
+        var values = additional
+        if let types = searchTypes {
+            var object: JSONObject = [:]
+            if types.webSearch { object["webSearch"] = .object([:]) }
+            if types.imageSearch { object["imageSearch"] = .object([:]) }
+            values["searchTypes"] = .object(object)
+        }
+        if let range = timeRangeFilter { values["timeRangeFilter"] = .object(["startTime": .string(range.startTime), "endTime": .string(range.endTime)]) }
+        return values
+    }
 }
+
+@discardableResult
+public func googleSearchTool(_ args: GoogleSearchArgs = .init()) -> Tool { googleSearchToolFactory(args) }

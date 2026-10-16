@@ -6,7 +6,7 @@ import Foundation
 // Ported from packages/google-vertex/src/google-vertex-options.ts
 // Ported from packages/google-vertex/src/google-vertex-embedding-options.ts
 // Ported from packages/google-vertex/src/google-vertex-image-settings.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct GoogleVertexModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral {
@@ -59,7 +59,20 @@ public struct GoogleVertexVideoModelId: RawRepresentable, Hashable, Sendable, Ex
 
 // MARK: - Known model identifiers
 
+public typealias GoogleVertexSpeechModelId = String
+public typealias GoogleVertexTranscriptionModelId = String
+public typealias GoogleVertexGeminiTranscriptionModelId = String
+
 public extension GoogleVertexModelId {
+    static let geminiNanoBanana21: Self = "gemini-nano-banana-2.1"
+    static let gemini4Argon: Self = "gemini-4-argon"
+    static let gemini38Flash: Self = "gemini-3.8-flash"
+    static let gemini37Flash: Self = "gemini-3.7-flash"
+    static let gemini36Flash: Self = "gemini-3.6-flash"
+    static let gemini35Flash: Self = "gemini-3.5-flash"
+    static let gemini35FlashLite: Self = "gemini-3.5-flash-lite"
+    static let gemini31FlashImagePreview: Self = "gemini-3.1-flash-image-preview"
+    static let gemini31FlashLitePreview: Self = "gemini-3.1-flash-lite-preview"
     // Stable models — https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
     static let gemini25Pro: Self = "gemini-2.5-pro"
     static let gemini25Flash: Self = "gemini-2.5-flash"
@@ -80,7 +93,6 @@ public extension GoogleVertexModelId {
 
     // Preview models
     static let gemini20FlashLitePreview0205: Self = "gemini-2.0-flash-lite-preview-02-05"
-    static let gemini25FlashLitePreview092025: Self = "gemini-2.5-flash-lite-preview-09-2025"
     static let gemini25FlashPreview092025: Self = "gemini-2.5-flash-preview-09-2025"
     static let gemini31ProPreview: Self = "gemini-3.1-pro-preview"
     static let gemini3ProPreview: Self = "gemini-3-pro-preview"
@@ -93,6 +105,9 @@ public extension GoogleVertexModelId {
 }
 
 public extension GoogleVertexEmbeddingModelId {
+    static let geminiEmbedding001: Self = "gemini-embedding-001"
+    static let geminiEmbedding2: Self = "gemini-embedding-2"
+    static let geminiEmbedding2Preview: Self = "gemini-embedding-2-preview"
     static let textEmbeddingGecko: Self = "textembedding-gecko"
     static let textEmbeddingGecko001: Self = "textembedding-gecko@001"
     static let textEmbeddingGecko003: Self = "textembedding-gecko@003"
@@ -104,23 +119,10 @@ public extension GoogleVertexEmbeddingModelId {
 }
 
 public extension GoogleVertexImageModelId {
-    static let imagen30Generate001: Self = "imagen-3.0-generate-001"
-    static let imagen30Generate002: Self = "imagen-3.0-generate-002"
-    static let imagen30FastGenerate001: Self = "imagen-3.0-fast-generate-001"
-    static let imagen40Generate001: Self = "imagen-4.0-generate-001"
-    static let imagen40FastGenerate001: Self = "imagen-4.0-fast-generate-001"
-    static let imagen40UltraGenerate001: Self = "imagen-4.0-ultra-generate-001"
     static let gemini25FlashImage: Self = "gemini-2.5-flash-image"
     static let gemini3ProImagePreview: Self = "gemini-3-pro-image-preview"
-
-    @available(*, deprecated, message: "Use `imagen40Generate001`.")
-    static let imagen40GeneratePreview0606: Self = "imagen-4.0-generate-preview-06-06"
-
-    @available(*, deprecated, message: "Use `imagen40FastGenerate001`.")
-    static let imagen40FastGeneratePreview0606: Self = "imagen-4.0-fast-generate-preview-06-06"
-
-    @available(*, deprecated, message: "Use `imagen40UltraGenerate001`.")
-    static let imagen40UltraGeneratePreview0606: Self = "imagen-4.0-ultra-generate-preview-06-06"
+    static let gemini31FlashImagePreview: Self = "gemini-3.1-flash-image-preview"
+    static let geminiNanoBanana21: Self = "gemini-nano-banana-2.1"
 }
 
 public extension GoogleVertexVideoModelId {

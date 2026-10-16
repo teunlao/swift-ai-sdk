@@ -1,30 +1,16 @@
 import Foundation
 import Testing
-@testable import GoogleProvider
+import GoogleProvider
 
-/**
- Tests for getGoogleModelPath function.
-
- Port of `@ai-sdk/google/src/get-model-path.test.ts`.
- */
-
-@Suite("GetModelPath")
+@Suite("Google model resource paths")
 struct GetModelPathTests {
-    @Test("should pass through model path for models/*")
-    func passThroughModelsPath() throws {
-        let result = getGoogleModelPath("models/some-model")
-        #expect(result == "models/some-model")
-    }
-
-    @Test("should pass through model path for tunedModels/*")
-    func passThroughTunedModelsPath() throws {
-        let result = getGoogleModelPath("tunedModels/some-model")
-        #expect(result == "tunedModels/some-model")
-    }
-
-    @Test("should add model path prefix to models without slash")
-    func addModelPathPrefix() throws {
-        let result = getGoogleModelPath("some-model")
-        #expect(result == "models/some-model")
+    @Test("language requests preserve explicit model resources")
+    func modelResources() async throws {
+        let transport = GoogleTransport([.init(try googleFixture("text.json")), .init(try googleFixture("text.json"))])
+        let provider = await transport.provider()
+        _ = try await provider.languageModel(modelId: "tunedModels/tuned-model").doGenerate(options: .init(prompt: googlePrompt))
+        _ = try await provider.languageModel(modelId: "gemini-3.8-flash").doGenerate(options: .init(prompt: googlePrompt))
+        let requests = await transport.captured()
+        #expect(requests.map { $0.url?.path } == ["/v1beta/tunedModels/tuned-model:generateContent", "/v1beta/models/gemini-3.8-flash:generateContent"])
     }
 }

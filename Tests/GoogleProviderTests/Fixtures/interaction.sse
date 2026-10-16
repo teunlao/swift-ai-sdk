@@ -1,0 +1,26 @@
+data: {"event_type":"interaction.created","event_id":"event-1","interaction":{"id":"interaction-1","model":"gemini-3.8-flash","created":"2026-05-01T00:00:00Z"}}
+
+data: {"event_type":"step.start","index":0,"step":{"type":"model_output"}}
+
+data: {"event_type":"step.start","index":1,"step":{"type":"thought","signature":"start-signature"}}
+
+data: {"event_type":"step.delta","index":0,"delta":{"type":"text","text":"Answer"}}
+
+data: {"event_type":"step.delta","index":1,"delta":{"type":"thought_summary","content":{"type":"text","text":"Think"}}}
+
+data: {"event_type":"step.delta","index":0,"delta":{"type":"image","mime_type":"image/png","data":"AQID"}}
+
+data: {"event_type":"step.delta","index":1,"delta":{"type":"thought_signature","signature":"final-signature"}}
+
+data: {"event_type":"step.stop","index":1}
+
+data: {"event_type":"step.stop","index":0}
+
+data: {"event_type":"step.start","index":2,"step":{"type":"function_call","id":"call-id","name":"lookup"}}
+
+data: {"event_type":"step.delta","index":2,"delta":{"type":"arguments_delta","arguments":"{\"query\":\"q\"}","signature":"call-signature"}}
+
+data: {"event_type":"step.stop","index":2}
+
+data: {"event_type":"interaction.completed","interaction":{"id":"interaction-1","status":"requires_action","service_tier":"flex","usage":{"total_input_tokens":4,"total_output_tokens":2}}}
+

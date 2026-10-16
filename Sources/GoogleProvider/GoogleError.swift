@@ -7,11 +7,13 @@ public struct GoogleErrorData: Sendable, Equatable {
         public let code: Double?
         public let message: String
         public let status: String
+        public let details: [JSONValue]?
 
-        public init(code: Double?, message: String, status: String) {
+        public init(code: Double?, message: String, status: String, details: [JSONValue]? = nil) {
             self.code = code
             self.message = message
             self.status = status
+            self.details = details
         }
     }
 
@@ -88,7 +90,14 @@ private let googleErrorSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: errorObject["status"] ?? .null, cause: error))
                 }
 
-                let data = GoogleErrorData(error: .init(code: code, message: message, status: status))
+                var details: [JSONValue]?
+                if let value = errorObject["details"], value != .null {
+                    guard case .array(let entries) = value else {
+                        return .failure(error: TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "google", issues: "error.details must be an array")))
+                    }
+                    details = entries
+                }
+                let data = GoogleErrorData(error: .init(code: code, message: message, status: status, details: details))
                 return .success(value: data)
             } catch {
                 return .failure(error: TypeValidationError.wrap(value: value, cause: error))

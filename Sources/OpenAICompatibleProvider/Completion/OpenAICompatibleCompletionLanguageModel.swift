@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct OpenAICompatibleCompletionConfig: Sendable {
     public let provider: String
     public let headers: @Sendable () -> [String: String]
-    public let url: @Sendable (OpenAICompatibleURLOptions) -> String
+    public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let includeUsage: Bool
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
@@ -14,7 +14,7 @@ public struct OpenAICompatibleCompletionConfig: Sendable {
     public init(
         provider: String,
         headers: @escaping @Sendable () -> [String: String],
-        url: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
+        url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
         errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
@@ -214,7 +214,7 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
         }
 
         let eventStream = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),
             headers: requestHeaders(for: options.headers),
             body: JSONValue.object(body),
             failedResponseHandler: config.errorConfiguration.failedResponseHandler,

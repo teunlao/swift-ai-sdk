@@ -2,596 +2,78 @@ import Foundation
 import Testing
 import AISDKProvider
 import AISDKProviderUtils
-@testable import GoogleVertexProvider
+import GoogleVertexProvider
 
-@Suite("GoogleVertexEmbeddingModel")
+@Suite("Vertex embeddings V4")
 struct GoogleVertexEmbeddingModelTests {
-    actor RequestCapture {
-        private(set) var lastRequest: URLRequest?
-        private(set) var callCount: Int = 0
-
-        func capture(_ request: URLRequest) {
-            lastRequest = request
-            callCount += 1
-        }
-    }
-
-    private func headerValue(_ name: String, in request: URLRequest) -> String? {
-        request.allHTTPHeaderFields?.first(where: { $0.key.lowercased() == name.lowercased() })?.value
-    }
-
-    private func normalizedHeaders(_ request: URLRequest) -> [String: String] {
-        (request.allHTTPHeaderFields ?? [:]).reduce(into: [String: String]()) { result, pair in
-            result[pair.key.lowercased()] = pair.value
-        }
-    }
-
-    private func makePredictionsData(
-        embeddings: [[Double]],
-        tokenCounts: [Int],
-        url: URL
-    ) throws -> (data: Data, response: HTTPURLResponse) {
-        let body: [String: Any] = [
-            "predictions": zip(embeddings, tokenCounts).map { values, tokenCount in
-                [
-                    "embeddings": [
-                        "values": values,
-                        "statistics": ["token_count": tokenCount]
-                    ]
-                ]
-            }
-        ]
-
-        let data = try JSONSerialization.data(withJSONObject: body)
-        let response = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        ))
-
-        return (data, response)
-    }
-
-    private func makeModel(fetch: @escaping FetchFunction) -> GoogleVertexEmbeddingModel {
-        GoogleVertexEmbeddingModel(
-            modelId: GoogleVertexEmbeddingModelId(rawValue: "textembedding-gecko@001"),
-            config: GoogleVertexEmbeddingConfig(
-                provider: "google-vertex",
-                baseURL: "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/publishers/google",
-                headers: { [:] as [String: String?] },
-                fetch: fetch
-            )
-        )
-    }
-
-    @Test("should expose upstream embedding model options aliases")
-    func exposesUpstreamEmbeddingModelOptionsAliases() async throws {
-        let options = GoogleVertexEmbeddingModelOptions(
-            outputDimensionality: 128,
-            taskType: .semanticSimilarity,
-            title: "example",
-            autoTruncate: true
-        )
-
-        #expect(options == GoogleVertexEmbeddingProviderOptions(
-            outputDimensionality: 128,
-            taskType: .semanticSimilarity,
-            title: "example",
-            autoTruncate: true
-        ))
-
-        let parsed = try await parseProviderOptions(
-            provider: "vertex",
-            providerOptions: [
-                "vertex": [
-                    "outputDimensionality": .number(128),
-                    "taskType": .string("SEMANTIC_SIMILARITY"),
-                    "title": .string("example"),
-                    "autoTruncate": .bool(true)
-                ]
-            ],
-            schema: googleVertexEmbeddingModelOptionsSchema
-        )
-
-        #expect(parsed?.outputDimensionality == 128)
-        #expect(parsed?.taskType == .semanticSimilarity)
-        #expect(parsed?.title == "example")
-        #expect(parsed?.autoTruncate == true)
-    }
-
-    @Test("outputDimensionality accepts non-integer numbers for vertex options")
-    func outputDimensionalityAcceptsFractionalNumbersForVertexOptions() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doEmbed(options: .init(
-            values: ["test text one", "test text two"],
-            providerOptions: [
-                "vertex": [
-                    "outputDimensionality": .number(64.5)
-                ]
-            ]
-        ))
-
-        let request = try #require(await capture.lastRequest)
-        let body = try #require(request.httpBody)
-        let json = try JSONSerialization.jsonObject(with: body)
-        let dict = try #require(json as? [String: Any])
-        let parameters = try #require(dict["parameters"] as? [String: Any])
-
-        #expect((parameters["outputDimensionality"] as? NSNumber)?.doubleValue == 64.5)
-    }
-
-    @Test("provider options reject null outputDimensionality in vertex namespace before request")
-    func rejectsNullOutputDimensionalityInVertexNamespaceBeforeRequest() async throws {
-        actor FetchCallCounter {
-            var count = 0
-            func increment() { count += 1 }
-            func value() -> Int { count }
-        }
-
-        let counter = FetchCallCounter()
-        let fetch: FetchFunction = { request in
-            await counter.increment()
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doEmbed(options: .init(
-                values: ["test text one"],
-                providerOptions: [
-                    "vertex": [
-                        "outputDimensionality": .null
-                    ]
-                ]
-            ))
-            Issue.record("Expected InvalidArgumentError")
-        } catch let error as InvalidArgumentError {
-            #expect(error.argument == "providerOptions")
-            #expect(error.message == "invalid vertex provider options")
-
-            let typeError = try #require(error.cause as? TypeValidationError)
-            let schemaError = try #require(typeError.cause as? SchemaValidationIssuesError)
-
-            #expect(schemaError.vendor == "vertex")
-            #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
-        }
-
-        #expect(await counter.value() == 0)
-    }
-
-    @Test("provider options reject null outputDimensionality in google fallback namespace before request")
-    func rejectsNullOutputDimensionalityInGoogleFallbackNamespaceBeforeRequest() async throws {
-        actor FetchCallCounter {
-            var count = 0
-            func increment() { count += 1 }
-            func value() -> Int { count }
-        }
-
-        let counter = FetchCallCounter()
-        let fetch: FetchFunction = { request in
-            await counter.increment()
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doEmbed(options: .init(
-                values: ["test text one"],
-                providerOptions: [
-                    "google": [
-                        "outputDimensionality": .null
-                    ]
-                ]
-            ))
-            Issue.record("Expected InvalidArgumentError")
-        } catch let error as InvalidArgumentError {
-            #expect(error.argument == "providerOptions")
-            #expect(error.message == "invalid google provider options")
-
-            let typeError = try #require(error.cause as? TypeValidationError)
-            let schemaError = try #require(typeError.cause as? SchemaValidationIssuesError)
-
-            #expect(schemaError.vendor == "google")
-            #expect(String(describing: schemaError.issues).contains("outputDimensionality must be a number"))
-        }
-
-        #expect(await counter.value() == 0)
-    }
-
-    @Test("should extract embeddings")
-    func extractEmbeddings() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-                tokenCounts: [1, 1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doEmbed(options: .init(values: ["test text one", "test text two"]))
-        #expect(result.embeddings == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-    }
-
-    @Test("should expose the raw response")
-    func exposeRawResponse() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let body: [String: Any] = [
-                "predictions": [
-                    ["embeddings": ["values": [0.1, 0.2, 0.3], "statistics": ["token_count": 1]]]
-                ]
-            ]
-            let data = try JSONSerialization.data(withJSONObject: body)
-            let response = try #require(HTTPURLResponse(
-                url: url,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: [
-                    "Content-Type": "application/json",
-                    "test-header": "test-value",
-                    "Content-Length": "\(data.count)"
-                ]
-            ))
-
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doEmbed(options: .init(values: ["test text one", "test text two"]))
-
-        #expect(result.response != nil)
-        if let response = result.response {
-            #expect(response.headers?["test-header"] == "test-value")
-            #expect(response.headers?["content-type"] == "application/json")
-            #expect(response.headers?["content-length"] != nil)
-        } else {
-            Issue.record("Expected response metadata")
-        }
-    }
-
-    @Test("should extract usage")
-    func extractUsage() async throws {
-        let fetch: FetchFunction = { request in
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1], [0.2]],
-                tokenCounts: [10, 15],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doEmbed(options: .init(values: ["test text one", "test text two"]))
-        #expect(result.usage?.tokens == 25)
-    }
-
-    @Test("should pass the model parameters correctly")
-    func passModelParametersCorrectly() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1], [0.2]],
-                tokenCounts: [1, 1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doEmbed(options: .init(
-            values: ["test text one", "test text two"],
-            providerOptions: [
-                "google": [
-                    "outputDimensionality": .number(768),
-                    "taskType": .string("SEMANTIC_SIMILARITY"),
-                    "title": .string("test title"),
-                    "autoTruncate": .bool(false)
-                ]
-            ]
-        ))
-
-        let request = try #require(await capture.lastRequest)
-        let body = try #require(request.httpBody)
-        let json = try JSONSerialization.jsonObject(with: body)
-        let dict = try #require(json as? [String: Any])
-
-        let instances = try #require(dict["instances"] as? [[String: Any]])
-        #expect(instances.count == 2)
-        #expect(instances[0]["content"] as? String == "test text one")
-        #expect(instances[0]["task_type"] as? String == "SEMANTIC_SIMILARITY")
-        #expect(instances[0]["title"] as? String == "test title")
-        #expect(instances[1]["content"] as? String == "test text two")
-        #expect(instances[1]["task_type"] as? String == "SEMANTIC_SIMILARITY")
-        #expect(instances[1]["title"] as? String == "test title")
-
-        let parameters = try #require(dict["parameters"] as? [String: Any])
-        #expect((parameters["outputDimensionality"] as? NSNumber)?.intValue == 768)
-        #expect(parameters["autoTruncate"] as? Bool == false)
-    }
-
-    @Test("should pass the taskType setting in instances")
-    func passTaskTypeInInstances() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doEmbed(options: .init(
-            values: ["test text one"],
-            providerOptions: [
-                "google": [
-                    "taskType": .string("SEMANTIC_SIMILARITY")
-                ]
-            ]
-        ))
-
-        let request = try #require(await capture.lastRequest)
-        let body = try #require(request.httpBody)
-        let json = try JSONSerialization.jsonObject(with: body)
-        let dict = try #require(json as? [String: Any])
-        let instances = try #require(dict["instances"] as? [[String: Any]])
-        let first = try #require(instances.first)
-        #expect(first["task_type"] as? String == "SEMANTIC_SIMILARITY")
-
-        let parameters = try #require(dict["parameters"] as? [String: Any])
-        #expect(parameters.isEmpty)
-    }
-
-    @Test("should pass the title setting in instances")
-    func passTitleInInstances() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doEmbed(options: .init(
-            values: ["test text one"],
-            providerOptions: [
-                "google": [
-                    "title": .string("test title")
-                ]
-            ]
-        ))
-
-        let request = try #require(await capture.lastRequest)
-        let body = try #require(request.httpBody)
-        let json = try JSONSerialization.jsonObject(with: body)
-        let dict = try #require(json as? [String: Any])
-        let instances = try #require(dict["instances"] as? [[String: Any]])
-        let first = try #require(instances.first)
-        #expect(first["title"] as? String == "test title")
-
-        let parameters = try #require(dict["parameters"] as? [String: Any])
-        #expect(parameters.isEmpty)
-    }
-
-    @Test("should pass headers correctly and include user-agent suffix")
-    func passHeadersCorrectly() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1]],
-                tokenCounts: [1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
-            location: "us-central1",
-            project: "test-project",
-            headers: ["X-Custom-Header": "custom-value"],
-            fetch: fetch,
-            accessTokenProvider: { "test-access-token" }
-        ))
-
-        let model = try provider.textEmbeddingModel(modelId: "textembedding-gecko@001")
-        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(
-            values: ["test text one", "test text two"],
-            providerOptions: [
-                "google": [
-                    "outputDimensionality": .number(768)
-                ]
-            ],
-            headers: ["X-Request-Header": "request-value"]
-        ))
-
-        let request = try #require(await capture.lastRequest)
-        let headers = normalizedHeaders(request)
-        #expect(headers["content-type"] == "application/json")
-        #expect(headers["x-custom-header"] == "custom-value")
-        #expect(headers["x-request-header"] == "request-value")
-
-        let userAgent = try #require(headerValue("user-agent", in: request))
-        #expect(userAgent.contains("ai-sdk/google-vertex/\(GOOGLE_VERTEX_VERSION)"))
-    }
-
-    @Test("should throw TooManyEmbeddingValuesForCallError when too many values provided")
-    func throwTooManyEmbeddingValuesForCallError() async throws {
-        let model = GoogleVertexEmbeddingModel(
-            modelId: GoogleVertexEmbeddingModelId(rawValue: "textembedding-gecko@001"),
-            config: GoogleVertexEmbeddingConfig(
-                provider: "google-vertex",
-                baseURL: "https://custom-endpoint.com",
-                headers: { [:] as [String: String?] },
-                fetch: nil
-            )
-        )
-
-        let tooManyValues = Array(repeating: "test", count: 2049)
-
-        do {
-            _ = try await model.doEmbed(options: .init(values: tooManyValues))
-            Issue.record("Expected error to be thrown")
-        } catch let error as TooManyEmbeddingValuesForCallError {
-            #expect(error.provider == "google-vertex")
-            #expect(error.modelId == "textembedding-gecko@001")
-            #expect(error.maxEmbeddingsPerCall == 2048)
-            #expect(error.values.count == 2049)
-        } catch {
-            Issue.record("Expected TooManyEmbeddingValuesForCallError, got: \(error)")
-        }
-    }
-
-    @Test("should use custom baseURL when provided")
-    func useCustomBaseURL() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-                tokenCounts: [1, 1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let provider = createGoogleVertex(settings: GoogleVertexProviderSettings(
-            location: "us-central1",
-            project: "test-project",
-            fetch: fetch,
-            baseURL: "https://custom-endpoint.com"
-        ))
-
-        let model = try provider.textEmbeddingModel(modelId: "textembedding-gecko@001")
-        let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(
-            values: ["test text one", "test text two"],
-            providerOptions: [
-                "google": ["outputDimensionality": .number(768)]
-            ]
-        ))
-
-        #expect(result.embeddings == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-
-        let request = try #require(await capture.lastRequest)
-        #expect(request.url?.absoluteString == "https://custom-endpoint.com/models/textembedding-gecko@001:predict")
-    }
-
-    @Test("should use custom fetch when provided and include proper request content")
-    func useCustomFetch_andIncludeProperRequestContent() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.capture(request)
-
-            let url = try #require(request.url)
-            let (data, response) = try makePredictionsData(
-                embeddings: [[0.1], [0.2]],
-                tokenCounts: [1, 1],
-                url: url
-            )
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
-
-        let model = GoogleVertexEmbeddingModel(
-            modelId: GoogleVertexEmbeddingModelId(rawValue: "textembedding-gecko@001"),
-            config: GoogleVertexEmbeddingConfig(
-                provider: "google-vertex",
-                baseURL: "https://custom-endpoint.com",
-                headers: { [:] as [String: String?] },
-                fetch: fetch
-            )
-        )
-
+    @Test(arguments: ["googleVertex", "vertex", "google"])
+    func predictRequestAndResponse(namespace: String) async throws {
+        let requests = VertexRequests()
+        let fixture = try vertexFixture("embedding.json")
+        let model = try vertexProvider { request in
+            await requests.append(request)
+            return try vertexResponse(request, fixture)
+        }.embeddingModel(modelId: "text-embedding-005")
         let result = try await model.doEmbed(options: .init(
-            values: ["test text one", "test text two"],
-            providerOptions: [
-                "google": [
-                    "outputDimensionality": .number(768)
-                ]
-            ]
+            values: ["one", "two"], dimensions: 128,
+            providerOptions: [namespace: ["taskType": .string("RETRIEVAL_DOCUMENT"), "title": .string("Document"), "autoTruncate": .bool(false)]],
+            headers: ["x-request": "custom"]
         ))
+        #expect(result.embeddings == [[0.1, 0.2], [0.3, 0.4]])
+        #expect(result.usage?.tokens == 25)
+        #expect(result.response?.headers?["x-request-id"] == "vertex-request")
+        let raw = try #require(result.response?.body)
+        #expect(try jsonValue(from: raw) == JSONDecoder().decode(JSONValue.self, from: Data(fixture.utf8)))
+        let request = try #require(await requests.last)
+        #expect(request.url?.absoluteString == "https://vertex.example/models/text-embedding-005:predict")
+        #expect(request.value(forHTTPHeaderField: "x-request") == "custom")
+        #expect(try vertexBody(request) == .object([
+            "instances": .array(["one", "two"].map { .object(["content": .string($0), "task_type": .string("RETRIEVAL_DOCUMENT"), "title": .string("Document")]) }),
+            "parameters": .object(["outputDimensionality": .number(128), "autoTruncate": .bool(false)])
+        ]))
+    }
 
-        #expect(result.embeddings == [[0.1], [0.2]])
-        #expect(await capture.callCount == 1)
+    @Test(arguments: ["gemini-embedding-2", "gemini-embedding-2-preview"])
+    func embedContent(modelId: String) async throws {
+        let requests = VertexRequests()
+        let model = try vertexProvider { request in
+            await requests.append(request)
+            return try vertexResponse(request, #"{"embedding":{"values":[0.5]},"usageMetadata":{"promptTokenCount":3}}"#)
+        }.embeddingModel(modelId: modelId)
+        let result = try await model.doEmbed(options: .init(values: ["query"], dimensions: 128, providerOptions: [
+            "googleVertex": ["outputDimensionality": .number(64.5), "taskType": .string("RETRIEVAL_QUERY"), "autoTruncate": .bool(false)],
+            "vertex": ["outputDimensionality": .number(8)]
+        ]))
+        #expect(try await model.maxEmbeddingsPerCall == 1)
+        #expect(result.embeddings == [[0.5]])
+        #expect(result.usage?.tokens == 3)
+        let request = try #require(await requests.last)
+        #expect(request.url?.absoluteString == "https://vertex.example/models/\(modelId):embedContent")
+        #expect(try vertexBody(request) == .object([
+            "content": .object(["parts": .array([.object(["text": .string("query")])])]),
+            "embedContentConfig": .object(["outputDimensionality": .number(64.5), "taskType": .string("RETRIEVAL_QUERY"), "autoTruncate": .bool(false)])
+        ]))
+    }
 
-        let request = try #require(await capture.lastRequest)
-        #expect(request.url?.absoluteString == "https://custom-endpoint.com/models/textembedding-gecko@001:predict")
+    @Test(arguments: [("text-embedding-005", 250), ("gemini-embedding-2", 1)])
+    func enforcesCallLimit(modelId: String, maximum: Int) async throws {
+        let model = try vertexProvider { _ in throw CancellationError() }.embeddingModel(modelId: modelId)
+        do {
+            _ = try await model.doEmbed(options: .init(values: Array(repeating: "value", count: maximum + 1)))
+            Issue.record("Expected embedding call limit")
+        } catch let error as TooManyEmbeddingValuesForCallError {
+            #expect(error.maxEmbeddingsPerCall == maximum)
+            #expect(error.modelId == modelId)
+            #expect(error.values.count == maximum + 1)
+        }
+    }
 
-        let body = try #require(request.httpBody)
-        let json = try JSONSerialization.jsonObject(with: body)
-        let dict = try #require(json as? [String: Any])
-
-        let instances = try #require(dict["instances"] as? [[String: Any]])
-        #expect(instances.count == 2)
-        #expect(instances[0]["content"] as? String == "test text one")
-        #expect(instances[1]["content"] as? String == "test text two")
-
-        let parameters = try #require(dict["parameters"] as? [String: Any])
-        #expect((parameters["outputDimensionality"] as? NSNumber)?.intValue == 768)
+    @Test func validatesSelectedNamespace() async throws {
+        let model = try vertexProvider { _ in throw CancellationError() }.embeddingModel(modelId: "text-embedding-005")
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doEmbed(options: .init(values: ["hello"], providerOptions: [
+                "googleVertex": ["outputDimensionality": .null], "vertex": ["outputDimensionality": .number(4)]
+            ]))
+        }
     }
 }

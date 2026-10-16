@@ -1,0 +1,1 @@
+{"id":"completion-1","object":"text_completion","created":1710000000,"model":"partner-model","choices":[{"index":0,"text":"completion","finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}
