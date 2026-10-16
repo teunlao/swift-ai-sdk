@@ -235,7 +235,7 @@ struct OpenAIFilesSkillsTests {
             Issue.record("Missing OpenAI file multipart part")
             return
         }
-        #expect(openAIMultipartFilename(filePart) == nil)
+        #expect(openAIMultipartFilename(filePart) == "blob")
         #expect(String(data: purposePart?.body ?? Data(), encoding: .utf8) == "assistants")
     }
 

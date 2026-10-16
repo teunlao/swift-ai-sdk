@@ -103,3 +103,67 @@ struct ConvertToFormDataTests {
         #expect(body.contains("filename=\"two.jpg\""))
     }
 }
+
+@Suite("MultipartFormDataBuilder")
+struct MultipartFormDataBuilderTests {
+    @Test("unnamed files retain file semantics and binary bytes")
+    func unnamedFile() {
+        var builder = MultipartFormDataBuilder(boundary: "test-boundary")
+        builder.appendField(name: "field", value: "value")
+        let bytes = Data([0x00, 0xFF, 0x0D, 0x0A])
+        builder.appendFile(name: "file", filename: nil, data: bytes)
+
+        let multipart = builder.build()
+        var expected = Data((
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"field\"\r\n\r\nvalue\r\n" +
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"blob\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).utf8)
+        expected.append(bytes)
+        expected.append(Data("\r\n--test-boundary--\r\n".utf8))
+
+        #expect(multipart.contentType == "multipart/form-data; boundary=test-boundary")
+        #expect(multipart.data == expected)
+    }
+
+    @Test("disposition parameters use native FormData escaping")
+    func dispositionEscaping() {
+        var builder = MultipartFormDataBuilder(boundary: "test-boundary")
+        builder.appendField(name: "field\rname\nline\r\npair\"quote\\slash%", value: "value")
+        builder.appendFile(
+            name: "file\rname\nline\r\npair\"quote\\slash%",
+            filename: "path/quo\"te\\slash\rname\nline\r\npair",
+            contentType: "IMAGE/PNG;X=Y",
+            data: Data("binary".utf8)
+        )
+
+        let expected = Data((
+            "--test-boundary\r\n" +
+            "Content-Disposition: form-data; name=\"field%0D%0Aname%0D%0Aline%0D%0Apair%22quote\\slash%\"\r\n\r\nvalue\r\n" +
+            "--test-boundary\r\n" +
+            "Content-Disposition: form-data; name=\"file%0D%0Aname%0D%0Aline%0D%0Apair%22quote\\slash%\"; " +
+            "filename=\"path/quo%22te\\slash%0Dname%0Aline%0D%0Apair\"\r\n" +
+            "Content-Type: image/png;x=y\r\n\r\nbinary\r\n" +
+            "--test-boundary--\r\n"
+        ).utf8)
+
+        #expect(builder.build().data == expected)
+    }
+
+    @Test("invalid Blob MIME types use the binary default", arguments: [
+        "", "text/plain\r\nX-Injected: yes", "text/pläin"
+    ])
+    func invalidContentType(_ contentType: String) {
+        var builder = MultipartFormDataBuilder(boundary: "test-boundary")
+        builder.appendFile(name: "file", filename: "payload.bin", contentType: contentType, data: Data([0x01]))
+
+        var expected = Data((
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"payload.bin\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).utf8)
+        expected.append(0x01)
+        expected.append(Data("\r\n--test-boundary--\r\n".utf8))
+
+        #expect(builder.build().data == expected)
+    }
+}

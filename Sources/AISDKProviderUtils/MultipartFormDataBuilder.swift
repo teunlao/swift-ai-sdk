@@ -27,7 +27,12 @@ public struct MultipartFormDataBuilder: Sendable {
 
     /// Appends a binary file part to the multipart payload.
     public mutating func appendFile(name: String, filename: String?, contentType: String? = nil, data: Data) {
-        parts.append(Part(name: name, filename: filename, contentType: contentType, data: data))
+        let mediaType = contentType.flatMap { type in
+            !type.isEmpty && type.utf8.allSatisfy { (0x20...0x7E).contains($0) }
+                ? type.lowercased()
+                : nil
+        } ?? "application/octet-stream"
+        parts.append(Part(name: name, filename: filename ?? "blob", contentType: mediaType, data: data))
     }
 
     /// Builds the multipart body data and returns it together with the Content-Type header value.
@@ -38,9 +43,10 @@ public struct MultipartFormDataBuilder: Sendable {
         for part in parts {
             body.append(boundaryPrefix.data(using: .utf8)!)
 
-            var disposition = "Content-Disposition: form-data; name=\"\(part.name)\""
+            let name = Self.escapeParameter(Self.normalizeLineBreaks(part.name))
+            var disposition = "Content-Disposition: form-data; name=\"\(name)\""
             if let filename = part.filename {
-                disposition += "; filename=\"\(filename)\""
+                disposition += "; filename=\"\(Self.escapeParameter(filename))\""
             }
             body.append("\(disposition)\r\n".data(using: .utf8)!)
 
@@ -62,5 +68,20 @@ public struct MultipartFormDataBuilder: Sendable {
 
     public static func makeBoundary() -> String {
         "----ai-sdk-boundary-\(UUID().uuidString)"
+    }
+
+    // Native FormData normalizes names to CRLF, but preserves filename line endings.
+    private static func normalizeLineBreaks(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\n", with: "\r\n")
+    }
+
+    private static func escapeParameter(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\r", with: "%0D")
+            .replacingOccurrences(of: "\n", with: "%0A")
+            .replacingOccurrences(of: "\"", with: "%22")
     }
 }
