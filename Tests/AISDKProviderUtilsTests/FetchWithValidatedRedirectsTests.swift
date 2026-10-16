@@ -178,6 +178,52 @@ struct FetchWithValidatedRedirectsTests {
         #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer key")
     }
 
+    @Test("fetchWithValidatedEndpoint validates untrusted endpoints and rejects redirects by default")
+    func validatedEndpointRejectsUnsafeTargetsAndRedirects() async throws {
+        let fetch = FetchSequence([
+            makeFetchResponse(
+                url: "https://auth.example.com/.well-known/oauth",
+                statusCode: 302,
+                headers: ["Location": "http://169.254.169.254/"]
+            ),
+            makeFetchResponse(
+                url: "https://auth.example.com/.well-known/oauth",
+                statusCode: 302,
+                headers: ["Location": "https://other.example.com/"]
+            ),
+            makeFetchResponse(url: "http://localhost:3000/token"),
+        ])
+
+        await #expect(throws: DownloadError.self) {
+            _ = try await fetchWithValidatedEndpoint(
+                request: URLRequest(url: URL(string: "http://127.0.0.1/token")!),
+                fetch: fetch.fetch
+            )
+        }
+
+        await #expect(throws: DownloadError.self) {
+            _ = try await fetchWithValidatedEndpoint(
+                request: URLRequest(url: URL(string: "https://auth.example.com/.well-known/oauth")!),
+                fetch: fetch.fetch
+            )
+        }
+
+        let manual = try await fetchWithValidatedEndpoint(
+            request: URLRequest(url: URL(string: "https://auth.example.com/.well-known/oauth")!),
+            fetch: fetch.fetch,
+            redirect: .manual
+        )
+        #expect(manual.statusCode == 302)
+
+        let trusted = try await fetchWithValidatedEndpoint(
+            request: URLRequest(url: URL(string: "http://localhost:3000/token")!),
+            fetch: fetch.fetch,
+            trustedOrigin: "http://localhost:3000"
+        )
+        #expect(trusted.statusCode == 200)
+        #expect(await fetch.requests().count == 3)
+    }
+
     @Test("rejects once redirect limit is exceeded")
     func rejectsWhenRedirectLimitExceeded() async throws {
         let fetch = RepeatingRedirectFetch()
