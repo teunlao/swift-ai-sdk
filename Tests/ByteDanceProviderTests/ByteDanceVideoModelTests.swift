@@ -4,1543 +4,255 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import ByteDanceProvider
 
-@Suite("ByteDanceVideoModel")
+@Suite("ByteDance video V4 operations")
 struct ByteDanceVideoModelTests {
-    private let prompt = "A futuristic city with flying cars"
-    private let baseURL = "https://ark.ap-southeast.bytepluses.com/api/v3"
+    private let baseURL = "https://api.example.com/v3"
+    private let date = Date(timeIntervalSince1970: 1_704_067_200)
+    private var operation: JSONValue { .object(["taskId": .string("job")]) }
 
-    private var createTasksURL: String {
-        "\(baseURL)/contents/generations/tasks"
+    private actor Capture {
+        var requests: [URLRequest] = []
+        func record(_ request: URLRequest) { requests.append(request) }
+        func first() -> URLRequest? { requests.first }
     }
 
-    private func statusURL(taskId: String) -> String {
-        "\(baseURL)/contents/generations/tasks/\(taskId)"
+    private func response(_ request: URLRequest, status: Int = 200, body: String) -> FetchResponse {
+        .init(body: .data(Data(body.utf8)), urlResponse: HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json", "x-request-id": "response-id"]
+        )!)
     }
 
-    private static func jsonData(_ value: Any) throws -> Data {
-        try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    private func model(fetch: @escaping FetchFunction) -> ByteDanceVideoModel {
+        ByteDanceVideoModel(modelId: .seedance15Pro251215, config: .init(
+            provider: "bytedance.video", baseURL: baseURL, headers: { ["Authorization": "Bearer key"] },
+            fetch: fetch, currentDate: { date }
+        ))
     }
 
-    private static func httpResponse(url: URL, statusCode: Int, headers: [String: String]) -> HTTPURLResponse {
-        HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
+    private func body(_ request: URLRequest) throws -> JSONValue {
+        try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
     }
 
-    private actor HTTPStub {
-        typealias Handler = @Sendable (URLRequest) async throws -> FetchResponse
-
-        private var handlers: [String: Handler] = [:]
-        private var calls: [URLRequest] = []
-
-        func setJSON(
-            method: String,
-            url: String,
-            statusCode: Int = 200,
-            body: Any,
-            headers: [String: String]? = nil
-        ) async throws {
-            let data = try ByteDanceVideoModelTests.jsonData(body)
-            var headerFields: [String: String] = [
-                "Content-Type": "application/json",
-                "Content-Length": String(data.count),
-            ]
-            if let headers {
-                for (key, value) in headers {
-                    headerFields[key] = value
-                }
-            }
-
-            let headerFieldsFinal = headerFields
-            setHandler(method: method, url: url) { request in
-                FetchResponse(
-                    body: .data(data),
-                    urlResponse: ByteDanceVideoModelTests.httpResponse(url: request.url!, statusCode: statusCode, headers: headerFieldsFinal)
-                )
-            }
-        }
-
-        func setRaw(
-            method: String,
-            url: String,
-            statusCode: Int,
-            body: Data,
-            headers: [String: String]? = nil
-        ) {
-            var headerFields: [String: String] = [
-                "Content-Type": "application/json",
-                "Content-Length": String(body.count),
-            ]
-            if let headers {
-                for (key, value) in headers {
-                    headerFields[key] = value
-                }
-            }
-
-            let headerFieldsFinal = headerFields
-            setHandler(method: method, url: url) { request in
-                FetchResponse(
-                    body: .data(body),
-                    urlResponse: ByteDanceVideoModelTests.httpResponse(url: request.url!, statusCode: statusCode, headers: headerFieldsFinal)
-                )
-            }
-        }
-
-        func setHandler(method: String, url: String, handler: @escaping Handler) {
-            handlers["\(method.uppercased()) \(url)"] = handler
-        }
-
-        func handle(_ request: URLRequest) async throws -> FetchResponse {
-            calls.append(request)
-            let method = request.httpMethod ?? "GET"
-            let url = request.url?.absoluteString ?? ""
-            let key = "\(method.uppercased()) \(url)"
-            guard let handler = handlers[key] else {
-                throw ByteDanceProviderTestError(message: "Unexpected request: \(key)")
-            }
-            return try await handler(request)
-        }
-
-        func request(at index: Int) -> URLRequest? {
-            guard index >= 0, index < calls.count else { return nil }
-            return calls[index]
-        }
-
-        func count() -> Int {
-            calls.count
-        }
+    @Test("start serializes generation settings and provider options with callback precedence")
+    func startRequest() async throws {
+        let capture = Capture()
+        let provider = createByteDance(settings: .init(apiKey: "secret", baseURL: baseURL + "/",
+                                                      headers: ["x-provider": "provider"], fetch: { request in
+            await capture.record(request)
+            return response(request, body: #"{"id":"job"}"#)
+        }))
+        let result = try await provider.video(.seedance15Pro251215).doStart(options: .init(
+            prompt: "city", n: 2, aspectRatio: "16:9", resolution: "1920x1080", duration: 5, fps: 30, seed: 42,
+            generateAudio: false, providerOptions: ["bytedance": [
+                "watermark": .bool(false), "generateAudio": .bool(true), "cameraFixed": .bool(true),
+                "returnLastFrame": .bool(true), "serviceTier": .string("flex"), "draft": .bool(false),
+                "pollIntervalMs": .number(1), "pollTimeoutMs": .number(2), "custom": .null,
+                "callback_url": .string("ignored"),
+            ]], headers: ["x-client": "client"]
+        ), webhookUrl: "https://example.com/callback")
+        let request = try #require(await capture.first())
+        #expect(request.url?.absoluteString == baseURL + "/contents/generations/tasks")
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+        #expect(request.value(forHTTPHeaderField: "x-provider") == "provider")
+        #expect(request.value(forHTTPHeaderField: "x-client") == "client")
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-bytedance/") == true)
+        #expect(try body(request) == .object([
+            "model": .string("seedance-1-5-pro-251215"), "content": .array([.object(["type": .string("text"), "text": .string("city")])]),
+            "ratio": .string("16:9"), "resolution": .string("1080p"), "duration": .number(5), "seed": .number(42),
+            "generate_audio": .bool(false), "watermark": .bool(false), "camera_fixed": .bool(true), "return_last_frame": .bool(true),
+            "service_tier": .string("flex"), "draft": .bool(false), "custom": .null, "callback_url": .string("https://example.com/callback"),
+        ]))
+        #expect(result.operation == operation)
+        #expect(result.response.headers?["x-request-id"] == "response-id")
+        #expect(result.warnings.contains { if case .deprecated(setting: "pollIntervalMs", _) = $0 { true } else { false } })
+        #expect(result.warnings.contains { if case .deprecated(setting: "pollTimeoutMs", _) = $0 { true } else { false } })
+        #expect(result.warnings.contains { if case .unsupported(feature: "fps", _) = $0 { true } else { false } })
+        #expect(result.warnings.contains { if case .unsupported(feature: "n", _) = $0 { true } else { false } })
     }
 
-    private struct ByteDanceProviderTestError: Error, CustomStringConvertible {
-        let message: String
-        var description: String { message }
-    }
-
-    private final class AbortFlag: @unchecked Sendable {
-        private var value = false
-        private let lock = NSLock()
-
-        func abort() {
-            lock.lock()
-            value = true
-            lock.unlock()
+    @Test("frames override the start and end image and suppress all image/video references")
+    func framePrecedence() async throws {
+        let capture = Capture()
+        let model = model { request in
+            await capture.record(request)
+            return response(request, body: #"{"id":"job"}"#)
         }
-
-        @Sendable func signal() -> Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return value
-        }
-    }
-
-    private final class LockedCounter: @unchecked Sendable {
-        private var valueStorage: Int = 0
-        private let lock = NSLock()
-
-        func increment() -> Int {
-            lock.lock()
-            valueStorage += 1
-            let value = valueStorage
-            lock.unlock()
-            return value
-        }
-
-        func value() -> Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return valueStorage
-        }
-    }
-
-    private func decodeRequestBody(_ request: URLRequest) throws -> JSONValue {
-        guard let body = request.httpBody else {
-            return .null
-        }
-        return try JSONDecoder().decode(JSONValue.self, from: body)
-    }
-
-    private func makeModel(
-        modelId: ByteDanceVideoModelId = .seedance10Pro250528,
-        headers: (@Sendable () throws -> [String: String?])? = { ["Authorization": "Bearer test-key"] },
-        fetch: FetchFunction? = nil,
-        currentDate: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_704_067_200) } // 2024-01-01
-    ) -> ByteDanceVideoModel {
-        ByteDanceVideoModel(
-            modelId: modelId,
-            config: ByteDanceVideoModelConfig(
-                provider: "bytedance.video",
-                baseURL: baseURL,
-                headers: headers ?? { [:] },
-                fetch: fetch,
-                currentDate: currentDate
-            )
-        )
-    }
-
-    private var defaultOptions: VideoModelV3CallOptions {
-        VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [:]
-        )
-    }
-
-    @Test("constructor exposes correct provider and model information")
-    func constructorInfo() async throws {
-        let model = makeModel()
-
-        #expect(model.provider == "bytedance.video")
-        #expect(model.modelId == "seedance-1-0-pro-250528")
-        #expect(model.specificationVersion == "v3")
-
-        switch model.maxVideosPerCall {
-        case .value(let value):
-            #expect(value == 1)
-        case .default, .function:
-            Issue.record("Expected fixed maxVideosPerCall == 1")
-        }
-    }
-
-    @Test("constructor supports different model IDs")
-    func constructorDifferentModelId() async throws {
-        let model = makeModel(modelId: .seedance15Pro251215)
-        #expect(model.modelId == "seedance-1-5-pro-251215")
-    }
-
-    @Test("constructor supports custom model IDs")
-    func constructorCustomModelId() async throws {
-        let model = makeModel(modelId: "custom-model-id")
-        #expect(model.modelId == "custom-model-id")
-    }
-
-    @Test("doGenerate passes the correct parameters including prompt")
-    func passesPrompt() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(
-            method: "POST",
-            url: createTasksURL,
-            body: ["id": "test-task-id-123"]
-        )
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "model": "seedance-1-0-pro-250528",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-                "usage": ["completion_tokens": 100],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: defaultOptions)
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
+        _ = try await model.doStart(options: .init(n: 1,
+            image: .url(url: "https://example.com/ignored", providerOptions: nil),
+            frameImages: [
+                .init(image: .file(mediaType: "image/png", data: .base64("AQID"), providerOptions: nil), frameType: .firstFrame),
+                .init(image: .url(url: "https://example.com/last", providerOptions: nil), frameType: .lastFrame),
+            ], inputReferences: [.url(url: "https://example.com/ignored-reference", providerOptions: nil)],
+            providerOptions: ["bytedance": [
+                "lastFrameImage": .string("ignored"), "referenceImages": .array([.string("ignored")]),
+                "referenceVideos": .array([.string("ignored")]), "referenceAudio": .array([.string("https://example.com/audio")]),
+            ]]
+        ))
+        let request = try #require(await capture.first())
+        #expect(try body(request) == .object([
+            "model": .string("seedance-1-5-pro-251215"), "content": .array([
+                .object(["type": .string("image_url"), "image_url": .object(["url": .string("data:image/png;base64,AQID")]), "role": .string("first_frame")]),
+                .object(["type": .string("image_url"), "image_url": .object(["url": .string("https://example.com/last")]), "role": .string("last_frame")]),
+                .object(["type": .string("audio_url"), "audio_url": .object(["url": .string("https://example.com/audio")]), "role": .string("reference_audio")]),
             ]),
         ]))
     }
 
-    @Test("doGenerate passes seed when provided")
-    func passesSeed() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("standard references route media types and override legacy reference arrays")
+    func referenceRouting() async throws {
+        let capture = Capture()
+        let model = model { request in
+            await capture.record(request)
+            return response(request, body: #"{"id":"job"}"#)
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, seed: 42, providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
+        let result = try await model.doStart(options: .init(n: 1,
+            image: .url(url: "https://example.com/start", providerOptions: nil),
+            inputReferences: [
+                .url(url: "https://example.com/video", mediaType: "video/mp4", providerOptions: nil),
+                .file(mediaType: "image/png", data: .binary(Data([1, 2, 3])), providerOptions: nil),
+                .url(url: "https://example.com/unknown", providerOptions: nil),
+            ], providerOptions: ["bytedance": ["referenceImages": .array([.string("ignored")])]]
+        ))
+        let request = try #require(await capture.first())
+        guard case .object(let value) = try body(request), case .array(let content) = value["content"] else {
+            Issue.record("Expected content array")
             return
         }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "seed": .number(42),
-        ]))
-    }
-
-    @Test("doGenerate passes aspect ratio when provided")
-    func passesAspectRatio() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, aspectRatio: "16:9", providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "ratio": .string("16:9"),
-        ]))
-    }
-
-    @Test("doGenerate passes duration when provided")
-    func passesDuration() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, duration: 5, providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "duration": .number(5),
-        ]))
-    }
-
-    @Test("doGenerate maps WxH resolution to API format")
-    func mapsResolution1080p() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, resolution: "1920x1080", providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "resolution": .string("1080p"),
-        ]))
-    }
-
-    @Test("doGenerate maps 720p resolution correctly")
-    func mapsResolution720p() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, resolution: "1280x720", providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "resolution": .string("720p"),
-        ]))
-    }
-
-    @Test("doGenerate maps 480p resolution correctly")
-    func mapsResolution480p() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, resolution: "864x480", providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "resolution": .string("480p"),
-        ]))
-    }
-
-    @Test("doGenerate passes through unmapped resolution values")
-    func passesThroughResolution() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, resolution: "640x480", providerOptions: [:]))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "resolution": .string("640x480"),
-        ]))
-    }
-
-    @Test("doGenerate merges headers")
-    func mergesHeaders() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(headers: { ["Custom-Provider-Header": "provider-header-value"] }, fetch: fetch)
-        _ = try await model.doGenerate(
-            options: VideoModelV3CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: [:],
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let headers = (request.allHTTPHeaderFields ?? [:]).reduce(into: [:]) { result, entry in
-            result[entry.key.lowercased()] = entry.value
-        }
-
-        #expect(headers["content-type"] == "application/json")
-        #expect(headers["custom-provider-header"] == "provider-header-value")
-        #expect(headers["custom-request-header"] == "request-header-value")
-    }
-
-    @Test("doGenerate returns video with correct data")
-    func returnsVideoData() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.videos.count == 1)
-        #expect(result.videos[0] == .url(url: "https://bytedance.cdn/files/video-output.mp4", mediaType: "video/mp4"))
-    }
-
-    @Test("doGenerate returns warnings array")
-    func returnsWarningsArray() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: defaultOptions)
-        #expect(result.warnings == [])
-    }
-
-    @Test("warnings: fps is unsupported")
-    func warnsOnFPS() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 1, fps: 30, providerOptions: [:]))
-
-        #expect(result.warnings.contains(.unsupported(
-            feature: "fps",
-            details: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
-        )))
-    }
-
-    @Test("warnings: n > 1 is unsupported")
-    func warnsOnN() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(prompt: prompt, n: 3, providerOptions: [:]))
-
-        #expect(result.warnings.contains(.unsupported(
-            feature: "n",
-            details: "ByteDance video models do not support generating multiple videos per call. Only 1 video will be generated."
-        )))
-    }
-
-    @Test("response metadata includes timestamp, headers and modelId")
-    func responseMetadata() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ],
-            headers: [
-                "X-Test": "1"
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 1_704_067_200)
-        let model = makeModel(fetch: fetch, currentDate: { testDate })
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "seedance-1-0-pro-250528")
-        #expect(result.response.headers?["x-test"] == "1")
-    }
-
-    @Test("providerMetadata includes task ID and usage")
-    func providerMetadata() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "model": "seedance-1-0-pro-250528",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-                "usage": ["completion_tokens": 100],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.providerMetadata == [
-            "bytedance": [
-                "taskId": .string("test-task-id-123"),
-                "usage": .object([
-                    "completion_tokens": .number(100)
-                ])
-            ]
+        #expect(content == [
+            .object(["type": .string("image_url"), "image_url": .object(["url": .string("https://example.com/start")]), "role": .string("reference_image")]),
+            .object(["type": .string("video_url"), "video_url": .object(["url": .string("https://example.com/video")]), "role": .string("reference_video")]),
+            .object(["type": .string("image_url"), "image_url": .object(["url": .string("data:image/png;base64,AQID")]), "role": .string("reference_image")]),
+            .object(["type": .string("image_url"), "image_url": .object(["url": .string("https://example.com/unknown")]), "role": .string("reference_image")]),
         ])
+        #expect(result.warnings.contains { if case .unsupported(feature: "inputReferences", _) = $0 { true } else { false } })
     }
 
-    @Test("Image-to-Video sends image_url with file data")
-    func imageToVideoFile() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("legacy reference inputs remain available and zero-valued settings are omitted")
+    func legacyInputs() async throws {
+        let capture = Capture()
+        let model = model { request in
+            await capture.record(request)
+            return response(request, body: #"{"id":"job"}"#)
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
-            providerOptions: [:]
+        let result = try await model.doStart(options: .init(n: 1, duration: 0, fps: 0, seed: 0,
+            image: .url(url: "start", providerOptions: nil), providerOptions: ["bytedance": [
+                "lastFrameImage": .string("last"), "referenceImages": .array([.string("image")]),
+                "referenceVideos": .array([.string("video")]), "generateAudio": .bool(true),
+            ]]
         ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("data:image/png;base64,iVBORw==")
-                    ])
-                ])
+        let request = try #require(await capture.first())
+        #expect(try body(request) == .object([
+            "model": .string("seedance-1-5-pro-251215"), "generate_audio": .bool(true), "content": .array([
+                .object(["type": .string("image_url"), "image_url": .object(["url": .string("start")]), "role": .string("first_frame")]),
+                .object(["type": .string("image_url"), "image_url": .object(["url": .string("last")]), "role": .string("last_frame")]),
+                .object(["type": .string("image_url"), "image_url": .object(["url": .string("image")]), "role": .string("reference_image")]),
+                .object(["type": .string("video_url"), "video_url": .object(["url": .string("video")]), "role": .string("reference_video")]),
             ]),
         ]))
+        #expect(result.warnings.isEmpty)
     }
 
-    @Test("Image-to-Video sends image_url with URL-based image")
-    func imageToVideoURL() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("known pixel resolutions map to API levels", arguments: ["864x496", "1280x720", "1920x1080", "custom"])
+    func resolutionMapping(resolution: String) async throws {
+        let capture = Capture()
+        let model = model { request in
+            await capture.record(request)
+            return response(request, body: #"{"id":"job"}"#)
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .url(url: "https://example.com/input-image.png", providerOptions: nil),
-            providerOptions: [:]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/input-image.png")
-                    ])
-                ])
-            ]),
-        ]))
+        _ = try await model.doStart(options: .init(n: 1, resolution: resolution))
+        let request = try #require(await capture.first())
+        let expected = ["864x496": "480p", "1280x720": "720p", "1920x1080": "1080p"][resolution] ?? resolution
+        guard case .object(let value) = try body(request) else { Issue.record("Expected body object"); return }
+        #expect(value["resolution"] == .string(expected))
     }
 
-    @Test("Provider options: watermark is passed through")
-    func providerOptionsWatermark() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("status completes with URL, nullable usage and last-frame metadata")
+    func completedStatus() async throws {
+        let model = model { request in
+            #expect(request.url?.absoluteString == baseURL + "/contents/generations/tasks/job")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+            return response(request, body: #"{"status":"succeeded","content":{"video_url":"https://cdn.example.net/video.mp4","last_frame_url":"https://cdn.example.net/last.png"},"usage":{"completion_tokens":null,"extra":1}}"#)
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "watermark": true
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
+        guard case .completed(let videos, let warnings, let metadata, let info) = try await model.doStatus(options: .init(operation: operation)) else {
+            Issue.record("Expected completed status"); return
         }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "watermark": .bool(true),
-        ]))
+        #expect(videos == [.url(url: "https://cdn.example.net/video.mp4", mediaType: "video/mp4")])
+        #expect(warnings.isEmpty)
+        #expect(metadata?["bytedance"] == ["taskId": .string("job"), "usage": .object(["completion_tokens": .null]), "lastFrameUrl": .string("https://cdn.example.net/last.png")])
+        #expect(info.timestamp == date)
+        #expect(info.headers?["x-request-id"] == "response-id")
     }
 
-    @Test("Provider options: generateAudio maps to generate_audio")
-    func providerOptionsGenerateAudio() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("nonterminal statuses stay pending", arguments: ["queued", "running", "unknown"])
+    func pendingStatus(status: String) async throws {
+        let model = model { request in response(request, body: #"{"status":"\#(status)"}"#) }
+        guard case .pending(_, _, let info) = try await model.doStatus(options: .init(operation: operation)) else {
+            Issue.record("Expected pending status"); return
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "generateAudio": true
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "generate_audio": .bool(true),
-        ]))
+        #expect(info.timestamp == date)
+        #expect(info.headers?["x-request-id"] == "response-id")
     }
 
-    @Test("Provider options: cameraFixed maps to camera_fixed")
-    func providerOptionsCameraFixed() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("all terminal failure statuses return actionable error state", arguments: ["failed", "expired", "cancelled", "canceled"])
+    func failedStatus(status: String) async throws {
+        let model = model { request in response(request, body: #"{"status":"\#(status)","error":{"message":"blocked","code":"Denied"}}"#) }
+        guard case .error(let message, _, let info) = try await model.doStatus(options: .init(operation: operation)) else {
+            Issue.record("Expected error status"); return
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "cameraFixed": true
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "camera_fixed": .bool(true),
-        ]))
+        #expect(message == "Video generation \(status). Task ID: job. blocked")
+        #expect(info.headers?["x-request-id"] == "response-id")
     }
 
-    @Test("Provider options: returnLastFrame maps to return_last_frame")
-    func providerOptionsReturnLastFrame() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
+    @Test("failure diagnostics fall back from message to code and then parsed task data", arguments: [false, true])
+    func failureDetails(code: Bool) async throws {
+        let model = model { request in response(request, body: code ? #"{"status":"failed","error":{"code":"Denied"}}"# : #"{"status":"failed","extra":"ignored"}"#) }
+        guard case .error(let message, _, _) = try await model.doStatus(options: .init(operation: operation)) else {
+            Issue.record("Expected error status"); return
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "returnLastFrame": true
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "return_last_frame": .bool(true),
-        ]))
+        #expect(message == "Video generation failed. Task ID: job. " + (code ? "Denied" : #"{"status":"failed"}"#))
     }
 
-    @Test("Provider options: serviceTier maps to service_tier")
-    func providerOptionsServiceTier() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "serviceTier": "flex"
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "service_tier": .string("flex"),
-        ]))
-    }
-
-    @Test("Provider options: draft is passed through")
-    func providerOptionsDraft() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(modelId: .seedance15Pro251215, fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "draft": true
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-5-pro-251215"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "draft": .bool(true),
-        ]))
-    }
-
-    @Test("Provider options: adds last frame image with role")
-    func providerOptionsLastFrameImage() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(modelId: .seedance15Pro251215, fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .url(url: "https://example.com/first-frame.png", providerOptions: nil),
-            providerOptions: [
-                "bytedance": [
-                    "lastFrameImage": "https://example.com/last-frame.png"
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-5-pro-251215"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/first-frame.png")
-                    ]),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/last-frame.png")
-                    ]),
-                    "role": .string("last_frame"),
-                ]),
-            ])
-        ]))
-    }
-
-    @Test("Provider options: adds reference images with role")
-    func providerOptionsReferenceImages() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(modelId: .seedance10LiteI2v250428, fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "referenceImages": [
-                        "https://example.com/ref1.png",
-                        "https://example.com/ref2.png",
-                        "https://example.com/ref3.png",
-                    ]
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-lite-i2v-250428"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/ref1.png")
-                    ]),
-                    "role": .string("reference_image"),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/ref2.png")
-                    ]),
-                    "role": .string("reference_image"),
-                ]),
-                .object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string("https://example.com/ref3.png")
-                    ]),
-                    "role": .string("reference_image"),
-                ]),
-            ])
-        ]))
-    }
-
-    @Test("Provider options: passes through additional options")
-    func providerOptionsPassthrough() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "test-task-id-123"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "test-task-id-123"),
-            body: [
-                "id": "test-task-id-123",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/video-output.mp4"],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "custom_param": "custom_value",
-                    "another_param": 123,
-                ]
-            ]
-        ))
-
-        guard let request = await stub.request(at: 0) else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let json = try decodeRequestBody(request)
-        #expect(json == .object([
-            "model": .string("seedance-1-0-pro-250528"),
-            "content": .array([
-                .object([
-                    "type": .string("text"),
-                    "text": .string(prompt),
-                ])
-            ]),
-            "custom_param": .string("custom_value"),
-            "another_param": .number(123),
-        ]))
-    }
-
-    @Test("Error handling: throws when no task ID is returned")
-    func errorNoTaskId() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: [:])
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
+    @Test("missing task IDs and successful tasks without video URLs remain generation errors", arguments: [false, true])
+    func missingRequiredOutput(status: Bool) async throws {
+        let model = model { request in response(request, body: status ? #"{"status":"succeeded"}"# : "{}") }
         do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch let error as AISDKError {
-            #expect(error.message == "No task ID returned from API")
+            if status { _ = try await model.doStatus(options: .init(operation: operation)) }
+            else { _ = try await model.doStart(options: .init(n: 1)) }
+            Issue.record("Expected generation error")
+        } catch let error as any AISDKError {
+            #expect(error.name == "BYTEDANCE_VIDEO_GENERATION_ERROR")
+            #expect(error.message == (status ? "No video URL in response. Task ID: job" : "No task ID returned from API"))
         }
     }
 
-    @Test("Error handling: throws when task fails")
-    func errorTaskFailed() async throws {
-        let stub = HTTPStub()
-
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "failed-task-id"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "failed-task-id"),
-            body: [
-                "id": "failed-task-id",
-                "status": "failed",
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
+    @Test("API failures from start and status remain thrown HTTP errors", arguments: [false, true])
+    func apiErrors(status: Bool) async throws {
+        let model = model { request in response(request, status: 429, body: #"{"error":{"message":"quota","code":null}}"#) }
         do {
-            _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: [
-                    "bytedance": [
-                        "pollIntervalMs": 10
-                    ]
-                ]
-            ))
-            Issue.record("Expected error")
-        } catch let error as AISDKError {
-            #expect(error.message.contains("Video generation failed"))
-        }
-    }
-
-    @Test("Error handling: throws when no video URL in response")
-    func errorNoVideoURL() async throws {
-        let stub = HTTPStub()
-
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "no-video-task-id"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "no-video-task-id"),
-            body: [
-                "id": "no-video-task-id",
-                "status": "succeeded",
-                "content": [:],
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: [
-                    "bytedance": [
-                        "pollIntervalMs": 10
-                    ]
-                ]
-            ))
-            Issue.record("Expected error")
-        } catch let error as AISDKError {
-            #expect(error.message == "No video URL in response")
-        }
-    }
-
-    @Test("Error handling: handles API errors from task creation")
-    func errorTaskCreationAPIError() async throws {
-        let stub = HTTPStub()
-
-        let errorData = try Self.jsonData([
-            "error": ["message": "Invalid prompt"]
-        ])
-        await stub.setRaw(method: "POST", url: createTasksURL, statusCode: 400, body: errorData)
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
+            if status { _ = try await model.doStatus(options: .init(operation: operation)) }
+            else { _ = try await model.doStart(options: .init(n: 1)) }
+            Issue.record("Expected API error")
         } catch let error as APICallError {
-            #expect(error.statusCode == 400)
+            #expect(error.message == "quota")
+            #expect(error.statusCode == 429)
+            #expect(error.isRetryable)
         }
     }
 
-    @Test("Polling: polls until video is ready")
-    func pollingUntilReady() async throws {
-        let stub = HTTPStub()
-
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "poll-test-id"])
-
-        let pollCount = LockedCounter()
-        await stub.setHandler(method: "GET", url: statusURL(taskId: "poll-test-id")) { request in
-            let currentCount = pollCount.increment()
-
-            if currentCount < 3 {
-                let data = try JSONSerialization.data(withJSONObject: [
-                    "id": "poll-test-id",
-                    "status": "processing",
-                ], options: [.sortedKeys])
-
-                return FetchResponse(
-                    body: .data(data),
-                    urlResponse: Self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
-                )
-            }
-
-            let data = try JSONSerialization.data(withJSONObject: [
-                "id": "poll-test-id",
-                "status": "succeeded",
-                "content": ["video_url": "https://bytedance.cdn/files/final-video.mp4"],
-                "usage": ["completion_tokens": 100],
-            ], options: [.sortedKeys])
-
-            return FetchResponse(
-                body: .data(data),
-                urlResponse: Self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
-            )
-        }
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "bytedance": [
-                    "pollIntervalMs": 10
-                ]
-            ]
-        ))
-
-        #expect(pollCount.value() == 3)
-        #expect(result.videos.first == .url(url: "https://bytedance.cdn/files/final-video.mp4", mediaType: "video/mp4"))
-    }
-
-    @Test("Polling: times out after pollTimeoutMs")
-    func pollingTimeout() async throws {
-        let stub = HTTPStub()
-
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "timeout-test-id"])
-        try await stub.setJSON(
-            method: "GET",
-            url: statusURL(taskId: "timeout-test-id"),
-            body: [
-                "id": "timeout-test-id",
-                "status": "processing",
-            ]
-        )
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: [
-                    "bytedance": [
-                        "pollIntervalMs": 10,
-                        "pollTimeoutMs": 50,
-                    ]
-                ]
-            ))
-            Issue.record("Expected error")
-        } catch let error as AISDKError {
-            #expect(error.message.contains("timed out"))
+    @Test("invalid provider options fail before submission")
+    func invalidOptions() async throws {
+        let model = model { _ in throw CancellationError() }
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doStart(options: .init(n: 1, providerOptions: ["bytedance": ["pollIntervalMs": .number(0)]]))
         }
     }
 
-    @Test("Polling: respects abort signal")
-    func pollingAbort() async throws {
-        let stub = HTTPStub()
-        let abortFlag = AbortFlag()
-
-        try await stub.setJSON(method: "POST", url: createTasksURL, body: ["id": "abort-test-id"])
-
-        await stub.setHandler(method: "GET", url: statusURL(taskId: "abort-test-id")) { request in
-            abortFlag.abort()
-            let data = try JSONSerialization.data(withJSONObject: [
-                "id": "abort-test-id",
-                "status": "processing",
-            ], options: [.sortedKeys])
-
-            return FetchResponse(
-                body: .data(data),
-                urlResponse: Self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
-            )
-        }
-
-        let fetch: FetchFunction = { request in
-            try await stub.handle(request)
-        }
-
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: VideoModelV3CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: [
-                    "bytedance": [
-                        "pollIntervalMs": 10
-                    ]
-                ],
-                abortSignal: abortFlag.signal
-            ))
-            Issue.record("Expected error")
-        } catch let error as AISDKError {
-            #expect(error.message.contains("aborted"))
-        }
+    @Test("cancellation passes through without a provider error wrapper")
+    func cancellation() async throws {
+        let model = model { _ in throw CancellationError() }
+        await #expect(throws: CancellationError.self) { _ = try await model.doStart(options: .init(n: 1, abortSignal: { true })) }
+        await #expect(throws: CancellationError.self) { _ = try await model.doStatus(options: .init(operation: operation, abortSignal: { true })) }
     }
 }

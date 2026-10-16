@@ -2,38 +2,32 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/bytedance/src/bytedance-video-model.ts
-// Ported from packages/bytedance/src/bytedance-video-settings.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
-public struct ByteDanceVideoProviderOptions: Sendable, Equatable {
-    public var watermark: Bool?
-    public var generateAudio: Bool?
-    public var cameraFixed: Bool?
-    public var returnLastFrame: Bool?
-    public var serviceTier: ServiceTier?
-    public var draft: Bool?
-    public var lastFrameImage: String?
-    public var referenceImages: [String]?
-    public var pollIntervalMs: Double?
-    public var pollTimeoutMs: Double?
+public struct ByteDanceVideoModelOptions: Decodable, Sendable {
+    public enum ServiceTier: String, Decodable, Sendable { case `default`, flex }
+    public let watermark: Bool?
+    public let generateAudio: Bool?
+    public let cameraFixed: Bool?
+    public let returnLastFrame: Bool?
+    public let serviceTier: ServiceTier?
+    public let draft: Bool?
+    public let lastFrameImage: String?
+    public let referenceImages: [String]?
+    public let referenceVideos: [String]?
+    public let referenceAudio: [String]?
+    public let pollIntervalMs: Double?
+    public let pollTimeoutMs: Double?
+    public let additionalOptions: JSONObject
 
     public init(
-        watermark: Bool? = nil,
-        generateAudio: Bool? = nil,
-        cameraFixed: Bool? = nil,
-        returnLastFrame: Bool? = nil,
-        serviceTier: ServiceTier? = nil,
-        draft: Bool? = nil,
-        lastFrameImage: String? = nil,
-        referenceImages: [String]? = nil,
-        pollIntervalMs: Double? = nil,
-        pollTimeoutMs: Double? = nil
-    ) {
+        watermark: Bool? = nil, generateAudio: Bool? = nil, cameraFixed: Bool? = nil,
+        returnLastFrame: Bool? = nil, serviceTier: ServiceTier? = nil, draft: Bool? = nil,
+        lastFrameImage: String? = nil, referenceImages: [String]? = nil, referenceVideos: [String]? = nil,
+        referenceAudio: [String]? = nil, pollIntervalMs: Double? = nil, pollTimeoutMs: Double? = nil,
+        additionalOptions: JSONObject = [:]
+    ) throws {
+        for value in [pollIntervalMs, pollTimeoutMs].compactMap({ $0 }) where value <= 0 || !value.isFinite {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Poll interval and timeout must be positive numbers"))
+        }
         self.watermark = watermark
         self.generateAudio = generateAudio
         self.cameraFixed = cameraFixed
@@ -42,647 +36,252 @@ public struct ByteDanceVideoProviderOptions: Sendable, Equatable {
         self.draft = draft
         self.lastFrameImage = lastFrameImage
         self.referenceImages = referenceImages
+        self.referenceVideos = referenceVideos
+        self.referenceAudio = referenceAudio
         self.pollIntervalMs = pollIntervalMs
         self.pollTimeoutMs = pollTimeoutMs
+        self.additionalOptions = additionalOptions
     }
 
-    public enum ServiceTier: String, Sendable, Equatable {
-        case `default` = "default"
-        case flex = "flex"
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case watermark, generateAudio, cameraFixed, returnLastFrame, serviceTier, draft, lastFrameImage
+        case referenceImages, referenceVideos, referenceAudio, pollIntervalMs, pollTimeoutMs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.singleValueContainer().decode(JSONObject.self)
+        let known = Set(CodingKeys.allCases.map(\.rawValue))
+        try self.init(
+            watermark: container.decodeIfPresent(Bool.self, forKey: .watermark),
+            generateAudio: container.decodeIfPresent(Bool.self, forKey: .generateAudio),
+            cameraFixed: container.decodeIfPresent(Bool.self, forKey: .cameraFixed),
+            returnLastFrame: container.decodeIfPresent(Bool.self, forKey: .returnLastFrame),
+            serviceTier: container.decodeIfPresent(ServiceTier.self, forKey: .serviceTier),
+            draft: container.decodeIfPresent(Bool.self, forKey: .draft),
+            lastFrameImage: container.decodeIfPresent(String.self, forKey: .lastFrameImage),
+            referenceImages: container.decodeIfPresent([String].self, forKey: .referenceImages),
+            referenceVideos: container.decodeIfPresent([String].self, forKey: .referenceVideos),
+            referenceAudio: container.decodeIfPresent([String].self, forKey: .referenceAudio),
+            pollIntervalMs: container.decodeIfPresent(Double.self, forKey: .pollIntervalMs),
+            pollTimeoutMs: container.decodeIfPresent(Double.self, forKey: .pollTimeoutMs),
+            additionalOptions: raw.filter { !known.contains($0.key) }
+        )
     }
 }
 
-private let handledProviderOptionKeys: Set<String> = [
-    "watermark",
-    "generateAudio",
-    "cameraFixed",
-    "returnLastFrame",
-    "serviceTier",
-    "draft",
-    "lastFrameImage",
-    "referenceImages",
-    "pollIntervalMs",
-    "pollTimeoutMs",
-]
-
-private let byteDanceVideoProviderOptionsSchema = FlexibleSchema(
-    Schema<ByteDanceVideoProviderOptions>(
-        jsonSchemaResolver: {
-            .object([
-                "type": .string("object"),
-                "additionalProperties": .bool(true),
-            ])
-        },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "provider options must be an object")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                func boolOrNullish(_ key: String) -> Result<Bool?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else {
-                        return .success(nil)
-                    }
-                    guard case .bool(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "\(key) must be a boolean")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(value)
-                }
-
-                func stringOrNullish(_ key: String) -> Result<String?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else {
-                        return .success(nil)
-                    }
-                    guard case .string(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "\(key) must be a string")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(value)
-                }
-
-                func stringArrayOrNullish(_ key: String) -> Result<[String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else {
-                        return .success(nil)
-                    }
-                    guard case .array(let values) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "\(key) must be an array of strings")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    var strings: [String] = []
-                    strings.reserveCapacity(values.count)
-                    for entry in values {
-                        guard case .string(let value) = entry else {
-                            let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "\(key) must be an array of strings")
-                            return .failure(TypeValidationError.wrap(value: entry, cause: error))
-                        }
-                        strings.append(value)
-                    }
-                    return .success(strings)
-                }
-
-                func positiveNumber(_ key: String) -> Result<Double?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else {
-                        return .success(nil)
-                    }
-                    guard case .number(let number) = raw, number > 0 else {
-                        let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "\(key) must be a positive number")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(number)
-                }
-
-                let watermark: Bool?
-                switch boolOrNullish("watermark") {
-                case .success(let value):
-                    watermark = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let generateAudio: Bool?
-                switch boolOrNullish("generateAudio") {
-                case .success(let value):
-                    generateAudio = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let cameraFixed: Bool?
-                switch boolOrNullish("cameraFixed") {
-                case .success(let value):
-                    cameraFixed = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let returnLastFrame: Bool?
-                switch boolOrNullish("returnLastFrame") {
-                case .success(let value):
-                    returnLastFrame = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                var serviceTier: ByteDanceVideoProviderOptions.ServiceTier?
-                if let raw = dict["serviceTier"], raw != .null {
-                    guard case .string(let value) = raw,
-                          let parsed = ByteDanceVideoProviderOptions.ServiceTier(rawValue: value) else {
-                        let error = SchemaValidationIssuesError(vendor: "bytedance", issues: "serviceTier must be one of 'default' | 'flex'")
-                        return .failure(error: TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    serviceTier = parsed
-                }
-
-                let draft: Bool?
-                switch boolOrNullish("draft") {
-                case .success(let value):
-                    draft = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let lastFrameImage: String?
-                switch stringOrNullish("lastFrameImage") {
-                case .success(let value):
-                    lastFrameImage = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let referenceImages: [String]?
-                switch stringArrayOrNullish("referenceImages") {
-                case .success(let value):
-                    referenceImages = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let pollIntervalMs: Double?
-                switch positiveNumber("pollIntervalMs") {
-                case .success(let value):
-                    pollIntervalMs = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                let pollTimeoutMs: Double?
-                switch positiveNumber("pollTimeoutMs") {
-                case .success(let value):
-                    pollTimeoutMs = value
-                case .failure(let error):
-                    return .failure(error: error)
-                }
-
-                return .success(
-                    value: ByteDanceVideoProviderOptions(
-                        watermark: watermark,
-                        generateAudio: generateAudio,
-                        cameraFixed: cameraFixed,
-                        returnLastFrame: returnLastFrame,
-                        serviceTier: serviceTier,
-                        draft: draft,
-                        lastFrameImage: lastFrameImage,
-                        referenceImages: referenceImages,
-                        pollIntervalMs: pollIntervalMs,
-                        pollTimeoutMs: pollTimeoutMs
-                    )
-                )
-            } catch let error as TypeValidationError {
-                return .failure(error: error)
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
+private let byteDanceVideoModelOptionsSchema = FlexibleSchema(
+    Schema<ByteDanceVideoModelOptions>.codable(ByteDanceVideoModelOptions.self, jsonSchema: .object(["type": .string("object")]))
 )
 
-struct ByteDanceVideoModelConfig: Sendable {
-    let provider: String
-    let baseURL: String
-    let headers: @Sendable () throws -> [String: String?]
-    let fetch: FetchFunction?
-    let currentDate: @Sendable () -> Date
-
-    init(
-        provider: String,
-        baseURL: String,
-        headers: @escaping @Sendable () throws -> [String: String?],
-        fetch: FetchFunction?,
-        currentDate: @escaping @Sendable () -> Date = { Date() }
-    ) {
-        self.provider = provider
-        self.baseURL = baseURL
-        self.headers = headers
-        self.fetch = fetch
-        self.currentDate = currentDate
-    }
-}
-
-public final class ByteDanceVideoModel: VideoModelV3 {
-    public var specificationVersion: String { "v3" }
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(1) }
-
+public final class ByteDanceVideoModel: VideoModelV4Operations {
+    public var specificationVersion: String { "v4" }
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(1) }
     public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    public var modelId: String { identifier.rawValue }
+    private let identifier: ByteDanceVideoModelId
+    private let config: ByteDanceConfig
 
-    private let modelIdentifier: ByteDanceVideoModelId
-    private let config: ByteDanceVideoModelConfig
-
-    init(modelId: ByteDanceVideoModelId, config: ByteDanceVideoModelConfig) {
-        self.modelIdentifier = modelId
+    init(modelId: ByteDanceVideoModelId, config: ByteDanceConfig) {
+        self.identifier = modelId
         self.config = config
     }
 
-    public func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
-        let currentDate = config.currentDate()
-        var warnings: [SharedV3Warning] = []
-
-        let byteDanceOptions = try await parseProviderOptions(
-            provider: "bytedance",
-            providerOptions: options.providerOptions,
-            schema: byteDanceVideoProviderOptionsSchema
+    public func doStart(
+        options: VideoModelV4CallOptions,
+        webhookUrl: String? = nil
+    ) async throws -> VideoModelV4OperationStartResult {
+        let now = config.currentDate()
+        let (requestBody, warnings) = try await buildRequestBody(options)
+        var body = requestBody
+        if let webhookUrl { body["callback_url"] = .string(webhookUrl) }
+        let response = try await postJsonToAPI(
+            url: "\(config.baseURL)/contents/generations/tasks",
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            body: JSONValue.object(body),
+            failedResponseHandler: byteDanceFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceTaskResponseSchema),
+            isAborted: options.abortSignal,
+            fetch: config.fetch
         )
-
-        if options.fps != nil {
-            warnings.append(.unsupported(
-                feature: "fps",
-                details: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
-            ))
+        guard let taskId = response.value.id, !taskId.isEmpty else {
+            throw ByteDanceVideoModelError(message: "No task ID returned from API")
         }
+        return .init(operation: .object(["taskId": .string(taskId)]), warnings: warnings,
+                     response: .init(timestamp: now, modelId: modelId, headers: response.responseHeaders))
+    }
 
+    public func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+        let now = config.currentDate()
+        guard case .object(let operation) = options.operation, case .string(let taskId) = operation["taskId"] else {
+            throw InvalidArgumentError(argument: "operation", message: "Invalid ByteDance video operation")
+        }
+        let response = try await getFromAPI(
+            url: "\(config.baseURL)/contents/generations/tasks/\(taskId)",
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            failedResponseHandler: byteDanceFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceStatusResponseSchema),
+            isAborted: options.abortSignal,
+            fetch: config.fetch,
+            validateUrl: true,
+            trustedOrigin: config.baseURL
+        )
+        let info = VideoModelV4ResponseInfo(timestamp: now, modelId: modelId, headers: response.responseHeaders)
+        let status = response.value
+        if status.status == "succeeded" {
+            guard let url = status.content?.videoUrl, !url.isEmpty else {
+                throw ByteDanceVideoModelError(message: "No video URL in response. Task ID: \(taskId)")
+            }
+            var metadata: JSONObject = ["taskId": .string(taskId)]
+            if let usage = status.fields["usage"] { metadata["usage"] = usage }
+            if let lastFrame = status.content?.lastFrameUrl { metadata["lastFrameUrl"] = .string(lastFrame) }
+            return .completed(videos: [.url(url: url, mediaType: "video/mp4")], warnings: [],
+                              providerMetadata: ["bytedance": metadata], response: info)
+        }
+        if ["failed", "expired", "cancelled", "canceled"].contains(status.status) {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let fallback = String(decoding: try encoder.encode(JSONValue.object(status.fields)), as: UTF8.self)
+            let reason = status.error?.message ?? status.error?.code ?? fallback
+            return .error(error: "Video generation \(status.status). Task ID: \(taskId). \(reason)", providerMetadata: nil, response: info)
+        }
+        return .pending(warnings: nil, providerMetadata: nil, response: info)
+    }
+
+    private func buildRequestBody(_ options: VideoModelV4CallOptions) async throws -> (JSONObject, [SharedV4Warning]) {
+        let parsed = try await parseProviderOptions(provider: "bytedance", providerOptions: options.providerOptions,
+                                                  schema: byteDanceVideoModelOptionsSchema)
+        var warnings: [SharedV4Warning] = []
+        for (setting, value) in [("pollIntervalMs", parsed?.pollIntervalMs), ("pollTimeoutMs", parsed?.pollTimeoutMs)] where value != nil {
+            warnings.append(.deprecated(setting: setting, message: "`\(setting)` is ignored. Polling is orchestrated by the AI SDK: pass `poll: { intervalMs, timeoutMs }` to `generateVideo` instead."))
+        }
+        if let fps = options.fps, fps != 0 {
+            warnings.append(.unsupported(feature: "fps", details: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."))
+        }
         if options.n > 1 {
-            warnings.append(.unsupported(
-                feature: "n",
-                details: "ByteDance video models do not support generating multiple videos per call. Only 1 video will be generated."
-            ))
+            warnings.append(.unsupported(feature: "n", details: "ByteDance video models do not support generating multiple videos per call. Only 1 video will be generated."))
         }
-
         var content: [JSONValue] = []
-
-        if let prompt = options.prompt {
-            content.append(.object([
-                "type": .string("text"),
-                "text": .string(prompt),
-            ]))
-        }
-
-        if let image = options.image {
-            content.append(.object([
-                "type": .string("image_url"),
-                "image_url": .object([
-                    "url": .string(convertVideoModelFileToDataUri(image)),
-                ]),
-            ]))
-        }
-
-        if let lastFrameImage = byteDanceOptions?.lastFrameImage {
-            content.append(.object([
-                "type": .string("image_url"),
-                "image_url": .object([
-                    "url": .string(lastFrameImage),
-                ]),
-                "role": .string("last_frame"),
-            ]))
-        }
-
-        if let referenceImages = byteDanceOptions?.referenceImages, !referenceImages.isEmpty {
-            for url in referenceImages {
-                content.append(.object([
-                    "type": .string("image_url"),
-                    "image_url": .object([
-                        "url": .string(url),
-                    ]),
-                    "role": .string("reference_image"),
-                ]))
-            }
-        }
-
-        var body: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "content": .array(content),
-        ]
-
-        if let aspectRatio = options.aspectRatio {
-            body["ratio"] = .string(aspectRatio)
-        }
-
-        if let duration = options.duration {
-            body["duration"] = .number(Double(duration))
-        }
-
-        if let seed = options.seed {
-            body["seed"] = .number(Double(seed))
-        }
-
-        if let resolution = options.resolution {
-            body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
-        }
-
-        if let byteDanceOptions {
-            if let watermark = byteDanceOptions.watermark {
-                body["watermark"] = .bool(watermark)
-            }
-            if let generateAudio = byteDanceOptions.generateAudio {
-                body["generate_audio"] = .bool(generateAudio)
-            }
-            if let cameraFixed = byteDanceOptions.cameraFixed {
-                body["camera_fixed"] = .bool(cameraFixed)
-            }
-            if let returnLastFrame = byteDanceOptions.returnLastFrame {
-                body["return_last_frame"] = .bool(returnLastFrame)
-            }
-            if let serviceTier = byteDanceOptions.serviceTier {
-                body["service_tier"] = .string(serviceTier.rawValue)
-            }
-            if let draft = byteDanceOptions.draft {
-                body["draft"] = .bool(draft)
-            }
-        }
-
-        let rawProviderOptions = options.providerOptions?["bytedance"] ?? [:]
-        for (key, value) in rawProviderOptions {
-            guard !handledProviderOptionKeys.contains(key) else { continue }
-            body[key] = value
-        }
-
-        let requestHeaders = combineHeaders(
-            try config.headers(),
-            options.headers?.mapValues { Optional($0) }
-        ).compactMapValues { $0 }
-
-        let createUrl = "\(config.baseURL)/contents/generations/tasks"
-
-        let createResponse: ResponseHandlerResult<ByteDanceTaskResponse>
-        do {
-            createResponse = try await postJsonToAPI(
-                url: createUrl,
-                headers: requestHeaders,
-                body: JSONValue.object(body),
-                failedResponseHandler: byteDanceFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceTaskResponseSchema),
-                isAborted: options.abortSignal,
-                fetch: config.fetch
-            )
-        } catch {
-            if isAbortError(error) {
-                throw ByteDanceVideoModelError(
-                    name: "BYTEDANCE_VIDEO_GENERATION_ABORTED",
-                    message: "Video generation request was aborted",
-                    cause: error
-                )
-            }
-            throw error
-        }
-
-        let taskId = createResponse.value.id
-        if taskId == nil || taskId?.isEmpty == true {
-            throw ByteDanceVideoModelError(
-                name: "BYTEDANCE_VIDEO_GENERATION_ERROR",
-                message: "No task ID returned from API"
-            )
-        }
-
-        let pollIntervalMs = byteDanceOptions?.pollIntervalMs ?? 3000
-        let pollTimeoutMs = byteDanceOptions?.pollTimeoutMs ?? 300000
-        let startTime = Date()
-
-        var response: ByteDanceStatusResponse
-        var responseHeaders: [String: String]?
-
-        while true {
-            let statusUrl = "\(config.baseURL)/contents/generations/tasks/\(taskId!)"
-
-            let statusResult: ResponseHandlerResult<ByteDanceStatusResponse>
-            do {
-                statusResult = try await getFromAPI(
-                    url: statusUrl,
-                    headers: requestHeaders,
-                    failedResponseHandler: byteDanceFailedResponseHandler,
-                    successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceStatusResponseSchema),
-                    isAborted: options.abortSignal,
-                    fetch: config.fetch
-                )
-            } catch {
-                if isAbortError(error) {
-                    throw ByteDanceVideoModelError(
-                        name: "BYTEDANCE_VIDEO_GENERATION_ABORTED",
-                        message: "Video generation request was aborted",
-                        cause: error
-                    )
+        if let prompt = options.prompt { content.append(.object(["type": .string("text"), "text": .string(prompt)])) }
+        let startImage = options.frameImages?.first { $0.frameType == .firstFrame }?.image ?? options.image
+        let lastFrameUrl = options.frameImages?.first { $0.frameType == .lastFrame }.map { dataURI($0.image) } ?? parsed?.lastFrameImage
+        var references: [JSONValue] = []
+        if options.frameImages?.isEmpty != false {
+            if let inputReferences = options.inputReferences, !inputReferences.isEmpty {
+                for reference in inputReferences {
+                    let mediaType: String?
+                    switch reference {
+                    case .file(let type, _, _): mediaType = type
+                    case .url(_, let type, _):
+                        mediaType = type
+                        if type == nil {
+                            warnings.append(.unsupported(feature: "inputReferences", details: "ByteDance requires an explicit mediaType to route URL references as video or image. Pass { data: url, mediaType: \"video/mp4\" } for video references. The reference was treated as an image."))
+                        }
+                    }
+                    let type = mediaType.map { getTopLevelMediaType($0) == "video" } == true ? "video" : "image"
+                    references.append(mediaContent(type: type, url: dataURI(reference), role: "reference_\(type)"))
                 }
-                throw error
-            }
-
-            if statusResult.value.status == "succeeded" {
-                response = statusResult.value
-                responseHeaders = statusResult.responseHeaders
-                break
-            }
-
-            if statusResult.value.status == "failed" {
-                throw ByteDanceVideoModelError(
-                    name: "BYTEDANCE_VIDEO_GENERATION_FAILED",
-                    message: "Video generation failed: \(byteDanceStatusJSONString(from: statusResult.value))"
-                )
-            }
-
-            let elapsedMs = Date().timeIntervalSince(startTime) * 1000
-            if elapsedMs > pollTimeoutMs {
-                throw ByteDanceVideoModelError(
-                    name: "BYTEDANCE_VIDEO_GENERATION_TIMEOUT",
-                    message: "Video generation timed out after \(pollTimeoutMs)ms"
-                )
-            }
-
-            let pollDelay = max(0, Int(pollIntervalMs.rounded(.towardZero)))
-            do {
-                try await delay(pollDelay, abortSignal: options.abortSignal)
-            } catch {
-                if isAbortError(error) {
-                    throw ByteDanceVideoModelError(
-                        name: "BYTEDANCE_VIDEO_GENERATION_ABORTED",
-                        message: "Video generation request was aborted",
-                        cause: error
-                    )
-                }
-                throw error
-            }
-        }
-
-        guard let videoUrl = response.content?.videoUrl, !videoUrl.isEmpty else {
-            throw ByteDanceVideoModelError(
-                name: "BYTEDANCE_VIDEO_GENERATION_ERROR",
-                message: "No video URL in response"
-            )
-        }
-
-        var bytedanceMetadata: [String: JSONValue] = [
-            "taskId": .string(taskId!)
-        ]
-        if let usage = response.usage {
-            let completionTokens: JSONValue
-            if let tokens = usage.completionTokens {
-                completionTokens = .number(tokens)
             } else {
-                completionTokens = .null
+                references += (parsed?.referenceImages ?? []).map { mediaContent(type: "image", url: $0, role: "reference_image") }
+                references += (parsed?.referenceVideos ?? []).map { mediaContent(type: "video", url: $0, role: "reference_video") }
             }
-            bytedanceMetadata["usage"] = .object([
-                "completion_tokens": completionTokens
-            ])
         }
-
-        return VideoModelV3GenerateResult(
-            videos: [
-                .url(url: videoUrl, mediaType: "video/mp4")
-            ],
-            warnings: warnings,
-            providerMetadata: [
-                "bytedance": bytedanceMetadata
-            ],
-            response: VideoModelV3ResponseInfo(
-                timestamp: currentDate,
-                modelId: modelIdentifier.rawValue,
-                headers: responseHeaders
-            )
-        )
-    }
-}
-
-// MARK: - API Schemas
-
-private struct ByteDanceTaskResponse: Codable, Sendable {
-    let id: String?
-}
-
-private let byteDanceTaskResponseSchema = FlexibleSchema(
-    Schema<ByteDanceTaskResponse>.codable(
-        ByteDanceTaskResponse.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
-
-private struct ByteDanceStatusResponse: Codable, Sendable {
-    struct Content: Codable, Sendable {
-        let videoUrl: String?
-
-        enum CodingKeys: String, CodingKey {
-            case videoUrl = "video_url"
+        if let startImage {
+            let role = lastFrameUrl != nil ? "first_frame" : references.isEmpty ? nil : "reference_image"
+            content.append(mediaContent(type: "image", url: dataURI(startImage), role: role))
         }
+        if let lastFrameUrl { content.append(mediaContent(type: "image", url: lastFrameUrl, role: "last_frame")) }
+        content += references
+        content += (parsed?.referenceAudio ?? []).map { mediaContent(type: "audio", url: $0, role: "reference_audio") }
+        var body: JSONObject = ["model": .string(modelId), "content": .array(content)]
+        if let ratio = options.aspectRatio, !ratio.isEmpty { body["ratio"] = .string(ratio) }
+        if let duration = options.duration, duration != 0 { body["duration"] = .number(Double(duration)) }
+        if let seed = options.seed, seed != 0 { body["seed"] = .number(Double(seed)) }
+        if let resolution = options.resolution, !resolution.isEmpty { body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution) }
+        if let audio = options.generateAudio ?? parsed?.generateAudio { body["generate_audio"] = .bool(audio) }
+        if let watermark = parsed?.watermark { body["watermark"] = .bool(watermark) }
+        if let cameraFixed = parsed?.cameraFixed { body["camera_fixed"] = .bool(cameraFixed) }
+        if let returnLastFrame = parsed?.returnLastFrame { body["return_last_frame"] = .bool(returnLastFrame) }
+        if let serviceTier = parsed?.serviceTier { body["service_tier"] = .string(serviceTier.rawValue) }
+        if let draft = parsed?.draft { body["draft"] = .bool(draft) }
+        for (key, value) in parsed?.additionalOptions ?? [:] { body[key] = value }
+        return (body, warnings)
     }
-
-    struct Usage: Codable, Sendable {
-        let completionTokens: Double?
-
-        enum CodingKeys: String, CodingKey {
-            case completionTokens = "completion_tokens"
-        }
-    }
-
-    let id: String?
-    let model: String?
-    let status: String
-    let content: Content?
-    let usage: Usage?
 }
 
-private let byteDanceStatusResponseSchema = FlexibleSchema(
-    Schema<ByteDanceStatusResponse>.codable(
-        ByteDanceStatusResponse.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
-
-private struct ByteDanceErrorResponse: Codable, Sendable {
-    struct ErrorPayload: Codable, Sendable {
-        let message: String
-        let code: String?
-    }
-
-    let error: ErrorPayload?
-    let message: String?
+private func mediaContent(type: String, url: String, role: String?) -> JSONValue {
+    var content: JSONObject = ["type": .string("\(type)_url"), "\(type)_url": .object(["url": .string(url)])]
+    if let role { content["role"] = .string(role) }
+    return .object(content)
 }
 
-private let byteDanceErrorResponseSchema = FlexibleSchema(
-    Schema<ByteDanceErrorResponse>.codable(
-        ByteDanceErrorResponse.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
-
-private let byteDanceFailedResponseHandler = createJsonErrorResponseHandler(
-    errorSchema: byteDanceErrorResponseSchema,
-    errorToMessage: { data in
-        data.error?.message ?? data.message ?? "Unknown error"
-    }
-)
-
-// MARK: - Helpers
-
-private func convertVideoModelFileToDataUri(_ file: VideoModelV3File) -> String {
+private func dataURI(_ file: VideoModelV4File) -> String {
     switch file {
-    case let .url(url, _):
-        return url
-    case let .file(mediaType, data, _):
+    case .url(let url, _, _): return url
+    case .file(let mediaType, let data, _):
         let base64: String
         switch data {
-        case .base64(let value):
-            base64 = value
-        case .binary(let value):
-            base64 = convertDataToBase64(value)
+        case .base64(let value): base64 = value
+        case .binary(let value): base64 = value.base64EncodedString()
         }
         return "data:\(mediaType);base64,\(base64)"
     }
 }
 
-private func byteDanceStatusJSONString(from response: ByteDanceStatusResponse) -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
+private struct ByteDanceTaskResponse: Decodable, Sendable { let id: String? }
+private let byteDanceTaskResponseSchema = FlexibleSchema(
+    Schema<ByteDanceTaskResponse>.codable(ByteDanceTaskResponse.self, jsonSchema: .object(["type": .string("object")]))
+)
 
-    do {
-        let data = try encoder.encode(response)
-        return String(data: data, encoding: .utf8) ?? "{}"
-    } catch {
-        return "{}"
+private struct ByteDanceStatusResponse: Decodable, Sendable {
+    struct Content: Decodable, Sendable {
+        let videoUrl: String?
+        let lastFrameUrl: String?
+        enum CodingKeys: String, CodingKey { case videoUrl = "video_url", lastFrameUrl = "last_frame_url" }
+    }
+    struct Usage: Decodable { let completion_tokens: Double? }
+    struct Failure: Decodable, Sendable { let code: String?; let message: String? }
+    let status: String
+    let content: Content?
+    let error: Failure?
+    let fields: JSONObject
+    enum CodingKeys: String, CodingKey, CaseIterable { case id, model, status, content, usage, error }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        _ = try container.decodeIfPresent(String.self, forKey: .id)
+        _ = try container.decodeIfPresent(String.self, forKey: .model)
+        status = try container.decode(String.self, forKey: .status)
+        content = try container.decodeIfPresent(Content.self, forKey: .content)
+        _ = try container.decodeIfPresent(Usage.self, forKey: .usage)
+        error = try container.decodeIfPresent(Failure.self, forKey: .error)
+        var fields: JSONObject = [:]
+        for key in CodingKeys.allCases where container.contains(key) { fields[key.rawValue] = try container.decode(JSONValue.self, forKey: key) }
+        for (key, allowed) in [("content", ["video_url", "last_frame_url"]), ("usage", ["completion_tokens"]), ("error", ["code", "message"])] {
+            if case .object(let object) = fields[key] { fields[key] = .object(object.filter { allowed.contains($0.key) }) }
+        }
+        self.fields = fields
     }
 }
+
+private let byteDanceStatusResponseSchema = FlexibleSchema(
+    Schema<ByteDanceStatusResponse>.codable(ByteDanceStatusResponse.self, jsonSchema: .object(["type": .string("object")]))
+)
 
 private struct ByteDanceVideoModelError: AISDKError, Sendable {
     static let errorDomain = "bytedance.video.error"
-
-    let name: String
+    let name = "BYTEDANCE_VIDEO_GENERATION_ERROR"
     let message: String
-    let cause: (any Error)?
-
-    init(name: String, message: String, cause: (any Error)? = nil) {
-        self.name = name
-        self.message = message
-        self.cause = cause
-    }
+    let cause: (any Error)? = nil
 }
 
 private let byteDanceResolutionMap: [String: String] = [
-    "864x496": "480p",
-    "496x864": "480p",
-    "752x560": "480p",
-    "560x752": "480p",
-    "640x640": "480p",
-    "992x432": "480p",
-    "432x992": "480p",
-    "864x480": "480p",
-    "480x864": "480p",
-    "736x544": "480p",
-    "544x736": "480p",
-    "960x416": "480p",
-    "416x960": "480p",
-    "832x480": "480p",
-    "480x832": "480p",
-    "624x624": "480p",
-    "1280x720": "720p",
-    "720x1280": "720p",
-    "1112x834": "720p",
-    "834x1112": "720p",
-    "960x960": "720p",
-    "1470x630": "720p",
-    "630x1470": "720p",
-    "1248x704": "720p",
-    "704x1248": "720p",
-    "1120x832": "720p",
-    "832x1120": "720p",
-    "1504x640": "720p",
-    "640x1504": "720p",
-    "1920x1080": "1080p",
-    "1080x1920": "1080p",
-    "1664x1248": "1080p",
-    "1248x1664": "1080p",
-    "1440x1440": "1080p",
-    "2206x946": "1080p",
-    "946x2206": "1080p",
-    "1920x1088": "1080p",
-    "1088x1920": "1080p",
-    "2176x928": "1080p",
-    "928x2176": "1080p",
+    "864x496": "480p", "496x864": "480p", "752x560": "480p", "560x752": "480p", "640x640": "480p",
+    "992x432": "480p", "432x992": "480p", "864x480": "480p", "480x864": "480p", "736x544": "480p",
+    "544x736": "480p", "960x416": "480p", "416x960": "480p", "832x480": "480p", "480x832": "480p", "624x624": "480p",
+    "1280x720": "720p", "720x1280": "720p", "1112x834": "720p", "834x1112": "720p", "960x960": "720p",
+    "1470x630": "720p", "630x1470": "720p", "1248x704": "720p", "704x1248": "720p", "1120x832": "720p",
+    "832x1120": "720p", "1504x640": "720p", "640x1504": "720p", "1920x1080": "1080p", "1080x1920": "1080p",
+    "1664x1248": "1080p", "1248x1664": "1080p", "1440x1440": "1080p", "2206x946": "1080p", "946x2206": "1080p",
+    "1920x1088": "1080p", "1088x1920": "1080p", "2176x928": "1080p", "928x2176": "1080p",
 ]
-

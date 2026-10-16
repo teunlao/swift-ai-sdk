@@ -2,33 +2,13 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/bytedance/src/bytedance-provider.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
 public struct ByteDanceProviderSettings: Sendable {
-    /// ByteDance Ark API key. Defaults to `ARK_API_KEY`.
     public var apiKey: String?
-
-    /// Base URL for the API calls.
-    /// Default: `https://ark.ap-southeast.bytepluses.com/api/v3`
     public var baseURL: String?
-
-    /// Custom headers to include in the requests.
     public var headers: [String: String]?
-
-    /// Custom fetch implementation.
     public var fetch: FetchFunction?
 
-    public init(
-        apiKey: String? = nil,
-        baseURL: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil
-    ) {
+    public init(apiKey: String? = nil, baseURL: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.headers = headers
@@ -36,26 +16,26 @@ public struct ByteDanceProviderSettings: Sendable {
     }
 }
 
-public final class ByteDanceProvider: ProviderV3 {
+public final class ByteDanceProvider: ProviderV4 {
     private let videoFactory: @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel
 
     init(videoFactory: @escaping @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel) {
         self.videoFactory = videoFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) -> ByteDanceVideoModel {
         videoFactory(ByteDanceVideoModelId(rawValue: modelId))
     }
 
@@ -68,58 +48,21 @@ public final class ByteDanceProvider: ProviderV3 {
     }
 }
 
-private let defaultByteDanceBaseURL = "https://ark.ap-southeast.bytepluses.com/api/v3"
-
-/// Create a ByteDance provider instance.
-public func createByteDanceProvider(
-    settings: ByteDanceProviderSettings = .init()
-) -> ByteDanceProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL ?? defaultByteDanceBaseURL) ?? defaultByteDanceBaseURL
-
-    let headersClosure: @Sendable () throws -> [String: String?] = {
-        let apiKey = try loadAPIKey(
-            apiKey: settings.apiKey,
-            environmentVariableName: "ARK_API_KEY",
-            description: "ByteDance ModelArk"
-        )
-
-        var headers: [String: String?] = [
-            "Authorization": "Bearer \(apiKey)",
+public func createByteDance(settings: ByteDanceProviderSettings = .init()) -> ByteDanceProvider {
+    let defaultBaseURL = "https://ark.ap-southeast.bytepluses.com/api/v3"
+    let baseURL = withoutTrailingSlash(settings.baseURL ?? defaultBaseURL) ?? defaultBaseURL
+    let headers: @Sendable () throws -> [String: String?] = {
+        var values: [String: String?] = [
+            "Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "ARK_API_KEY", description: "ByteDance ModelArk"))",
             "Content-Type": "application/json",
         ]
-
-        if let custom = settings.headers {
-            for (key, value) in custom {
-                headers[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/bytedance/\(BYTEDANCE_VERSION)")
-        return withUA.mapValues { Optional($0) }
+        for (key, value) in settings.headers ?? [:] { values[key] = value }
+        return withUserAgentSuffix(values, "ai-sdk-bytedance/\(VERSION)").mapValues { Optional($0) }
     }
-
-    let videoFactory: @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel = { modelId in
-        ByteDanceVideoModel(
-            modelId: modelId,
-            config: ByteDanceVideoModelConfig(
-                provider: "bytedance.video",
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: settings.fetch
-            )
-        )
-    }
-
-    return ByteDanceProvider(videoFactory: videoFactory)
+    return ByteDanceProvider(videoFactory: { modelId in
+        ByteDanceVideoModel(modelId: modelId, config: .init(provider: "bytedance.video", baseURL: baseURL,
+                                                          headers: headers, fetch: settings.fetch))
+    })
 }
 
-/// Alias matching upstream naming (`createByteDance`).
-public func createByteDance(
-    settings: ByteDanceProviderSettings = .init()
-) -> ByteDanceProvider {
-    createByteDanceProvider(settings: settings)
-}
-
-/// Default ByteDance provider instance.
-public let byteDance: ByteDanceProvider = createByteDanceProvider()
-
+public let byteDance = createByteDance()
