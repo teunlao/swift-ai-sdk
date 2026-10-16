@@ -96,7 +96,7 @@ struct DeepSeekProviderTests {
     @Test func invalidOptionsFailBeforeSending() async throws {
         let capture = Capture()
         let model = createDeepSeek(settings: .init(apiKey: "key", fetch: try Self.fetch(capture: capture)))("deepseek-v4-flash")
-        await #expect(throws: TypeValidationError.self) {
+        await #expect(throws: InvalidArgumentError.self) {
             _ = try await model.doGenerate(options: .init(prompt: Self.prompt, providerOptions: ["deepseek": ["userId": "invalid value"]]))
         }
         #expect(await capture.value() == nil)
