@@ -1,744 +1,156 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
+import AISDKProvider
+import AISDKProviderUtils
 @testable import XAIProvider
 
 @Suite("XAIVideoModel")
 struct XAIVideoModelTests {
-    private let prompt = "A chicken flying into the sunset"
-    private let baseURL = "https://api.example.com"
-
-    private var createGenerationsURL: String { "\(baseURL)/videos/generations" }
-    private var createEditsURL: String { "\(baseURL)/videos/edits" }
-    private var statusURL: String { "\(baseURL)/videos/req-123" }
-
-    private static func jsonData(_ value: Any) throws -> Data {
-        try JSONSerialization.data(withJSONObject: value, options: [])
+    private actor Capture {
+        var requests: [URLRequest] = []
+        func append(_ request: URLRequest) { requests.append(request) }
+        func last() -> URLRequest? { requests.last }
+    }
+    private func model(_ payload: String = #"{"request_id":"req-123"}"#, status: Int = 200, modelId: XAIVideoModelId = .grokImagineVideo, capture: Capture = Capture()) -> XAIVideoModel {
+        XAIVideoModel(modelId: modelId, config: .init(provider: "xai.video", baseURL: "https://api.example.com", headers: { ["Authorization": "Bearer key", "X-Provider": "provider"] }, fetch: { request in
+            await capture.append(request)
+            return FetchResponse(body: .data(Data(payload.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json", "X-Request-Id": "request"])!)
+        }, currentDate: { Date(timeIntervalSince1970: 1234) }))
+    }
+    private func body(_ request: URLRequest) throws -> [String: JSONValue] {
+        guard case .object(let body) = try JSONDecoder().decode(JSONValue.self, from: request.httpBody!) else { throw CancellationError() }
+        return body
     }
 
-    private static func httpResponse(url: URL, statusCode: Int, headers: [String: String]) -> HTTPURLResponse {
-        HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
-    }
-
-    private actor HTTPStub {
-        typealias Handler = @Sendable (_ request: URLRequest, _ callNumber: Int) async throws -> FetchResponse
-
-        struct Call: Sendable {
-            let method: String
-            let url: String
-            let headers: [String: String]
-            let body: JSONValue?
-        }
-
-        private var handlers: [String: Handler] = [:]
-        private var calls: [Call] = []
-        private var callCountByKey: [String: Int] = [:]
-
-        func setJSON(
-            method: String,
-            url: String,
-            statusCode: Int = 200,
-            body: Any,
-            headers: [String: String]? = nil
-        ) async throws {
-            let data = try XAIVideoModelTests.jsonData(body)
-            let headerFields: [String: String] = {
-                var base: [String: String] = [
-                    "Content-Type": "application/json",
-                    "Content-Length": String(data.count),
-                ]
-                if let headers {
-                    for (k, v) in headers { base[k] = v }
-                }
-                return base
-            }()
-
-            setHandler(method: method, url: url) { request, _ in
-                FetchResponse(
-                    body: .data(data),
-                    urlResponse: XAIVideoModelTests.httpResponse(url: request.url!, statusCode: statusCode, headers: headerFields)
-                )
-            }
-        }
-
-        func setHandler(method: String, url: String, handler: @escaping Handler) {
-            handlers["\(method.uppercased()) \(url)"] = handler
-        }
-
-        func handle(_ request: URLRequest) async throws -> FetchResponse {
-            let method = request.httpMethod ?? "GET"
-            let url = request.url?.absoluteString ?? ""
-            let key = "\(method.uppercased()) \(url)"
-
-            let callNumber = (callCountByKey[key] ?? 0) + 1
-            callCountByKey[key] = callNumber
-
-            let headers = request.allHTTPHeaderFields ?? [:]
-            let body: JSONValue?
-            if let data = request.httpBody {
-                body = try? JSONDecoder().decode(JSONValue.self, from: data)
-            } else {
-                body = nil
-            }
-            calls.append(Call(method: method, url: url, headers: headers, body: body))
-
-            guard let handler = handlers[key] else {
-                throw TestError(message: "Unexpected request: \(key)")
-            }
-
-            return try await handler(request, callNumber)
-        }
-
-        func call(at index: Int) -> Call? {
-            guard index >= 0, index < calls.count else { return nil }
-            return calls[index]
-        }
-
-        func count() -> Int { calls.count }
-    }
-
-    private struct TestError: Error, CustomStringConvertible {
-        let message: String
-        var description: String { message }
-    }
-
-    private var createVideoResponse: [String: Any] {
-        ["request_id": "req-123"]
-    }
-
-    private var doneStatusResponse: [String: Any] {
-        [
-            "status": "done",
-            "video": [
-                "url": "https://vidgen.x.ai/output/video-001.mp4",
-                "duration": 5,
-                "respect_moderation": true,
-            ],
-            "model": "grok-imagine-video",
-        ]
-    }
-
-    private var defaultProviderOptions: SharedV4ProviderOptions {
-        [
-            "xai": [
-                "pollIntervalMs": 10,
-                "pollTimeoutMs": 5_000,
-            ]
-        ]
-    }
-
-    private var defaultOptions: VideoModelV4CallOptions {
-        VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: defaultProviderOptions
-        )
-    }
-
-    private func makeModel(
-        headers: (@Sendable () -> [String: String?])? = { ["api-key": "test-key"] },
-        fetch: FetchFunction? = nil,
-        currentDate: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_704_067_200) } // 2024-01-01
-    ) -> XAIVideoModel {
-        XAIVideoModel(
-            modelId: .grokImagineVideo,
-            config: XAIVideoModelConfig(
-                provider: "xai.video",
-                baseURL: baseURL,
-                headers: headers ?? { [:] },
-                fetch: fetch,
-                currentDate: currentDate
-            )
-        )
-    }
-
-    @Test("constructor exposes correct provider and model information")
-    func constructorInfo() throws {
-        let model = makeModel()
-        #expect(model.provider == "xai.video")
-        #expect(model.modelId == "grok-imagine-video")
-        #expect(model.specificationVersion == "v4")
-
-        switch model.maxVideosPerCall {
-        case .value(let value):
-            #expect(value == 1)
-        case .default, .function:
-            Issue.record("Expected fixed maxVideosPerCall == 1")
-        }
-    }
-
-    @Test("sends correct request body with model and prompt")
-    func requestBodyMinimal() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: defaultOptions)
-
-        guard let call = await stub.call(at: 0) else {
-            Issue.record("Missing create call")
-            return
-        }
-
-        #expect(call.method.uppercased() == "POST")
-        #expect(call.url == createGenerationsURL)
-        #expect(call.body == .object([
-            "model": .string("grok-imagine-video"),
-            "prompt": .string(prompt),
-        ]))
-    }
-
-    @Test("polls the correct status URL")
-    func pollsCorrectStatusURL() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: defaultOptions)
-
-        guard let call = await stub.call(at: 1) else {
-            Issue.record("Missing poll call")
-            return
-        }
-
-        #expect(call.method.uppercased() == "GET")
-        #expect(call.url == statusURL)
-    }
-
-    @Test("sends duration in request body")
-    func sendsDuration() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            duration: 10,
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["duration"] == 10)
-    }
-
-    @Test("sends aspect_ratio in request body")
-    func sendsAspectRatio() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            aspectRatio: "9:16",
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["aspect_ratio"] == "9:16")
-    }
-
-    @Test("maps SDK resolution 1280x720 to 720p")
-    func resolutionMaps720p() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            resolution: "1280x720",
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["resolution"] == "720p")
-    }
-
-    @Test("maps SDK resolution 854x480 to 480p")
-    func resolutionMaps480p() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            resolution: "854x480",
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["resolution"] == "480p")
-    }
-
-    @Test("prefers provider option resolution over SDK resolution")
-    func providerResolutionOverridesSDKResolution() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let providerOptions: SharedV4ProviderOptions = [
-            "xai": [
-                "resolution": "480p",
-                "pollIntervalMs": 10,
-                "pollTimeoutMs": 5_000,
-            ]
-        ]
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            resolution: "1280x720",
-            providerOptions: providerOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["resolution"] == "480p")
-    }
-
-    @Test("warns for unrecognized resolution format")
-    func warnsUnrecognizedResolution() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            resolution: "1920x1080",
-            providerOptions: defaultProviderOptions
-        ))
-
-        #expect(result.warnings.contains(where: { warning in
-            if case .unsupported(feature: "resolution", details: _) = warning { return true }
-            return false
-        }))
-    }
-
-    @Test("sends image object from URL-based image input")
-    func sendsImageURL() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .url(url: "https://example.com/image.png", providerOptions: nil),
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["image"] == .object(["url": "https://example.com/image.png"]))
-    }
-
-    @Test("sends image object with data URI from file data")
-    func sendsImageDataURIFromBinary() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let imageData = Data([137, 80, 78, 71]) // PNG magic bytes
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil),
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["image"] == .object(["url": "data:image/png;base64,iVBORw=="]))
-    }
-
-    @Test("sends image object with data URI from base64 string")
-    func sendsImageDataURIFromBase64() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            image: .file(mediaType: "image/jpeg", data: .base64("aGVsbG8="), providerOptions: nil),
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["image"] == .object(["url": "data:image/jpeg;base64,aGVsbG8="]))
-    }
-
-    @Test("sends video object to /videos/edits for video editing")
-    func editModeSendsVideoObjectAndUsesEditsEndpoint() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createEditsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let providerOptions: SharedV4ProviderOptions = [
-            "xai": [
-                "videoUrl": "https://example.com/source-video.mp4",
-                "pollIntervalMs": 10,
-                "pollTimeoutMs": 5_000,
-            ]
-        ]
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: providerOptions
-        ))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(call.url == createEditsURL)
-        #expect(body["video"] == .object(["url": "https://example.com/source-video.mp4"]))
-    }
-
-    @Test("warns about duration/aspectRatio/resolution in edit mode and omits them from body")
-    func editModeWarningsAndOmissions() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createEditsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let providerOptions: SharedV4ProviderOptions = [
-            "xai": [
-                "videoUrl": "https://example.com/source-video.mp4",
-                "pollIntervalMs": 10,
-                "pollTimeoutMs": 5_000,
-            ]
-        ]
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            aspectRatio: "16:9",
-            resolution: "1280x720",
-            duration: 10,
-            providerOptions: providerOptions
-        ))
-
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "duration", details: _) = $0 { true } else { false } }))
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "aspectRatio", details: _) = $0 { true } else { false } }))
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "resolution", details: _) = $0 { true } else { false } }))
-
-        guard let call = await stub.call(at: 0), case let .object(body)? = call.body else {
-            Issue.record("Missing body")
-            return
-        }
-
-        #expect(body["duration"] == nil)
-        #expect(body["aspect_ratio"] == nil)
-        #expect(body["resolution"] == nil)
-    }
-
-    @Test("passes headers to requests (create + poll)")
-    func headersAreCombined() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(
-            headers: { ["Authorization": "Bearer custom-token", "X-Custom": "value"] },
-            fetch: { request in try await stub.handle(request) }
-        )
-
-        _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: defaultProviderOptions,
-            headers: ["X-Request-Header": "request-value"]
-        ))
-
-        guard let createCall = await stub.call(at: 0) else {
-            Issue.record("Missing create call")
-            return
-        }
-        guard let pollCall = await stub.call(at: 1) else {
-            Issue.record("Missing poll call")
-            return
-        }
-
-        func header(_ headers: [String: String], _ key: String) -> String? {
-            headers.first(where: { $0.key.lowercased() == key.lowercased() })?.value
-        }
-
-        #expect(header(createCall.headers, "authorization") == "Bearer custom-token")
-        #expect(header(createCall.headers, "x-custom") == "value")
-        #expect(header(createCall.headers, "x-request-header") == "request-value")
-
-        #expect(header(pollCall.headers, "authorization") == "Bearer custom-token")
-        #expect(header(pollCall.headers, "x-custom") == "value")
-        #expect(header(pollCall.headers, "x-request-header") == "request-value")
-    }
-
-    @Test("returns video with correct URL and media type")
-    func returnsVideoURL() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.videos == [
-            .url(url: "https://vidgen.x.ai/output/video-001.mp4", mediaType: "video/mp4")
-        ])
-    }
-
-    @Test("handles done response without status field")
-    func doneWithoutStatusField() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: [
-            "video": [
-                "url": "https://vidgen.x.ai/output/video-001.mp4",
-                "duration": 5,
-                "respect_moderation": true,
-            ],
-            "model": "grok-imagine-video",
-        ])
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.videos.count == 1)
-    }
-
-    @Test("returns empty warnings for supported features")
-    func emptyWarningsForDefaults() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: defaultOptions)
-
+    @Test("starts generation with standard request fields and metadata")
+    func start() async throws {
+        let capture = Capture()
+        let result = try await model(capture: capture).doStart(options: .init(prompt: "sunset", n: 1, aspectRatio: "16:9", resolution: "1280x720", duration: 5, generateAudio: true, headers: ["X-Request": "custom"]))
+        let request = try #require(await capture.last())
+        #expect(request.url?.absoluteString == "https://api.example.com/videos/generations")
+        #expect(try body(request) == ["model": .string("grok-imagine-video"), "prompt": .string("sunset"), "aspect_ratio": .string("16:9"), "resolution": .string("720p"), "duration": .number(5), "generate_audio": .bool(true)])
+        #expect(request.value(forHTTPHeaderField: "X-Request") == "custom")
+        #expect(request.value(forHTTPHeaderField: "X-Provider") == "provider")
+        #expect(result.operation == .object(["requestId": .string("req-123")]))
         #expect(result.warnings.isEmpty)
-    }
-
-    @Test("warns about unsupported fps")
-    func warnsUnsupportedFPS() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            fps: 30,
-            providerOptions: defaultProviderOptions
-        ))
-
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "fps", details: _) = $0 { true } else { false } }))
-    }
-
-    @Test("warns about unsupported seed")
-    func warnsUnsupportedSeed() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 1,
-            seed: 42,
-            providerOptions: defaultProviderOptions
-        ))
-
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "seed", details: _) = $0 { true } else { false } }))
-    }
-
-    @Test("warns when n > 1 and does not warn when n == 1")
-    func warnsWhenNGreaterThan1() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: VideoModelV4CallOptions(
-            prompt: prompt,
-            n: 3,
-            providerOptions: defaultProviderOptions
-        ))
-
-        #expect(result.warnings.contains(where: { if case .unsupported(feature: "n", details: _) = $0 { true } else { false } }))
-
-        // n == 1 should not warn
-        let result2 = try await model.doGenerate(options: defaultOptions)
-        #expect(!result2.warnings.contains(where: { if case .unsupported(feature: "n", details: _) = $0 { true } else { false } }))
-    }
-
-    @Test("response includes timestamp, headers, and modelId")
-    func responseMetadata() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let testDate = Date(timeIntervalSince1970: 1_704_067_200) // 2024-01-01
-        let model = makeModel(
-            fetch: { request in try await stub.handle(request) },
-            currentDate: { testDate }
-        )
-
-        let result = try await model.doGenerate(options: defaultOptions)
-        #expect(result.response.timestamp == testDate)
+        #expect(result.response.timestamp == Date(timeIntervalSince1970: 1234))
         #expect(result.response.modelId == "grok-imagine-video")
-        #expect(result.response.headers != nil)
+        #expect(result.response.headers?["x-request-id"] == "request")
     }
 
-    @Test("providerMetadata includes requestId, videoUrl, and duration")
-    func providerMetadata() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.providerMetadata == [
-            "xai": [
-                "requestId": "req-123",
-                "videoUrl": "https://vidgen.x.ai/output/video-001.mp4",
-                "duration": 5,
-            ]
-        ])
+    @Test("maps supported resolutions and provider override", arguments: [("854x480", "480p"), ("640x480", "480p"), ("1920x1080", "1080p")])
+    func resolutions(_ input: String, _ expected: String) async throws {
+        let capture = Capture()
+        _ = try await model(modelId: .grokImagineVideo15, capture: capture).doStart(options: .init(n: 1, resolution: input))
+        #expect(try body(#require(await capture.last()))["resolution"] == .string(expected))
+        _ = try await model(capture: capture).doStart(options: .init(n: 1, resolution: input, providerOptions: ["xai": ["resolution": .string("720p")]]))
+        #expect(try body(#require(await capture.last()))["resolution"] == .string("720p"))
     }
 
-    @Test("throws when status is expired")
-    func errorExpired() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: [
-            "status": "expired",
-            "model": "grok-imagine-video",
-        ])
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("expired"))
-        }
+    @Test("generation warnings preserve unsupported feature verdicts")
+    func warnings() async throws {
+        let result = try await model().doStart(options: .init(n: 2, resolution: "bad", fps: 24, seed: 1))
+        let features = result.warnings.compactMap { warning -> String? in if case .unsupported(let feature, _) = warning { feature } else { nil } }
+        #expect(Set(features) == Set(["n", "resolution", "fps", "seed"]))
     }
 
-    @Test("throws when no request_id is returned")
-    func errorMissingRequestId() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: [:])
-        try await stub.setJSON(method: "GET", url: statusURL, body: doneStatusResponse)
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("No request_id"))
-        }
-    }
-
-    @Test("throws when video URL is missing on done status")
-    func errorMissingVideoURLOnDone() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: [
-            "status": "done",
-            "video": NSNull(),
-            "model": "grok-imagine-video",
-        ])
-
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("no video url"))
-        }
-    }
-
-    @Test("throws on timeout")
-    func errorTimeout() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createGenerationsURL, body: createVideoResponse)
-        try await stub.setJSON(method: "GET", url: statusURL, body: [
-            "status": "pending",
-            "model": "grok-imagine-video",
-        ])
-
-        let providerOptions: SharedV4ProviderOptions = [
-            "xai": [
-                "pollIntervalMs": 10,
-                "pollTimeoutMs": 50,
-            ]
+    @Test("converts binary, base64, and URL frame images")
+    func images() async throws {
+        let capture = Capture()
+        let frames: [VideoModelV4FrameImage] = [
+            .init(image: .file(mediaType: "image/png", data: .binary(Data([1, 2, 3])), providerOptions: nil), frameType: .firstFrame),
+            .init(image: .url(url: "https://example.com/last.png", providerOptions: nil), frameType: .lastFrame)
         ]
+        _ = try await model(modelId: .grokImagineVideo15, capture: capture).doStart(options: .init(n: 1, image: .url(url: "https://example.com/ignored.png", providerOptions: nil), frameImages: frames))
+        let request = try body(#require(await capture.last()))
+        #expect(request["image"] == .object(["url": .string("data:image/png;base64,AQID")]))
+        #expect(request["last_frame"] == .object(["url": .string("https://example.com/last.png")]))
+        _ = try await model(capture: capture).doStart(options: .init(n: 1, image: .file(mediaType: "image/png", data: .base64("AQID"), providerOptions: nil)))
+        #expect(try body(#require(await capture.last()))["image"] == .object(["url": .string("data:image/png;base64,AQID")]))
+    }
 
-        let model = makeModel(fetch: { request in try await stub.handle(request) })
+    @Test("edit and extension route endpoints and warn about unsupported settings", arguments: ["edit-video", "extend-video"])
+    func modes(_ mode: String) async throws {
+        let capture = Capture()
+        let result = try await model(capture: capture).doStart(options: .init(prompt: "edit", n: 1, aspectRatio: "16:9", resolution: "1280x720", duration: 5, generateAudio: true, providerOptions: ["xai": ["mode": .string(mode), "videoUrl": .string("https://example.com/source.mp4"), "user": .string("user"), "custom": .number(7)]]))
+        let request = try #require(await capture.last())
+        #expect(request.url?.path == (mode == "edit-video" ? "/videos/edits" : "/videos/extensions"))
+        let data = try body(request)
+        #expect(data["video"] == .object(["url": .string("https://example.com/source.mp4")]))
+        #expect(data["custom"] == .number(7))
+        #expect(data["duration"] == (mode == "edit-video" ? nil : .number(5)))
+        #expect(data["aspect_ratio"] == nil)
+        #expect(data["resolution"] == nil)
+        #expect(data["generate_audio"] == nil)
+        #expect(data["user"] == (mode == "edit-video" ? .string("user") : nil))
+        let features = result.warnings.compactMap { if case .unsupported(let feature, _) = $0 { feature } else { nil } }
+        #expect(Set(features) == Set(mode == "edit-video" ? ["duration", "aspectRatio", "resolution", "generateAudio"] : ["aspectRatio", "resolution", "generateAudio"]))
+    }
 
-        do {
-            _ = try await model.doGenerate(options: VideoModelV4CallOptions(
-                prompt: prompt,
-                n: 1,
-                providerOptions: providerOptions
-            ))
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("timed out"))
-        }
+    @Test("reference generation maps image/audio inputs, voices, storage, and keyframes")
+    func references() async throws {
+        let capture = Capture()
+        let result = try await model(modelId: .grokImagineVideo15, capture: capture).doStart(options: .init(n: 1, resolution: "1920x1080", inputReferences: [
+            .url(url: "https://example.com/image.png", providerOptions: nil),
+            .file(mediaType: "audio/wav", data: .binary(Data([1])), providerOptions: nil),
+            .url(url: "https://example.com/video.mp4", mediaType: "video/mp4", providerOptions: nil)
+        ], providerOptions: ["xai": ["referenceVoiceIds": .array([.string("voice")]), "storageOptions": .object(["filename": .string("clip.mp4"), "expiresAfter": .number(3600), "publicUrl": .object(["expiresAfter": .number(7200)])]), "keyframes": .array([.object(["imageUrl": .string("https://example.com/key.png"), "timestampSeconds": .number(1)])])]]))
+        let request = try body(#require(await capture.last()))
+        #expect(request["resolution"] == .string("720p"))
+        #expect(request["reference_images"] == .array([.object(["url": .string("https://example.com/image.png")])]))
+        #expect(request["reference_audios"] == .array([.object(["url": .string("data:audio/wav;base64,AQ==")]), .object(["voice_id": .string("voice")])]))
+        #expect(request["storage_options"] == .object(["filename": .string("clip.mp4"), "expires_after": .number(3600), "public_url": .object(["expires_after": .number(7200)])]))
+        #expect(request["keyframes"] == .array([.object(["image": .object(["url": .string("https://example.com/key.png")]), "timestamp_s": .number(1)])]))
+        #expect(result.warnings.count == 2)
+    }
+
+    @Test("status returns completion, billing, storage metadata, and combined headers")
+    func completed() async throws {
+        let payload = #"{"status":"done","video":{"duration":5,"respect_moderation":true,"file_output":{"file_id":"file","filename":"clip.mp4","expires_at":2000,"public_url":"https://example.com/video.mp4","public_url_expires_at":1900},"storage_error":"warning"},"usage":{"cost_in_usd_ticks":8},"progress":100}"#
+        let capture = Capture()
+        let result = try await model(payload, capture: capture).doStatus(options: .init(operation: .object(["requestId": .string("../id?query#hash")]), headers: ["X-Request": "request"]))
+        let request = try #require(await capture.last())
+        #expect(request.url?.absoluteString == "https://api.example.com/videos/..%2Fid%3Fquery%23hash")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+        #expect(request.value(forHTTPHeaderField: "X-Request") == "request")
+        guard case .completed(let videos, let warnings, let metadata, let response) = result else { Issue.record("Expected completion"); return }
+        #expect(videos == [.url(url: "https://example.com/video.mp4", mediaType: "video/mp4")])
+        #expect(warnings.isEmpty)
+        #expect(metadata?["xai"]?["costInUsdTicks"] == .number(8))
+        #expect(metadata?["xai"]?["duration"] == .number(5))
+        #expect(metadata?["xai"]?["progress"] == .number(100))
+        #expect(metadata?["xai"]?["storageError"] == .string("warning"))
+        #expect(response.timestamp == Date(timeIntervalSince1970: 1234))
+        #expect(response.headers?["x-request-id"] == "request")
+    }
+
+    @Test("URL-only status responses complete")
+    func completedWithoutStatus() async throws {
+        let result = try await model(#"{"video":{"url":"https://example.com/video.mp4"}}"#).doStatus(options: .init(operation: .object(["requestId": .string("request")])))
+        guard case .completed(let videos, _, _, _) = result else { Issue.record("Expected completion"); return }
+        #expect(videos == [.url(url: "https://example.com/video.mp4", mediaType: "video/mp4")])
+    }
+
+    @Test("202 bodies produce pending without requiring JSON", arguments: ["", "not json", #"{"status":"pending","progress":0.5}"#])
+    func pending(_ payload: String) async throws {
+        let result = try await model(payload, status: 202).doStatus(options: .init(operation: .object(["requestId": .string("request")])))
+        guard case .pending = result else { Issue.record("Expected pending"); return }
+    }
+
+    @Test("terminal status errors are returned as typed verdicts", arguments: [
+        (#"{"status":"expired"}"#, "Video generation request expired."),
+        (#"{"status":"failed","error":{"message":"bad video"}}"#, "Video generation failed: bad video"),
+        (#"{"status":"done","video":{"respect_moderation":false}}"#, "Video generation was blocked due to a content policy violation."),
+        (#"{"status":"done"}"#, "Video generation completed but no video URL was returned.")
+    ])
+    func failed(_ payload: String, _ expected: String) async throws {
+        let result = try await model(payload).doStatus(options: .init(operation: .object(["requestId": .string("request")])))
+        guard case .error(let error, _, _) = result else { Issue.record("Expected terminal error"); return }
+        #expect(error == expected)
+    }
+
+    @Test("missing operation identifiers reject generation")
+    func missingRequestID() async throws {
+        await #expect(throws: (any Error).self) { _ = try await model("{}").doStart(options: .init(n: 1)) }
     }
 }
