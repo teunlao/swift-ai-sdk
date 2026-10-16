@@ -47,12 +47,14 @@ struct ProviderRegistryTests {
         )
 
         try await withGlobalProviderV4(MediaProvider()) {
-            let speechModel = try #require(aliases.speechModel(modelId: "alias"))
+            let resolvedSpeech = try aliases.speechModel(modelId: "alias")
+            let speechModel = try #require(resolvedSpeech)
             let audio = try await generateSpeech(model: speechModel, text: "fallback audio")
             #expect(audio.audio.data == Data("fallback audio".utf8))
             #expect(audio.responses.first?.modelId == "fallback-speech")
 
-            let transcriptionModel = try #require(aliases.transcriptionModel(modelId: "alias"))
+            let resolvedTranscription = try aliases.transcriptionModel(modelId: "alias")
+            let transcriptionModel = try #require(resolvedTranscription)
             let transcript = try await transcribe(model: transcriptionModel, audio: .data(Data([1])))
             #expect(transcript.text == "fallback transcript")
             #expect(transcript.responses.first?.modelId == "fallback-transcription")

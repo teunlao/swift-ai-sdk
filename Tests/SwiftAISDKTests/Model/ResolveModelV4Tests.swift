@@ -13,8 +13,10 @@ struct ResolveModelV4Tests {
         ]
         for provider in providers {
             try withGlobalProviderV4(provider) {
-                #expect(try resolveSpeechModelV4(.string("unsupported")) == nil)
-                #expect(try resolveTranscriptionModelV4(.string("unsupported")) == nil)
+                let speech = try resolveSpeechModelV4(.string("unsupported"))
+                let transcription = try resolveTranscriptionModelV4(.string("unsupported"))
+                #expect(speech == nil)
+                #expect(transcription == nil)
 
                 let custom = customProvider(
                     transcriptionModels: ["alias": .string("unsupported")],
