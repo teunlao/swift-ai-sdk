@@ -83,6 +83,7 @@ let package = Package(
 
         // OpenAI provider package
         .target(name: "OpenAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
+        .testTarget(name: "OpenAIProviderTests", dependencies: ["OpenAIProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
 
 	        // OpenAI-compatible provider package
 	        .target(name: "OpenAICompatibleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
@@ -135,8 +136,7 @@ let package = Package(
         .target(name: "SwiftAISDK", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AISDKJSONSchema", "EventSourceParser", "GatewayProvider"]),
 	        .testTarget(
                 name: "SwiftAISDKTests",
-                dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider", "CohereProvider", "AmazonBedrockProvider"],
-                resources: [.copy("OpenAI/Fixtures")]
+                dependencies: ["SwiftAISDK", "OpenAIProvider", "OpenAICompatibleProvider", "CohereProvider", "AmazonBedrockProvider"]
             ),
 	        .testTarget(
                 name: "OpenAICompatibleProviderTests",

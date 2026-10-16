@@ -3801,7 +3801,7 @@ struct OpenAIChatLanguageModelTests {
             return
         }
 
-        #expect(finishReason == .error)
+        #expect(finishReason.unified == .error)
     }
 
     @Test("O1 model stream text delta")

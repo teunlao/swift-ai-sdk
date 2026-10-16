@@ -1404,7 +1404,7 @@ struct OpenAICompletionLanguageModelTests {
             }
 
             if case .finish(let finishReason, _, _) = parts[2] {
-                #expect(finishReason == .error)
+                #expect(finishReason.unified == .error)
             } else {
                 Issue.record("Expected finish part")
             }
@@ -1832,7 +1832,7 @@ struct OpenAICompletionLanguageModelTests {
             }
 
             if case .finish(let finishReason, _, _) = parts[2] {
-                #expect(finishReason == .error)
+                #expect(finishReason.unified == .error)
             } else {
                 Issue.record("Expected finish part")
             }

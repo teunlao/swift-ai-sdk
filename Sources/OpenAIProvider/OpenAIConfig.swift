@@ -21,6 +21,7 @@ public protocol OpenAIWebSocketConnection: Sendable {
     var messages: AsyncThrowingStream<String, Error> { get }
 
     func waitUntilOpen() async throws
+    func waitForBufferDrain() async throws
     func send(_ text: String) async throws
     func close(code: Int?)
 }
@@ -29,6 +30,7 @@ public typealias OpenAIWebSocketFactory = @Sendable (OpenAIWebSocketRequest) thr
 
 public extension OpenAIWebSocketConnection {
     func waitUntilOpen() async throws {}
+    func waitForBufferDrain() async throws {}
 }
 
 /// Configuration options for OpenAI provider API calls.
@@ -54,7 +56,20 @@ public struct OpenAIConfig: @unchecked Sendable {
         }
     }
 
+    public struct ImageInputCapabilities: Sendable {
+        public let supportsFileInputs: Bool?
+        public let supportsMaskInputs: Bool?
+
+        public init(supportsFileInputs: Bool? = nil, supportsMaskInputs: Bool? = nil) {
+            self.supportsFileInputs = supportsFileInputs
+            self.supportsMaskInputs = supportsMaskInputs
+        }
+    }
+
     public let provider: String
+    public let baseURL: String?
+    public let explicitMessageItemType: Bool?
+    public let imageInputCapabilities: ImageInputCapabilities?
     public let url: @Sendable (_ options: URLOptions) throws -> String
     public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
@@ -66,6 +81,9 @@ public struct OpenAIConfig: @unchecked Sendable {
 
     public init(
         provider: String,
+        baseURL: String? = nil,
+        explicitMessageItemType: Bool? = nil,
+        imageInputCapabilities: ImageInputCapabilities? = nil,
         url: @escaping @Sendable (_ options: URLOptions) throws -> String,
         headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction? = nil,
@@ -76,6 +94,9 @@ public struct OpenAIConfig: @unchecked Sendable {
         _internal: InternalOptions? = nil
     ) {
         self.provider = provider
+        self.baseURL = baseURL
+        self.explicitMessageItemType = explicitMessageItemType
+        self.imageInputCapabilities = imageInputCapabilities
         self.url = url
         self.headers = headers
         self.fetch = fetch

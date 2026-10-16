@@ -174,7 +174,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(toolCalls.first?.toolName == "lookup_city")
         #expect(toolCalls.first?.input == "{\"city\":\"Berlin\"}")
 
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
         #expect(result.usage.inputTokens.total == 12)
         #expect(result.usage.outputTokens.total == 7)
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 19)
@@ -826,7 +826,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         if let finishPart = parts.last {
             if case .finish(let finishReason, let usage, let providerMetadata) = finishPart {
-                #expect(finishReason == .stop)
+                #expect(finishReason.unified == .stop)
                 #expect(usage.inputTokens.total == 543)
                 #expect(usage.outputTokens.total == 478)
                 #expect(usage.inputTokens.cacheRead == 234)
@@ -1151,7 +1151,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         if let finish = parts.last {
             if case .finish(let reason, let usage, _) = finish {
-                #expect(reason == .toolCalls)
+                #expect(reason.unified == .toolCalls)
                 #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 16)
             } else {
                 Issue.record("Expected finish part for tool stream")
@@ -2956,7 +2956,7 @@ struct OpenAIResponsesLanguageModelTests {
         })
 
         if let finish = parts.last, case .finish(let reason, let usage, _) = finish {
-            #expect(reason == .stop)
+            #expect(reason.unified == .stop)
             #expect((usage.inputTokens.total ?? 0) + (usage.outputTokens.total ?? 0) == 4)
         } else {
             Issue.record("Expected finish part for code interpreter stream")
@@ -3242,7 +3242,7 @@ struct OpenAIResponsesLanguageModelTests {
         })
 
         if let finish = parts.last, case .finish(let reason, _, _) = finish {
-            #expect(reason == .error)
+            #expect(reason.unified == .error)
         } else {
             Issue.record("Expected finish error part")
         }
@@ -3323,7 +3323,7 @@ struct OpenAIResponsesLanguageModelTests {
         })
 
         if let finish = parts.last, case .finish(let reason, _, _) = finish {
-            #expect(reason == .error)
+            #expect(reason.unified == .error)
         } else {
             Issue.record("Expected finish error part")
         }
@@ -6849,7 +6849,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
 
-        #expect(result.finishReason == .toolCalls)
+        #expect(result.finishReason.unified == .toolCalls)
     }
 
     // MARK: - fileIdPrefixes Configuration Tests
