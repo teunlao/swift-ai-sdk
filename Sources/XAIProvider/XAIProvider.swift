@@ -7,12 +7,14 @@ public struct XAIProviderSettings: Sendable {
     public var apiKey: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
+    public var webSocket: XAIWebSocketFactory?
 
-    public init(baseURL: String? = nil, apiKey: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
+    public init(baseURL: String? = nil, apiKey: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil, webSocket: XAIWebSocketFactory? = nil) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.headers = headers
         self.fetch = fetch
+        self.webSocket = webSocket
     }
 }
 
@@ -58,6 +60,16 @@ public final class XAIProvider: ProviderV4 {
 
     public func image(modelId: XAIImageModelId) -> XAIImageModel {
         XAIImageModel(modelId: modelId, config: .init(provider: "xai.image", baseURL: baseURL, headers: headers, fetch: settings.fetch))
+    }
+
+    public func transcription(modelId: XAITranscriptionModelId = "") -> XAITranscriptionModel {
+        XAITranscriptionModel(modelId: modelId, config: .init(provider: "xai.transcription", baseURL: baseURL, headers: headers, fetch: settings.fetch, webSocket: settings.webSocket))
+    }
+
+    public func transcriptionModel() -> XAITranscriptionModel { transcription() }
+
+    public func transcriptionModel(modelId: String) -> (any TranscriptionModelV4)? {
+        transcription(modelId: XAITranscriptionModelId(rawValue: modelId))
     }
 
     public func files() -> (any FilesV4)? {
