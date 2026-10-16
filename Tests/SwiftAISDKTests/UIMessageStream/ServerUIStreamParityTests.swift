@@ -244,7 +244,9 @@ private final class PipeResponse: StreamTextResponseWriter, @unchecked Sendable 
     private var ended = false
 
     func writeHead(status: Int, statusText: String?, headers: [String: String]) {}
-    func write(_ data: Data) { lock.lock(); body.append(data); lock.unlock() }
+    var isClosed: Bool { false }
+    func onClose(_ handler: @escaping @Sendable () -> Void) -> @Sendable () -> Void { {} }
+    func write(_ data: Data) async throws { lock.withLock { body.append(data) } }
     func end() { lock.lock(); ended = true; lock.unlock() }
     func result() -> (body: String, ended: Bool) {
         lock.lock()

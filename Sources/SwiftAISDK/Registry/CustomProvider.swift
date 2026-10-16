@@ -351,8 +351,9 @@ private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
     }
 
     func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
-        if let models = transcriptionModels, let model = models[modelId] {
-            return try resolveTranscriptionModelV4(model)
+        if let model = transcriptionModels?[modelId],
+           let resolved = try resolveTranscriptionModelV4(model) {
+            return resolved
         }
 
         if let models = legacyTranscriptionModels, let model = models[modelId] {
@@ -364,8 +365,9 @@ private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
     }
 
     func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
-        if let models = speechModels, let model = models[modelId] {
-            return try resolveSpeechModelV4(model)
+        if let model = speechModels?[modelId],
+           let resolved = try resolveSpeechModelV4(model) {
+            return resolved
         }
 
         if let models = legacySpeechModels, let model = models[modelId] {

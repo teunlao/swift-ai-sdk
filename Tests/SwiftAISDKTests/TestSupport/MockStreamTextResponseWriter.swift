@@ -28,7 +28,13 @@ final class MockStreamTextResponseWriter: StreamTextResponseWriter, @unchecked S
         }
     }
 
-    func write(_ data: Data) {
+    var isClosed: Bool { false }
+
+    func onClose(_ handler: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
+        return {}
+    }
+
+    func write(_ data: Data) async throws {
         queue.sync {
             internalChunks.append(data)
         }

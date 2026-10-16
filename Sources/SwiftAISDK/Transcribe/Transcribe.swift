@@ -19,7 +19,9 @@ public func transcribe(
     headers: [String: String]? = nil,
     experimentalDownload download: DownloadFileFunction? = nil
 ) async throws -> any TranscriptionResult {
-    let resolvedModel = try resolveTranscriptionModelV4(model)
+    guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
+        throw ModelResolutionFailure(message: "Model could not be resolved")
+    }
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,

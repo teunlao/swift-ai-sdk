@@ -101,7 +101,9 @@ public func generateSpeech(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil
 ) async throws -> any SpeechResult {
-    let model = try resolveSpeechModelV4(model)
+    guard let model = try resolveSpeechModelV4(model) else {
+        throw ModelResolutionFailure(message: "Model could not be resolved")
+    }
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,

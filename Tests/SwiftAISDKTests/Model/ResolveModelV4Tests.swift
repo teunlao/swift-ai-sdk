@@ -5,21 +5,42 @@ import Testing
 
 @Suite("resolve model V4 adapters")
 struct ResolveModelV4Tests {
-    @Test("unsupported optional models report an unresolved-model failure")
-    func optionalModelResolutionFailure() throws {
-        struct Provider: ProviderV4 {
-            func languageModel(modelId: String) throws -> any LanguageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .languageModel) }
-            func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
-            func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
+    @Test("speech and transcription resolution preserves absent provider capabilities")
+    func optionalModelCapabilityAbsent() throws {
+        let providers: [any ProviderV4] = [
+            UnsupportedMediaProviderV4(),
+            asProviderV4(UploadCapableProviderV3())
+        ]
+        for provider in providers {
+            try withGlobalProviderV4(provider) {
+                #expect(try resolveSpeechModelV4(.string("unsupported")) == nil)
+                #expect(try resolveTranscriptionModelV4(.string("unsupported")) == nil)
+
+                let custom = customProvider(
+                    transcriptionModels: ["alias": .string("unsupported")],
+                    speechModels: ["alias": .string("unsupported")]
+                )
+                #expect(throws: NoSuchModelError.self) { try custom.speechModel(modelId: "alias") }
+                #expect(throws: NoSuchModelError.self) { try custom.transcriptionModel(modelId: "alias") }
+            }
         }
-        let custom = customProvider(fallbackProvider: Provider())
-        #expect(throws: NoSuchModelError.self) { try custom.speechModel(modelId: "unsupported") }
-        try withGlobalProviderV4(Provider()) {
-            do {
-                _ = try resolveSpeechModelV4(.string("unsupported"))
-                Issue.record("Expected unresolved speech model")
-            } catch {
-                #expect(error.localizedDescription == "Model could not be resolved")
+    }
+
+    @Test("speech and transcription operations reject an unresolved model")
+    func operationsRejectAbsentCapabilities() async {
+        await withGlobalProviderV4(UnsupportedMediaProviderV4()) {
+            await #expect(throws: ModelResolutionFailure.self) {
+                try await generateSpeech(model: .string("unsupported"), text: "hello")
+            }
+            await #expect(throws: ModelResolutionFailure.self) {
+                try await transcribe(model: .string("unsupported"), audio: .data(Data([1])))
+            }
+            #expect(throws: ModelResolutionFailure.self) {
+                try streamTranscribe(
+                    model: .string("unsupported"),
+                    audio: AsyncThrowingStream { $0.finish() },
+                    inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+                )
             }
         }
     }
@@ -381,6 +402,20 @@ struct ResolveModelV4Tests {
                 )
             )
         }
+    }
+}
+
+private struct UnsupportedMediaProviderV4: ProviderV4 {
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 }
 

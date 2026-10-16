@@ -29,25 +29,23 @@ public func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
     let headers = prepareHeaders(responseInit.headers, defaultHeaders: UI_MESSAGE_STREAM_HEADERS)
     response.writeHead(status: responseInit.status ?? 200, statusText: responseInit.statusText,
                        headers: headers.mapKeys { $0.lowercased() })
-    defer { response.end() }
-    for try await chunk in sseStream { response.write(Data(chunk.utf8)) }
+    try await writeToServerResponse(response: response, stream: sseStream)
 }
 
 private func buildSSEStream(
     from chunkStream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     consumer: UIMessageStreamConsumer?, keepAliveMs: Double?
 ) throws -> AsyncThrowingStream<String, Error> {
-    let jsonStream = AsyncThrowingStream<JSONValue, Error> { continuation in
-        let task = Task {
-            do {
-                for try await chunk in chunkStream { continuation.yield(encodeUIMessageChunkToJSON(chunk)) }
-                continuation.finish()
-            } catch { continuation.finish(throwing: error) }
+    let source = createAsyncIterableStream(source: chunkStream)
+    let iterator = source.makeAsyncIterator()
+    let jsonStream = AsyncThrowingStream<JSONValue, Error>(unfolding: {
+        try await withTaskCancellationHandler {
+            guard let chunk = try await iterator.next() else { return nil }
+            return encodeUIMessageChunkToJSON(chunk)
+        } onCancel: {
+            Task { await source.cancel() }
         }
-        continuation.onTermination = { termination in
-            if case .cancelled = termination { task.cancel() }
-        }
-    }
+    })
     let stream = try createSSEStreamWithKeepAlive(
         stream: JsonToSSETransformStream().transform(stream: jsonStream), keepAliveMs: keepAliveMs
     )

@@ -193,7 +193,7 @@ public func resolveSpeechModelV4(_ model: any SpeechModelV4) -> any SpeechModelV
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveSpeechModelV4(_ model: SpeechModel) throws -> any SpeechModelV4 {
+public func resolveSpeechModelV4(_ model: SpeechModel) throws -> (any SpeechModelV4)? {
     switch model {
     case .v4(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
@@ -202,11 +202,8 @@ public func resolveSpeechModelV4(_ model: SpeechModel) throws -> any SpeechModel
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asSpeechModelV4(model)
     case .string(let id):
-        let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .speechModel)
-        guard let model = try provider.speechModel(modelId: id) else {
-            throw ModelResolutionFailure(message: "Model could not be resolved")
-        }
-        return model
+        return try _resolveGlobalProviderV4(modelId: id, modelType: .speechModel)
+            .speechModel(modelId: id)
     }
 }
 
@@ -221,7 +218,7 @@ public func resolveTranscriptionModelV4(_ model: any TranscriptionModelV4) -> an
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveTranscriptionModelV4(_ model: TranscriptionModel) throws -> any TranscriptionModelV4 {
+public func resolveTranscriptionModelV4(_ model: TranscriptionModel) throws -> (any TranscriptionModelV4)? {
     switch model {
     case .v4(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
@@ -230,11 +227,8 @@ public func resolveTranscriptionModelV4(_ model: TranscriptionModel) throws -> a
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asTranscriptionModelV4(model)
     case .string(let id):
-        let provider = try _resolveGlobalProviderV4(modelId: id, modelType: .transcriptionModel)
-        guard let model = try provider.transcriptionModel(modelId: id) else {
-            throw ModelResolutionFailure(message: "Model could not be resolved")
-        }
-        return model
+        return try _resolveGlobalProviderV4(modelId: id, modelType: .transcriptionModel)
+            .transcriptionModel(modelId: id)
     }
 }
 
@@ -271,7 +265,7 @@ private func _resolveGlobalVideoModelV4(modelId id: String) throws -> any VideoM
     return try videoProvider.videoModel(modelId: id)
 }
 
-private struct ModelResolutionFailure: Error, LocalizedError, CustomStringConvertible {
+struct ModelResolutionFailure: Error, LocalizedError, CustomStringConvertible {
     let message: String
     var errorDescription: String? { message }
     var description: String { message }

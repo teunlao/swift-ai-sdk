@@ -277,8 +277,14 @@ public protocol StreamTextResponseWriter: AnyObject, Sendable {
         headers: [String: String]
     )
 
-    /// Writes a single UTF-8 encoded chunk to the underlying response.
-    func write(_ data: Data)
+    /// Whether the connection has closed before the response finished.
+    var isClosed: Bool { get }
+
+    /// Observes premature closure and returns a thread-safe listener removal operation.
+    func onClose(_ handler: @escaping @Sendable () -> Void) -> @Sendable () -> Void
+
+    /// Writes and flushes a UTF-8 chunk, awaiting drain and respecting task cancellation.
+    func write(_ data: Data) async throws
 
     /// Finishes the response after all chunks have been written.
     func end()

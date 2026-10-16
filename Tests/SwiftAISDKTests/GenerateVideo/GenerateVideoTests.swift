@@ -26,6 +26,23 @@ struct GenerateVideoTests {
         }
     }
 
+    private struct WebhookVideoModel: VideoModelV4Operations, VideoModelV4WebhookHandler {
+        let operations: OperationsVideoModel
+        var provider: String { operations.provider }
+        var modelId: String { operations.modelId }
+        var maxVideosPerCall: VideoModelV4MaxVideosPerCall { operations.maxVideosPerCall }
+        func doStart(options: VideoModelV4CallOptions, webhookUrl: String?) async throws -> VideoModelV4OperationStartResult {
+            try await operations.doStart(options: options, webhookUrl: webhookUrl)
+        }
+        func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+            try await operations.doStatus(options: options)
+        }
+        func handleWebhookOption(webhook: @escaping GenerateVideoWebhookFactory) async throws -> VideoModelV4WebhookRegistration {
+            let endpoint = try await webhook()
+            return .init(webhookUrl: endpoint.url, received: endpoint.received)
+        }
+    }
+
     private let prompt = "a cat walking on a beach"
     private let testDate: Date = {
         var components = DateComponents()
@@ -225,6 +242,150 @@ struct GenerateVideoTests {
             #expect(error.localizedDescription == "Video generation timed out after 20ms.")
         }
         pending.resolve(.pending(warnings: nil, providerMetadata: nil, response: response))
+    }
+
+    @Test("the polling deadline wins over a provider reacting to its abort signal", arguments: [false, true])
+    func deadlineWinsOverProviderReaction(lateSuccess: Bool) async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let reacted = DelayedPromise<Void>()
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(1))
+            reacted.reject(CancellationError())
+        }
+        defer { deadline.cancel() }
+        let model = OperationsVideoModel(
+            start: { _, _ in .init(operation: .string("slow"), response: response) },
+            status: { options in
+                while options.abortSignal?() != true { await Task.yield() }
+                reacted.resolve(())
+                if !lateSuccess { throw CancellationError() }
+                return .completed(videos: [.binary(data: Data([1]), mediaType: "video/mp4")],
+                    warnings: [], providerMetadata: nil, response: response)
+            }
+        )
+        do {
+            _ = try await experimental_generateVideo(model: model, prompt: prompt, maxRetries: 0,
+                poll: .init(intervalMs: 0, timeoutMs: 20, delay: { _, _ in }))
+            Issue.record("Expected the polling timeout")
+        } catch {
+            #expect(error.localizedDescription == "Video generation timed out after 20ms.")
+        }
+        try await reacted.task.value
+    }
+
+    @Test("webhooks defer final status until notification and require completion", arguments: [true, false])
+    func webhookNotification(completed: Bool) async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let received = DelayedPromise<VideoModelV4OperationWebhook>()
+        let armed = DelayedPromise<Void>()
+        let delivered = LockedBox<Bool>()
+        let timer = AsyncThrowingStream<Void, Error>.makeStream()
+        let timerCancelled = DelayedPromise<Bool>()
+        timer.continuation.onTermination = { reason in
+            if case .cancelled = reason { timerCancelled.resolve(true) }
+            else { timerCancelled.resolve(false) }
+        }
+        let model = WebhookVideoModel(operations: OperationsVideoModel(
+            start: { _, url in
+                #expect(url == "https://example.com/webhook")
+                return .init(operation: .string("webhook-operation"), response: response)
+            },
+            status: { options in
+                #expect(delivered.get() == true)
+                #expect(options.operation == .string("webhook-operation"))
+                if completed {
+                    return .completed(videos: [.binary(data: Data([7]), mediaType: "video/mp4")],
+                        warnings: [], providerMetadata: nil, response: response)
+                }
+                return .pending(warnings: nil, providerMetadata: nil, response: response)
+            }
+        ))
+        let generation = Task {
+            try await experimental_generateVideo(model: model, prompt: prompt, maxRetries: 0,
+                poll: .init(timeoutMs: 1000, delay: { _, _ in
+                    armed.resolve(())
+                    for try await _ in timer.stream {}
+                    try Task.checkCancellation()
+                }), webhook: {
+                    .init(url: "https://example.com/webhook", received: received.task)
+                })
+        }
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(1))
+            generation.cancel()
+            armed.reject(CancellationError())
+            timer.continuation.finish()
+            received.reject(CancellationError())
+        }
+        defer { deadline.cancel(); received.reject(CancellationError()); timer.continuation.finish() }
+        try await armed.task.value
+        delivered.set(true)
+        received.resolve(.init(headers: [:], body: .null))
+        do {
+            let result = try await generation.value
+            #expect(completed)
+            #expect(result.video.data == Data([7]))
+        } catch {
+            #expect(!completed)
+            #expect(error.localizedDescription == "Video generation did not complete after webhook notification.")
+        }
+        #expect(try await timerCancelled.task.value)
+    }
+
+    @Test("webhook timeout ends generation without querying final status")
+    func webhookTimeout() async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let received = DelayedPromise<VideoModelV4OperationWebhook>()
+        defer { received.reject(CancellationError()) }
+        let model = WebhookVideoModel(operations: OperationsVideoModel(
+            start: { _, _ in .init(operation: .string("webhook-operation"), response: response) },
+            status: { _ in
+                Issue.record("Final status requested without a webhook notification")
+                throw CancellationError()
+            }
+        ))
+        do {
+            _ = try await experimental_generateVideo(model: model, prompt: prompt, maxRetries: 0,
+                poll: .init(timeoutMs: 20, delay: { _, _ in }),
+                webhook: { .init(url: "https://example.com/webhook", received: received.task) })
+            Issue.record("Expected a webhook timeout")
+        } catch {
+            #expect(error.localizedDescription == "Video generation timed out after 20ms.")
+        }
+    }
+
+    @Test("webhook waits honor task cancellation and caller abort signals", arguments: [true, false])
+    func webhookCancellation(cancelTask: Bool) async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let received = DelayedPromise<VideoModelV4OperationWebhook>()
+        let armed = DelayedPromise<Void>()
+        let aborted = LockedBox<Bool>()
+        let model = WebhookVideoModel(operations: OperationsVideoModel(
+            start: { _, _ in .init(operation: .string("webhook-operation"), response: response) },
+            status: { _ in
+                Issue.record("Final status requested after cancelling a webhook wait")
+                throw CancellationError()
+            }
+        ))
+        let generation = Task {
+            try await experimental_generateVideo(model: model, prompt: prompt, maxRetries: 0,
+                abortSignal: { aborted.get() == true },
+                poll: .init(timeoutMs: 1000, delay: { milliseconds, signal in
+                    armed.resolve(())
+                    try await delay(Int(milliseconds), abortSignal: signal)
+                }), webhook: { .init(url: "https://example.com/webhook", received: received.task) })
+        }
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(1))
+            generation.cancel()
+            armed.reject(CancellationError())
+            received.reject(CancellationError())
+        }
+        defer { deadline.cancel(); received.reject(CancellationError()) }
+        try await armed.task.value
+        if cancelTask { generation.cancel() }
+        else { aborted.set(true) }
+        await #expect(throws: CancellationError.self) { _ = try await generation.value }
     }
 
     @Test("should send args to doGenerate")

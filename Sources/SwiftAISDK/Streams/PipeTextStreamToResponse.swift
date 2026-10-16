@@ -34,12 +34,6 @@ public func pipeTextStreamToResponse(
     )
 
     Task {
-        defer {
-            response.end()
-        }
-
-        for try await chunk in textStream {
-            response.write(Data(chunk.utf8))
-        }
+        try await writeToServerResponse(response: response, stream: textStream)
     }
 }

@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import AISDKProvider
 import SwiftAISDK
 import GatewayProvider
@@ -43,6 +44,32 @@ struct RetryTests {
             #expect(error.lastError is GatewayRateLimitError)
             #expect(error.message == "Failed after 2 attempts. Last error: GatewayRateLimitError: Rate limit exceeded")
         }
+    }
+
+    @Test("Retry-After on a gateway cause delays a retry beyond the configured backoff")
+    func honorsGatewayRetryAfter() async throws {
+        actor Attempts {
+            var first = true
+            func consumeFirst() -> Bool {
+                defer { first = false }
+                return first
+            }
+        }
+        let attempts = Attempts()
+        let retry = retryWithExponentialBackoffRespectingRetryHeaders(maxRetries: 1, initialDelayInMs: 0)
+        let clock = ContinuousClock()
+        let start = clock.now
+        let result = try await retry.call {
+            if await attempts.consumeFirst() {
+                throw GatewayRateLimitError(cause: APICallError(
+                    message: "rate limit", url: "https://example.com/model", requestBodyValues: nil,
+                    statusCode: 429, responseHeaders: ["retry-after": "0.02"]
+                ))
+            }
+            return 42
+        }
+        #expect(result == 42)
+        #expect(start.duration(to: clock.now) >= .milliseconds(20))
     }
 
     @Test("non-finite and oversized Retry-After values use the configured backoff", arguments: ["Infinity", "1e100"])

@@ -21,6 +21,81 @@ struct ProviderRegistryTests {
         #expect(throws: NoSuchModelError.self) { try aliases.speechModel(modelId: "missing") }
     }
 
+    @Test("speech and transcription aliases use fallback when the global capability is absent")
+    func mediaAliasesUseFallback() async throws {
+        let speech = MockSpeechModelV4 { options in
+            .init(
+                audio: .binary(Data(options.text.utf8)),
+                response: .init(timestamp: Date(), modelId: "fallback-speech")
+            )
+        }
+        let transcription = MockTranscriptionModelV4 { _ in
+            .init(
+                text: "fallback transcript",
+                segments: [],
+                response: .init(timestamp: Date(), modelId: "fallback-transcription")
+            )
+        }
+        let fallback = customProviderV4(
+            transcriptionModels: ["alias": transcription],
+            speechModels: ["alias": speech]
+        )
+        let aliases = customProvider(
+            transcriptionModels: ["alias": .string("global-transcription")],
+            speechModels: ["alias": .string("global-speech")],
+            fallbackProvider: fallback
+        )
+
+        try await withGlobalProviderV4(MediaProvider()) {
+            let speechModel = try #require(aliases.speechModel(modelId: "alias"))
+            let audio = try await generateSpeech(model: speechModel, text: "fallback audio")
+            #expect(audio.audio.data == Data("fallback audio".utf8))
+            #expect(audio.responses.first?.modelId == "fallback-speech")
+
+            let transcriptionModel = try #require(aliases.transcriptionModel(modelId: "alias"))
+            let transcript = try await transcribe(model: transcriptionModel, audio: .data(Data([1])))
+            #expect(transcript.text == "fallback transcript")
+            #expect(transcript.responses.first?.modelId == "fallback-transcription")
+        }
+    }
+
+    @Test("speech and transcription aliases preserve resolution errors instead of using fallback")
+    func mediaAliasesPreserveResolutionErrors() {
+        let fallback = customProviderV4(
+            transcriptionModels: ["alias": MockTranscriptionModelV4()],
+            speechModels: ["alias": MockSpeechModelV4()]
+        )
+        let aliases = customProvider(
+            transcriptionModels: ["alias": .string("global-transcription")],
+            speechModels: ["alias": .string("global-speech")],
+            fallbackProvider: fallback
+        )
+
+        withGlobalProviderV4(customProviderV4()) {
+            #expect {
+                try aliases.speechModel(modelId: "alias")
+            } throws: { error in
+                guard let error = error as? NoSuchModelError else { return false }
+                return error.modelId == "global-speech" && error.modelType == .speechModel
+            }
+            #expect {
+                try aliases.transcriptionModel(modelId: "alias")
+            } throws: { error in
+                guard let error = error as? NoSuchModelError else { return false }
+                return error.modelId == "global-transcription" && error.modelType == .transcriptionModel
+            }
+        }
+
+        withGlobalProviderV4(MediaProvider(error: MediaResolutionError.unavailable)) {
+            #expect(throws: MediaResolutionError.unavailable) {
+                try aliases.speechModel(modelId: "alias")
+            }
+            #expect(throws: MediaResolutionError.unavailable) {
+                try aliases.transcriptionModel(modelId: "alias")
+            }
+        }
+    }
+
     @Test("V4 registry resolves video aliases into usable models")
     func videoAliasesGenerate() async throws {
         let model = MockVideoModelV4 { options in
@@ -237,6 +312,36 @@ struct ProviderRegistryTests {
 
         #expect(resolved.provider == "base")
         #expect(resolved.modelId == "model")
+    }
+}
+
+private enum MediaResolutionError: Error, Equatable {
+    case unavailable
+}
+
+private struct MediaProvider: ProviderV4 {
+    var error: (any Error)? = nil
+
+    func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+    }
+
+    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
+    }
+
+    func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+    }
+
+    func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
+        if let error { throw error }
+        return nil
+    }
+
+    func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
+        if let error { throw error }
+        return nil
     }
 }
 

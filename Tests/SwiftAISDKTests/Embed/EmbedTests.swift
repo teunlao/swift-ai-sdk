@@ -49,7 +49,7 @@ struct EmbedTests {
         #expect(await events.phases == ["start", "model", "end"])
     }
 
-    @Test("retryable gateway failures use the underlying Retry-After header")
+    @Test("retryable gateway failures retry to a generated embedding")
     func retriesGatewayFailure() async throws {
         actor Attempts {
             var count = 0

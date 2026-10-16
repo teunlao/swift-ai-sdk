@@ -16,7 +16,9 @@ public func streamTranscribe(
     headers: [String: String]? = nil,
     includeRawChunks: Bool? = nil
 ) throws -> any StreamTranscriptionResult {
-    let resolvedModel = try resolveTranscriptionModelV4(model)
+    guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
+        throw ModelResolutionFailure(message: "Model could not be resolved")
+    }
     return makeStreamTranscriptionResult(
         model: resolvedModel,
         audio: audio,

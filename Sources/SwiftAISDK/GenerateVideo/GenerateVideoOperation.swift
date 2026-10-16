@@ -136,8 +136,9 @@ private func withVideoTimeout<Value: Sendable>(
     let timer = Task {
         do {
             try await timeoutDelay(milliseconds, timerSignal)
-            deadline.markTotalTimedOut()
+            // Fix the timeout result before providers can observe its abort signal.
             race.finish(.failure(timeout))
+            deadline.markTotalTimedOut()
         } catch { race.finish(.failure(error)) }
     }
     defer {
@@ -147,8 +148,8 @@ private func withVideoTimeout<Value: Sendable>(
     return try await withTaskCancellationHandler {
         try await race.value()
     } onCancel: {
-        deadline.markTotalTimedOut()
         race.finish(.failure(CancellationError()))
+        deadline.markTotalTimedOut()
     }
 }
 

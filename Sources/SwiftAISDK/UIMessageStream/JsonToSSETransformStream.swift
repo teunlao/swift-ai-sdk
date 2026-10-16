@@ -16,26 +16,49 @@ public struct JsonToSSETransformStream {
     public func transform(
         stream: AsyncThrowingStream<JSONValue, Error>
     ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-
-                do {
-                    for try await element in stream {
-                        let data = try encoder.encode(element)
-                        guard let text = String(data: data, encoding: .utf8) else {
-                            continue
-                        }
-                        continuation.yield("data: \(text)\n\n")
-                    }
-
-                    continuation.yield("data: [DONE]\n\n")
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let encoder = SSEEncoder(stream: stream)
+        return AsyncThrowingStream(unfolding: {
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                return try await encoder.next()
+            } onCancel: {
+                Task { await encoder.cancel() }
             }
+        })
+    }
+}
+
+private actor SSEEncoder {
+    private let source: AsyncIterableStream<JSONValue>
+    private let iterator: AsyncIterableStream<JSONValue>.AsyncIterator
+    private let encoder: JSONEncoder
+    private var finished = false
+
+    init(stream: AsyncThrowingStream<JSONValue, Error>) {
+        let source = createAsyncIterableStream(source: stream)
+        self.source = source
+        iterator = source.makeAsyncIterator()
+        encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    }
+
+    func next() async throws -> String? {
+        guard !finished else { return nil }
+        do {
+            guard let element = try await iterator.next() else {
+                guard !finished else { return nil }
+                finished = true
+                return "data: [DONE]\n\n"
+            }
+            return "data: \(String(decoding: try encoder.encode(element), as: UTF8.self))\n\n"
+        } catch {
+            finished = true
+            throw error
         }
+    }
+
+    func cancel() async {
+        finished = true
+        await source.cancel()
     }
 }
