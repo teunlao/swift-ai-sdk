@@ -24,11 +24,12 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "providerMetadata": providerMetadataJSON(providerMetadata)
         ]))
 
-    case .textEnd(let id, let providerMetadata):
+    case .textEnd(let id, let providerMetadata, let citations):
         return .object(baseObject([
             "type": .string("text-end"),
             "id": .string(id),
-            "providerMetadata": providerMetadataJSON(providerMetadata)
+            "providerMetadata": providerMetadataJSON(providerMetadata),
+            "citations": citations.map { .array($0.map(citationJSON)) }
         ]))
 
     case .reasoningStart(let id, let providerMetadata):
@@ -66,7 +67,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let providerExecuted,
         let providerMetadata,
         let dynamic,
-        let title
+        let title,
+        let toolMetadata
     ):
         return .object(baseObject([
             "type": .string("tool-input-available"),
@@ -76,7 +78,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
-            "title": title.map(JSONValue.string)
+            "title": title.map(JSONValue.string),
+            "toolMetadata": toolMetadata.map(JSONValue.object)
         ]))
 
     case .toolInputError(
@@ -87,7 +90,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let providerMetadata,
         let dynamic,
         let errorText,
-        let title
+        let title,
+        let toolMetadata
     ):
         return .object(baseObject([
             "type": .string("tool-input-error"),
@@ -98,15 +102,31 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
             "errorText": .string(errorText),
-            "title": title.map(JSONValue.string)
+            "title": title.map(JSONValue.string),
+            "toolMetadata": toolMetadata.map(JSONValue.object)
         ]))
 
-    case .toolApprovalRequest(let approvalId, let toolCallId):
-        return .object([
+    case .toolApprovalRequest(let approvalId, let toolCallId, let descriptor, let inputSchemaInput, let reason, let isAutomatic, let signature):
+        return .object(baseObject([
             "type": .string("tool-approval-request"),
             "approvalId": .string(approvalId),
-            "toolCallId": .string(toolCallId)
-        ])
+            "toolCallId": .string(toolCallId),
+            "approvalDescriptor": descriptor,
+            "inputSchemaInput": inputSchemaInput,
+            "reason": reason.map(JSONValue.string),
+            "isAutomatic": isAutomatic.map(JSONValue.bool),
+            "signature": signature.map(JSONValue.string)
+        ]))
+
+    case .toolApprovalResponse(let approvalId, let approved, let reason, let providerExecuted, let providerMetadata):
+        return .object(baseObject([
+            "type": .string("tool-approval-response"),
+            "approvalId": .string(approvalId),
+            "approved": .bool(approved),
+            "reason": reason.map(JSONValue.string),
+            "providerExecuted": providerExecuted.map(JSONValue.bool),
+            "providerMetadata": providerMetadataJSON(providerMetadata)
+        ]))
 
     case .toolOutputAvailable(
         let toolCallId,
@@ -114,7 +134,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let providerExecuted,
         let providerMetadata,
         let dynamic,
-        let preliminary
+        let preliminary,
+        let toolMetadata
     ):
         return .object(baseObject([
             "type": .string("tool-output-available"),
@@ -123,7 +144,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
-            "preliminary": preliminary.map(JSONValue.bool)
+            "preliminary": preliminary.map(JSONValue.bool),
+            "toolMetadata": toolMetadata.map(JSONValue.object)
         ]))
 
     case .toolOutputError(
@@ -131,7 +153,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
         let errorText,
         let providerExecuted,
         let providerMetadata,
-        let dynamic
+        let dynamic,
+        let toolMetadata
     ):
         return .object(baseObject([
             "type": .string("tool-output-error"),
@@ -139,7 +162,8 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "errorText": .string(errorText),
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
-            "dynamic": dynamic.map(JSONValue.bool)
+            "dynamic": dynamic.map(JSONValue.bool),
+            "toolMetadata": toolMetadata.map(JSONValue.object)
         ]))
 
     case .toolOutputDenied(let toolCallId):
@@ -148,15 +172,17 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "toolCallId": .string(toolCallId)
         ])
 
-    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title):
+    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title, let toolMetadata, let inputEncoding):
         return .object(baseObject([
             "type": .string("tool-input-start"),
+            "inputEncoding": inputEncoding.map { .string($0.rawValue) },
             "toolCallId": .string(toolCallId),
             "toolName": .string(toolName),
             "providerExecuted": providerExecuted.map(JSONValue.bool),
             "providerMetadata": providerMetadataJSON(providerMetadata),
             "dynamic": dynamic.map(JSONValue.bool),
-            "title": title.map(JSONValue.string)
+            "title": title.map(JSONValue.string),
+            "toolMetadata": toolMetadata.map(JSONValue.object)
         ]))
 
     case .toolInputDelta(let toolCallId, let inputTextDelta):
@@ -192,6 +218,21 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "mediaType": .string(mediaType),
             "providerMetadata": providerMetadataJSON(providerMetadata)
         ]))
+
+    case .custom(let kind, let providerMetadata):
+        return .object(baseObject([
+            "type": .string("custom"), "kind": .string(kind),
+            "providerMetadata": providerMetadataJSON(providerMetadata)
+        ]))
+
+    case .reasoningFile(let url, let mediaType, let providerMetadata):
+        return .object(baseObject([
+            "type": .string("reasoning-file"), "url": .string(url), "mediaType": .string(mediaType),
+            "providerMetadata": providerMetadataJSON(providerMetadata)
+        ]))
+
+    case .resetStep:
+        return .object(["type": .string("reset-step")])
 
     case .data(let dataChunk):
         return .object(baseObject([
@@ -233,6 +274,26 @@ func encodeUIMessageChunkToJSON(_ chunk: AnyUIMessageChunk) -> JSONValue {
             "messageMetadata": metadata
         ])
     }
+}
+
+private func citationJSON(_ citation: Citation) -> JSONValue {
+    var source: [String: JSONValue?]
+    switch citation.source {
+    case .url(let id, let url, let title, let metadata):
+        source = ["type": .string("source"), "sourceType": .string("url"), "id": .string(id),
+                  "url": .string(url), "title": title.map(JSONValue.string),
+                  "providerMetadata": providerMetadataJSON(metadata)]
+    case .document(let id, let mediaType, let title, let filename, let metadata):
+        source = ["type": .string("source"), "sourceType": .string("document"), "id": .string(id),
+                  "mediaType": .string(mediaType), "title": .string(title),
+                  "filename": filename.map(JSONValue.string), "providerMetadata": providerMetadataJSON(metadata)]
+    }
+    return .object(baseObject([
+        "source": .object(baseObject(source)),
+        "startIndex": citation.startIndex.map { .number(Double($0)) },
+        "endIndex": citation.endIndex.map { .number(Double($0)) },
+        "citedText": citation.citedText.map(JSONValue.string)
+    ]))
 }
 
 private func providerMetadataJSON(

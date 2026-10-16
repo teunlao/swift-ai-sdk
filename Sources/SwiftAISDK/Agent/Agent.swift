@@ -160,8 +160,8 @@ public final class Agent<OutputValue: Sendable, PartialOutputValue: Sendable>: @
         messages: [Message],
         ignoreIncompleteToolCalls: Bool = false,
         options: StreamTextUIResponseOptions<Message>? = nil
-    ) throws -> UIMessageStreamResponse<Message> {
-        let modelMessages = try convertToModelMessages(
+    ) async throws -> UIMessageStreamResponse<Message> {
+        let modelMessages = try await convertToModelMessages(
             messages: messages,
             options: ConvertToModelMessagesOptions(
                 tools: settings.tools,
@@ -170,7 +170,7 @@ public final class Agent<OutputValue: Sendable, PartialOutputValue: Sendable>: @
         )
 
         let streamResult = try stream(prompt: Prompt(messages: modelMessages))
-        return streamResult.toUIMessageStreamResponse(options: options)
+        return try streamResult.toUIMessageStreamResponse(options: options)
     }
 
     // MARK: - Helpers

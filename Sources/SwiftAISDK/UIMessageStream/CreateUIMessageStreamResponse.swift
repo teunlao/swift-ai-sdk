@@ -2,153 +2,66 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Creates an HTTP-style response representation for a UI message stream.
-
- Port of `@ai-sdk/ai/src/ui-message-stream/create-ui-message-stream-response.ts`.
- */
 public func createUIMessageStreamResponse<Message: UIMessageConvertible>(
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     options: StreamTextUIResponseOptions<Message>? = nil
-) -> UIMessageStreamResponse<Message> {
+) throws -> UIMessageStreamResponse<Message> {
     var responseInit = options?.responseInit ?? UIMessageStreamResponseInit()
-    let preparedHeaders = prepareHeaders(
-        responseInit.headers,
-        defaultHeaders: UI_MESSAGE_STREAM_HEADERS
+    let responseStream = try buildSSEStream(
+        from: stream, consumer: responseInit.consumeSSEStream, keepAliveMs: responseInit.keepAliveMs
     )
-    responseInit.headers = preparedHeaders
-
-    let responseStream = buildSSEStream(
-        from: stream,
-        consumer: responseInit.consumeSSEStream
-    )
-
-    // Mirror TypeScript behaviour: consumeSseStream executes immediately, so avoid re-running.
+    responseInit.headers = prepareHeaders(responseInit.headers, defaultHeaders: UI_MESSAGE_STREAM_HEADERS)
     responseInit.consumeSSEStream = nil
-
-    let finalOptions = StreamTextUIResponseOptions(
-        responseInit: responseInit,
-        streamOptions: options?.streamOptions
-    )
-
-    return UIMessageStreamResponse(stream: responseStream, options: finalOptions)
+    return UIMessageStreamResponse(stream: responseStream, options: StreamTextUIResponseOptions(
+        responseInit: responseInit, streamOptions: options?.streamOptions
+    ))
 }
 
-/**
- Pipes a UI message stream into a streaming HTTP response writer.
-
- Port of `@ai-sdk/ai/src/ui-message-stream/pipe-ui-message-stream-to-response.ts`.
- */
 public func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
     response: any StreamTextResponseWriter,
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     options: StreamTextUIResponseOptions<Message>? = nil
-) {
-    var responseInit = options?.responseInit ?? UIMessageStreamResponseInit()
-    let preparedHeaders = prepareHeaders(
-        responseInit.headers,
-        defaultHeaders: UI_MESSAGE_STREAM_HEADERS
+) async throws {
+    let responseInit = options?.responseInit ?? UIMessageStreamResponseInit()
+    let sseStream = try buildSSEStream(
+        from: stream, consumer: responseInit.consumeSSEStream, keepAliveMs: responseInit.keepAliveMs
     )
-    responseInit.headers = preparedHeaders
-
-    response.writeHead(
-        status: responseInit.status ?? 200,
-        statusText: responseInit.statusText,
-        headers: preparedHeaders.mapKeys { $0.lowercased() }
-    )
-
-    let sseStream = buildSSEStream(
-        from: stream,
-        consumer: responseInit.consumeSSEStream
-    )
-
-    responseInit.consumeSSEStream = nil
-
-    Task {
-        defer { response.end() }
-
-        do {
-            for try await chunk in sseStream {
-                response.write(Data(chunk.utf8))
-            }
-        } catch {
-            // Terminate the response silently, mirroring upstream behaviour.
-        }
-    }
+    let headers = prepareHeaders(responseInit.headers, defaultHeaders: UI_MESSAGE_STREAM_HEADERS)
+    response.writeHead(status: responseInit.status ?? 200, statusText: responseInit.statusText,
+                       headers: headers.mapKeys { $0.lowercased() })
+    defer { response.end() }
+    for try await chunk in sseStream { response.write(Data(chunk.utf8)) }
 }
-
-// MARK: - Helpers
 
 private func buildSSEStream(
     from chunkStream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
-    consumer: UIMessageStreamConsumer?
-) -> AsyncThrowingStream<String, Error> {
-    // Convert UI chunks → JSON → SSE
+    consumer: UIMessageStreamConsumer?, keepAliveMs: Double?
+) throws -> AsyncThrowingStream<String, Error> {
     let jsonStream = AsyncThrowingStream<JSONValue, Error> { continuation in
         let task = Task {
             do {
-                for try await chunk in chunkStream {
-                    continuation.yield(encodeUIMessageChunkToJSON(chunk))
-                }
+                for try await chunk in chunkStream { continuation.yield(encodeUIMessageChunkToJSON(chunk)) }
                 continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
+            } catch { continuation.finish(throwing: error) }
         }
         continuation.onTermination = { termination in
             if case .cancelled = termination { task.cancel() }
         }
     }
-
-    let sseBase = JsonToSSETransformStream().transform(stream: jsonStream)
-
-    guard let consumer else {
-        return sseBase
+    let stream = try createSSEStreamWithKeepAlive(
+        stream: JsonToSSETransformStream().transform(stream: jsonStream), keepAliveMs: keepAliveMs
+    )
+    guard let consumer else { return stream }
+    let (response, secondary) = teeAsyncThrowingStream(stream)
+    Task {
+        do { try await consumer(secondary) }
+        catch { /* The independent observer cannot fail the response. */ }
     }
-
-    // Tie consumer lifetime to the returned stream to avoid leaked tasks.
-    return AsyncThrowingStream { continuation in
-        // Split base stream into producer (to caller) and consumer branch.
-        let (producer, secondary) = teeAsyncThrowingStream(sseBase)
-
-        // Kick off consumer immediately, as upstream.
-        let consumerTask = Task {
-            do {
-                try await consumer(secondary)
-            } catch {
-                // Ignore consumer errors to mirror upstream behaviour.
-            }
-        }
-
-        // Forward producer to the caller; cancel consumer when caller cancels.
-        let forwardTask = Task {
-            do {
-                for try await chunk in producer {
-                    continuation.yield(chunk)
-                }
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
-        }
-
-        continuation.onTermination = { termination in
-            // Do not cancel the consumer on normal stream completion: upstream allows
-            // `consumeSSEStream` to finish (and even continue doing work) after the
-            // response stream is done. Cancelling here can race with the final chunk
-            // and cause `consumeSSEStream` to never observe `[DONE]`.
-            if case .cancelled = termination {
-                consumerTask.cancel()
-                forwardTask.cancel()
-            }
-        }
-    }
+    return response
 }
 
 private extension Dictionary where Key == String, Value == String {
     func mapKeys(_ transform: (String) -> String) -> [String: String] {
-        reduce(into: [String: String]()) { result, entry in
-            result[transform(entry.key)] = entry.value
-        }
+        reduce(into: [:]) { result, entry in result[transform(entry.key)] = entry.value }
     }
 }

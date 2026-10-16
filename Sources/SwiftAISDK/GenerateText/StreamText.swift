@@ -771,62 +771,17 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
     public func toUIMessageStream<Message: UIMessageConvertible>(
         options: UIMessageStreamOptions<Message>?
     ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
-        let streamOptions = options ?? UIMessageStreamOptions<Message>()
-
-        let responseMessageId: String?
-        if let generator = streamOptions.generateMessageId {
-            responseMessageId = getResponseUIMessageId(
-                originalMessages: streamOptions.originalMessages,
-                responseMessageId: generator
-            )
-        } else {
-            responseMessageId = nil
-        }
-
-        @Sendable func mapErrorMessage(_ value: Any?) -> String {
-            if let error = value as? Error {
-                return streamOptions.onError?(error) ?? AISDKProvider.getErrorMessage(error)
-            }
-            let message = AISDKProvider.getErrorMessage(value)
-            if let onError = streamOptions.onError {
-                let synthetic = NSError(
-                    domain: "ai.streamText",
-                    code: 0,
-                    userInfo: [NSLocalizedDescriptionKey: message]
-                )
-                return onError(synthetic)
-            }
-            return message
-        }
-
-        let base: AsyncThrowingStream<AnyUIMessageChunk, Error> = transformFullToUIMessageStream(
-            stream: fullStream,
-            options: UIMessageTransformOptions(
-                sendStart: streamOptions.sendStart,
-                sendFinish: streamOptions.sendFinish,
-                sendReasoning: streamOptions.sendReasoning,
-                sendSources: streamOptions.sendSources,
-                messageMetadata: streamOptions.messageMetadata
-            )
+        SwiftAISDK.toUIMessageStream(
+            stream: fullStream, tools: tools, options: options ?? UIMessageStreamOptions<Message>()
         )
-
-        let handled = handleUIMessageStreamFinish(
-            stream: base,
-            messageId: responseMessageId,
-            originalMessages: streamOptions.originalMessages ?? [],
-            onFinish: streamOptions.onFinish,
-            onError: { error in _ = mapErrorMessage(error) }
-        )
-
-        return handled
     }
 
     public func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
         _ response: any StreamTextResponseWriter,
         options: StreamTextUIResponseOptions<Message>?
-    ) {
+    ) async throws {
         let stream = toUIMessageStream(options: options?.streamOptions)
-        SwiftAISDK.pipeUIMessageStreamToResponse(
+        try await SwiftAISDK.pipeUIMessageStreamToResponse(
             response: response,
             stream: stream,
             options: options
@@ -835,9 +790,9 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutputV
 
     public func toUIMessageStreamResponse<Message: UIMessageConvertible>(
         options: StreamTextUIResponseOptions<Message>?
-    ) -> UIMessageStreamResponse<Message> {
+    ) throws -> UIMessageStreamResponse<Message> {
         let stream = toUIMessageStream(options: options?.streamOptions)
-        return SwiftAISDK.createUIMessageStreamResponse(
+        return try SwiftAISDK.createUIMessageStreamResponse(
             stream: stream,
             options: options
         )

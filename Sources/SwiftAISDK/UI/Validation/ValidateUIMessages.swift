@@ -12,6 +12,8 @@ import AISDKProviderUtils
    abstraction (`validateTypes`) and manual structural checks to reproduce parity.
  - Provider metadata is validated structurally because Zod schemas are not available.
  */
+public typealias UIToolInputRefinement = @Sendable (JSONValue) async throws -> JSONValue
+
 public struct SafeValidateUIMessagesResult<Message: UIMessageConvertible>: Sendable {
     public let success: Bool
     public let data: [Message]?
@@ -28,7 +30,8 @@ public func safeValidateUIMessages<Message: UIMessageConvertible>(
     messages: Any?,
     metadataSchema: FlexibleSchema<JSONValue>? = nil,
     dataSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
-    tools: [String: Tool]? = nil
+    tools: [String: Tool]? = nil,
+    experimentalRefineToolInput: [String: UIToolInputRefinement]? = nil
 ) async -> SafeValidateUIMessagesResult<Message> {
     guard let messages, !(messages is NSNull) else {
         let error = InvalidArgumentError(
@@ -40,23 +43,16 @@ public func safeValidateUIMessages<Message: UIMessageConvertible>(
     }
 
     do {
-        let parsedMessages = try parseMessages(messages, as: Message.self)
+        var parsedMessages = try parseMessages(messages, as: Message.self)
 
         if let metadataSchema {
-            try await validateMetadata(for: parsedMessages, schema: metadataSchema)
+            try await validateMetadata(for: &parsedMessages, schema: metadataSchema)
         }
 
-        if let dataSchemas {
-            try await validateDataParts(
-                for: parsedMessages,
-                schemas: dataSchemas
-            )
-        }
-
-        if let tools {
-            try await validateToolParts(
-                for: parsedMessages,
-                tools: tools
+        if dataSchemas != nil || tools != nil {
+            try await validateMessageParts(
+                for: &parsedMessages, dataSchemas: dataSchemas, tools: tools,
+                refineToolInput: experimentalRefineToolInput
             )
         }
 
@@ -71,13 +67,15 @@ public func validateUIMessages<Message: UIMessageConvertible>(
     messages: Any?,
     metadataSchema: FlexibleSchema<JSONValue>? = nil,
     dataSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
-    tools: [String: Tool]? = nil
+    tools: [String: Tool]? = nil,
+    experimentalRefineToolInput: [String: UIToolInputRefinement]? = nil
 ) async throws -> [Message] {
     let result: SafeValidateUIMessagesResult<Message> = await safeValidateUIMessages(
         messages: messages,
         metadataSchema: metadataSchema,
         dataSchemas: dataSchemas,
-        tools: tools
+        tools: tools,
+        experimentalRefineToolInput: experimentalRefineToolInput
     )
 
     if result.success, let data = result.data {
@@ -136,6 +134,8 @@ private func parseMessages<Message: UIMessageConvertible>(
         let metadata = object["metadata"]
         let partsValue = try requireJSONValue(object, key: "parts", context: rawContext)
         let parts = try parseParts(partsValue, in: rawContext)
+        try ensure(role == .assistant || !parts.isEmpty, context: rawContext,
+                   message: "Message must contain at least one part")
 
         let message = Message(
             id: id,
@@ -158,13 +158,6 @@ private func parseParts(
         throw typeValidationError(
             value: parentContext,
             message: "message parts must be provided as an array"
-        )
-    }
-
-    if entries.isEmpty {
-        throw typeValidationError(
-            value: parentContext,
-            message: "Message must contain at least one part"
         )
     }
 
@@ -195,8 +188,9 @@ private func parseParts(
 
             let part = TextUIPart(
                 text: text,
-                state: state ?? .streaming,
-                providerMetadata: providerMetadata
+                state: state,
+                providerMetadata: providerMetadata,
+                citations: try object["citations"].map { try parseCitations($0) }
             )
             parts.append(.text(part))
 
@@ -212,10 +206,24 @@ private func parseParts(
 
             let part = ReasoningUIPart(
                 text: text,
-                state: state ?? .streaming,
-                providerMetadata: providerMetadata
+                state: state,
+                providerMetadata: providerMetadata,
+                id: try optionalString(object, key: "id")
             )
             parts.append(.reasoning(part))
+
+        case "custom":
+            parts.append(.custom(CustomContentUIPart(
+                kind: try requireString(object, key: "kind", context: context),
+                providerMetadata: try parseProviderMetadataIfPresent(object, context: context)
+            )))
+
+        case "reasoning-file":
+            parts.append(.reasoningFile(ReasoningFileUIPart(
+                mediaType: try requireString(object, key: "mediaType", context: context),
+                url: try requireString(object, key: "url", context: context),
+                providerMetadata: try parseProviderMetadataIfPresent(object, context: context)
+            )))
 
         case "source-url":
             let sourceId = try requireString(object, key: "sourceId", context: context)
@@ -257,7 +265,8 @@ private func parseParts(
                 mediaType: mediaType,
                 filename: filename,
                 url: url,
-                providerMetadata: providerMetadata
+                providerMetadata: providerMetadata,
+                providerReference: try parseProviderReference(object["providerReference"])
             )
             parts.append(.file(part))
 
@@ -320,7 +329,6 @@ private func parseParts(
                     try ensure(approvalValue.approved == true, context: context, message: "dynamic-tool approval.approved must be true when provided in \"output-available\" state")
                 }
             case .outputError:
-                try ensure(input != nil, context: context, message: "dynamic-tool input must be provided when state is \"output-error\"")
                 try ensure(output == nil, context: context, message: "dynamic-tool output must be omitted when state is \"output-error\"")
                 try ensure(errorText != nil, context: context, message: "dynamic-tool errorText must be provided when state is \"output-error\"")
                 try ensure(preliminary == nil, context: context, message: "dynamic-tool preliminary must be omitted when state is \"output-error\"")
@@ -341,6 +349,8 @@ private func parseParts(
                 toolName: toolName,
                 toolCallId: toolCallId,
                 state: state,
+                dynamic: try parseDynamicOrigin(object),
+                rawInput: try parseRawInput(object, state: state.rawValue),
                 input: input,
                 output: output,
                 errorText: errorText,
@@ -349,7 +359,9 @@ private func parseParts(
                 resultProviderMetadata: resultProviderMetadata,
                 preliminary: preliminary,
                 approval: approval,
-                title: title
+                title: title,
+                toolMetadata: try optionalObject(object, key: "toolMetadata"),
+                inputEncoding: state == .inputStreaming ? try parseOptionalEnum(object, key: "inputEncoding", context: context, as: UIToolInputEncoding.self) : nil
             )
             parts.append(.dynamicTool(part))
 
@@ -390,7 +402,7 @@ private func parseParts(
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"input-streaming\"")
                     try ensure(errorText == nil, context: context, message: "tool errorText must be omitted when state is \"input-streaming\"")
                     try ensure(approval == nil, context: context, message: "tool approval must be omitted when state is \"input-streaming\"")
-                    rawInput = nil
+                    rawInput = try parseRawInput(object, state: state.rawValue)
                 case .inputAvailable:
                     try ensure(input != nil, context: context, message: "tool input must be provided when state is \"input-available\"")
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"input-available\"")
@@ -423,7 +435,6 @@ private func parseParts(
                     preliminary = try optionalBool(object, key: "preliminary")
                     rawInput = nil
                 case .outputError:
-                    try ensure(input != nil, context: context, message: "tool input must be provided when state is \"output-error\"")
                     try ensure(output == nil, context: context, message: "tool output must be omitted when state is \"output-error\"")
                     try ensure(errorText != nil, context: context, message: "tool errorText must be provided when state is \"output-error\"")
                     if let approvalValue = approval {
@@ -453,7 +464,9 @@ private func parseParts(
                     resultProviderMetadata: resultProviderMetadata,
                     preliminary: preliminary,
                     approval: approval,
-                    title: title
+                    title: title,
+                    toolMetadata: try optionalObject(object, key: "toolMetadata"),
+                    inputEncoding: state == .inputStreaming ? try parseOptionalEnum(object, key: "inputEncoding", context: context, as: UIToolInputEncoding.self) : nil
                 )
                 parts.append(.tool(part))
             } else {
@@ -471,95 +484,138 @@ private func parseParts(
 // MARK: - Metadata & Schema Validation
 
 private func validateMetadata<Message: UIMessageConvertible>(
-    for messages: [Message],
-    schema: FlexibleSchema<JSONValue>
+    for messages: inout [Message], schema: FlexibleSchema<JSONValue>
 ) async throws {
-    for message in messages {
-        guard let metadata = message.metadata else {
-            continue
-        }
-
-        _ = try await validateTypes(
-            ValidateTypesOptions(
-                value: jsonValueToAny(metadata),
-                schema: schema
-            )
-        )
+    for index in messages.indices {
+        messages[index].metadata = try await validateTypes(ValidateTypesOptions(
+            value: messages[index].metadata.map(jsonValueToAny) as Any? ?? NSNull(), schema: schema,
+            context: TypeValidationContext(field: "messages[\(index)].metadata", entityId: messages[index].id)
+        ))
     }
 }
 
-private func validateDataParts<Message: UIMessageConvertible>(
-    for messages: [Message],
-    schemas: [String: FlexibleSchema<JSONValue>]
+private func validateMessageParts<Message: UIMessageConvertible>(
+    for messages: inout [Message], dataSchemas: [String: FlexibleSchema<JSONValue>]?,
+    tools: [String: Tool]?, refineToolInput: [String: UIToolInputRefinement]?
 ) async throws {
-    for message in messages {
-        for part in message.parts {
-            guard case .data(let dataPart) = part else { continue }
-            let dataName = String(dataPart.typeIdentifier.dropFirst("data-".count))
-
-            guard let schema = schemas[dataName] else {
-                throw typeValidationError(
-                    value: jsonValueToAny(dataPart.data),
-                    message: "No data schema found for data part \(dataName)"
-                )
-            }
-
-            _ = try await validateTypes(
-                ValidateTypesOptions(
-                    value: jsonValueToAny(dataPart.data),
-                    schema: schema
-                )
-            )
-        }
-    }
-}
-
-private func validateToolParts<Message: UIMessageConvertible>(
-    for messages: [Message],
-    tools: [String: Tool]
-) async throws {
-    for message in messages {
-        for part in message.parts {
-            guard case .tool(let toolPart) = part else { continue }
-            let toolName = toolPart.toolName
-
-            guard let tool = tools[toolName] else {
-                throw typeValidationError(
-                    value: jsonValueToAny(toolPart.input ?? .null),
-                    message: "No tool schema found for tool part \(toolName)"
-                )
-            }
-
-            switch toolPart.state {
-            case .inputAvailable, .outputAvailable, .outputError:
-                if let input = toolPart.input {
-                    _ = try await validateTypes(
-                        ValidateTypesOptions(
-                            value: jsonValueToAny(input),
-                            schema: tool.inputSchema
-                        )
-                    )
+    for messageIndex in messages.indices {
+        for partIndex in messages[messageIndex].parts.indices {
+            if let dataSchemas, case .data(var part) = messages[messageIndex].parts[partIndex] {
+                let name = String(part.typeIdentifier.dropFirst(5))
+                let context = TypeValidationContext(field: "messages[\(messageIndex)].parts[\(partIndex)].data",
+                                                    entityName: name, entityId: part.id)
+                guard let schema = dataSchemas[name] else {
+                    throw TypeValidationError.wrap(value: jsonValueToAny(part.data),
+                        cause: ValidationMessageError(message: "No data schema found for data part \(name)"), context: context)
                 }
-
-            case .inputStreaming, .approvalRequested, .approvalResponded, .outputDenied:
-                break
+                part.data = try await validateTypes(ValidateTypesOptions(value: jsonValueToAny(part.data), schema: schema, context: context))
+                messages[messageIndex].parts[partIndex] = .data(part)
             }
-
-            if toolPart.state == .outputAvailable,
-               let outputSchema = tool.outputSchema,
-               let output = toolPart.output {
-                _ = try await validateTypes(
-                    ValidateTypesOptions(
-                        value: jsonValueToAny(output),
-                        schema: outputSchema
-                    )
-                )
+            guard let tools, case .tool(let part) = messages[messageIndex].parts[partIndex] else { continue }
+            let name = part.toolName
+            let terminal = part.state == .outputAvailable || part.state == .outputError || part.state == .outputDenied
+            let context = TypeValidationContext(field: "messages[\(messageIndex)].parts[\(partIndex)].input",
+                                                entityName: name, entityId: part.toolCallId)
+            guard let tool = tools[name] else {
+                if terminal {
+                    messages[messageIndex].parts[partIndex] = .dynamicTool(unavailableTool(part))
+                    continue
+                }
+                throw TypeValidationError.wrap(value: part.input.map(jsonValueToAny) as Any? ?? NSNull(),
+                    cause: ValidationMessageError(message: "No tool schema found for tool part \(name)"), context: context)
             }
+            var convertToDynamic = false
+            let schemaInput = part.approval?.inputSchemaInput
+            if part.state != .inputStreaming && (part.state != .outputError || schemaInput != nil || part.input != nil) {
+                do {
+                    let input = try await validateTypes(ValidateTypesOptions(
+                        value: (schemaInput ?? part.input).map(jsonValueToAny) as Any? ?? NSNull(),
+                        schema: tool.inputSchema, context: context
+                    ))
+                    if schemaInput != nil {
+                        let reconstructed: JSONValue
+                        do {
+                            if let refine = refineToolInput?[name] { reconstructed = try await refine(input) }
+                            else { reconstructed = input }
+                        } catch {
+                            throw TypeValidationError.wrap(value: (schemaInput ?? .null), cause: error, context: context)
+                        }
+                        guard reconstructed == part.input else {
+                            throw TypeValidationError.wrap(value: part.input.map(jsonValueToAny) as Any? ?? NSNull(),
+                                cause: ValidationMessageError(message: "Tool input does not match the output reconstructed from inputSchemaInput."),
+                                context: context)
+                        }
+                    }
+                } catch {
+                    if part.state == .outputError || (part.state == .outputAvailable && part.input == .object([:])) {
+                        convertToDynamic = true
+                    } else { throw error }
+                }
+            }
+            if part.state == .outputAvailable, let schema = tool.outputSchema {
+                _ = try await validateTypes(ValidateTypesOptions(
+                    value: part.output.map(jsonValueToAny) as Any? ?? NSNull(), schema: schema,
+                    context: TypeValidationContext(field: "messages[\(messageIndex)].parts[\(partIndex)].output",
+                                                   entityName: name, entityId: part.toolCallId)
+                ))
+            }
+            if convertToDynamic { messages[messageIndex].parts[partIndex] = .dynamicTool(unavailableTool(part)) }
         }
     }
+}
+
+private func unavailableTool(_ part: UIToolUIPart) -> UIDynamicToolUIPart {
+    UIDynamicToolUIPart(
+        toolName: part.toolName, toolCallId: part.toolCallId,
+        state: part.state, dynamic: false,
+        rawInput: part.rawInput, input: part.input, output: part.output, errorText: part.errorText,
+        providerExecuted: part.providerExecuted, callProviderMetadata: part.callProviderMetadata,
+        resultProviderMetadata: part.resultProviderMetadata, preliminary: part.preliminary,
+        approval: part.approval, title: part.title, toolMetadata: part.toolMetadata, inputEncoding: part.inputEncoding
+    )
 }
 
 // MARK: - Helpers
+
+private func parseCitations(_ value: JSONValue) throws -> [Citation] {
+    do { return try parseUICitations(value) }
+    catch { throw typeValidationError(value: jsonValueToAny(value), message: "Invalid citations: \(error)") }
+}
+
+private func optionalObject(_ object: JSONObject, key: String) throws -> JSONObject? {
+    guard let value = object[key] else { return nil }
+    guard case .object(let result) = value else {
+        throw typeValidationError(value: jsonValueToAny(value), message: "\"\(key)\" must be an object")
+    }
+    return result
+}
+
+private func parseProviderReference(_ value: JSONValue?) throws -> ProviderReference? {
+    guard let value else { return nil }
+    guard case .object(let object) = value else {
+        throw typeValidationError(value: jsonValueToAny(value), message: "providerReference must be an object")
+    }
+    var reference: ProviderReference = [:]
+    for (key, entry) in object {
+        guard case .string(let identifier) = entry else {
+            throw typeValidationError(value: jsonValueToAny(value), message: "providerReference values must be strings")
+        }
+        reference[key] = identifier
+    }
+    return reference
+}
+
+private func parseDynamicOrigin(_ object: JSONObject) throws -> Bool? {
+    let value = try optionalBool(object, key: "dynamic")
+    try ensure(value != true, context: jsonValueToAny(.object(object)), message: "dynamic must be false when provided")
+    return value
+}
+
+private func parseRawInput(_ object: JSONObject, state: String) throws -> JSONValue? {
+    if state == "output-error" { return object["rawInput"] }
+    if state == "input-streaming" { return try optionalString(object, key: "rawInput").map(JSONValue.string) }
+    return nil
+}
 
 private func requireString(
     _ object: [String: JSONValue],
@@ -727,7 +783,14 @@ private func parseToolApprovalIfPresent(
     let approved = try optionalBool(approvalObject, key: "approved")
     let reason = try optionalString(approvalObject, key: "reason")
 
-    return UIToolApproval(id: id, approved: approved, reason: reason)
+    return UIToolApproval(
+        id: id, approved: approved, reason: reason,
+        descriptor: approvalObject["descriptor"],
+        requestReason: try optionalString(approvalObject, key: "requestReason"),
+        isAutomatic: try optionalBool(approvalObject, key: "isAutomatic"),
+        signature: try optionalString(approvalObject, key: "signature"),
+        inputSchemaInput: approvalObject["inputSchemaInput"]
+    )
 }
 
 @discardableResult

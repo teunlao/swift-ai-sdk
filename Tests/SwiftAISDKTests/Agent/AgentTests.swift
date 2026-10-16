@@ -166,7 +166,7 @@ struct AgentTests {
             parts: [.text(TextUIPart(text: "Hi there"))]
         )
 
-        let response = try agent.respond(messages: [uiMessage])
+        let response = try await agent.respond(messages: [uiMessage])
         var iterator = response.stream.makeAsyncIterator()
         while try await iterator.next() != nil {}
 

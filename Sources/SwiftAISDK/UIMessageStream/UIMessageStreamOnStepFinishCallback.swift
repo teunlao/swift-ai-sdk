@@ -8,6 +8,9 @@ import Foundation
 public typealias UIMessageStreamOnStepFinishCallback<Message: UIMessageConvertible> =
     @Sendable (UIMessageStreamStepFinishEvent<Message>) async throws -> Void
 
+public typealias UIMessageStreamOnStepEndCallback<Message: UIMessageConvertible> = UIMessageStreamOnStepFinishCallback<Message>
+public typealias UIMessageStreamStepEndEvent<Message: UIMessageConvertible> = UIMessageStreamStepFinishEvent<Message>
+
 public struct UIMessageStreamStepFinishEvent<Message: UIMessageConvertible>: Sendable, Equatable {
     public let messages: [Message]
     public let isContinuation: Bool

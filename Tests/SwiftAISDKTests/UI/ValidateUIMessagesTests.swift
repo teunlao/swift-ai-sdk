@@ -103,7 +103,7 @@ struct ValidateUIMessagesTests {
                 id: "1",
                 role: .user,
                 metadata: .object(["foo": .string("bar")]),
-                parts: [.text(TextUIPart(text: "Hello, world!", state: .streaming))]
+                parts: [.text(TextUIPart(text: "Hello, world!", state: nil))]
             )
         ])
     }
@@ -140,7 +140,7 @@ struct ValidateUIMessagesTests {
                 id: "1",
                 role: .user,
                 metadata: .object(["foo": .string("bar")]),
-                parts: [.text(TextUIPart(text: "Hello, world!", state: .streaming))]
+                parts: [.text(TextUIPart(text: "Hello, world!", state: nil))]
             )
         ])
     }
@@ -213,7 +213,7 @@ struct ValidateUIMessagesTests {
                     .text(
                         TextUIPart(
                             text: "Hello, world!",
-                            state: .streaming,
+                            state: nil,
                             providerMetadata: expectedMetadata
                         )
                     )
@@ -241,7 +241,7 @@ struct ValidateUIMessagesTests {
                 id: "1",
                 role: .user,
                 metadata: nil,
-                parts: [.text(TextUIPart(text: "Hello, world!", state: .streaming))]
+                parts: [.text(TextUIPart(text: "Hello, world!", state: nil))]
             )
         ])
     }
@@ -263,7 +263,7 @@ struct ValidateUIMessagesTests {
                 id: "1",
                 role: .assistant,
                 metadata: nil,
-                parts: [.reasoning(ReasoningUIPart(text: "Thinking...", state: .streaming))]
+                parts: [.reasoning(ReasoningUIPart(text: "Thinking...", state: nil))]
             )
         ])
     }
@@ -967,8 +967,8 @@ struct ValidateUIMessagesTests {
         ])
     }
 
-    @Test("strips unsupported tool fields in input-streaming")
-    func stripsUnsupportedToolFieldsInInputStreaming() async throws {
+    @Test("preserves raw tool input in input-streaming")
+    func preservesRawToolInputInInputStreaming() async throws {
         let expectedMetadata: ProviderMetadata = [
             "provider": ["meta": .string("value")]
         ]
@@ -987,7 +987,7 @@ struct ValidateUIMessagesTests {
                             "provider": ["meta": "value"]
                         ],
                         "preliminary": true,
-                        "rawInput": ["raw": true]
+                        "rawInput": "{\"foo\":\"bar\"}"
                     ]
                 ]
             ]
@@ -1006,7 +1006,7 @@ struct ValidateUIMessagesTests {
                             state: .inputStreaming,
                             input: .object(["foo": .string("bar")]),
                             output: nil,
-                            rawInput: nil,
+                            rawInput: .string("{\"foo\":\"bar\"}"),
                             errorText: nil,
                             providerExecuted: nil,
                             callProviderMetadata: expectedMetadata,
@@ -1408,54 +1408,22 @@ struct ValidateUIMessagesTests {
         ))
     }
 
-    @Test("does not validate tool input schema for approval states")
-    func doesNotValidateToolInputSchemaForApprovalStates() async throws {
-        let tool = Tool(
-            inputSchema: stringFooSchema(),
-            outputSchema: nil
-        )
-
-        let messages: [UIMessage] = try await validateUIMessages(
-            messages: [
-                [
-                    "id": "1",
-                    "role": "assistant",
-                    "parts": [
-                        [
-                            "type": "tool-foo",
-                            "toolCallId": "1",
-                            "state": "approval-requested",
-                            "input": ["foo": 123],
-                            "approval": [
-                                "id": "request-id"
-                            ]
-                        ]
-                    ]
-                ]
-            ],
-            tools: ["foo": tool]
-        )
-
-        guard let part = messages.first?.parts.first else {
-            Issue.record("Expected tool part")
-            return
+    @Test("validates tool input schema for approval states")
+    func validatesToolInputSchemaForApprovalStates() async throws {
+        let tool = Tool(inputSchema: stringFooSchema())
+        do {
+            let _: [UIMessage] = try await validateUIMessages(messages: [[
+                "id": "1", "role": "assistant", "parts": [[
+                    "type": "tool-foo", "toolCallId": "1", "state": "approval-requested",
+                    "input": ["foo": 123], "approval": ["id": "request-id"]
+                ]]
+            ]], tools: ["foo": tool])
+            Issue.record("Invalid approval input was accepted")
+        } catch let error as TypeValidationError {
+            #expect(error.context?.field == "messages[0].parts[0].input")
+            #expect(error.context?.entityName == "foo")
+            #expect(error.context?.entityId == "1")
         }
-
-        #expect(part == .tool(
-            UIToolUIPart(
-                toolName: "foo",
-                toolCallId: "1",
-                state: .approvalRequested,
-                input: .object(["foo": .number(123)]),
-                output: nil,
-                rawInput: nil,
-                errorText: nil,
-                providerExecuted: nil,
-                callProviderMetadata: nil,
-                preliminary: nil,
-                approval: UIToolApproval(id: "request-id", approved: nil, reason: nil)
-            )
-        ))
     }
 
     // MARK: - Tool schema validation
@@ -1653,7 +1621,7 @@ struct SafeValidateUIMessagesTests {
                 id: "1",
                 role: .user,
                 metadata: nil,
-                parts: [.text(TextUIPart(text: "Hello, world!", state: .streaming))]
+                parts: [.text(TextUIPart(text: "Hello, world!", state: nil))]
             )
         ])
     }

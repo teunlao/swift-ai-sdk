@@ -181,8 +181,8 @@ struct ProcessUIMessageStreamTests {
         #expect(toolPart.toolCallId == "call-1")
         #expect(toolPart.toolName == "nonExistentTool")
         #expect(toolPart.state == .outputError)
-        #expect(toolPart.input == nil)
-        #expect(toolPart.rawInput == .string(rawInput))
+        #expect(toolPart.input == .string(rawInput))
+        #expect(toolPart.rawInput == nil)
         #expect(toolPart.errorText == "Model tried to call unavailable tool 'nonExistentTool'.")
     }
 

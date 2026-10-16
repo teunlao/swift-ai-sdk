@@ -14,28 +14,39 @@ import AISDKProviderUtils
    the higher-kinded generic inference used by the TypeScript version.
  */
 
+public struct UIMessageStreamWriteOptions: Sendable, Equatable {
+    public var updateStatus: Bool?
+
+    public init(updateStatus: Bool? = nil) { self.updateStatus = updateStatus }
+}
+
 public struct StreamingUIMessageJobContext<Message: UIMessageConvertible>: Sendable {
     public let state: StreamingUIMessageState<Message>
-    public let write: @Sendable () -> Void
+    private let writeMessage: @Sendable (UIMessageStreamWriteOptions?) -> Void
 
-    public init(
-        state: StreamingUIMessageState<Message>,
-        write: @escaping @Sendable () -> Void
-    ) {
+    public init(state: StreamingUIMessageState<Message>, write: @escaping @Sendable () -> Void) {
         self.state = state
-        self.write = write
+        self.writeMessage = { _ in write() }
     }
+
+    public init(state: StreamingUIMessageState<Message>, writeWithOptions: @escaping @Sendable (UIMessageStreamWriteOptions?) -> Void) {
+        self.state = state
+        self.writeMessage = writeWithOptions
+    }
+
+    public func write(_ options: UIMessageStreamWriteOptions? = nil) { writeMessage(options) }
 }
 
 public typealias StreamingUIMessageJob<Message: UIMessageConvertible> =
     @Sendable (StreamingUIMessageJobContext<Message>) async throws -> Void
 
 public final class StreamingUIMessageState<Message: UIMessageConvertible>: @unchecked Sendable {
-    var message: Message
+    public var message: Message
     var activeTextPartIndices: [String: Int]
     var activeReasoningPartIndices: [String: Int]
     var partialToolCalls: [String: PartialToolCall]
-    var finishReason: FinishReason? = nil
+    public var finishReason: FinishReason? = nil
+    var didStart = false
 
     init(
         message: Message,
@@ -61,8 +72,13 @@ public struct PartialToolCall: Sendable {
     public var toolName: String
     public var dynamic: Bool
     public var title: String?
+    public var toolMetadata: JSONObject?
+    public var inputEncoding: UIToolInputEncoding?
 
-    public init(text: String, toolName: String, dynamic: Bool, title: String? = nil) {
+    public init(text: String, toolName: String, dynamic: Bool, title: String? = nil,
+                toolMetadata: JSONObject? = nil, inputEncoding: UIToolInputEncoding? = nil) {
+        self.toolMetadata = toolMetadata
+        self.inputEncoding = inputEncoding
         self.text = text
         self.toolName = toolName
         self.dynamic = dynamic
@@ -75,14 +91,31 @@ public func createStreamingUIMessageState<Message: UIMessageConvertible>(
     messageId: String
 ) -> StreamingUIMessageState<Message> {
     if let lastMessage, lastMessage.role == .assistant {
-        return StreamingUIMessageState(message: lastMessage.clone())
+        let state = StreamingUIMessageState(message: lastMessage.clone())
+        let step = (lastMessage.parts.lastIndex(of: .stepStart) ?? -1) + 1
+        for part in lastMessage.parts.dropFirst(step) {
+            switch part {
+            case .tool(let tool) where tool.state == .inputStreaming:
+                state.partialToolCalls[tool.toolCallId] = PartialToolCall(
+                    text: rawToolInput(tool.rawInput), toolName: tool.toolName, dynamic: false,
+                    title: tool.title, toolMetadata: tool.toolMetadata, inputEncoding: tool.inputEncoding
+                )
+            case .dynamicTool(let tool) where tool.state == .inputStreaming:
+                state.partialToolCalls[tool.toolCallId] = PartialToolCall(
+                    text: rawToolInput(tool.rawInput), toolName: tool.toolName, dynamic: true,
+                    title: tool.title, toolMetadata: tool.toolMetadata, inputEncoding: tool.inputEncoding
+                )
+            default: break
+            }
+        }
+        return state
     }
 
     let message = Message(id: messageId, role: .assistant, metadata: nil, parts: [])
     return StreamingUIMessageState(message: message)
 }
 
-public typealias UIMessageToolCallHandler = @Sendable (AnyUIMessageChunk) async -> Void
+public typealias UIMessageToolCallHandler = @Sendable (AnyUIMessageChunk) async throws -> Void
 
 /// Processes a UI message stream and yields the original chunks while updating UI message state.
 ///
@@ -94,7 +127,9 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
     messageMetadataSchema: FlexibleSchema<JSONValue>? = nil,
     dataPartSchemas: [String: FlexibleSchema<JSONValue>]? = nil,
     onToolCall: UIMessageToolCallHandler? = nil,
-    onData: (@Sendable (DataUIPart) -> Void)? = nil
+    onData: (@Sendable (DataUIPart) -> Void)? = nil,
+    resetStateOnMessageIdChange: Bool = false,
+    resetStateOnFirstMessageStart: Bool = false
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     processUIMessageStreamImpl(
         stream: stream,
@@ -104,6 +139,8 @@ public func processUIMessageStream<Message: UIMessageConvertible>(
         dataPartSchemas: dataPartSchemas,
         onToolCall: onToolCall,
         onData: onData,
+        resetStateOnMessageIdChange: resetStateOnMessageIdChange,
+        resetStateOnFirstMessageStart: resetStateOnFirstMessageStart,
         onChunk: nil
     )
 }
@@ -128,6 +165,8 @@ func processUIMessageStreamInternal<Message: UIMessageConvertible>(
         dataPartSchemas: dataPartSchemas,
         onToolCall: onToolCall,
         onData: onData,
+        resetStateOnMessageIdChange: false,
+        resetStateOnFirstMessageStart: false,
         onChunk: onChunk
     )
 }
@@ -140,6 +179,8 @@ private func processUIMessageStreamImpl<Message: UIMessageConvertible>(
     dataPartSchemas: [String: FlexibleSchema<JSONValue>]?,
     onToolCall: UIMessageToolCallHandler?,
     onData: (@Sendable (DataUIPart) -> Void)?,
+    resetStateOnMessageIdChange: Bool,
+    resetStateOnFirstMessageStart: Bool,
     onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)?
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     return AsyncThrowingStream { continuation in
@@ -154,7 +195,9 @@ private func processUIMessageStreamImpl<Message: UIMessageConvertible>(
                             messageMetadataSchema: messageMetadataSchema,
                             dataPartSchemas: dataPartSchemas,
                             onToolCall: onToolCall,
-                            onData: onData
+                            onData: onData,
+                            resetStateOnMessageIdChange: resetStateOnMessageIdChange,
+                            resetStateOnFirstMessageStart: resetStateOnFirstMessageStart
                         )
                     }
 
@@ -189,7 +232,9 @@ private func handleChunk<Message: UIMessageConvertible>(
     messageMetadataSchema: FlexibleSchema<JSONValue>?,
     dataPartSchemas: [String: FlexibleSchema<JSONValue>]?,
     onToolCall: UIMessageToolCallHandler?,
-    onData: (@Sendable (DataUIPart) -> Void)?
+    onData: (@Sendable (DataUIPart) -> Void)?,
+    resetStateOnMessageIdChange: Bool,
+    resetStateOnFirstMessageStart: Bool
 ) async throws {
     switch chunk {
     case .textStart(let id, let providerMetadata):
@@ -215,7 +260,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         }
         context.write()
 
-    case .textEnd(let id, let providerMetadata):
+    case .textEnd(let id, let providerMetadata, let citations):
         guard let index = context.state.activeTextPartIndices.removeValue(forKey: id) else {
             throw UIMessageStreamError(
                 chunkType: "text-end",
@@ -226,6 +271,7 @@ private func handleChunk<Message: UIMessageConvertible>(
 
         context.state.updateTextPart(at: index) { textPart in
             textPart.state = .done
+            if let citations { textPart.citations = citations }
             if let metadata = providerMetadata {
                 textPart.providerMetadata = metadata
             }
@@ -233,7 +279,7 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .reasoningStart(let id, let providerMetadata):
-        let part = ReasoningUIPart(text: "", state: .streaming, providerMetadata: providerMetadata)
+        let part = ReasoningUIPart(text: "", state: .streaming, providerMetadata: providerMetadata, id: id)
         let index = context.state.appendPart(.reasoning(part))
         context.state.activeReasoningPartIndices[id] = index
         context.write()
@@ -272,6 +318,14 @@ private func handleChunk<Message: UIMessageConvertible>(
         }
         context.write()
 
+    case .custom(let kind, let providerMetadata):
+        context.state.appendPart(.custom(CustomContentUIPart(kind: kind, providerMetadata: providerMetadata)))
+        context.write()
+
+    case .reasoningFile(let url, let mediaType, let providerMetadata):
+        context.state.appendPart(.reasoningFile(ReasoningFileUIPart(mediaType: mediaType, url: url, providerMetadata: providerMetadata)))
+        context.write()
+
     case .file(let url, let mediaType, let providerMetadata):
         let part = FileUIPart(mediaType: mediaType, filename: nil, url: url, providerMetadata: providerMetadata)
         context.state.appendPart(.file(part))
@@ -302,16 +356,27 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.state.appendPart(.stepStart)
 
     case .finishStep:
+        break
+
+    case .resetStep:
         context.state.activeTextPartIndices.removeAll()
         context.state.activeReasoningPartIndices.removeAll()
+        context.state.partialToolCalls.removeAll()
+        let start = (context.state.message.parts.lastIndex(of: .stepStart) ?? -1) + 1
+        if start < context.state.message.parts.count {
+            context.state.message.parts.removeSubrange(start...)
+            context.write()
+        }
 
-    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title):
+    case .toolInputStart(let toolCallId, let toolName, let providerExecuted, let providerMetadata, let dynamic, let title, let toolMetadata, let inputEncoding):
         let isDynamic = dynamic ?? false
         context.state.partialToolCalls[toolCallId] = PartialToolCall(
             text: "",
             toolName: toolName,
             dynamic: isDynamic,
-            title: title
+            title: title,
+            toolMetadata: toolMetadata,
+            inputEncoding: inputEncoding
         )
 
         if isDynamic {
@@ -326,7 +391,9 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata,
+                inputEncoding: inputEncoding
             )
         } else {
             context.state.upsertToolPart(
@@ -341,7 +408,9 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata,
+                inputEncoding: inputEncoding
             )
         }
 
@@ -359,8 +428,12 @@ private func handleChunk<Message: UIMessageConvertible>(
         partial.text += inputTextDelta
         context.state.partialToolCalls[toolCallId] = partial
 
-        let parsed = await parsePartialJson(partial.text)
-        let partialInput = parsed.value
+        let partialInput: JSONValue?
+        if partial.inputEncoding == .text {
+            partialInput = .string(partial.text)
+        } else {
+            partialInput = await parsePartialJson(partial.text).value
+        }
 
         if partial.dynamic {
             context.state.upsertDynamicToolPart(
@@ -374,7 +447,10 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: nil,
                 preliminary: nil,
                 approval: nil,
-                title: partial.title
+                title: partial.title,
+                toolMetadata: partial.toolMetadata,
+                inputEncoding: partial.inputEncoding,
+                streamingRawInput: partial.text
             )
         } else {
             context.state.upsertToolPart(
@@ -389,7 +465,10 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: nil,
                 preliminary: nil,
                 approval: nil,
-                title: partial.title
+                title: partial.title,
+                toolMetadata: partial.toolMetadata,
+                inputEncoding: partial.inputEncoding,
+                streamingRawInput: partial.text
             )
         }
 
@@ -402,7 +481,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         let providerExecuted,
         let providerMetadata,
         let dynamic,
-        let title
+        let title,
+        let toolMetadata
     ):
         let isDynamic = dynamic ?? false
         if isDynamic {
@@ -417,7 +497,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata
             )
         } else {
             context.state.upsertToolPart(
@@ -432,14 +513,15 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata
             )
         }
 
         context.write()
 
         if let onToolCall, providerExecuted != true {
-            await onToolCall(chunk)
+            try await onToolCall(chunk)
         }
 
     case .toolInputError(
@@ -450,9 +532,10 @@ private func handleChunk<Message: UIMessageConvertible>(
         let providerMetadata,
         let dynamic,
         let errorText,
-        _
+        _,
+        let toolMetadata
     ):
-        let invocationKind = context.state.toolInvocationKind(for: toolCallId)
+        let invocationKind = context.state.toolInvocationKind(for: toolCallId, currentStepOnly: true)
         let isDynamic = invocationKind == .dynamic ? true : invocationKind == .tool ? false : (dynamic ?? false)
         if isDynamic {
             context.state.upsertDynamicToolPart(
@@ -466,28 +549,32 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: nil
+                title: nil,
+                toolMetadata: toolMetadata,
+                currentStepOnly: true
             )
         } else {
             context.state.upsertToolPart(
                 toolCallId: toolCallId,
                 toolName: toolName,
                 state: .outputError,
-                input: nil,
+                input: input,
                 output: nil,
-                rawInput: input,
+                rawInput: nil,
                 errorText: errorText,
                 providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
                 preliminary: nil,
                 approval: nil,
-                title: nil
+                title: nil,
+                toolMetadata: toolMetadata,
+                currentStepOnly: true
             )
         }
 
         context.write()
 
-    case .toolApprovalRequest(let approvalId, let toolCallId):
+    case .toolApprovalRequest(let approvalId, let toolCallId, let descriptor, let inputSchemaInput, let reason, let isAutomatic, let signature):
         guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
             throw UIMessageStreamError(
                 chunkType: "tool-invocation",
@@ -500,13 +587,47 @@ private func handleChunk<Message: UIMessageConvertible>(
         case .tool:
             context.state.updateToolPart(with: toolCallId) { part in
                 part.state = .approvalRequested
-                part.approval = UIToolApproval(id: approvalId)
+                part.approval = UIToolApproval(id: approvalId, descriptor: descriptor == .null ? nil : descriptor,
+                                               requestReason: reason, isAutomatic: isAutomatic == true ? true : nil,
+                                               signature: signature, inputSchemaInput: inputSchemaInput)
             }
         case .dynamic:
             context.state.updateDynamicToolPart(with: toolCallId) { part in
                 part.state = .approvalRequested
-                part.approval = UIToolApproval(id: approvalId)
+                part.approval = UIToolApproval(id: approvalId, descriptor: descriptor == .null ? nil : descriptor,
+                                               requestReason: reason, isAutomatic: isAutomatic == true ? true : nil,
+                                               signature: signature, inputSchemaInput: inputSchemaInput)
             }
+        }
+        context.write()
+
+    case .toolApprovalResponse(let approvalId, let approved, let reason, let providerExecuted, let providerMetadata):
+        guard let index = context.state.message.parts.firstIndex(where: { part in
+            switch part {
+            case .tool(let tool): return tool.approval?.id == approvalId
+            case .dynamicTool(let tool): return tool.approval?.id == approvalId
+            default: return false
+            }
+        }) else {
+            throw UIMessageStreamError(chunkType: "tool-approval-response", chunkId: approvalId,
+                                       message: "No tool invocation found for approval ID \"\(approvalId)\".")
+        }
+        switch context.state.message.parts[index] {
+        case .tool(var part):
+            part.state = .approvalResponded
+            part.approval?.approved = approved
+            if let reason { part.approval?.reason = reason }
+            if let providerExecuted { part.providerExecuted = providerExecuted }
+            if let providerMetadata { part.callProviderMetadata = providerMetadata }
+            context.state.message.parts[index] = .tool(part)
+        case .dynamicTool(var part):
+            part.state = .approvalResponded
+            part.approval?.approved = approved
+            if let reason { part.approval?.reason = reason }
+            if let providerExecuted { part.providerExecuted = providerExecuted }
+            if let providerMetadata { part.callProviderMetadata = providerMetadata }
+            context.state.message.parts[index] = .dynamicTool(part)
+        default: break
         }
         context.write()
 
@@ -516,7 +637,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         let providerExecuted,
         let providerMetadata,
         _,
-        let preliminary
+        let preliminary,
+        let toolMetadata
     ):
         guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
             throw UIMessageStreamError(
@@ -546,7 +668,8 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: preliminary,
                 approval: toolPart.approval,
-                title: toolPart.title
+                title: toolPart.title,
+                toolMetadata: toolMetadata ?? toolPart.toolMetadata
             )
         case .tool:
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
@@ -568,13 +691,14 @@ private func handleChunk<Message: UIMessageConvertible>(
                 providerMetadata: providerMetadata,
                 preliminary: preliminary,
                 approval: toolPart.approval,
-                title: toolPart.title
+                title: toolPart.title,
+                toolMetadata: toolMetadata ?? toolPart.toolMetadata
             )
         }
 
         context.write()
 
-    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let providerMetadata, _):
+    case .toolOutputError(let toolCallId, let errorText, let providerExecuted, let providerMetadata, _, let toolMetadata):
         guard let invocationKind = context.state.toolInvocationKind(for: toolCallId) else {
             throw UIMessageStreamError(
                 chunkType: "tool-invocation",
@@ -601,9 +725,10 @@ private func handleChunk<Message: UIMessageConvertible>(
                 errorText: errorText,
                 providerExecuted: providerExecuted,
                 providerMetadata: providerMetadata,
-                preliminary: toolPart.preliminary,
+                preliminary: nil,
                 approval: toolPart.approval,
-                title: toolPart.title
+                title: toolPart.title,
+                toolMetadata: toolMetadata ?? toolPart.toolMetadata
             )
         case .tool:
             guard let toolPart = context.state.toolPart(for: toolCallId) else {
@@ -623,9 +748,10 @@ private func handleChunk<Message: UIMessageConvertible>(
                 errorText: errorText,
                 providerExecuted: providerExecuted ?? toolPart.providerExecuted,
                 providerMetadata: providerMetadata,
-                preliminary: toolPart.preliminary,
+                preliminary: nil,
                 approval: toolPart.approval,
-                title: toolPart.title
+                title: toolPart.title,
+                toolMetadata: toolMetadata ?? toolPart.toolMetadata
             )
         }
 
@@ -653,6 +779,16 @@ private func handleChunk<Message: UIMessageConvertible>(
         context.write()
 
     case .start(let messageId, let messageMetadata):
+        let shouldReset = (resetStateOnFirstMessageStart && !context.state.didStart)
+            || (resetStateOnMessageIdChange && messageId != nil && messageId != context.state.message.id)
+        context.state.didStart = true
+        if shouldReset {
+            context.state.message = Message(id: messageId ?? context.state.message.id, role: .assistant, metadata: nil, parts: [])
+            context.state.activeTextPartIndices.removeAll()
+            context.state.activeReasoningPartIndices.removeAll()
+            context.state.partialToolCalls.removeAll()
+            context.state.finishReason = nil
+        }
         if let messageId {
             context.state.message.id = messageId
         }
@@ -661,14 +797,15 @@ private func handleChunk<Message: UIMessageConvertible>(
             if let merged = try await mergeMetadata(
                 existing: context.state.message.metadata,
                 incoming: metadata,
-                schema: messageMetadataSchema
+                schema: messageMetadataSchema,
+                messageId: context.state.message.id
             ) {
                 context.state.message.metadata = merged
             }
         }
 
-        if messageId != nil || messageMetadata != nil {
-            context.write()
+        if shouldReset || messageId != nil || (messageMetadata != nil && messageMetadata != .null) {
+            context.write(UIMessageStreamWriteOptions(updateStatus: false))
         }
 
     case .finish(let finishReason, let messageMetadata):
@@ -679,7 +816,8 @@ private func handleChunk<Message: UIMessageConvertible>(
             if let merged = try await mergeMetadata(
                 existing: context.state.message.metadata,
                 incoming: metadata,
-                schema: messageMetadataSchema
+                schema: messageMetadataSchema,
+                messageId: context.state.message.id
             ) {
                 context.state.message.metadata = merged
                 context.write()
@@ -690,7 +828,8 @@ private func handleChunk<Message: UIMessageConvertible>(
         if let merged = try await mergeMetadata(
             existing: context.state.message.metadata,
             incoming: metadata,
-            schema: messageMetadataSchema
+            schema: messageMetadataSchema,
+            messageId: context.state.message.id
         ) {
             context.state.message.metadata = merged
             context.write()
@@ -701,10 +840,18 @@ private func handleChunk<Message: UIMessageConvertible>(
 
     case .data(let dataChunk):
         if let schema = dataPartSchemas?[dataChunk.typeIdentifier] {
+            let index = context.state.message.parts.firstIndex { part in
+                if case .data(let data) = part {
+                    return data.id == dataChunk.id && data.typeIdentifier == dataChunk.typeIdentifier
+                }
+                return false
+            } ?? context.state.message.parts.count
             _ = try await validateTypes(
                 ValidateTypesOptions(
                     value: jsonValueToAny(dataChunk.data),
-                    schema: schema
+                    schema: schema,
+                    context: TypeValidationContext(field: "message.parts[\(index)].data",
+                                                   entityName: dataChunk.typeIdentifier, entityId: dataChunk.id)
                 )
             )
         }
@@ -742,11 +889,18 @@ private func handleChunk<Message: UIMessageConvertible>(
 
 // MARK: - Helpers
 
+private func rawToolInput(_ value: JSONValue?) -> String {
+    if case .string(let text) = value { return text }
+    return ""
+}
+
 private func mergeMetadata(
     existing: JSONValue?,
     incoming: JSONValue,
-    schema: FlexibleSchema<JSONValue>?
+    schema: FlexibleSchema<JSONValue>?,
+    messageId: String
 ) async throws -> JSONValue? {
+    guard incoming != .null else { return nil }
     let merged: JSONValue
 
     switch (existing, incoming) {
@@ -763,7 +917,8 @@ private func mergeMetadata(
         _ = try await validateTypes(
             ValidateTypesOptions(
                 value: jsonValueToAny(merged),
-                schema: schema
+                schema: schema,
+                context: TypeValidationContext(field: "message.metadata", entityId: messageId)
             )
         )
     }
@@ -869,23 +1024,22 @@ private extension StreamingUIMessageState {
         message.parts[index] = .data(part)
     }
 
-    func toolPartIndex(for toolCallId: String) -> Int? {
-        message.parts.firstIndex {
-            if case .tool(let part) = $0 {
-                return part.toolCallId == toolCallId
-            } else {
-                return false
-            }
+    func toolPartIndex(for toolCallId: String, currentStepOnly: Bool = false) -> Int? {
+        let start = currentStepOnly ? (message.parts.lastIndex(of: .stepStart) ?? -1) + 1 : 0
+        return message.parts.indices.reversed().first { index in
+            guard index >= start else { return false }
+            let part = message.parts[index]
+            if case .tool(let tool) = part { return tool.toolCallId == toolCallId }
+            return false
         }
     }
 
-    func dynamicToolPartIndex(for toolCallId: String) -> Int? {
-        message.parts.firstIndex {
-            if case .dynamicTool(let part) = $0 {
-                return part.toolCallId == toolCallId
-            } else {
-                return false
-            }
+    func dynamicToolPartIndex(for toolCallId: String, currentStepOnly: Bool = false) -> Int? {
+        let start = currentStepOnly ? (message.parts.lastIndex(of: .stepStart) ?? -1) + 1 : 0
+        return message.parts.indices.reversed().first { index in
+            guard index >= start else { return false }
+            if case .dynamicTool(let tool) = message.parts[index] { return tool.toolCallId == toolCallId }
+            return false
         }
     }
 
@@ -905,8 +1059,9 @@ private extension StreamingUIMessageState {
         return part
     }
 
-    func toolInvocationKind(for toolCallId: String) -> ToolInvocationKind? {
-        for part in message.parts {
+    func toolInvocationKind(for toolCallId: String, currentStepOnly: Bool = false) -> ToolInvocationKind? {
+        let start = currentStepOnly ? (message.parts.lastIndex(of: .stepStart) ?? -1) + 1 : 0
+        for part in message.parts.dropFirst(start).reversed() {
             switch part {
             case .tool(let toolPart) where toolPart.toolCallId == toolCallId:
                 return .tool
@@ -932,14 +1087,20 @@ private extension StreamingUIMessageState {
         providerMetadata: ProviderMetadata?,
         preliminary: Bool?,
         approval: UIToolApproval?,
-        title: String?
+        title: String?,
+        toolMetadata: JSONObject? = nil,
+        inputEncoding: UIToolInputEncoding? = nil,
+        streamingRawInput: String? = nil,
+        currentStepOnly: Bool = false
     ) {
-        if let index = toolPartIndex(for: toolCallId),
+        if let index = toolPartIndex(for: toolCallId, currentStepOnly: currentStepOnly || state == .inputStreaming || state == .inputAvailable),
            case .tool(var part) = message.parts[index] {
             part.state = state
+            if let toolMetadata { part.toolMetadata = toolMetadata }
+            part.inputEncoding = inputEncoding
             part.input = input
             part.output = output
-            part.rawInput = rawInput
+            part.rawInput = streamingRawInput.map(JSONValue.string) ?? rawInput
             part.errorText = errorText
             if let providerExecuted { part.providerExecuted = providerExecuted }
             if let providerMetadata {
@@ -960,14 +1121,16 @@ private extension StreamingUIMessageState {
                 state: state,
                 input: input,
                 output: output,
-                rawInput: rawInput,
+                rawInput: streamingRawInput.map(JSONValue.string) ?? rawInput,
                 errorText: errorText,
                 providerExecuted: providerExecuted,
                 callProviderMetadata: state == .outputAvailable || state == .outputError ? nil : providerMetadata,
                 resultProviderMetadata: state == .outputAvailable || state == .outputError ? providerMetadata : nil,
                 preliminary: preliminary,
                 approval: approval,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata,
+                inputEncoding: inputEncoding
             )
             appendPart(.tool(part))
         }
@@ -984,11 +1147,18 @@ private extension StreamingUIMessageState {
         providerMetadata: ProviderMetadata?,
         preliminary: Bool?,
         approval: UIToolApproval?,
-        title: String?
+        title: String?,
+        toolMetadata: JSONObject? = nil,
+        inputEncoding: UIToolInputEncoding? = nil,
+        streamingRawInput: String? = nil,
+        currentStepOnly: Bool = false
     ) {
-        if let index = dynamicToolPartIndex(for: toolCallId),
+        if let index = dynamicToolPartIndex(for: toolCallId, currentStepOnly: currentStepOnly || state == .inputStreaming || state == .inputAvailable),
            case .dynamicTool(var part) = message.parts[index] {
             part.state = state
+            if let toolMetadata { part.toolMetadata = toolMetadata }
+            part.inputEncoding = inputEncoding
+            part.rawInput = streamingRawInput.map(JSONValue.string)
             part.input = input
             part.output = output
             part.errorText = errorText
@@ -1010,6 +1180,7 @@ private extension StreamingUIMessageState {
                 toolName: toolName,
                 toolCallId: toolCallId,
                 state: state,
+                rawInput: streamingRawInput.map(JSONValue.string),
                 input: input,
                 output: output,
                 errorText: errorText,
@@ -1018,24 +1189,23 @@ private extension StreamingUIMessageState {
                 resultProviderMetadata: state == .outputAvailable || state == .outputError ? providerMetadata : nil,
                 preliminary: preliminary,
                 approval: approval,
-                title: title
+                title: title,
+                toolMetadata: toolMetadata,
+                inputEncoding: inputEncoding
             )
             appendPart(.dynamicTool(part))
         }
     }
 
     func indexOfDataPart(typeIdentifier: String, id: String?) -> Int? {
-        message.parts.firstIndex {
+        guard let id else { return nil }
+        return message.parts.firstIndex {
             switch $0 {
             case .data(let part):
                 if part.typeIdentifier != typeIdentifier {
                     return false
                 }
-                if let id {
-                    return part.id == id
-                } else {
-                    return part.id == nil
-                }
+                return part.id == id
             default:
                 return false
             }
