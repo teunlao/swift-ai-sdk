@@ -141,12 +141,23 @@ final class LoopbackHTTPConnection: @unchecked Sendable {
         try await send(Data(head.utf8))
     }
 
-    /// Waits until the peer closes the connection or it fails.
+    /// Waits until the peer closes the connection or it fails, discarding what it sends.
     func waitUntilClosed() async {
-        while (try? await receiveMore()) == true {}
+        while (try? await receiveMore()) == true {
+            buffer.removeAll(keepingCapacity: true)
+        }
     }
 
-    func close() {
+    /// Closes in stages like a production server (RFC 9112 §9.6): half-close, drain
+    /// until the peer closes, then release. Closing with unread request bytes resets
+    /// the connection, and the reset can erase the response before the client reads it.
+    func close() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
+                continuation.resume()
+            })
+        }
+        await waitUntilClosed()
         connection.cancel()
     }
 
