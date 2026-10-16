@@ -83,7 +83,7 @@ public struct SpeechModelV3Result: Sendable {
         public let modelId: String
 
         /// Response headers
-        public let headers: SharedV2Headers?
+        public let headers: SharedV3Headers?
 
         /// Response body
         /// Marked @unchecked Sendable to match TypeScript's unknown type.
@@ -92,7 +92,7 @@ public struct SpeechModelV3Result: Sendable {
         public init(
             timestamp: Date,
             modelId: String,
-            headers: SharedV2Headers? = nil,
+            headers: SharedV3Headers? = nil,
             body: Any? = nil
         ) {
             self.timestamp = timestamp

@@ -138,7 +138,7 @@ private struct OpenAISpeechCoreResult: @unchecked Sendable {
     let requestBody: String?
     let timestamp: Date
     let modelId: String
-    let responseHeaders: SharedV2Headers?
+    let responseHeaders: SharedV4Headers?
     let responseBody: Any?
 }
 

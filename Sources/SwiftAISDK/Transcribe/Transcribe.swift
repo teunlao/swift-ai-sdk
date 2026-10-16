@@ -119,26 +119,6 @@ public func transcribe(
     )
 }
 
-public func transcribe(
-    model: any TranscriptionModelV2,
-    audio: TranscriptionAudioInput,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil
-) async throws -> any TranscriptionResult {
-    try await transcribe(
-        model: .v2(model),
-        audio: audio,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        experimentalDownload: download
-    )
-}
-
 /**
  Audio input for transcription.
 

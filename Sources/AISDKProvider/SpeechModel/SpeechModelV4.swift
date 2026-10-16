@@ -53,13 +53,13 @@ public struct SpeechModelV4Result: Sendable {
     public struct ResponseInfo: @unchecked Sendable {
         public let timestamp: Date
         public let modelId: String
-        public let headers: SharedV2Headers?
+        public let headers: SharedV4Headers?
         public let body: Any?
 
         public init(
             timestamp: Date,
             modelId: String,
-            headers: SharedV2Headers? = nil,
+            headers: SharedV4Headers? = nil,
             body: Any? = nil
         ) {
             self.timestamp = timestamp

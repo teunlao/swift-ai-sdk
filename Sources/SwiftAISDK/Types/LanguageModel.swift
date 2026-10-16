@@ -18,9 +18,8 @@ import AISDKProviderUtils
  - A string identifier (model ID that will be resolved via registry)
  - A `LanguageModelV4` protocol implementation
  - A `LanguageModelV3` protocol implementation
- - A `LanguageModelV2` protocol implementation
 
- TypeScript equivalent: `string | LanguageModelV4 | LanguageModelV3 | LanguageModelV2`
+ TypeScript equivalent: `string | LanguageModelV4 | LanguageModelV3`
  */
 public enum LanguageModel: Sendable {
     /// Model identifier string (will be resolved via registry)
@@ -32,8 +31,6 @@ public enum LanguageModel: Sendable {
     /// Language model V3 implementation
     case v3(LanguageModelV3)
 
-    /// Language model V2 implementation
-    case v2(LanguageModelV2)
 }
 
 /**

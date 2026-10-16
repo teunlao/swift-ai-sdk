@@ -18,11 +18,6 @@ import AISDKProviderUtils
 
 // MARK: - Public V4 Adapter Entry Points
 
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func asProviderV4(_ provider: any ProviderV2) -> any ProviderV4 {
-    ProviderV2ToV4Adapter(provider: provider)
-}
-
 public func asProviderV4(_ provider: any ProviderV4) -> any ProviderV4 {
     provider
 }
@@ -63,11 +58,6 @@ public func asImageModelV4(_ model: any ImageModelV3) -> any ImageModelV4 {
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func asImageModelV4(_ model: any ImageModelV2) -> any ImageModelV4 {
-    ImageModelV2ToV4Adapter(wrapping: model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func asRerankingModelV4(_ model: any RerankingModelV4) -> any RerankingModelV4 {
     model
 }
@@ -88,11 +78,6 @@ public func asSpeechModelV4(_ model: any SpeechModelV3) -> any SpeechModelV4 {
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func asSpeechModelV4(_ model: any SpeechModelV2) -> any SpeechModelV4 {
-    SpeechModelV2ToV4Adapter(wrapping: model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func asTranscriptionModelV4(_ model: any TranscriptionModelV4) -> any TranscriptionModelV4 {
     model
 }
@@ -100,11 +85,6 @@ public func asTranscriptionModelV4(_ model: any TranscriptionModelV4) -> any Tra
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func asTranscriptionModelV4(_ model: any TranscriptionModelV3) -> any TranscriptionModelV4 {
     TranscriptionModelV3ToV4Adapter(wrapping: model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func asTranscriptionModelV4(_ model: any TranscriptionModelV2) -> any TranscriptionModelV4 {
-    TranscriptionModelV2ToV4Adapter(wrapping: model)
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
@@ -131,9 +111,6 @@ public func resolveLanguageModelV4(_ model: LanguageModel) throws -> any Languag
     case .v3(let legacy):
         try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
         return asLanguageModelV4(legacy)
-    case .v2(let legacy):
-        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
-        return try asLanguageModelV4(resolveLanguageModel(model))
     }
 }
 
@@ -149,9 +126,6 @@ public func resolveEmbeddingModelV4(_ model: EmbeddingModel) throws -> any Embed
     case .v3(let legacy):
         try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
         return asEmbeddingModelV4(legacy)
-    case .v2(let legacy):
-        try validateModelSpecification(legacy.specificationVersion, provider: legacy.provider, modelId: legacy.modelId)
-        return try asEmbeddingModelV4(resolveEmbeddingModel(model))
     }
 }
 
@@ -166,20 +140,12 @@ public func resolveImageModelV4(_ model: any ImageModelV4) -> any ImageModelV4 {
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveImageModelV4(_ model: any ImageModelV2) -> any ImageModelV4 {
-    asImageModelV4(model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func resolveImageModelV4(_ model: ImageModel) throws -> any ImageModelV4 {
     switch model {
     case .v4(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
-        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
-        return asImageModelV4(model)
-    case .v2(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asImageModelV4(model)
     case .string(let id):
@@ -227,20 +193,12 @@ public func resolveSpeechModelV4(_ model: any SpeechModelV4) -> any SpeechModelV
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveSpeechModelV4(_ model: any SpeechModelV2) -> any SpeechModelV4 {
-    asSpeechModelV4(model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func resolveSpeechModelV4(_ model: SpeechModel) throws -> any SpeechModelV4 {
     switch model {
     case .v4(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
-        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
-        return asSpeechModelV4(model)
-    case .v2(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asSpeechModelV4(model)
     case .string(let id):
@@ -263,20 +221,12 @@ public func resolveTranscriptionModelV4(_ model: any TranscriptionModelV4) -> an
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func resolveTranscriptionModelV4(_ model: any TranscriptionModelV2) -> any TranscriptionModelV4 {
-    asTranscriptionModelV4(model)
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func resolveTranscriptionModelV4(_ model: TranscriptionModel) throws -> any TranscriptionModelV4 {
     switch model {
     case .v4(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return model
     case .v3(let model):
-        try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
-        return asTranscriptionModelV4(model)
-    case .v2(let model):
         try validateModelSpecification(model.specificationVersion, provider: model.provider, modelId: model.modelId)
         return asTranscriptionModelV4(model)
     case .string(let id):
@@ -327,7 +277,7 @@ private struct ModelResolutionFailure: Error, LocalizedError, CustomStringConver
     var description: String { message }
 }
 
-private func validateModelSpecification(_ version: String, provider: String, modelId: String, versions: [String] = ["v2", "v3", "v4"]) throws {
+private func validateModelSpecification(_ version: String, provider: String, modelId: String, versions: [String] = ["v3", "v4"]) throws {
     guard versions.contains(version) else {
         throw UnsupportedModelVersionError(version: version, provider: provider, modelId: modelId)
     }
@@ -383,27 +333,6 @@ private final class ProviderV3ToV4Adapter: ProviderV4, VideoProviderV4, @uncheck
     func skills() throws -> (any SkillsV4)? {
         (provider as? any SkillsProvider)?.skills()
     }
-}
-
-private struct ProviderV2ToV4Adapter: ProviderV4 {
-    let provider: any ProviderV2
-    func languageModel(modelId: String) throws -> any LanguageModelV4 {
-        try resolveLanguageModelV4(.v2(provider.languageModel(modelId: modelId)))
-    }
-    func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        try resolveEmbeddingModelV4(.v2(provider.textEmbeddingModel(modelId: modelId)))
-    }
-    func imageModel(modelId: String) throws -> any ImageModelV4 {
-        asImageModelV4(provider.imageModel(modelId: modelId))
-    }
-    func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
-        provider.transcriptionModel(modelId: modelId).map(asTranscriptionModelV4)
-    }
-    func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
-        provider.speechModel(modelId: modelId).map(asSpeechModelV4)
-    }
-    func files() throws -> (any FilesV4)? { (provider as? any FilesProvider)?.files() }
-    func skills() throws -> (any SkillsV4)? { (provider as? any SkillsProvider)?.skills() }
 }
 
 // MARK: - Language Model Adapter
@@ -1061,87 +990,6 @@ private func _convertImageModelV3ProviderMetadataToV4(
     value?.mapValues { ImageModelV4ProviderMetadataValue(images: $0.images, additionalData: $0.additionalData) }
 }
 
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class ImageModelV2ToV4Adapter: ImageModelV4, @unchecked Sendable {
-    let specificationVersion = "v4"
-
-    private let model: any ImageModelV2
-
-    var provider: String { model.provider }
-    var modelId: String { model.modelId }
-    var maxImagesPerCall: ImageModelV4MaxImagesPerCall { _convertImageModelV2MaxImagesPerCallToV4(model.maxImagesPerCall) }
-
-    init(wrapping model: any ImageModelV2) {
-        self.model = model
-    }
-
-    func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
-        guard options.files == nil, options.mask == nil else {
-            throw UnsupportedFunctionalityError(functionality: "image model v2 does not support image editing files or masks")
-        }
-
-        let result = try await model.doGenerate(
-            options: ImageModelV2CallOptions(
-                prompt: options.prompt ?? "",
-                n: options.n,
-                size: options.size,
-                aspectRatio: options.aspectRatio,
-                seed: options.seed,
-                providerOptions: options.providerOptions,
-                abortSignal: options.abortSignal,
-                headers: options.headers
-            )
-        )
-
-        return ImageModelV4GenerateResult(
-            images: _convertImageModelV2GeneratedImagesToV4(result.images),
-            warnings: result.warnings.map(_convertImageModelV2WarningToV4),
-            providerMetadata: _convertImageModelV2ProviderMetadataToV4(result.providerMetadata),
-            response: ImageModelV4ResponseInfo(
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-                headers: result.response.headers
-            ),
-            usage: nil
-        )
-    }
-}
-
-private func _convertImageModelV2MaxImagesPerCallToV4(_ value: ImageModelV2MaxImagesPerCall) -> ImageModelV4MaxImagesPerCall {
-    switch value {
-    case .value(let count):
-        return .value(count)
-    case .default:
-        return .default
-    case .function(let resolver):
-        return .function(resolver)
-    }
-}
-
-private func _convertImageModelV2GeneratedImagesToV4(_ value: ImageModelV2GeneratedImages) -> ImageModelV4GeneratedImages {
-    switch value {
-    case .base64(let images):
-        return .base64(images)
-    case .binary(let images):
-        return .binary(images)
-    }
-}
-
-private func _convertImageModelV2ProviderMetadataToV4(
-    _ value: ImageModelV2ProviderMetadata?
-) -> ImageModelV4ProviderMetadata? {
-    value?.mapValues { ImageModelV4ProviderMetadataValue(images: $0.images, additionalData: $0.additionalData) }
-}
-
-private func _convertImageModelV2WarningToV4(_ value: ImageModelV2CallWarning) -> SharedV4Warning {
-    switch value {
-    case let .unsupportedSetting(setting, details):
-        return .unsupported(feature: setting, details: details)
-    case .other(let message):
-        return .other(message: message)
-    }
-}
-
 // MARK: - Reranking Model Adapter
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
@@ -1250,145 +1098,7 @@ private func _convertSpeechModelV3AudioToV4(_ value: SpeechModelV3Audio) -> Spee
     }
 }
 
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class SpeechModelV2ToV4Adapter: SpeechModelV4, @unchecked Sendable {
-    let specificationVersion = "v4"
-
-    private let model: any SpeechModelV2
-
-    var provider: String { model.provider }
-    var modelId: String { model.modelId }
-
-    init(wrapping model: any SpeechModelV2) {
-        self.model = model
-    }
-
-    func doGenerate(options: SpeechModelV4CallOptions) async throws -> SpeechModelV4Result {
-        let result = try await model.doGenerate(options: _convertSpeechModelV4CallOptionsToV2(options))
-        return SpeechModelV4Result(
-            audio: _convertSpeechModelV2AudioToV4(result.audio),
-            warnings: result.warnings.map(_convertSpeechModelV2WarningToV4),
-            request: result.request.map { SpeechModelV4Result.RequestInfo(body: $0.body) },
-            response: SpeechModelV4Result.ResponseInfo(
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-                headers: result.response.headers,
-                body: result.response.body
-            ),
-            providerMetadata: result.providerMetadata
-        )
-    }
-}
-
-private func _convertSpeechModelV4CallOptionsToV2(_ options: SpeechModelV4CallOptions) -> SpeechModelV2CallOptions {
-    SpeechModelV2CallOptions(
-        text: options.text,
-        voice: options.voice,
-        outputFormat: options.outputFormat,
-        instructions: options.instructions,
-        speed: options.speed,
-        language: options.language,
-        providerOptions: options.providerOptions,
-        abortSignal: options.abortSignal,
-        headers: options.headers
-    )
-}
-
-private func _convertSpeechModelV2AudioToV4(_ value: SpeechModelV2Audio) -> SpeechModelV4Audio {
-    switch value {
-    case .base64(let base64):
-        return .base64(base64)
-    case .binary(let data):
-        return .binary(data)
-    }
-}
-
-private func _convertSpeechModelV2WarningToV4(_ value: SpeechModelV2CallWarning) -> SharedV4Warning {
-    switch value {
-    case let .unsupportedSetting(setting, details):
-        return .unsupported(feature: setting, details: details)
-    case .other(let message):
-        return .other(message: message)
-    }
-}
-
 // MARK: - Transcription Model Adapter
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class TranscriptionModelV2ToV4Adapter: TranscriptionModelV4, @unchecked Sendable {
-    let specificationVersion = "v4"
-
-    private let model: any TranscriptionModelV2
-
-    var provider: String { model.provider }
-    var modelId: String { model.modelId }
-
-    init(wrapping model: any TranscriptionModelV2) {
-        self.model = model
-    }
-
-    func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
-        let result = try await model.doGenerate(options: _convertTranscriptionModelV4CallOptionsToV2(options))
-        return TranscriptionModelV4Result(
-            text: result.text,
-            segments: result.segments.map {
-                TranscriptionModelV4Result.Segment(
-                    text: $0.text,
-                    startSecond: $0.startSecond,
-                    endSecond: $0.endSecond
-                )
-            },
-            language: result.language,
-            durationInSeconds: result.durationInSeconds,
-            warnings: result.warnings.map(_convertTranscriptionModelV2WarningToV4),
-            request: result.request.map { TranscriptionModelV4Result.RequestInfo(body: $0.body) },
-            response: TranscriptionModelV4Result.ResponseInfo(
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-                headers: result.response.headers,
-                body: result.response.body
-            ),
-            providerMetadata: result.providerMetadata
-        )
-    }
-
-    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
-        if let streamingModel = model as? any TranscriptionModelV4Streaming {
-            return try await streamingModel.doStream(options: options)
-        }
-        throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
-    }
-}
-
-private func _convertTranscriptionModelV4CallOptionsToV2(
-    _ options: TranscriptionModelV4CallOptions
-) -> TranscriptionModelV2CallOptions {
-    TranscriptionModelV2CallOptions(
-        audio: _convertTranscriptionModelV4AudioToV2(options.audio),
-        mediaType: options.mediaType,
-        providerOptions: options.providerOptions,
-        abortSignal: options.abortSignal,
-        headers: options.headers
-    )
-}
-
-private func _convertTranscriptionModelV4AudioToV2(_ value: TranscriptionModelV4Audio) -> TranscriptionModelV2Audio {
-    switch value {
-    case .binary(let data):
-        return .binary(data)
-    case .base64(let base64):
-        return .base64(base64)
-    }
-}
-
-private func _convertTranscriptionModelV2WarningToV4(_ value: TranscriptionModelV2CallWarning) -> SharedV4Warning {
-    switch value {
-    case let .unsupportedSetting(setting, details):
-        return .unsupported(feature: setting, details: details)
-    case .other(let message):
-        return .other(message: message)
-    }
-}
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private final class TranscriptionModelV3ToV4Adapter: TranscriptionModelV4, @unchecked Sendable {

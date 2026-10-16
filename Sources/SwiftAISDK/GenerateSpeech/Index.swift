@@ -98,32 +98,3 @@ public func experimental_generateSpeech(
         headers: headers
     )
 }
-
-/// Experimental generate speech entry point (mirrors upstream export name).
-public func experimental_generateSpeech(
-    model: any SpeechModelV2,
-    text: String,
-    voice: String? = nil,
-    outputFormat: String? = nil,
-    instructions: String? = nil,
-    speed: Double? = nil,
-    language: String? = nil,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> any SpeechResult {
-    try await experimental_generateSpeech(
-        model: .v2(model),
-        text: text,
-        voice: voice,
-        outputFormat: outputFormat,
-        instructions: instructions,
-        speed: speed,
-        language: language,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
