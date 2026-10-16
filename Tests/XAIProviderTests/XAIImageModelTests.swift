@@ -18,6 +18,7 @@ struct XAIImageModelTests {
         var requests: [URLRequest] = []
         func append(_ request: URLRequest) { requests.append(request) }
         func first() -> URLRequest? { requests.first }
+        func last() -> URLRequest? { requests.last }
     }
 
     private func httpResponse(url: URL, statusCode: Int, headers: [String: String]) -> HTTPURLResponse {
@@ -94,7 +95,7 @@ struct XAIImageModelTests {
 
         switch model.maxImagesPerCall {
         case .value(let value):
-            #expect(value == 1)
+            #expect(value == 3)
         default:
             Issue.record("Expected maxImagesPerCall == .value(1)")
         }
@@ -125,7 +126,7 @@ struct XAIImageModelTests {
             "model": .string("grok-2-image"),
             "prompt": .string(prompt),
             "n": .number(1),
-            "response_format": .string("url"),
+            "response_format": .string("b64_json"),
             "aspect_ratio": .string("16:9"),
         ]))
     }
@@ -159,7 +160,7 @@ struct XAIImageModelTests {
             "model": .string("grok-2-image"),
             "prompt": .string("Turn the cat into a dog"),
             "n": .number(1),
-            "response_format": .string("url"),
+            "response_format": .string("b64_json"),
             "image": .object([
                 "url": .string("data:image/png;base64,iVBORw=="),
                 "type": .string("image_url"),
@@ -190,7 +191,7 @@ struct XAIImageModelTests {
             "model": .string("grok-2-image"),
             "prompt": .string("Edit this image"),
             "n": .number(1),
-            "response_format": .string("url"),
+            "response_format": .string("b64_json"),
             "image": .object([
                 "url": .string("https://example.com/input.png"),
                 "type": .string("image_url"),
@@ -225,7 +226,7 @@ struct XAIImageModelTests {
             "model": .string("grok-2-image"),
             "prompt": .string("Edit this image"),
             "n": .number(1),
-            "response_format": .string("url"),
+            "response_format": .string("b64_json"),
             "image": .object([
                 "url": .string("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE="),
                 "type": .string("image_url"),
@@ -311,7 +312,7 @@ struct XAIImageModelTests {
             "model": .string("grok-2-image"),
             "prompt": .string(prompt),
             "n": .number(1),
-            "response_format": .string("url"),
+            "response_format": .string("b64_json"),
             "output_format": .string("jpeg"),
             "sync_mode": .bool(true),
         ]))
@@ -414,9 +415,40 @@ struct XAIImageModelTests {
                 .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
             ]
         ))
-        #expect(multiFileResult.warnings.contains(.other(
-            message: "xAI only supports a single input image. Additional images are ignored."
-        )))
+        let multiRequest = try #require(await capture.last())
+        #expect(multiFileResult.warnings.isEmpty)
+        #expect(multiRequest.url?.path == "/images/edits")
+        guard case .object(let multiBody) = try decodeRequestBodyJSON(multiRequest) else { Issue.record("Missing image edit request"); return }
+        #expect(multiBody["images"] == .array([
+            .object(["url": .string("data:image/png;base64,iVBORw=="), "type": .string("image_url")]),
+            .object(["url": .string("data:image/png;base64,iVBORw=="), "type": .string("image_url")])
+        ]))
+    }
+
+    @Test("base64 images preserve billing metadata and image capabilities")
+    func base64Images() async throws {
+        let capture = RequestCapture()
+        let fetch = try makeFetch(capture: capture, postResponseBody: ["data": [["b64_json": "AQID", "revised_prompt": "otter"]], "usage": ["cost_in_usd_ticks": 7]])
+        let model = XAIImageModel(modelId: "grok-imagine-image-pro", config: .init(provider: "xai.image", baseURL: "https://api.example.com", headers: { [:] }, fetch: fetch))
+        #expect(try await model.supportsFileInputs == true)
+        #expect(try await model.supportsMaskInputs == false)
+        let result = try await model.doGenerate(options: .init(prompt: prompt, n: 1, providerOptions: ["xai": ["resolution": .string("2k"), "quality": .string("high"), "user": .string("user")]]))
+        #expect(result.images == .base64(["AQID"]))
+        #expect(result.providerMetadata?["xai"]?.additionalData == .object(["costInUsdTicks": .number(7)]))
+        let request = try #require(await capture.first())
+        guard case .object(let body) = try decodeRequestBodyJSON(request) else { Issue.record("Missing request"); return }
+        #expect(body["resolution"] == .string("2k"))
+        #expect(body["quality"] == .string("high"))
+        #expect(body["user"] == .string("user"))
+    }
+
+    @Test("moderation rejections fail before downloading an image")
+    func moderation() async throws {
+        let capture = RequestCapture()
+        let model = makeModel(fetch: try makeFetch(capture: capture, postResponseBody: ["data": [["respect_moderation": false]]]))
+        await #expect(throws: InvalidResponseDataError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: prompt, n: 1))
+        }
     }
 
     @Test("handles API errors")

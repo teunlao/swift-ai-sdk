@@ -2,13 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/xai/src/xai-image-model.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
 struct XAIImageModelConfig: Sendable {
     let provider: String
     let baseURL: String?
@@ -33,16 +26,25 @@ struct XAIImageModelConfig: Sendable {
 
 private struct XAIImageResponse: Codable, Sendable {
     struct Item: Codable, Sendable {
-        let url: String
+        let url: String?
+        let base64: String?
         let revisedPrompt: String?
+        let respectModeration: Bool?
 
         enum CodingKeys: String, CodingKey {
             case url
+            case base64 = "b64_json"
             case revisedPrompt = "revised_prompt"
+            case respectModeration = "respect_moderation"
         }
     }
 
+    struct Usage: Codable, Sendable {
+        let costInUsdTicks: Double?
+        enum CodingKeys: String, CodingKey { case costInUsdTicks = "cost_in_usd_ticks" }
+    }
     let data: [Item]
+    let usage: Usage?
 }
 
 private let xaiImageResponseSchema = FlexibleSchema(
@@ -54,7 +56,13 @@ private let xaiImageResponseSchema = FlexibleSchema(
 
 public final class XAIImageModel: ImageModelV4 {
     public let specificationVersion: String = "v4"
-    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(3) }
+    public var supportsFileInputs: Bool? {
+        get async throws { ["grok-imagine-image", "grok-imagine-image-2.0", "grok-imagine-image-pro"].contains(modelId) ? true : nil }
+    }
+    public var supportsMaskInputs: Bool? {
+        get async throws { try await supportsFileInputs == true ? false : nil }
+    }
 
     private let modelIdentifier: XAIImageModelId
     private let config: XAIImageModelConfig
@@ -94,23 +102,14 @@ public final class XAIImageModel: ImageModelV4 {
         let files = options.files ?? []
         let hasFiles = !files.isEmpty
 
-        var imageURL: String? = nil
-        if hasFiles {
-            imageURL = convertImageModelFileToDataURI(files[0])
-
-            if files.count > 1 {
-                warnings.append(.other(
-                    message: "xAI only supports a single input image. Additional images are ignored."
-                ))
-            }
-        }
+        let imageURLs = files.map(convertImageModelFileToDataURI)
 
         let endpoint = hasFiles ? "/images/edits" : "/images/generations"
 
         var body: [String: JSONValue] = [
             "model": .string(modelIdentifier.rawValue),
             "n": .number(Double(options.n)),
-            "response_format": .string("url")
+            "response_format": .string("b64_json")
         ]
 
         if let prompt = options.prompt {
@@ -133,11 +132,13 @@ public final class XAIImageModel: ImageModelV4 {
             body["aspect_ratio"] = .string(providerAspectRatio)
         }
 
-        if let imageURL {
-            body["image"] = .object([
-                "url": .string(imageURL),
-                "type": .string("image_url")
-            ])
+        if let value = xaiOptions?.resolution { body["resolution"] = .string(value) }
+        if let value = xaiOptions?.quality { body["quality"] = .string(value) }
+        if let value = xaiOptions?.user { body["user"] = .string(value) }
+        if imageURLs.count == 1 {
+            body["image"] = .object(["url": .string(imageURLs[0]), "type": .string("image_url")])
+        } else if imageURLs.count > 1 {
+            body["images"] = .array(imageURLs.map { .object(["url": .string($0), "type": .string("image_url")]) })
         }
 
         let baseURL = config.baseURL ?? "https://api.x.ai/v1"
@@ -158,7 +159,15 @@ public final class XAIImageModel: ImageModelV4 {
             fetch: config.fetch
         )
 
-        let downloadedImages = try await downloadImages(response.value.data, abortSignal: options.abortSignal)
+        if response.value.data.contains(where: { $0.respectModeration == false }) {
+            throw InvalidResponseDataError(data: response.rawValue, message: "Image generation was blocked due to a content policy violation.")
+        }
+        let images: ImageModelV4GeneratedImages
+        if response.value.data.allSatisfy({ $0.base64 != nil }) {
+            images = .base64(response.value.data.compactMap(\.base64))
+        } else {
+            images = .binary(try await downloadImages(response.value.data, abortSignal: options.abortSignal))
+        }
 
         let metadataImages = response.value.data.map { item -> JSONValue in
             var object: [String: JSONValue] = [:]
@@ -169,11 +178,11 @@ public final class XAIImageModel: ImageModelV4 {
         }
 
         let providerMetadata: ImageModelV4ProviderMetadata = [
-            "xai": ImageModelV4ProviderMetadataValue(images: metadataImages)
+            "xai": ImageModelV4ProviderMetadataValue(images: metadataImages, additionalData: response.value.usage?.costInUsdTicks.map { .object(["costInUsdTicks": .number($0)]) })
         ]
 
         return ImageModelV4GenerateResult(
-            images: .binary(downloadedImages),
+            images: images,
             warnings: warnings,
             providerMetadata: providerMetadata,
             response: ImageModelV4ResponseInfo(
@@ -193,12 +202,15 @@ public final class XAIImageModel: ImageModelV4 {
         try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             for (index, item) in items.enumerated() {
                 group.addTask { [config] in
+                    guard let url = item.url else { throw InvalidResponseDataError(data: item.base64, message: "Generated image URL is missing") }
                     let data = try await getFromAPI(
-                        url: item.url,
+                        url: url,
                         failedResponseHandler: createStatusCodeErrorResponseHandler(),
                         successfulResponseHandler: createBinaryResponseHandler(),
                         isAborted: abortSignal,
-                        fetch: config.fetch
+                        fetch: config.fetch,
+                        validateUrl: true,
+                        trustedOrigin: config.baseURL
                     ).value
                     return (index, data)
                 }
