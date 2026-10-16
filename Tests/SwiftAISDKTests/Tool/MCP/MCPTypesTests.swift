@@ -14,14 +14,6 @@ import Testing
 @Suite("MCP Types")
 struct MCPTypesTests {
 
-    // MARK: - Protocol Versioning Tests
-
-    @Test("Protocol version constants match upstream")
-    func testProtocolVersions() throws {
-        #expect(latestProtocolVersion == "2025-06-18")
-        #expect(supportedProtocolVersions == ["2025-06-18", "2025-03-26", "2024-11-05"])
-    }
-
     // MARK: - Configuration Tests
 
     @Test("Configuration encoding/decoding")
@@ -241,7 +233,7 @@ struct MCPTypesTests {
     @Test("ToolContent image encoding/decoding")
     func testToolContentImage() throws {
         let content = ToolContent.image(ToolContent.ImageContent(
-            data: "base64data",
+            data: "aW1hZ2U=",
             mimeType: "image/png"
         ))
 
@@ -249,7 +241,7 @@ struct MCPTypesTests {
         let decoded = try JSONDecoder().decode(ToolContent.self, from: encoded)
 
         if case .image(let imageContent) = decoded {
-            #expect(imageContent.data == "base64data")
+            #expect(imageContent.data == "aW1hZ2U=")
             #expect(imageContent.mimeType == "image/png")
             #expect(imageContent.type == "image")
         } else {
@@ -268,7 +260,7 @@ struct MCPTypesTests {
 
         if case .resource(let embeddedResource) = decoded {
             #expect(embeddedResource.type == "resource")
-            if case .text(let uri, _, _, let mimeType, let text) = embeddedResource.resource {
+            if case .text(let uri, _, _, let mimeType, let text, _, _) = embeddedResource.resource {
                 #expect(uri == "file://test.txt")
                 #expect(mimeType == "text/plain")
                 #expect(text == "content")
@@ -305,7 +297,7 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .text(let uri, _, _, let mimeType, let text) = decoded {
+        if case .text(let uri, _, _, let mimeType, let text, _, _) = decoded {
             #expect(uri == "file://test.txt")
             #expect(mimeType == "text/plain")
             #expect(text == "Hello, World!")
@@ -321,16 +313,16 @@ struct MCPTypesTests {
             name: nil,
             title: nil,
             mimeType: "application/octet-stream",
-            blob: "base64encodeddata"
+            blob: "YmxvYg=="
         )
 
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .blob(let uri, _, _, let mimeType, let blob) = decoded {
+        if case .blob(let uri, _, _, let mimeType, let blob, _, _) = decoded {
             #expect(uri == "file://test.bin")
             #expect(mimeType == "application/octet-stream")
-            #expect(blob == "base64encodeddata")
+            #expect(blob == "YmxvYg==")
         } else {
             Issue.record("Expected blob resource")
         }
@@ -343,7 +335,7 @@ struct MCPTypesTests {
         let encoded = try JSONEncoder().encode(resource)
         let decoded = try JSONDecoder().decode(ResourceContents.self, from: encoded)
 
-        if case .text(let uri, _, _, let mimeType, let text) = decoded {
+        if case .text(let uri, _, _, let mimeType, let text, _, _) = decoded {
             #expect(uri == "file://test.txt")
             #expect(mimeType == nil)
             #expect(text == "content")

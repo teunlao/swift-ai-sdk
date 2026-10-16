@@ -63,6 +63,14 @@ struct OAuthUtilTests {
         #expect(resourceUrlFromServerUrl(url6).absoluteString == "https://example.com/path/")
     }
 
+    @Test("resource serialization strips only an origin trailing slash")
+    func resourceSerialization() throws {
+        #expect(resourceUrlStripSlash(URL(string: "https://example.com/")!) == "https://example.com")
+        #expect(resourceUrlStripSlash(URL(string: "https://example.com/path/")!) == "https://example.com/path/")
+        #expect(resourceUrlStripSlash(URL(string: "https://example.com/?scope=read")!) == "https://example.com/?scope=read")
+        #expect(resourceUrlStripSlash(URL(string: "https://example.com/#fragment")!) == "https://example.com/#fragment")
+    }
+
     // MARK: - checkResourceAllowed
 
     @Test("checkResourceAllowed: should match identical URLs")
@@ -123,7 +131,7 @@ struct OAuthUtilTests {
     func checkResourceAllowedSubpaths() throws {
         #expect(
             !checkResourceAllowed(
-                requestedResource: try #require(URL(string: "https://example.com/mcpxxxx")),
+                requestedResource: try #require(URL(string: "https://example.com/mcp%2Ftenant")),
                 configuredResource: try #require(URL(string: "https://example.com/mcp"))
             )
         )

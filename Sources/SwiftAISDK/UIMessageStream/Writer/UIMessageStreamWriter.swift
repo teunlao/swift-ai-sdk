@@ -15,5 +15,9 @@ public protocol UIMessageStreamWriter: Sendable {
     func merge(_ stream: AsyncIterableStream<InferUIMessageChunk<Message>>)
 
     /// Optional error handler forwarded to nested writers.
-    var onError: ErrorHandler? { get }
+    var onError: (@Sendable (Error) -> String)? { get }
+}
+
+public protocol UIMessageStreamWriterWithOutcome: UIMessageStreamWriter {
+    func setOutcome(_ outcome: UIMessageStreamOutcome)
 }

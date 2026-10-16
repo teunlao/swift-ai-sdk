@@ -20,6 +20,11 @@ public protocol GeneratedFile: Sendable {
     ///
     /// See https://www.iana.org/assignments/media-types/media-types.xhtml
     var mediaType: String { get }
+    var providerMetadata: ProviderMetadata? { get }
+}
+
+extension GeneratedFile {
+    public var providerMetadata: ProviderMetadata? { nil }
 }
 
 /// Default implementation of GeneratedFile with lazy conversion between base64 and Data.
@@ -29,15 +34,18 @@ public class DefaultGeneratedFile: GeneratedFile, @unchecked Sendable {
     private let lock = NSLock()
 
     public let mediaType: String
+    public let providerMetadata: ProviderMetadata?
 
-    public init(data: Data, mediaType: String) {
+    public init(data: Data, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
         self.binaryData = data
         self.mediaType = mediaType
+        self.providerMetadata = providerMetadata
     }
 
-    public init(base64: String, mediaType: String) {
+    public init(base64: String, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
         self.base64Data = base64
         self.mediaType = mediaType
+        self.providerMetadata = providerMetadata
     }
 
     /// Lazy conversion with caching to avoid unnecessary conversion overhead.
@@ -75,11 +83,11 @@ public class DefaultGeneratedFile: GeneratedFile, @unchecked Sendable {
 public final class DefaultGeneratedFileWithType: DefaultGeneratedFile, @unchecked Sendable {
     public let type: String = "file"
 
-    public override init(data: Data, mediaType: String) {
-        super.init(data: data, mediaType: mediaType)
+    public override init(data: Data, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
+        super.init(data: data, mediaType: mediaType, providerMetadata: providerMetadata)
     }
 
-    public override init(base64: String, mediaType: String) {
-        super.init(base64: base64, mediaType: mediaType)
+    public override init(base64: String, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
+        super.init(base64: base64, mediaType: mediaType, providerMetadata: providerMetadata)
     }
 }

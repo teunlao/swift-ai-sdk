@@ -8,6 +8,8 @@ struct DelayedPromiseTests {
     func resolvesWhenAccessedAfterResolution() async throws {
         let promise = DelayedPromise<String>()
         promise.resolve("success")
+        promise.reject(DelayedPromiseTestError.failure)
+        promise.resolve("later")
 
         let value = try await promise.task.value
 
@@ -21,6 +23,7 @@ struct DelayedPromiseTests {
     func rejectsWhenAccessedAfterRejection() async {
         let promise = DelayedPromise<String>()
         promise.reject(DelayedPromiseTestError.failure)
+        promise.resolve("later")
 
         await #expect(throws: DelayedPromiseTestError.failure) {
             _ = try await promise.task.value

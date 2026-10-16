@@ -119,13 +119,83 @@ struct OAuthDiscoveryTests {
         #expect(extractResourceMetadataUrl(response) == nil)
     }
 
+    @Test("bearer challenges expose scopes independently of malformed metadata URLs")
+    func extractChallengeParameters() throws {
+        let response = makeHTTPResponse(
+            url: URL(string: "https://resource.example.com")!, statusCode: 401,
+            headers: ["WWW-Authenticate": "bEaReR x_scope=\"decoy\", SCOPE=\"mcp.read mcp.write\", RESOURCE_METADATA=\"invalid-url\""]
+        )
+        let parameters = extractWWWAuthenticateParams(response)
+        #expect(parameters.scope == "mcp.read mcp.write")
+        #expect(parameters.resourceMetadataUrl == nil)
+    }
+
+    @Test("issuer matching permits trailing slash only for an origin", arguments: ["origin", "path", "foreign"])
+    func issuerMatching(kind: String) async throws {
+        let server = URL(string: kind == "path" ? "https://auth.example.com/tenant" : "https://auth.example.com/")!
+        let issuer = kind == "origin" ? "https://auth.example.com/" : kind == "path" ? "https://auth.example.com/tenant/" : "https://foreign.example.com"
+        let recorder = FetchRecorder { _, request in
+            let json = """
+            {"issuer":"\(issuer)","authorization_endpoint":"https://auth.example.com/authorize","token_endpoint":"https://auth.example.com/token","response_types_supported":["code"]}
+            """
+            return (Data(json.utf8), makeHTTPResponse(url: request.url!, statusCode: 200))
+        }
+        if kind == "origin" {
+            let metadata = try await discoverAuthorizationServerMetadata(authorizationServerUrl: server, fetchFn: { try await recorder.fetch($0) })
+            #expect(metadata?.issuer == issuer)
+            #expect(metadata?.codeChallengeMethodsSupported == nil)
+        } else {
+            await #expect(throws: MCPClientOAuthError.self) {
+                _ = try await discoverAuthorizationServerMetadata(authorizationServerUrl: server, fetchFn: { try await recorder.fetch($0) })
+            }
+        }
+    }
+
+    @Test("path-appended OIDC discovery stays on the authorization server origin")
+    func discoveryKeepsApprovedOrigin() async throws {
+        let issuer = "https://auth.example.com//evil.example"
+        let target = issuer + "/.well-known/openid-configuration"
+        let recorder = FetchRecorder { _, request in
+            if request.url?.absoluteString != target {
+                return (Data(), makeHTTPResponse(url: request.url!, statusCode: 404))
+            }
+            let json = """
+            {"issuer":"\(issuer)","authorization_endpoint":"https://auth.example.com/authorize","token_endpoint":"https://auth.example.com/token","userinfo_endpoint":"https://auth.example.com/userinfo","jwks_uri":"https://auth.example.com/jwks","subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"claims_supported":["sub","email"],"response_types_supported":["code"],"code_challenge_methods_supported":["S256"],"x_auth":{"mode":"custom"}}
+            """
+            return (Data(json.utf8), makeHTTPResponse(url: request.url!, statusCode: 200))
+        }
+        let metadata = try await discoverAuthorizationServerMetadata(authorizationServerUrl: URL(string: issuer)!, fetchFn: { try await recorder.fetch($0) })
+        let discovered = try #require(metadata)
+        #expect(discovered.issuer == issuer)
+        #expect(discovered.userinfoEndpoint?.url.absoluteString == "https://auth.example.com/userinfo")
+        #expect(discovered.jwksUri?.url.absoluteString == "https://auth.example.com/jwks")
+        #expect(discovered.subjectTypesSupported == ["public"])
+        #expect(discovered.idTokenSigningAlgValuesSupported == ["RS256"])
+        #expect(discovered.claimsSupported == ["sub", "email"])
+        #expect(discovered.additionalProperties["x_auth"] == .object(["mode": .string("custom")]))
+        let restored = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: JSONEncoder().encode(discovered))
+        #expect(restored == discovered)
+        #expect(await recorder.recordedRequests().allSatisfy { $0.url?.host == "auth.example.com" })
+    }
+
+    @Test("protected resource discovery blocks redirects to private addresses")
+    func protectedMetadataRedirectSafety() async throws {
+        let recorder = FetchRecorder { _, request in
+            (Data(), makeHTTPResponse(url: request.url!, statusCode: 302, headers: ["Location": "http://169.254.169.254/metadata"]))
+        }
+        await #expect(throws: Error.self) {
+            _ = try await discoverOAuthProtectedResourceMetadata(serverUrl: URL(string: "https://resource.example.com")!, fetchFn: { try await recorder.fetch($0) })
+        }
+        #expect(await recorder.recordedRequests().map { $0.url?.host } == ["resource.example.com"])
+    }
+
     // MARK: - discoverOAuthProtectedResourceMetadata
 
     @Test("discoverOAuthProtectedResourceMetadata returns metadata when discovery succeeds")
     func discoverOAuthProtectedResourceMetadataReturnsMetadata() async throws {
         let serverUrl = try #require(URL(string: "https://resource.example.com"))
         let json = """
-        {"resource":"https://resource.example.com","authorization_servers":["https://auth.example.com"]}
+        {"resource":"https://resource.example.com","authorization_servers":["https://auth.example.com"],"x_resource":{"audiences":["mcp",null]}}
         """
 
         let recorder = FetchRecorder { _, request in
@@ -141,6 +211,9 @@ struct OAuthDiscoveryTests {
 
         #expect(metadata.resource.absoluteString == "https://resource.example.com")
         #expect(metadata.authorizationServers?.map(\.url.absoluteString) == ["https://auth.example.com"])
+        #expect(metadata.additionalProperties["x_resource"] == .object(["audiences": .array([.string("mcp"), .null])]))
+        let restored = try JSONDecoder().decode(OAuthProtectedResourceMetadata.self, from: JSONEncoder().encode(metadata))
+        #expect(restored == metadata)
 
         let requests = await recorder.recordedRequests()
         #expect(requests.count == 1)
@@ -252,12 +325,12 @@ struct OAuthDiscoveryTests {
         }
     }
 
-    @Test("discoverOAuthProtectedResourceMetadata validates metadata schema")
-    func discoverOAuthProtectedResourceMetadataValidatesSchema() async throws {
+    @Test("discoverOAuthProtectedResourceMetadata validates metadata schema", arguments: [
+        #"{"scopes_supported":["email","mcp"]}"#,
+        #"{"resource":"relative"}"#,
+    ])
+    func discoverOAuthProtectedResourceMetadataValidatesSchema(invalidJSON: String) async throws {
         let serverUrl = try #require(URL(string: "https://resource.example.com"))
-        let invalidJSON = """
-        {"scopes_supported":["email","mcp"]}
-        """
 
         let recorder = FetchRecorder { _, request in
             let url = try #require(request.url)
@@ -298,7 +371,7 @@ struct OAuthDiscoveryTests {
 
     @Test("discoverOAuthProtectedResourceMetadata preserves query parameters in path-aware discovery")
     func discoverOAuthProtectedResourceMetadataPreservesQuery() async throws {
-        let serverUrl = try #require(URL(string: "https://resource.example.com/path?param=value"))
+        let serverUrl = try #require(URL(string: "https://resource.example.com/team%2Fblue?aud=a%26b"))
         let json = """
         {"resource":"https://resource.example.com","authorization_servers":["https://auth.example.com"]}
         """
@@ -316,7 +389,7 @@ struct OAuthDiscoveryTests {
 
         let requests = await recorder.recordedRequests()
         #expect(requests.count == 1)
-        #expect(requests[0].url?.absoluteString == "https://resource.example.com/.well-known/oauth-protected-resource/path?param=value")
+        #expect(requests[0].url?.absoluteString == "https://resource.example.com/.well-known/oauth-protected-resource/team%2Fblue?aud=a%26b")
     }
 
     @Test("discoverOAuthProtectedResourceMetadata falls back to root discovery when path-aware discovery returns 4xx")

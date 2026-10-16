@@ -2,6 +2,7 @@ import AISDKProvider
 import AISDKProviderUtils
 import Foundation
 import Testing
+import GatewayProvider
 
 @testable import SwiftAISDK
 
@@ -12,6 +13,79 @@ import Testing
 struct EmbedTests {
     private let dummyEmbedding: Embedding = [0.1, 0.2, 0.3]
     private let testValue = "sunny day at the beach"
+
+    @Test("dimensions and runtime callbacks describe the same embedding operation")
+    func dimensionsAndCallbacks() async throws {
+        actor Events {
+            var phases: [String] = []
+            func append(_ phase: String) { phases.append(phase) }
+        }
+        let events = Events()
+        let model = TestEmbeddingModelV4 { options in
+            await events.append("model")
+            return EmbeddingModelV4Result(embeddings: [Array(repeating: 1, count: options.dimensions ?? 0)])
+        }
+        let result = try await embed(
+            model: model, value: "hello", dimensions: 2,
+            runtimeContext: ["requestId": "request-1"],
+            onStart: { event in
+                #expect(event.runtimeContext["requestId"] as? String == "request-1")
+                #expect(event.dimensions == 2)
+                await events.append("start")
+                throw CancellationError()
+            },
+            onEnd: { event in
+                #expect(event.embedding == [1, 1])
+                #expect(event.usage.tokens.isNaN)
+                await events.append("end")
+                throw CancellationError()
+            }
+        )
+        #expect(result.embedding == [1, 1])
+        #expect(result.usage.tokens.isNaN)
+        let usageJSON = try JSONEncoder().encode(result.usage)
+        #expect(try JSONDecoder().decode([String: JSONValue].self, from: usageJSON)["tokens"] == .null)
+        #expect(try JSONDecoder().decode(EmbeddingModelUsage.self, from: usageJSON).tokens.isNaN)
+        #expect(await events.phases == ["start", "model", "end"])
+    }
+
+    @Test("retryable gateway failures use the underlying Retry-After header")
+    func retriesGatewayFailure() async throws {
+        actor Attempts {
+            var count = 0
+            func next() -> Int { count += 1; return count }
+        }
+        let attempts = Attempts()
+        let model = TestEmbeddingModelV4 { _ in
+            if await attempts.next() == 1 {
+                throw GatewayRateLimitError(cause: APICallError(
+                    message: "rate limit", url: "https://example.com/embed", requestBodyValues: nil,
+                    statusCode: 429, responseHeaders: ["retry-after-ms": "0"]
+                ))
+            }
+            return EmbeddingModelV4Result(embeddings: [[1]])
+        }
+        let result = try await embed(model: model, value: "hello", maxRetries: 1)
+        #expect(result.embedding == [1])
+    }
+
+    @Test("unsupported model specifications are rejected before generation")
+    func rejectsUnsupportedSpecification() async throws {
+        let model = TestEmbeddingModelV4(specificationVersion: "v1") { _ in
+            EmbeddingModelV4Result(embeddings: [[1]])
+        }
+        await #expect(throws: UnsupportedModelVersionError.self) {
+            _ = try await embed(model: model, value: "hello")
+        }
+    }
+
+    @Test("missing embedding is an invalid provider response")
+    func missingEmbedding() async throws {
+        let model = TestEmbeddingModelV4 { _ in EmbeddingModelV4Result(embeddings: []) }
+        await #expect(throws: InvalidResponseDataError.self) {
+            _ = try await embed(model: model, value: "hello")
+        }
+    }
 
     @Test("result.embedding should match model output")
     func resultEmbeddingMatches() async throws {

@@ -194,18 +194,66 @@ private func embedJSONString(from value: JSONValue) -> String? {
 
 // MARK: - Usage Helpers
 
-/// Converts provider usage information into public `EmbeddingModelUsage`.
-///
-/// Upstream uses `NaN` when usage is unavailable. Since Swift integers cannot represent
-/// `NaN`, we default to `0` in that case. This matches the ergonomic behaviour of treating
-/// missing usage as "unknown/zero" while keeping the API non-optional.
-func makeEmbeddingUsage(from usage: EmbeddingModelV3Usage?) -> EmbeddingModelUsage {
-    EmbeddingModelUsage(tokens: usage?.tokens ?? 0)
+func embeddingTokenAttribute(_ tokens: Double) -> AttributeValue {
+    if tokens.isFinite, tokens >= Double(Int.min), tokens < Double(Int.max), tokens.rounded() == tokens {
+        return .int(Int(tokens))
+    }
+    return .double(tokens)
 }
 
-/// Converts V4 provider usage information into public `EmbeddingModelUsage`.
+func makeEmbeddingUsage(from usage: EmbeddingModelV3Usage?) -> EmbeddingModelUsage {
+    EmbeddingModelUsage(tokens: usage.map { Double($0.tokens) } ?? .nan)
+}
+
 func makeEmbeddingUsage(from usage: EmbeddingModelV4Usage?) -> EmbeddingModelUsage {
-    EmbeddingModelUsage(tokens: usage?.tokens ?? 0)
+    EmbeddingModelUsage(tokens: usage.map { Double($0.tokens) } ?? .nan)
+}
+
+func validateEmbeddingDimensions(_ dimensions: Int?) throws {
+    if let dimensions, dimensions <= 0 {
+        throw InvalidArgumentError(
+            parameter: "dimensions",
+            value: .number(Double(dimensions)),
+            message: "dimensions must be a positive integer"
+        )
+    }
+}
+
+func validateEmbeddingCount(_ embeddings: [Embedding], values: [String]) throws {
+    guard embeddings.count == values.count else {
+        throw InvalidResponseDataError(
+            data: embeddings,
+            message: "Expected \(values.count) embeddings, but received \(embeddings.count)."
+        )
+    }
+}
+
+func splitEmbeddingValues(
+    _ values: [String],
+    maxEmbeddingsPerCall: Int,
+    maxInputBytesPerCall: Int
+) throws -> [[String]] {
+    guard maxEmbeddingsPerCall > 0, maxInputBytesPerCall > 0 else {
+        throw InvalidArgumentError(
+            argument: maxEmbeddingsPerCall <= 0 ? "maxEmbeddingsPerCall" : "maxInputBytesPerCall",
+            message: "Embedding call limits must be greater than 0"
+        )
+    }
+    var chunks: [[String]] = []
+    var chunk: [String] = []
+    var bytes = 0
+    for value in values {
+        let inputBytes = value.utf8.count
+        if !chunk.isEmpty && (chunk.count >= maxEmbeddingsPerCall || inputBytes > maxInputBytesPerCall - bytes) {
+            chunks.append(chunk)
+            chunk = []
+            bytes = 0
+        }
+        chunk.append(value)
+        bytes += inputBytes
+    }
+    if !chunk.isEmpty { chunks.append(chunk) }
+    return chunks
 }
 
 // MARK: - Response and Warning Helpers

@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import GatewayProvider
 
 /**
  Model resolution logic for language and embedding models.
@@ -71,7 +72,7 @@ private final class LanguageModelV2ToV3Adapter: LanguageModelV3, @unchecked Send
  except `specificationVersion` which returns "v3".
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class EmbeddingModelV2ToV3Adapter<VALUE: Sendable>: EmbeddingModelV3, @unchecked Sendable {
+private final class EmbeddingModelV2ToV3Adapter<VALUE: Sendable>: EmbeddingModelV3, EmbeddingModelMaxInputBytesPerCall, EmbeddingModelProviderOptionsTransformer, @unchecked Sendable {
     /// Always returns "v3" to indicate V3 specification
     public let specificationVersion = "v3"
 
@@ -99,6 +100,19 @@ private final class EmbeddingModelV2ToV3Adapter<VALUE: Sendable>: EmbeddingModel
         get async throws {
             try await wrappedModel.supportsParallelCalls
         }
+    }
+
+    var maxInputBytesPerCall: Int? {
+        get async throws {
+            try await (wrappedModel as? any EmbeddingModelMaxInputBytesPerCall)?.maxInputBytesPerCall
+        }
+    }
+
+    func transformProviderOptions(_ options: EmbeddingModelProviderOptionsTransformerOptions) async throws -> SharedV4ProviderOptions? {
+        guard let transformer = wrappedModel as? any EmbeddingModelProviderOptionsTransformer else {
+            return options.providerOptions
+        }
+        return try await transformer.transformProviderOptions(options)
     }
 
     init(wrapping model: any EmbeddingModelV2<VALUE>) {
@@ -671,6 +685,7 @@ func _resolveGlobalProviderV4(modelId: String, modelType: NoSuchModelError.Model
         if let provider = globalDefaultProvider {
             return asProviderV4(provider)
         }
+        return asProviderV4(gateway)
     }
 
     throw NoSuchProviderError(

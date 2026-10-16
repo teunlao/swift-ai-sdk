@@ -13,6 +13,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import GatewayProvider
 
 /// Gets the retry delay in milliseconds, respecting rate limit headers.
 ///
@@ -28,44 +29,42 @@ func getRetryDelayInMs(
         return exponentialBackoffDelay
     }
 
-    var ms: Int?
-
-    // retry-after-ms is more precise than retry-after and used by e.g. OpenAI
-    if let retryAfterMs = headers["retry-after-ms"] {
-        if let timeoutMs = Int(retryAfterMs) {
-            ms = timeoutMs
-        } else if let timeoutMs = Double(retryAfterMs) {
-            ms = Int(timeoutMs)
-        }
-    }
-
-    // About the Retry-After header: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After
+    var ms = headers["retry-after-ms"].flatMap(parseRetryNumber)
     if let retryAfter = headers["retry-after"], ms == nil {
-        if let timeoutSeconds = Double(retryAfter) {
-            ms = Int(timeoutSeconds * 1000)
+        if let seconds = parseRetryNumber(retryAfter) {
+            ms = seconds * 1000
         } else {
-            // Try to parse as HTTP date
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-            formatter.timeZone = TimeZone(abbreviation: "GMT")
-
-            if let date = formatter.date(from: retryAfter) {
-                let delayMs = Int(date.timeIntervalSince(Date()) * 1000)
-                ms = delayMs
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            for format in ["EEE, dd MMM yyyy HH:mm:ss zzz", "EEEE, dd-MMM-yy HH:mm:ss zzz", "EEE MMM d HH:mm:ss yyyy"] {
+                formatter.dateFormat = format
+                if let date = formatter.date(from: retryAfter) {
+                    ms = date.timeIntervalSinceNow * 1000
+                    break
+                }
             }
         }
     }
-
-    // Check that the delay is reasonable:
-    // Accept if it's between 0 and 60 seconds, or if it's less than the exponential backoff
-    if let ms = ms,
-       ms >= 0,
-       (ms < 60 * 1000 || ms < exponentialBackoffDelay) {
-        return ms
+    if let ms, ms.isFinite, ms >= 0, ms < Double(Int.max),
+       ms < 60_000 || ms < Double(exponentialBackoffDelay) {
+        return Int(ms)
     }
-
     return exponentialBackoffDelay
+}
+
+private let retryNumberPrefix = try! NSRegularExpression(pattern: #"^[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)"#)
+
+private func parseRetryNumber(_ text: String) -> Double? {
+    let whitespace = CharacterSet.whitespacesAndNewlines
+        .subtracting(CharacterSet(charactersIn: "\u{85}"))
+        .union(CharacterSet(charactersIn: "\u{FEFF}"))
+    let trimmed = text.trimmingCharacters(in: whitespace)
+    guard let match = retryNumberPrefix.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+          let range = Range(match.range, in: trimmed) else { return nil }
+    let number = String(trimmed[range])
+    if number.hasSuffix("Infinity") { return number.hasPrefix("-") ? -.infinity : .infinity }
+    return Double(number)
 }
 
 /// Creates a retry function with exponential backoff that respects retry headers.
@@ -85,13 +84,15 @@ public func retryWithExponentialBackoffRespectingRetryHeaders(
     maxRetries: Int = 2,
     initialDelayInMs: Int = 2000,
     backoffFactor: Int = 2,
-    abortSignal: (@Sendable () -> Bool)? = nil
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    additionalRetryableError: (@Sendable (any Error) async -> Bool)? = nil
 ) -> RetryFunctionWrapper {
     RetryFunctionWrapper(
         maxRetries: maxRetries,
         initialDelayInMs: initialDelayInMs,
         backoffFactor: backoffFactor,
-        abortSignal: abortSignal
+        abortSignal: abortSignal,
+        additionalRetryableError: additionalRetryableError
     )
 }
 
@@ -112,7 +113,8 @@ func _retryWithExponentialBackoff<OUTPUT>(
     delayInMs: Int,
     backoffFactor: Int,
     abortSignal: (@Sendable () -> Bool)?,
-    errors: [any Error]
+    errors: [any Error],
+    additionalRetryableError: (@Sendable (any Error) async -> Bool)? = nil
 ) async throws -> OUTPUT {
     do {
         return try await fn()
@@ -127,7 +129,12 @@ func _retryWithExponentialBackoff<OUTPUT>(
             throw error
         }
 
-        let errorMessage = AISDKProvider.getErrorMessage(error)
+        let errorMessage: String
+        if let gateway = error as? any GatewayError {
+            errorMessage = gateway.message.isEmpty ? gateway.name : "\(gateway.name): \(gateway.message)"
+        } else {
+            errorMessage = AISDKProvider.getErrorMessage(error)
+        }
         let newErrors = errors + [error]
         let tryNumber = newErrors.count
 
@@ -141,14 +148,15 @@ func _retryWithExponentialBackoff<OUTPUT>(
         }
 
         // Check if error is retryable
-        if let apiError = error as? APICallError,
-           apiError.isRetryable == true,
-           tryNumber <= maxRetries {
-            // Calculate delay
-            let retryDelay = getRetryDelayInMs(
-                error: apiError,
-                exponentialBackoffDelay: delayInMs
-            )
+        let apiError = error as? APICallError
+        let gatewayError = error as? any GatewayError
+        let shouldRetry = apiError?.isRetryable == true || gatewayError?.isRetryable == true
+            ? true
+            : await additionalRetryableError?(error) ?? false
+        if shouldRetry {
+            let retryDelay = (apiError ?? gatewayError?.cause as? APICallError).map {
+                getRetryDelayInMs(error: $0, exponentialBackoffDelay: delayInMs)
+            } ?? delayInMs
 
             // Check if task was cancelled
             try Task.checkCancellation()
@@ -156,14 +164,17 @@ func _retryWithExponentialBackoff<OUTPUT>(
             // Wait before retrying
             try await delay(retryDelay, abortSignal: abortSignal)
 
-            // Retry with increased delay
+            let product = delayInMs.multipliedReportingOverflow(by: backoffFactor)
+            let limit = (delayInMs < 0) != (backoffFactor < 0) ? Int.min : Int.max
+            let nextDelay = product.overflow ? limit : product.partialValue
             return try await _retryWithExponentialBackoff(
                 fn: fn,
                 maxRetries: maxRetries,
-                delayInMs: backoffFactor * delayInMs,
+                delayInMs: nextDelay,
                 backoffFactor: backoffFactor,
                 abortSignal: abortSignal,
-                errors: newErrors
+                errors: newErrors,
+                additionalRetryableError: additionalRetryableError
             )
         }
 

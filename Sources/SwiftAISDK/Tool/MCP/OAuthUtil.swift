@@ -4,7 +4,7 @@ import Foundation
  Utilities for handling OAuth resource URIs.
 
  Port of `packages/mcp/src/util/oauth-util.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  */
 
 /// Converts a server URL to a resource URL by removing the fragment.
@@ -48,6 +48,18 @@ private func isDefaultPort(_ port: Int, forScheme scheme: String) -> Bool {
     }
 }
 
+/// Serializes origin-only resources without the trailing slash added by URL normalization.
+public func resourceUrlStripSlash(_ resource: URL) -> String {
+    var components = URLComponents(url: resourceUrlFromServerUrl(resource), resolvingAgainstBaseURL: false)
+    components?.percentEncodedFragment = URLComponents(url: resource, resolvingAgainstBaseURL: false)?.percentEncodedFragment
+    let normalized = components?.url ?? resource
+    let href = normalized.absoluteString
+    if normalizePathname(normalized) == "/", href.hasSuffix("/") {
+        return String(href.dropLast())
+    }
+    return href
+}
+
 /// Checks if a requested resource URL matches a configured resource URL.
 ///
 /// A requested resource matches if it has the same scheme, domain, port,
@@ -82,12 +94,12 @@ public func checkResourceAllowed(requestedResource: URL, configuredResource: URL
 }
 
 private func normalizePathname(_ url: URL) -> String {
-    // `URL.path` drops a trailing slash, but JavaScript's `URL.pathname` preserves it.
+    // JavaScript's pathname preserves percent escapes and trailing slashes.
     let pathname: String = {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url.path
         }
-        return components.path
+        return components.percentEncodedPath
     }()
 
     return pathname.isEmpty ? "/" : pathname

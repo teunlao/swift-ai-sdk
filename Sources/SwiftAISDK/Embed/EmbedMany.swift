@@ -11,13 +11,20 @@ import AISDKProviderUtils
 public func embedMany(
     model modelArg: EmbeddingModel,
     values: [String],
+    dimensions: Int? = nil,
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedManyResult<String> {
+    try validateEmbeddingDimensions(dimensions)
     let model = try resolveEmbeddingModelV4(modelArg)
 
     let preparedRetries = try prepareRetries(
@@ -61,20 +68,30 @@ public func embedMany(
         attributes: outerAttributeDescriptors
     )
 
+    let callId = try createIDGenerator(prefix: "call", size: 24)()
     return try await recordSpan(
         name: "ai.embedMany",
         tracer: tracer,
         attributes: outerAttributes
     ) { span in
+        try? await (onStart ?? experimentalOnStart)?(EmbedStartEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.embedMany",
+            provider: model.provider, modelId: model.modelId, value: values,
+            dimensions: dimensions, maxRetries: preparedRetries.maxRetries,
+            headers: headersWithUserAgent, providerOptions: providerOptions
+        ))
         async let maxEmbeddingsPerCallPromise = model.maxEmbeddingsPerCall
         async let supportsParallelCallsPromise = model.supportsParallelCalls
+        async let maxInputBytesPromise = (model as? any EmbeddingModelMaxInputBytesPerCall)?.maxInputBytesPerCall
 
-        let (maxEmbeddingsPerCall, supportsParallelCalls) = try await (
+        let (maxEmbeddingsPerCall, supportsParallelCalls, maxInputBytesPerCall) = try await (
             maxEmbeddingsPerCallPromise,
-            supportsParallelCallsPromise
+            supportsParallelCallsPromise,
+            maxInputBytesPromise
         )
 
-        if maxEmbeddingsPerCall == nil || maxEmbeddingsPerCall == .some(.max) {
+        if (maxEmbeddingsPerCall == nil || maxEmbeddingsPerCall == .max)
+            && (maxInputBytesPerCall == nil || maxInputBytesPerCall == .max) {
             let result = try await preparedRetries.retry.call {
                 try await recordSpan(
                     name: "ai.embedMany.doEmbed",
@@ -96,6 +113,7 @@ public func embedMany(
                     let modelResponse = try await model.doEmbed(
                         options: EmbeddingModelV4CallOptions(
                             values: values,
+                            dimensions: dimensions,
                             abortSignal: abortSignal,
                             providerOptions: providerOptions,
                             headers: headersWithUserAgent
@@ -112,7 +130,7 @@ public func embedMany(
                                     embedTelemetryJSONStringArray(from: modelResponse.embeddings.map { $0 as Any })
                                 )
                             },
-                            "ai.usage.tokens": .value(.int(usage.tokens))
+                            "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
                         ]
                     )
 
@@ -128,6 +146,8 @@ public func embedMany(
                 }
             }
 
+            try validateEmbeddingCount(result.embeddings, values: values)
+
             let outerAttributesSingleCall = try await selectTelemetryAttributes(
                 telemetry: telemetry,
                 attributes: [
@@ -136,13 +156,19 @@ public func embedMany(
                             embedTelemetryJSONStringArray(from: result.embeddings.map { $0 as Any })
                         )
                     },
-                    "ai.usage.tokens": .value(.int(result.usage.tokens))
+                    "ai.usage.tokens": .value(embeddingTokenAttribute(result.usage.tokens))
                 ]
             )
 
             span.setAttributes(outerAttributesSingleCall)
             logWarnings(result.warnings.map { .embeddingModel($0) })
 
+            try? await (onEnd ?? experimentalOnEnd)?(EmbedEndEvent(
+                runtimeContext: runtimeContext, callId: callId, operationId: "ai.embedMany",
+                provider: model.provider, modelId: model.modelId, value: values,
+                embedding: result.embeddings, usage: result.usage, warnings: result.warnings,
+                providerMetadata: result.providerMetadata, response: .many([result.response])
+            ))
             return DefaultEmbedManyResult(
                 values: values,
                 embeddings: result.embeddings,
@@ -153,12 +179,14 @@ public func embedMany(
             )
         }
 
-        let valueChunks = try splitArray(values, chunkSize: maxEmbeddingsPerCall!)
+        let valueChunks = try splitEmbeddingValues(
+            values,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall ?? .max,
+            maxInputBytesPerCall: maxInputBytesPerCall ?? .max
+        )
 
         let effectiveParallelLimit = supportsParallelCalls ? (maxParallelCalls ?? .max) : 1
-        let parallelChunkSize = supportsParallelCalls
-            ? max(1, min(effectiveParallelLimit, max(valueChunks.count, 1)))
-            : 1
+        let parallelChunkSize = min(effectiveParallelLimit, max(valueChunks.count, 1))
 
         let parallelChunks = try splitArray(valueChunks, chunkSize: parallelChunkSize)
 
@@ -170,15 +198,29 @@ public func embedMany(
         var collectedResponses: [EmbeddingModelV4ResponseInfo?] = []
         collectedResponses.reserveCapacity(valueChunks.count)
 
-        var totalTokens = 0
+        var totalTokens: Double = 0
         var aggregatedMetadata: ProviderMetadata?
 
+        var nextChunkStartIndex = 0
         for parallelChunk in parallelChunks {
             var results = Array<SingleCallResult?>(repeating: nil, count: parallelChunk.count)
 
             try await withThrowingTaskGroup(of: (Int, SingleCallResult).self) { group in
                 for (index, chunk) in parallelChunk.enumerated() {
+                    let startIndex = nextChunkStartIndex
+                    nextChunkStartIndex += chunk.count
                     group.addTask {
+                        let chunkProviderOptions: ProviderOptions?
+                        if let transformer = model as? any EmbeddingModelProviderOptionsTransformer {
+                            chunkProviderOptions = try await transformer.transformProviderOptions(.init(
+                                providerOptions: providerOptions,
+                                values: values,
+                                startIndex: startIndex,
+                                endIndex: startIndex + chunk.count
+                            ))
+                        } else {
+                            chunkProviderOptions = providerOptions
+                        }
                         let result = try await preparedRetries.retry.call {
                             try await recordSpan(
                                 name: "ai.embedMany.doEmbed",
@@ -200,8 +242,9 @@ public func embedMany(
                                 let modelResponse = try await model.doEmbed(
                                     options: EmbeddingModelV4CallOptions(
                                         values: chunk,
+                                        dimensions: dimensions,
                                         abortSignal: abortSignal,
-                                        providerOptions: providerOptions,
+                                        providerOptions: chunkProviderOptions,
                                         headers: headersWithUserAgent
                                     )
                                 )
@@ -216,7 +259,7 @@ public func embedMany(
                                                 embedTelemetryJSONStringArray(from: modelResponse.embeddings.map { $0 as Any })
                                             )
                                         },
-                                        "ai.usage.tokens": .value(.int(usage.tokens))
+                                        "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
                                     ]
                                 )
 
@@ -232,6 +275,7 @@ public func embedMany(
                             }
                         }
 
+                        try validateEmbeddingCount(result.embeddings, values: chunk)
                         return (index, result)
                     }
                 }
@@ -265,13 +309,20 @@ public func embedMany(
                         embedTelemetryJSONStringArray(from: telemetryEmbeddings.map { $0 as Any })
                     )
                 },
-                "ai.usage.tokens": .value(.int(totalUsageTokens))
+                "ai.usage.tokens": .value(embeddingTokenAttribute(totalUsageTokens))
             ]
         )
 
         span.setAttributes(outerAttributesMultiCall)
         logWarnings(collectedWarnings.map { .embeddingModel($0) })
 
+        try? await (onEnd ?? experimentalOnEnd)?(EmbedEndEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.embedMany",
+            provider: model.provider, modelId: model.modelId, value: values,
+            embedding: collectedEmbeddings, usage: EmbeddingModelUsage(tokens: totalTokens),
+            warnings: collectedWarnings, providerMetadata: aggregatedMetadata,
+            response: .many(collectedResponses)
+        ))
         return DefaultEmbedManyResult(
             values: values,
             embeddings: telemetryEmbeddings,
@@ -289,22 +340,34 @@ public func embedMany(
 public func embedMany(
     model: any EmbeddingModelV4,
     values: [String],
+    dimensions: Int? = nil,
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedManyResult<String> {
     try await embedMany(
         model: .v4(model),
         values: values,
+        dimensions: dimensions,
         maxParallelCalls: maxParallelCalls,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -312,22 +375,34 @@ public func embedMany(
 public func embedMany(
     model: any EmbeddingModelV3<String>,
     values: [String],
+    dimensions: Int? = nil,
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedManyResult<String> {
     try await embedMany(
         model: .v3(model),
         values: values,
+        dimensions: dimensions,
         maxParallelCalls: maxParallelCalls,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -335,22 +410,34 @@ public func embedMany(
 public func embedMany(
     model: any EmbeddingModelV2<String>,
     values: [String],
+    dimensions: Int? = nil,
     maxParallelCalls: Int? = nil,
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (EmbedStartEvent<[String]>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (EmbedEndEvent<[String], [Embedding]>) async throws -> Void)? = nil
 ) async throws -> DefaultEmbedManyResult<String> {
     try await embedMany(
         model: .v2(model),
         values: values,
+        dimensions: dimensions,
         maxParallelCalls: maxParallelCalls,
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart,
+        experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd,
+        experimentalOnEnd: experimentalOnEnd
     )
 }
 

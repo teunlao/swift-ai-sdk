@@ -2,7 +2,7 @@
  Model Context Protocol (MCP) type definitions.
 
  Port of `packages/mcp/src/tool/types.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 
  This module defines the core types for the Model Context Protocol, including
  protocol versioning, tool schemas, server capabilities, and result types.
@@ -14,12 +14,13 @@ import AISDKProviderUtils
 
 // MARK: - Protocol Versioning
 
-/// Latest supported MCP protocol version
-public let latestProtocolVersion = "2025-06-18"
+/// Latest supported legacy MCP protocol version
+public let latestProtocolVersion = "2025-11-25"
 
-/// All supported MCP protocol versions (newest to oldest)
+/// All supported legacy MCP protocol versions (newest to oldest)
 public let supportedProtocolVersions = [
     latestProtocolVersion,
+    "2025-06-18",
     "2025-03-26",
     "2024-11-05",
 ]
@@ -62,10 +63,12 @@ public struct ToolSchemaDefinition: Sendable {
 public struct Configuration: Codable, Sendable {
     public let name: String
     public let version: String
+    public let title: String?
 
-    public init(name: String, version: String) {
+    public init(name: String, version: String, title: String? = nil) {
         self.name = name
         self.version = version
+        self.title = title
     }
 }
 
@@ -99,7 +102,7 @@ public struct RequestOptions: Sendable {
     public let signal: (@Sendable () -> Bool)?
     /// Timeout for this specific request
     public let timeout: TimeInterval?
-    /// Maximum total timeout across all retries
+    /// Maximum total request timeout in seconds
     public let maxTotalTimeout: TimeInterval?
 
     public init(
@@ -131,6 +134,7 @@ public struct ElicitationCapability: Codable, Sendable {
 public struct ServerCapabilities: Codable, Sendable {
     public let experimental: [String: JSONValue]?
     public let logging: [String: JSONValue]?
+    public let completions: [String: JSONValue]?
     public let prompts: PromptsCapabilities?
     public let resources: ResourcesCapabilities?
     public let tools: ToolsCapabilities?
@@ -139,6 +143,7 @@ public struct ServerCapabilities: Codable, Sendable {
     public init(
         experimental: [String: JSONValue]? = nil,
         logging: [String: JSONValue]? = nil,
+        completions: [String: JSONValue]? = nil,
         prompts: PromptsCapabilities? = nil,
         resources: ResourcesCapabilities? = nil,
         tools: ToolsCapabilities? = nil,
@@ -146,6 +151,7 @@ public struct ServerCapabilities: Codable, Sendable {
     ) {
         self.experimental = experimental
         self.logging = logging
+        self.completions = completions
         self.prompts = prompts
         self.resources = resources
         self.tools = tools
@@ -182,9 +188,11 @@ public struct ServerCapabilities: Codable, Sendable {
 /// Client capabilities advertised during initialization.
 public struct ClientCapabilities: Codable, Sendable {
     public let elicitation: ElicitationCapability?
+    public let extensions: [String: JSONValue]?
 
-    public init(elicitation: ElicitationCapability? = nil) {
+    public init(elicitation: ElicitationCapability? = nil, extensions: [String: JSONValue]? = nil) {
         self.elicitation = elicitation
+        self.extensions = extensions
     }
 }
 
@@ -268,9 +276,39 @@ public struct PaginatedResult: Codable, Sendable {
 /// Tool annotations (loose object in the wire protocol).
 public struct MCPToolAnnotations: Codable, Sendable {
     public let title: String?
+    public let readOnlyHint: Bool?
+    public let destructiveHint: Bool?
+    public let idempotentHint: Bool?
+    public let openWorldHint: Bool?
 
-    public init(title: String? = nil) {
+    public init(
+        title: String? = nil,
+        readOnlyHint: Bool? = nil,
+        destructiveHint: Bool? = nil,
+        idempotentHint: Bool? = nil,
+        openWorldHint: Bool? = nil
+    ) {
         self.title = title
+        self.readOnlyHint = readOnlyHint
+        self.destructiveHint = destructiveHint
+        self.idempotentHint = idempotentHint
+        self.openWorldHint = openWorldHint
+    }
+}
+
+public struct McpProviderMetadata: Codable, Sendable {
+    public let clientName: String?
+    public let title: String?
+    public let toolName: String?
+    public let annotations: MCPToolAnnotations?
+    public let app: [String: JSONValue]?
+
+    public init(clientName: String? = nil, title: String? = nil, toolName: String? = nil, annotations: MCPToolAnnotations? = nil, app: [String: JSONValue]? = nil) {
+        self.clientName = clientName
+        self.title = title
+        self.toolName = toolName
+        self.annotations = annotations
+        self.app = app
     }
 }
 
@@ -310,6 +348,26 @@ public struct MCPTool: Codable, Sendable {
         self.outputSchema = outputSchema
         self.annotations = annotations
         self.meta = meta
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        inputSchema = try container.decode(JSONValue.self, forKey: .inputSchema)
+        guard case .object(let input) = inputSchema else {
+            throw DecodingError.dataCorruptedError(forKey: .inputSchema, in: container, debugDescription: "Tool inputSchema must be an object")
+        }
+        if let properties = input["properties"], case .object = properties {} else if input["properties"] != nil {
+            throw DecodingError.dataCorruptedError(forKey: .inputSchema, in: container, debugDescription: "Tool properties must be an object")
+        }
+        outputSchema = try container.decodeIfPresent(JSONValue.self, forKey: .outputSchema)
+        if let outputSchema, case .object = outputSchema {} else if outputSchema != nil {
+            throw DecodingError.dataCorruptedError(forKey: .outputSchema, in: container, debugDescription: "Tool outputSchema must be an object")
+        }
+        annotations = try container.decodeIfPresent(MCPToolAnnotations.self, forKey: .annotations)
+        meta = try container.decodeIfPresent(ToolMeta.self, forKey: .meta)
     }
 }
 
@@ -437,13 +495,39 @@ public enum ToolContent: Codable, Sendable {
         case "text":
             self = .text(try TextContent(from: decoder))
         case "image":
-            self = .image(try ImageContent(from: decoder))
+            let image = try ImageContent(from: decoder)
+            guard Data(base64Encoded: image.data) != nil else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid base64 image")
+            }
+            self = .image(image)
         case "resource":
             self = .resource(try EmbeddedResource(from: decoder))
+        case "resource_link":
+            let value = try JSONValue(from: decoder)
+            guard case .object(let object) = value,
+                  case .string = object["uri"], case .string = object["name"] else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Resource link requires uri and name")
+            }
+            for key in ["description", "mimeType"] {
+                if let value = object[key], case .string = value {} else if object[key] != nil {
+                    throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid resource link field")
+                }
+            }
+            self = .unknown(value)
         default:
             // Upstream parses content parts loosely and keeps unknown shapes. Preserve the raw JSON
             // so callers can still access and forward it (e.g. via toModelOutput fallback).
             self = .unknown(try JSONValue(from: decoder))
+        }
+        if case .object(let raw) = try JSONValue(from: decoder) {
+            let knownKeys: Set<String>
+            switch type {
+            case "text": knownKeys = ["type", "text"]
+            case "image": knownKeys = ["type", "data", "mimeType"]
+            case "resource": knownKeys = ["type", "resource"]
+            default: return
+            }
+            if !Set(raw.keys).isSubset(of: knownKeys) { self = .unknown(.object(raw)) }
         }
     }
 
@@ -463,8 +547,8 @@ public enum ToolContent: Codable, Sendable {
 
 /// Resource contents (text or blob)
 public enum ResourceContents: Codable, Sendable {
-    case text(uri: String, name: String?, title: String?, mimeType: String?, text: String)
-    case blob(uri: String, name: String?, title: String?, mimeType: String?, blob: String) // base64
+    case text(uri: String, name: String?, title: String?, mimeType: String?, text: String, meta: JSONValue? = nil, additionalProperties: [String: JSONValue] = [:])
+    case blob(uri: String, name: String?, title: String?, mimeType: String?, blob: String, meta: JSONValue? = nil, additionalProperties: [String: JSONValue] = [:]) // base64
 
     enum CodingKeys: String, CodingKey {
         case uri
@@ -473,6 +557,7 @@ public enum ResourceContents: Codable, Sendable {
         case mimeType
         case text
         case blob
+        case meta = "_meta"
     }
 
     public init(from decoder: Decoder) throws {
@@ -481,11 +566,19 @@ public enum ResourceContents: Codable, Sendable {
         let name = try container.decodeIfPresent(String.self, forKey: .name)
         let title = try container.decodeIfPresent(String.self, forKey: .title)
         let mimeType = try container.decodeIfPresent(String.self, forKey: .mimeType)
+        var additionalProperties = try [String: JSONValue](from: decoder)
+        let meta = additionalProperties.removeValue(forKey: "_meta")
+        for key in ["uri", "name", "title", "mimeType"] { additionalProperties.removeValue(forKey: key) }
 
-        if let text = try container.decodeIfPresent(String.self, forKey: .text) {
-            self = .text(uri: uri, name: name, title: title, mimeType: mimeType, text: text)
-        } else if let blob = try container.decodeIfPresent(String.self, forKey: .blob) {
-            self = .blob(uri: uri, name: name, title: title, mimeType: mimeType, blob: blob)
+        if let text = try? container.decode(String.self, forKey: .text) {
+            additionalProperties.removeValue(forKey: "text")
+            self = .text(uri: uri, name: name, title: title, mimeType: mimeType, text: text, meta: meta, additionalProperties: additionalProperties)
+        } else if let blob = try? container.decode(String.self, forKey: .blob) {
+            guard Data(base64Encoded: blob) != nil else {
+                throw DecodingError.dataCorruptedError(forKey: .blob, in: container, debugDescription: "Invalid base64 resource")
+            }
+            additionalProperties.removeValue(forKey: "blob")
+            self = .blob(uri: uri, name: name, title: title, mimeType: mimeType, blob: blob, meta: meta, additionalProperties: additionalProperties)
         } else {
             throw DecodingError.dataCorruptedError(
                 forKey: .text,
@@ -496,21 +589,28 @@ public enum ResourceContents: Codable, Sendable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
+        var object: [String: JSONValue]
+        let uri: String
+        let name: String?
+        let title: String?
+        let mimeType: String?
+        let meta: JSONValue?
         switch self {
-        case .text(let uri, let name, let title, let mimeType, let text):
-            try container.encode(uri, forKey: .uri)
-            try container.encodeIfPresent(name, forKey: .name)
-            try container.encodeIfPresent(title, forKey: .title)
-            try container.encodeIfPresent(mimeType, forKey: .mimeType)
-            try container.encode(text, forKey: .text)
-        case .blob(let uri, let name, let title, let mimeType, let blob):
-            try container.encode(uri, forKey: .uri)
-            try container.encodeIfPresent(name, forKey: .name)
-            try container.encodeIfPresent(title, forKey: .title)
-            try container.encodeIfPresent(mimeType, forKey: .mimeType)
-            try container.encode(blob, forKey: .blob)
+        case .text(let value, let displayName, let displayTitle, let mediaType, let text, let metadata, let properties):
+            uri = value; name = displayName; title = displayTitle; mimeType = mediaType; meta = metadata
+            object = properties
+            object["text"] = .string(text)
+        case .blob(let value, let displayName, let displayTitle, let mediaType, let blob, let metadata, let properties):
+            uri = value; name = displayName; title = displayTitle; mimeType = mediaType; meta = metadata
+            object = properties
+            object["blob"] = .string(blob)
         }
+        object["uri"] = .string(uri)
+        object["name"] = name.map(JSONValue.string)
+        object["title"] = title.map(JSONValue.string)
+        object["mimeType"] = mimeType.map(JSONValue.string)
+        object["_meta"] = meta
+        try object.encode(to: encoder)
     }
 }
 
@@ -566,6 +666,88 @@ public struct ReadResourceResult: Codable, Sendable {
         self.contents = contents
         self.meta = meta
     }
+}
+
+// MARK: - Completions
+
+public struct CompleteRequestParams: Codable, Sendable {
+    public enum Reference: Codable, Sendable {
+        case prompt(name: String)
+        case resource(uri: String)
+
+        private enum CodingKeys: String, CodingKey { case type, name, uri }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            switch try container.decode(String.self, forKey: .type) {
+            case "ref/prompt": self = .prompt(name: try container.decode(String.self, forKey: .name))
+            case "ref/resource": self = .resource(uri: try container.decode(String.self, forKey: .uri))
+            default: throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid completion reference")
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .prompt(let name):
+                try container.encode("ref/prompt", forKey: .type)
+                try container.encode(name, forKey: .name)
+            case .resource(let uri):
+                try container.encode("ref/resource", forKey: .type)
+                try container.encode(uri, forKey: .uri)
+            }
+        }
+    }
+
+    public struct Argument: Codable, Sendable {
+        public let name: String
+        public let value: String
+        public init(name: String, value: String) { self.name = name; self.value = value }
+    }
+
+    public struct Context: Codable, Sendable {
+        public let arguments: [String: String]
+        public init(arguments: [String: String]) { self.arguments = arguments }
+    }
+
+    public let ref: Reference
+    public let argument: Argument
+    public let context: Context?
+    public let meta: [String: JSONValue]?
+    private enum CodingKeys: String, CodingKey { case ref, argument, context; case meta = "_meta" }
+
+    public init(ref: Reference, argument: Argument, context: Context? = nil, meta: [String: JSONValue]? = nil) {
+        self.ref = ref; self.argument = argument; self.context = context; self.meta = meta
+    }
+}
+
+public struct CompleteResult: Codable, Sendable {
+    public struct Completion: Codable, Sendable {
+        public let values: [String]
+        public let total: Int?
+        public let hasMore: Bool?
+
+        public init(values: [String], total: Int? = nil, hasMore: Bool? = nil) {
+            self.values = values; self.total = total; self.hasMore = hasMore
+        }
+
+        private enum CodingKeys: String, CodingKey { case values, total, hasMore }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            values = try container.decode([String].self, forKey: .values)
+            guard values.count <= 100 else {
+                throw DecodingError.dataCorruptedError(forKey: .values, in: container, debugDescription: "Completion must contain at most 100 values")
+            }
+            total = try container.decodeIfPresent(Int.self, forKey: .total)
+            hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+        }
+    }
+
+    public let completion: Completion
+    public let meta: [String: JSONValue]?
+    private enum CodingKeys: String, CodingKey { case completion; case meta = "_meta" }
+    public init(completion: Completion, meta: [String: JSONValue]? = nil) { self.completion = completion; self.meta = meta }
 }
 
 // MARK: - Prompts
@@ -635,6 +817,19 @@ public struct MCPPromptMessage: Codable, Sendable {
     public init(role: Role, content: ToolContent) {
         self.role = role
         self.content = content
+    }
+
+    private enum CodingKeys: String, CodingKey { case role, content }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decode(Role.self, forKey: .role)
+        content = try container.decode(ToolContent.self, forKey: .content)
+        if case .unknown(.object(let raw)) = content {
+            guard case .string(let type) = raw["type"], ["text", "image", "resource", "resource_link"].contains(type) else {
+                throw DecodingError.dataCorruptedError(forKey: .content, in: container, debugDescription: "Unsupported prompt content type")
+            }
+        }
     }
 }
 
@@ -720,6 +915,12 @@ public struct ElicitResult: Codable, Sendable {
 
 /// Result of calling an MCP tool
 public enum CallToolResult: Codable, Sendable {
+    public var isError: Bool {
+        if case .content(_, _, let isError, _) = self { return isError }
+        if case .raw(.object(let object)) = self, case .bool(let value) = object["isError"] { return value }
+        return false
+    }
+
     case content(content: [ToolContent], structuredContent: JSONValue?, isError: Bool, meta: [String: JSONValue]?)
     case toolResult(result: JSONValue, meta: [String: JSONValue]?)
     case raw(JSONValue)
@@ -735,20 +936,44 @@ public enum CallToolResult: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        if container.contains(.content) {
-            let content = try container.decode([ToolContent].self, forKey: .content)
-            let structuredContent = try container.decodeIfPresent(JSONValue.self, forKey: .structuredContent)
-            let isError = try container.decodeIfPresent(Bool.self, forKey: .isError) ?? false
-            let meta = try container.decodeIfPresent([String: JSONValue].self, forKey: .meta)
-            self = .content(content: content, structuredContent: structuredContent, isError: isError, meta: meta)
-        } else if container.contains(.toolResult) {
-            let result = try container.decode(JSONValue.self, forKey: .toolResult)
-            let meta = try container.decodeIfPresent([String: JSONValue].self, forKey: .meta)
-            self = .toolResult(result: result, meta: meta)
-        } else {
-            // Upstream allows loose result shapes (e.g. custom toolCallResults in tests).
-            // Preserve the full JSON object for downstream consumers.
-            self = .raw(try JSONValue(from: decoder))
+        do {
+            if container.contains(.content) {
+                let content = try container.decode([ToolContent].self, forKey: .content)
+                let structuredContent: JSONValue? = container.contains(.structuredContent) ? try container.decode(JSONValue.self, forKey: .structuredContent) : Optional<JSONValue>.none
+                let isError = try container.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+                let meta = try container.decodeIfPresent([String: JSONValue].self, forKey: .meta)
+                self = .content(content: content, structuredContent: structuredContent, isError: isError, meta: meta)
+            } else if container.contains(.structuredContent) {
+                let structured = try container.decode(JSONValue.self, forKey: .structuredContent)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.withoutEscapingSlashes]
+                let text = String(decoding: try encoder.encode(structured), as: UTF8.self)
+                self = .content(
+                    content: [.text(.init(text: text))], structuredContent: structured,
+                    isError: try container.decodeIfPresent(Bool.self, forKey: .isError) ?? false,
+                    meta: try container.decodeIfPresent([String: JSONValue].self, forKey: .meta)
+                )
+            } else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Tool result must contain content, structuredContent or toolResult"))
+            }
+        } catch {
+            guard container.contains(.toolResult) else { throw error }
+            self = .toolResult(
+                result: try container.decode(JSONValue.self, forKey: .toolResult),
+                meta: try container.decodeIfPresent([String: JSONValue].self, forKey: .meta)
+            )
+        }
+        if case .object(var raw) = try JSONValue(from: decoder) {
+            let knownKeys: Set<String>
+            if case .toolResult = self { knownKeys = ["toolResult", "_meta"] }
+            else { knownKeys = ["content", "structuredContent", "isError", "_meta"] }
+            if !Set(raw.keys).isSubset(of: knownKeys) {
+                if case .content(let content, _, let isError, _) = self {
+                    raw["isError"] = .bool(isError)
+                    raw["content"] = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(content))
+                }
+                self = .raw(.object(raw))
+            }
         }
     }
 

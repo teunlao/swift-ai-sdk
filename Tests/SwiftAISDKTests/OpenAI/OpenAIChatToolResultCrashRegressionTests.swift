@@ -33,7 +33,7 @@ struct OpenAIChatToolResultCrashRegressionTests {
 
         let toolSchema = FlexibleSchema(jsonSchema(.object([:])))
         let tool = Tool(description: "Calculator", inputSchema: toolSchema)
-        let modelMessages = try convertToModelMessages(
+        let modelMessages = try await convertToModelMessages(
             messages: [message],
             options: ConvertToModelMessagesOptions(tools: ["calculator": tool])
         )

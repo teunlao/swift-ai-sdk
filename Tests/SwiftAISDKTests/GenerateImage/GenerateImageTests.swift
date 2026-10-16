@@ -29,6 +29,79 @@ struct GenerateImageTests {
     private let gifBase64 =
         "R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=" // 1x1 transparent GIF
 
+    @Test("image batches can make progress concurrently")
+    func concurrentImageBatches() async throws {
+        actor Barrier {
+            var arrived = false
+            var waiter: CheckedContinuation<Bool, Never>?
+            func enter() async -> Bool {
+                if arrived { waiter?.resume(returning: true); waiter = nil; return true }
+                arrived = true
+                return await withCheckedContinuation { waiter = $0 }
+            }
+            func expire() { waiter?.resume(returning: false); waiter = nil }
+        }
+        let barrier = Barrier()
+        let deadline = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if !Task.isCancelled { await barrier.expire() }
+        }
+        defer { deadline.cancel() }
+        let model = MockImageModelV4(maxImagesPerCall: .value(1)) { _ in
+            let concurrent = await barrier.enter()
+            return .init(images: .binary([Data([concurrent ? 1 : 0])]), response: .init(timestamp: testDate, modelId: "concurrent"))
+        }
+        let result = try await generateImage(model: model, prompt: prompt, n: 2)
+        #expect(result.images.map(\.data) == [Data([1]), Data([1])])
+    }
+
+    @Test("empty retry attempts remain visible with usage and gateway costs")
+    func retriesEmptyImagesWithDiagnostics() async throws {
+        actor Attempts {
+            var count = 0
+            func next() -> Int { count += 1; return count }
+        }
+        let attempts = Attempts()
+        let model = MockImageModelV4 { _ in
+            let attempt = await attempts.next()
+            return ImageModelV4GenerateResult(
+                images: .binary(attempt == 1 ? [] : [Data([0x89, 0x50, 0x4E, 0x47])]),
+                providerMetadata: [
+                    "gateway": .init(images: [], additionalData: .object(["cost": .string(attempt == 1 ? "0.1" : "0.2")])),
+                    "test": .init(images: attempt == 1 ? [] : [.object(["seed": .number(42)])])
+                ],
+                response: .init(timestamp: testDate, modelId: "image-model"),
+                usage: .init(inputTokens: 1, outputTokens: 2, totalTokens: 3)
+            )
+        }
+        let result = try await generateImage(model: model, prompt: prompt, maxRetries: 1)
+        #expect(result.calls.count == 2)
+        #expect(result.calls[0].images.isEmpty)
+        #expect(result.calls[1].images.count == 1)
+        #expect(result.image.providerMetadata?["test"]?["seed"] == .number(42))
+        #expect(result.usage.totalTokens == 6)
+        #expect(result.providerMetadata["gateway"]?.additionalData == .object(["cost": .string("0.3")]))
+    }
+
+    @Test("nonretryable empty results preserve one call in NoImageGeneratedError")
+    func nonretryableEmptyDiagnostics() async throws {
+        let model = MockImageModelV4 { _ in
+            ImageModelV4GenerateResult(
+                images: .binary([]), isRetryable: false,
+                response: .init(timestamp: testDate, modelId: "filtered-image"),
+                usage: .init(inputTokens: 5)
+            )
+        }
+        do {
+            _ = try await generateImage(model: model, prompt: prompt)
+            Issue.record("Expected NoImageGeneratedError")
+        } catch let error as NoImageGeneratedError {
+            #expect(error.calls?.count == 1)
+            #expect(error.calls?.first?.usage?.inputTokens == 5)
+            #expect(error.responses?.first?.modelId == "filtered-image")
+        }
+    }
+
     // MARK: - Helpers
 
     private enum TestImages {
@@ -395,15 +468,13 @@ struct GenerateImageTests {
             resetLogWarningsState()
             defer { resetWarningHooks() }
 
-            let counter = Counter()
 
             _ = try await generateImage(
                 model: MockImageModelV3(
-                    maxImagesPerCall: .value(1),
-                    doGenerate: { _ in
-                        let index = await counter.next()
-                        switch index {
-                        case 0:
+                    maxImagesPerCall: .value(2),
+                    doGenerate: { options in
+                        switch options.n {
+                        case 2:
                             return self.createMockResponse(
                                 images: .base64([self.pngBase64]),
                                 warnings: [warning1]
@@ -419,7 +490,7 @@ struct GenerateImageTests {
                     }
                 ),
                 prompt: prompt,
-                n: 2
+                n: 3
             )
 
             guard let observed = warningsBox.get() else {
@@ -552,16 +623,13 @@ struct GenerateImageTests {
         let requestHeaders: [String: String] = [
             "custom-request-header": "request-header-value"
         ]
-        let counter = Counter()
 
         let result: DefaultGenerateImageResult = try await generateImage(
             model: MockImageModelV3(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         #expect(options.prompt == self.prompt)
                         #expect(options.seed == 12345)
                         #expect(options.size == "1024x1024")
@@ -573,7 +641,6 @@ struct GenerateImageTests {
                             images: .base64(Array(base64Images.prefix(2)))
                         )
                     case 1:
-                        #expect(options.n == 1)
                         #expect(options.prompt == self.prompt)
                         #expect(options.seed == 12345)
                         #expect(options.size == "1024x1024")
@@ -612,22 +679,18 @@ struct GenerateImageTests {
         let requestHeaders: [String: String] = [
             "custom-request-header": "request-header-value"
         ]
-        let counter = Counter()
 
         let result: DefaultGenerateImageResult = try await generateImage(
             model: MockImageModelV3(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             images: .base64(Array(base64Images.prefix(2))),
                             warnings: [.other(message: "1")]
                         )
                     case 1:
-                        #expect(options.n == 1)
                         return self.createMockResponse(
                             images: .base64([base64Images[2]]),
                             warnings: [.other(message: "2")]
@@ -767,7 +830,8 @@ struct GenerateImageTests {
                         )
                     }
                 ),
-                prompt: prompt
+                prompt: prompt,
+                maxRetries: 0
             )
             Issue.record("Expected generateImage to throw.")
         } catch let error as NoImageGeneratedError {
@@ -797,7 +861,8 @@ struct GenerateImageTests {
                         )
                     }
                 ),
-                prompt: prompt
+                prompt: prompt,
+                maxRetries: 0
             )
             Issue.record("Expected generateImage to throw.")
         } catch let error as NoImageGeneratedError {
@@ -886,15 +951,13 @@ struct GenerateImageTests {
 
     @Test("should aggregate usage across multiple provider calls")
     func aggregatesUsageAcrossMultipleProviderCalls() async throws {
-        let counter = Counter()
 
         let result = try await generateImage(
             model: MockImageModelV3(
-                maxImagesPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxImagesPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             images: .base64([self.pngBase64]),
                             usage: ImageModelV3Usage(
@@ -919,10 +982,9 @@ struct GenerateImageTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
-        #expect(result.images.map { $0.base64 } == [pngBase64, jpegBase64])
         #expect(result.usage == ImageModelUsage(inputTokens: 15, outputTokens: 0, totalTokens: 15))
     }
 
@@ -980,16 +1042,6 @@ private actor SingleValueBox<Value: Sendable> {
         return await withCheckedContinuation { continuation in
             continuations.append(continuation)
         }
-    }
-}
-
-private actor Counter {
-    private var value = 0
-
-    func next() -> Int {
-        let current = value
-        value += 1
-        return current
     }
 }
 

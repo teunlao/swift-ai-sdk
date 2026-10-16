@@ -5,6 +5,32 @@ import Testing
 
 @Suite("resolve model V4 adapters")
 struct ResolveModelV4Tests {
+    @Test("unsupported optional models report an unresolved-model failure")
+    func optionalModelResolutionFailure() throws {
+        struct Provider: ProviderV4 {
+            func languageModel(modelId: String) throws -> any LanguageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .languageModel) }
+            func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
+            func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
+        }
+        let custom = customProvider(fallbackProvider: Provider())
+        #expect(throws: NoSuchModelError.self) { try custom.speechModel(modelId: "unsupported") }
+        try withGlobalProviderV4(Provider()) {
+            do {
+                _ = try resolveSpeechModelV4(.string("unsupported"))
+                Issue.record("Expected unresolved speech model")
+            } catch {
+                #expect(error.localizedDescription == "Model could not be resolved")
+            }
+        }
+    }
+
+    @Test("unconfigured string models resolve through the default gateway")
+    func defaultGatewayResolution() throws {
+        let model = try resolveEmbeddingModelV4(.string("openai/text-embedding-3-small"))
+        #expect(model.provider == "gateway")
+        #expect(model.modelId == "openai/text-embedding-3-small")
+    }
+
     @Test("adapts a ProviderV3 through the ProviderV4 surface")
     func adaptsProviderV3ToProviderV4() async throws {
         let provider = AdapterProviderV3()

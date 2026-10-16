@@ -187,7 +187,7 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
         ignoreIncompleteToolCalls: Bool = false,
         options: StreamTextUIResponseOptions<Message>? = nil
     ) async throws -> UIMessageStreamResponse<Message> {
-        let modelMessages = try convertToModelMessages(
+        let modelMessages = try await convertToModelMessages(
             messages: messages,
             options: ConvertToModelMessagesOptions(
                 tools: settings.tools,
@@ -195,7 +195,7 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
             )
         )
         let result = try await stream(messages: modelMessages)
-        return result.toUIMessageStreamResponse(options: options)
+        return try result.toUIMessageStreamResponse(options: options)
     }
 }
 

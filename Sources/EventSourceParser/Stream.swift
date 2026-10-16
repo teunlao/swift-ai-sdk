@@ -49,13 +49,13 @@ public struct EventSourceParserStream {
                 }
             ))
 
-            Task {
+            let task = Task {
                 do {
                     for try await chunk in input {
                         if await stopFlag.get() { break }
                         parser.feed(chunk)
                     }
-                    if await !stopFlag.get() {
+                    if await !stopFlag.get(), !Task.isCancelled {
                         parser.reset(consume: true)
                         continuation.finish()
                     }
@@ -63,6 +63,7 @@ public struct EventSourceParserStream {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

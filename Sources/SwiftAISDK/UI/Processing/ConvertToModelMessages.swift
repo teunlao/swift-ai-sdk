@@ -2,14 +2,26 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+public enum ConvertedDataPart: Sendable, Equatable {
+    case text(TextPart)
+    case file(FilePart)
+}
+
 /// Options controlling the conversion from UI messages to core model messages.
 public struct ConvertToModelMessagesOptions: Sendable {
     public var tools: ToolSet?
     public var ignoreIncompleteToolCalls: Bool
 
-    public init(tools: ToolSet? = nil, ignoreIncompleteToolCalls: Bool = false) {
+    public var convertDataPart: (@Sendable (DataUIPart) -> ConvertedDataPart?)?
+
+    public init(
+        tools: ToolSet? = nil,
+        ignoreIncompleteToolCalls: Bool = false,
+        convertDataPart: (@Sendable (DataUIPart) -> ConvertedDataPart?)? = nil
+    ) {
         self.tools = tools
         self.ignoreIncompleteToolCalls = ignoreIncompleteToolCalls
+        self.convertDataPart = convertDataPart
     }
 }
 
@@ -18,17 +30,24 @@ public struct ConvertToModelMessagesOptions: Sendable {
 public func convertToModelMessages<Message: UIMessageConvertible>(
     messages: [Message],
     options: ConvertToModelMessagesOptions = ConvertToModelMessagesOptions()
-) throws -> [ModelMessage] {
+) async throws -> [ModelMessage] {
     var workingMessages = messages
 
-    if options.ignoreIncompleteToolCalls {
-        workingMessages = workingMessages.map { message in
+    let lastUserIndex = messages.lastIndex { $0.role == .user } ?? -1
+    if options.ignoreIncompleteToolCalls || lastUserIndex > 0 {
+        workingMessages = workingMessages.enumerated().map { messageIndex, message in
             let filteredParts = message.parts.filter { part in
                 switch part {
                 case .tool(let toolPart):
-                    return toolPart.state != .inputStreaming && toolPart.state != .inputAvailable
+                    return (toolPart.state != .approvalRequested || messageIndex >= lastUserIndex)
+                        && (!options.ignoreIncompleteToolCalls || toolPart.state == .approvalResponded
+                            || (toolPart.state == .outputAvailable && toolPart.preliminary != true)
+                            || toolPart.state == .outputError || toolPart.state == .outputDenied)
                 case .dynamicTool(let dynamicPart):
-                    return dynamicPart.state != .inputStreaming && dynamicPart.state != .inputAvailable
+                    return (dynamicPart.state != .approvalRequested || messageIndex >= lastUserIndex)
+                        && (!options.ignoreIncompleteToolCalls || dynamicPart.state == .approvalResponded
+                            || (dynamicPart.state == .outputAvailable && dynamicPart.preliminary != true)
+                            || dynamicPart.state == .outputError || dynamicPart.state == .outputDenied)
                 default:
                     return true
                 }
@@ -62,19 +81,25 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
             )
 
         case .user:
-            let contentParts: [UserContentPart] = message.parts.compactMap { part in
+            let contentParts: [UserContentPart] = try message.parts.compactMap { part in
                 switch part {
                 case .text(let textPart):
                     return .text(TextPart(text: textPart.text, providerOptions: textPart.providerMetadata))
                 case .file(let filePart):
                     return .file(
                         FilePart(
-                            data: .string(filePart.url),
+                            data: try fileData(filePart),
                             mediaType: filePart.mediaType,
                             filename: filePart.filename,
                             providerOptions: filePart.providerMetadata
                         )
                     )
+                case .data(let dataPart):
+                    switch options.convertDataPart?(dataPart) {
+                    case .text(let part): return .text(part)
+                    case .file(let part): return .file(part)
+                    case nil: return nil
+                    }
                 default:
                     return nil
                 }
@@ -87,7 +112,7 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
         case .assistant:
             var block: [UIMessagePart] = []
 
-            func processBlock() throws {
+            func processBlock() async throws {
                 guard !block.isEmpty else { return }
 
                 var assistantParts: [AssistantContentPart] = []
@@ -106,13 +131,25 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                         assistantParts.append(
                             .file(
                                 FilePart(
-                                    data: .string(filePart.url),
+                                    data: try fileData(filePart),
                                     mediaType: filePart.mediaType,
                                     filename: filePart.filename,
                                     providerOptions: filePart.providerMetadata
                                 )
                             )
                         )
+                    case .custom(let part):
+                        assistantParts.append(.custom(CustomPart(kind: part.kind, providerOptions: part.providerMetadata)))
+                    case .reasoningFile(let part):
+                        assistantParts.append(.reasoningFile(ReasoningFilePart(
+                            data: try urlData(part.url), mediaType: part.mediaType, providerOptions: part.providerMetadata
+                        )))
+                    case .data(let part):
+                        switch options.convertDataPart?(part) {
+                        case .text(let converted): assistantParts.append(.text(converted))
+                        case .file(let converted): assistantParts.append(.file(converted))
+                        case nil: break
+                        }
                     case .dynamicTool(let dynamicPart):
                         if dynamicPart.state != .inputStreaming {
                             assistantParts.append(
@@ -120,8 +157,8 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                     ToolCallPart(
                                         toolCallId: dynamicPart.toolCallId,
                                         toolName: dynamicPart.toolName,
-                                        input: dynamicPart.input ?? .null,
-                                        providerOptions: dynamicPart.callProviderMetadata,
+                                        input: dynamicPart.input ?? dynamicPart.rawInput ?? .null,
+                                        providerOptions: dynamicPart.callProviderMetadata ?? (dynamicPart.state == .outputError ? dynamicPart.resultProviderMetadata : nil),
                                         providerExecuted: dynamicPart.providerExecuted
                                     )
                                 )
@@ -132,7 +169,11 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                     .toolApprovalRequest(
                                         ToolApprovalRequest(
                                             approvalId: approval.id,
-                                            toolCallId: dynamicPart.toolCallId
+                                            toolCallId: dynamicPart.toolCallId,
+                                            reason: approval.requestReason,
+                                            isAutomatic: approval.isAutomatic,
+                                            signature: approval.signature,
+                                            inputSchemaInput: approval.inputSchemaInput
                                         )
                                     )
                                 )
@@ -158,11 +199,9 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                         ToolResultPart(
                                             toolCallId: dynamicPart.toolCallId,
                                             toolName: dynamicPart.toolName,
-                                            output: createToolModelOutput(
-                                                output: outputValue,
-                                                tool: tool,
-                                                errorMode: errorMode
-                                            ),
+                                            output: try await modelOutput(toolCallId: dynamicPart.toolCallId, input: dynamicPart.input,
+                                                                output: outputValue, tool: tool, errorMode: errorMode,
+                                                                unavailable: dynamicPart.dynamic == false),
                                             providerOptions: providerOptions
                                         )
                                     )
@@ -185,7 +224,7 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                         toolCallId: toolPart.toolCallId,
                                         toolName: toolName,
                                         input: inputValue,
-                                        providerOptions: toolPart.callProviderMetadata,
+                                        providerOptions: toolPart.callProviderMetadata ?? (toolPart.state == .outputError ? toolPart.resultProviderMetadata : nil),
                                         providerExecuted: toolPart.providerExecuted
                                     )
                                 )
@@ -196,7 +235,11 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                     .toolApprovalRequest(
                                         ToolApprovalRequest(
                                             approvalId: approval.id,
-                                            toolCallId: toolPart.toolCallId
+                                            toolCallId: toolPart.toolCallId,
+                                            reason: approval.requestReason,
+                                            isAutomatic: approval.isAutomatic,
+                                            signature: approval.signature,
+                                            inputSchemaInput: approval.inputSchemaInput
                                         )
                                     )
                                 )
@@ -221,7 +264,8 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                                         ToolResultPart(
                                             toolCallId: toolPart.toolCallId,
                                             toolName: toolName,
-                                            output: createToolModelOutput(
+                                            output: try await modelOutput(
+                                                toolCallId: toolPart.toolCallId, input: toolPart.input,
                                                 output: outputValue,
                                                 tool: tool,
                                                 errorMode: errorMode
@@ -245,7 +289,7 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
                     )
                 }
 
-                let toolMessageParts = try buildToolMessageParts(from: block, tools: options.tools)
+                let toolMessageParts = try await buildToolMessageParts(from: block, tools: options.tools)
                 if !toolMessageParts.isEmpty {
                     modelMessages.append(.tool(ToolModelMessage(content: toolMessageParts)))
                 }
@@ -255,16 +299,16 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
 
             for part in message.parts {
                 switch part {
-                case .text, .reasoning, .file, .dynamicTool, .tool:
+                case .text, .custom, .reasoning, .reasoningFile, .file, .dynamicTool, .tool, .data:
                     block.append(part)
                 case .stepStart:
-                    try processBlock()
+                    try await processBlock()
                 default:
-                    throw makeConversionError(for: message, reason: "Unsupported assistant part: \(part.typeIdentifier)")
+                    break
                 }
             }
 
-            try processBlock()
+            try await processBlock()
         }
     }
 
@@ -276,20 +320,39 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
 public func convertToCoreMessages<Message: UIMessageConvertible>(
     messages: [Message],
     options: ConvertToModelMessagesOptions = ConvertToModelMessagesOptions()
-) throws -> [ModelMessage] {
-    try convertToModelMessages(messages: messages, options: options)
+) async throws -> [ModelMessage] {
+    try await convertToModelMessages(messages: messages, options: options)
 }
 
 // MARK: - Helpers
+
+private func fileData(_ part: FileUIPart) throws -> DataContentOrURL {
+    if let reference = part.providerReference { return .reference(reference) }
+    return try urlData(part.url)
+}
+
+private func urlData(_ string: String) throws -> DataContentOrURL {
+    guard let url = URL(string: string), url.scheme != nil else {
+        throw InvalidArgumentError(parameter: "url", value: .string(string), message: "Invalid URL")
+    }
+    return .url(url)
+}
+
+private func modelOutput(
+    toolCallId: String, input: JSONValue?, output: Any?, tool: Tool?, errorMode: ToolOutputErrorMode, unavailable: Bool = false
+) async throws -> LanguageModelV3ToolResultOutput {
+    if errorMode == .none, tool == nil, unavailable {
+        return .text(value: "Tool output omitted because the tool is no longer available.")
+    }
+    return createToolModelOutput(output: output, tool: tool, errorMode: errorMode)
+}
 
 private func mergeProviderOptions(from metadata: [ProviderMetadata?]) -> ProviderOptions? {
     var merged: ProviderOptions = [:]
 
     for entry in metadata.compactMap({ $0 }) {
         for (provider, options) in entry {
-            var existing = merged[provider] ?? [:]
-            existing.merge(options) { _, new in new }
-            merged[provider] = existing
+            merged[provider] = options
         }
     }
 
@@ -299,7 +362,7 @@ private func mergeProviderOptions(from metadata: [ProviderMetadata?]) -> Provide
 private func buildToolMessageParts(
     from block: [UIMessagePart],
     tools: ToolSet?
-) throws -> [ToolContentPart] {
+) async throws -> [ToolContentPart] {
     var outputs: [ToolContentPart] = []
 
     for part in block {
@@ -314,13 +377,21 @@ private func buildToolMessageParts(
                 )))
             }
 
+            if toolPart.state == .approvalResponded, toolPart.approval?.approved == false {
+                outputs.append(.toolResult(ToolResultPart(
+                    toolCallId: toolPart.toolCallId, toolName: toolPart.toolName,
+                    output: .executionDenied(reason: toolPart.approval?.reason),
+                    providerOptions: toolPart.callProviderMetadata
+                )))
+            }
+
             if toolPart.providerExecuted == true {
                 break
             }
 
             switch toolPart.state {
             case .outputDenied:
-                let reason = toolPart.approval?.reason ?? "Tool execution denied."
+                let reason = toolPart.approval?.reason ?? "Tool call execution denied."
                 outputs.append(.toolResult(ToolResultPart(
                     toolCallId: toolPart.toolCallId,
                     toolName: getToolName(toolPart),
@@ -345,7 +416,8 @@ private func buildToolMessageParts(
                 outputs.append(.toolResult(ToolResultPart(
                     toolCallId: toolPart.toolCallId,
                     toolName: toolName,
-                    output: createToolModelOutput(
+                    output: try await modelOutput(
+                        toolCallId: toolPart.toolCallId, input: toolPart.input,
                         output: outputValue,
                         tool: tool,
                         errorMode: errorMode
@@ -367,13 +439,21 @@ private func buildToolMessageParts(
                 )))
             }
 
+            if dynamicPart.state == .approvalResponded, dynamicPart.approval?.approved == false {
+                outputs.append(.toolResult(ToolResultPart(
+                    toolCallId: dynamicPart.toolCallId, toolName: dynamicPart.toolName,
+                    output: .executionDenied(reason: dynamicPart.approval?.reason),
+                    providerOptions: dynamicPart.callProviderMetadata
+                )))
+            }
+
             if dynamicPart.providerExecuted == true {
                 break
             }
 
             switch dynamicPart.state {
             case .outputDenied:
-                let reason = dynamicPart.approval?.reason ?? "Tool execution denied."
+                let reason = dynamicPart.approval?.reason ?? "Tool call execution denied."
                 outputs.append(.toolResult(ToolResultPart(
                     toolCallId: dynamicPart.toolCallId,
                     toolName: dynamicPart.toolName,
@@ -397,11 +477,9 @@ private func buildToolMessageParts(
                 outputs.append(.toolResult(ToolResultPart(
                     toolCallId: dynamicPart.toolCallId,
                     toolName: dynamicPart.toolName,
-                    output: createToolModelOutput(
-                        output: outputValue,
-                        tool: tool,
-                        errorMode: errorMode
-                    ),
+                    output: try await modelOutput(toolCallId: dynamicPart.toolCallId, input: dynamicPart.input,
+                                        output: outputValue, tool: tool, errorMode: errorMode,
+                                        unavailable: dynamicPart.dynamic == false),
                     providerOptions: dynamicPart.callProviderMetadata
                 )))
 

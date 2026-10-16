@@ -2,7 +2,7 @@
  MCP Client implementation for connecting to MCP servers and invoking tools.
 
  Port of `packages/mcp/src/tool/mcp-client.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 
  A lightweight MCP Client implementation.
 
@@ -17,7 +17,7 @@
 
  Not supported:
  - Accepting notifications
- - Session management (when passing a sessionId to an instance of the Streamable HTTP transport)
+ - Automatic session persistence for Streamable HTTP transport
  - Resumable SSE streams
  */
 
@@ -63,19 +63,29 @@ public struct MCPClientConfig: Sendable {
     /// NOTE: It is up to the client application to handle the requests properly.
     /// This parameter just helps surface the request from the server.
     public let capabilities: ClientCapabilities
+    public let initializationOptions: RequestOptions?
+    public let initialInitializeResult: InitializeResult?
+    public let maxRetries: Int
 
     public init(
         transport: MCPTransportVariant,
         onUncaughtError: (@Sendable (Error) -> Void)? = nil,
         name: String = "ai-sdk-mcp-client",
         version: String = "1.0.0",
-        capabilities: ClientCapabilities = ClientCapabilities()
+        capabilities: ClientCapabilities = ClientCapabilities(),
+        clientName: String? = nil,
+        initializationOptions: RequestOptions? = nil,
+        initialInitializeResult: InitializeResult? = nil,
+        maxRetries: Int = 0
     ) {
         self.transport = transport
         self.onUncaughtError = onUncaughtError
-        self.name = name
+        self.name = clientName ?? name
         self.version = version
         self.capabilities = capabilities
+        self.initializationOptions = initializationOptions
+        self.initialInitializeResult = initialInitializeResult
+        self.maxRetries = maxRetries
     }
 }
 
@@ -93,8 +103,29 @@ public func createMCPClient(config: MCPClientConfig) async throws -> MCPClient {
     return client
 }
 
+@available(*, deprecated, renamed: "createMCPClient")
+public func experimental_createMCPClient(config: MCPClientConfig) async throws -> MCPClient {
+    try await createMCPClient(config: config)
+}
+
+public typealias MCPClientCapabilities = ClientCapabilities
+@available(*, deprecated, renamed: "MCPClientConfig")
+public typealias experimental_MCPClientConfig = MCPClientConfig
+@available(*, deprecated, renamed: "MCPClient")
+public typealias experimental_MCPClient = MCPClient
+@available(*, deprecated, renamed: "MCPClientCapabilities")
+public typealias experimental_MCPClientCapabilities = ClientCapabilities
+
 /// MCP Client protocol
 public protocol MCPClient: Sendable {
+    var serverInfo: Configuration { get }
+    var initializeResult: InitializeResult { get }
+    var instructions: String? { get }
+
+    func listTools(options: MCPListToolsOptions?) async throws -> ListToolsResult
+    func callTool(name: String, arguments: JSONValue?, options: RequestOptions?) async throws -> CallToolResult
+    func toolsFromDefinitions(_ definitions: ListToolsResult, options: MCPToolsOptions?) throws -> [String: Tool]
+    func complete(args: CompleteRequestParams, options: RequestOptions?) async throws -> CompleteResult
     /// Returns a set of AI SDK tools from the MCP server.
     ///
     /// - Parameter options: Optional configuration with tool schema definitions.
@@ -126,6 +157,8 @@ public struct MCPToolsOptions: Sendable {
         self.schemas = schemas
     }
 }
+
+public typealias MCPListToolsOptions = MCPListResourcesOptions
 
 public struct MCPListResourcesOptions: Sendable {
     public let params: PaginatedRequest.PaginatedParams?
@@ -181,6 +214,28 @@ public struct MCPGetPromptArgs: Sendable {
     }
 }
 
+public extension MCPClient {
+    func tools() async throws -> [String: Tool] { try await tools(options: nil) }
+    func listTools() async throws -> ListToolsResult { try await listTools(options: nil) }
+    func listResources() async throws -> ListResourcesResult { try await listResources(options: nil) }
+    func listResourceTemplates() async throws -> ListResourceTemplatesResult { try await listResourceTemplates(options: nil) }
+    func experimental_listPrompts() async throws -> ListPromptsResult { try await experimental_listPrompts(options: nil) }
+    func callTool(name: String, arguments: JSONValue? = nil) async throws -> CallToolResult {
+        try await callTool(name: name, arguments: arguments, options: nil)
+    }
+    func toolsFromDefinitions(_ definitions: ListToolsResult) throws -> [String: Tool] {
+        try toolsFromDefinitions(definitions, options: nil)
+    }
+    func complete(args: CompleteRequestParams) async throws -> CompleteResult { try await complete(args: args, options: nil) }
+}
+
+public extension Tool {
+    func execute(input: JSONValue, options: ToolCallOptions? = nil) async throws -> ToolExecutionResult<JSONValue> {
+        guard let execute else { throw MCPClientError(message: "Tool has no execute function") }
+        return try await execute(input, options ?? ToolCallOptions(toolCallId: "", messages: []))
+    }
+}
+
 // MARK: - Default implementation
 
 @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
@@ -189,6 +244,18 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
     private let onUncaughtError: (@Sendable (Error) -> Void)?
     private let clientInfo: Configuration
     private let clientCapabilities: ClientCapabilities
+    private let initializationOptions: RequestOptions?
+    private let initialInitializeResult: InitializeResult?
+    private let maxRetries: Int
+    private var _initializeResult = InitializeResult(
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        capabilities: ServerCapabilities(),
+        serverInfo: Configuration(name: "", version: "")
+    )
+
+    var initializeResult: InitializeResult { lock.withLock { _initializeResult } }
+    var serverInfo: Configuration { initializeResult.serverInfo }
+    var instructions: String? { initializeResult.instructions }
 
     private let lock = NSLock()
     private var requestMessageId: Int = 0
@@ -201,6 +268,12 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         onUncaughtError = config.onUncaughtError
         clientInfo = Configuration(name: config.name, version: config.version)
         clientCapabilities = config.capabilities
+        initializationOptions = config.initializationOptions
+        initialInitializeResult = config.initialInitializeResult
+        maxRetries = config.maxRetries
+        guard maxRetries >= 0 else {
+            throw MCPClientError(message: "maxRetries must be >= 0")
+        }
 
         switch config.transport {
         case .config(let transportConfig):
@@ -235,50 +308,62 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
             case .error(let errorResponse):
                 let error = MCPClientError(
                     message: errorResponse.error.message,
-                    cause: nil,
+                    cause: errorResponse.error,
                     data: errorResponse.error.data,
                     code: errorResponse.error.code
                 )
-                self.handleErrorResponse(errorResponse.id, error: error)
+                self.handleErrorResponse(errorResponse, error: error)
             }
         }
     }
 
     func initialize() async throws {
+        lock.withLock { isClosed = false }
+        let interrupted = MCPAbortState()
         do {
-            try await transport.start()
-            lock.withLock { isClosed = false }
-
-            let initResult: InitializeResult = try await request(
-                method: "initialize",
-                params: nil,
-                additionalParams: [
-                    "protocolVersion": .string(LATEST_PROTOCOL_VERSION),
-                    "capabilities": try encodeToJSONValue(clientCapabilities),
-                    "clientInfo": .object([
-                        "name": .string(clientInfo.name),
-                        "version": .string(clientInfo.version),
-                    ]),
-                ],
-                options: nil
-            )
-
-            guard SUPPORTED_PROTOCOL_VERSIONS.contains(initResult.protocolVersion) else {
-                throw MCPClientError(
-                    message: "Server's protocol version is not supported: \(initResult.protocolVersion)"
+            try await runMCPOperation(
+                options: initializationOptions,
+                timeoutMessage: { "MCP client initialization timed out after \($0)ms" },
+                abortMessage: "MCP client initialization was aborted",
+                onAbort: { interrupted.abort() }
+            ) { [self] in
+                try await transport.start()
+                if let initialInitializeResult {
+                    try applyInitializeResult(initialInitializeResult)
+                    return
+                }
+                transport.setProtocolVersion(LATEST_PROTOCOL_VERSION)
+                let result: InitializeResult = try await request(
+                    method: "initialize",
+                    additionalParams: [
+                        "protocolVersion": .string(LATEST_PROTOCOL_VERSION),
+                        "capabilities": try encodeToJSONValue(clientCapabilities),
+                        "clientInfo": try encodeToJSONValue(clientInfo),
+                    ]
                 )
+                try applyInitializeResult(result)
+                try await sendNotification(method: "notifications/initialized")
             }
-
-            lock.withLock {
-                serverCapabilities = initResult.capabilities
-            }
-
-            // Complete initialization handshake:
-            try await sendNotification(method: "notifications/initialized")
         } catch {
-            try? await close()
+            handleClose()
+            if interrupted.isAborted {
+                Task { try? await transport.close(options: .init(signal: { true })) }
+            } else {
+                try? await transport.close(options: .init(signal: initializationOptions?.signal))
+            }
             throw error
         }
+    }
+
+    private func applyInitializeResult(_ result: InitializeResult) throws {
+        guard SUPPORTED_PROTOCOL_VERSIONS.contains(result.protocolVersion) else {
+            throw MCPClientError(message: "Server's protocol version is not supported: \(result.protocolVersion)")
+        }
+        lock.withLock {
+            _initializeResult = result
+            serverCapabilities = result.capabilities
+        }
+        transport.setProtocolVersion(result.protocolVersion)
     }
 
     func close() async throws {
@@ -290,11 +375,19 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
     }
 
     func tools(options: MCPToolsOptions? = nil) async throws -> [String: Tool] {
+        var definitions = try await listTools()
+        var tools = definitions.tools
+        while let cursor = definitions.nextCursor {
+            definitions = try await listTools(params: .init(cursor: cursor))
+            tools.append(contentsOf: definitions.tools)
+        }
+        return try toolsFromDefinitions(ListToolsResult(tools: tools), options: options)
+    }
+
+    func toolsFromDefinitions(_ definitions: ListToolsResult, options: MCPToolsOptions? = nil) throws -> [String: Tool] {
         let schemas = options?.schemas ?? .automatic
         var result: [String: Tool] = [:]
-
-        let listToolsResult: ListToolsResult = try await listTools()
-        for mcpTool in listToolsResult.tools {
+        for mcpTool in definitions.tools {
             let name = mcpTool.name
 
             if case .schemas(let schemaDict) = schemas {
@@ -303,12 +396,19 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
 
             let resolvedTitle = mcpTool.title ?? mcpTool.annotations?.title
             let outputSchema = outputSchemaForTool(named: name, schemas: schemas)
+            var metadata: [String: JSONValue] = [
+                "clientName": .string(clientInfo.name), "toolName": .string(name),
+            ]
+            if let resolvedTitle { metadata["title"] = .string(resolvedTitle) }
+            if let annotations = mcpTool.annotations {
+                metadata["annotations"] = try encodeToJSONValue(annotations)
+            }
+            if var app = try getMCPAppToolMeta(meta: mcpTool.meta), app["resourceUri"] != nil {
+                app["mimeType"] = .string(MCP_APP_MIME_TYPE)
+                metadata["app"] = .object(app)
+            }
 
-            let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { [weak self] args, options in
-                guard let self else {
-                    throw MCPClientError(message: "Client was deallocated")
-                }
-
+            let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { [self] args, options in
                 if let abortSignal = options.abortSignal, abortSignal() {
                     throw AbortError(message: "The operation was aborted")
                 }
@@ -319,7 +419,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                     options: RequestOptions(signal: options.abortSignal)
                 )
 
-                if let outputSchema {
+                if !callResult.isError, let outputSchema {
                     let extracted = try await self.extractStructuredContent(
                         callResult,
                         outputSchema: outputSchema,
@@ -339,6 +439,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                     description: mcpTool.description.map(ToolDescription.text),
                     title: resolvedTitle,
                     _meta: mcpTool.meta,
+                    metadata: metadata,
                     inputSchema: FlexibleSchema(jsonSchema(schema)),
                     execute: execute,
                     toModelOutput: { Self.mcpToModelOutput($0.output) }
@@ -350,6 +451,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                     description: mcpTool.description.map(ToolDescription.text),
                     title: resolvedTitle,
                     _meta: mcpTool.meta,
+                    metadata: metadata,
                     inputSchema: schemaDefinition.inputSchema,
                     execute: execute,
                     outputSchema: outputSchema,
@@ -361,6 +463,10 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         }
 
         return result
+    }
+
+    func complete(args: CompleteRequestParams, options: RequestOptions? = nil) async throws -> CompleteResult {
+        try await request(method: "completion/complete", params: encodeToJSONValue(args), options: options)
     }
 
     func listResources(options: MCPListResourcesOptions? = nil) async throws -> ListResourcesResult {
@@ -393,7 +499,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
             )
         }
 
-        elicitationRequestHandler = handler
+        lock.withLock { elicitationRequestHandler = handler }
     }
 
     // MARK: - Requests
@@ -406,6 +512,10 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
             let hasTools = lock.withLock { serverCapabilities.tools != nil }
             guard hasTools else {
                 throw MCPClientError(message: "Server does not support tools")
+            }
+        case "completion/complete":
+            guard lock.withLock({ serverCapabilities.completions != nil }) else {
+                throw MCPClientError(message: "Server does not support completions")
             }
         case "resources/list", "resources/read", "resources/templates/list":
             let hasResources = lock.withLock { serverCapabilities.resources != nil }
@@ -428,89 +538,62 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         additionalParams: [String: JSONValue] = [:],
         options: RequestOptions? = nil
     ) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            let closed = lock.withLock { isClosed }
-            if closed {
-                continuation.resume(throwing: MCPClientError(
-                    message: "Attempted to send a request from a closed client"
-                ))
-                return
-            }
-
-            let abortSignal = options?.signal
-            if let abortSignal, abortSignal() {
-                continuation.resume(throwing: AbortError(message: "Request was aborted"))
-                return
-            }
-
-            do {
-                try assertCapability(method: method)
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
-            let messageId = lock.withLock { () -> Int in
-                let id = requestMessageId
-                requestMessageId += 1
-                return id
-            }
-
-            var requestParams: [String: JSONValue] = [:]
-            if let params, case .object(let paramDict) = params {
-                requestParams = paramDict
-            }
-            for (key, value) in additionalParams {
-                requestParams[key] = value
-            }
-
-            let jsonrpcRequest = JSONRPCRequest(
-                id: .int(messageId),
-                method: method,
-                params: requestParams.isEmpty ? nil : .object(requestParams)
-            )
-
-            lock.withLock {
-                responseHandlers[messageId] = { [weak self] result in
-                    guard let self else {
-                        continuation.resume(throwing: MCPClientError(message: "Client was deallocated"))
+        guard !lock.withLock({ isClosed }) else {
+            throw MCPClientError(message: "Attempted to send a request from a closed client")
+        }
+        try assertCapability(method: method)
+        if Task.isCancelled || options?.signal?() == true {
+            throw MCPClientError(message: "Request was aborted", cause: Task.isCancelled ? CancellationError() : nil)
+        }
+        let messageId = lock.withLock {
+            let id = requestMessageId
+            requestMessageId += 1
+            return id
+        }
+        var requestParams: [String: JSONValue] = [:]
+        if case .object(let object) = params { requestParams = object }
+        requestParams.merge(additionalParams) { _, value in value }
+        let message = JSONRPCRequest(
+            id: .int(messageId), method: method,
+            params: requestParams.isEmpty ? nil : .object(requestParams)
+        )
+        let pending = MCPOperation<JSONRPCResponse>()
+        let interrupted = MCPAbortState()
+        defer {
+            _ = lock.withLock { responseHandlers.removeValue(forKey: messageId) }
+        }
+        let response = try await runMCPOperation(options: options, onAbort: { interrupted.abort() }) { [self] in
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    pending.install(continuation)
+                    let closed = lock.withLock {
+                        guard !isClosed, !pending.isFinished else { return true }
+                        responseHandlers[messageId] = { pending.finish($0) }
+                        return false
+                    }
+                    guard !closed else {
+                        pending.finish(.failure(MCPClientError(message: "Connection closed")))
                         return
                     }
-
-                    if let abortSignal, abortSignal() {
-                        continuation.resume(throwing: AbortError(message: "Request was aborted"))
-                        return
-                    }
-
-                    switch result {
-                    case .success(let response):
-                        do {
-                            let decoded = try self.decodeResult(response.result, as: T.self)
-                            continuation.resume(returning: decoded)
-                        } catch {
-                            continuation.resume(throwing: MCPClientError(
-                                message: "Failed to parse server response",
-                                cause: error
-                            ))
-                        }
-
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
+                    pending.own(Task {
+                        do { try await transport.send(message: .request(message), options: .init(signal: { interrupted.isAborted || options?.signal?() == true })) }
+                        catch { pending.finish(.failure(error)) }
+                    }, cancelOnSuccess: false)
                 }
-            }
-
-            Task {
-                do {
-                    try await transport.send(message: .request(jsonrpcRequest))
-                } catch {
-                    let _ = self.lock.withLock {
-                        self.responseHandlers.removeValue(forKey: messageId)
-                    }
-                    continuation.resume(throwing: error)
-                }
+            } onCancel: {
+                interrupted.abort()
+                pending.finish(.failure(MCPClientError(message: "Request was aborted", cause: CancellationError())))
             }
         }
+        do {
+            return try decodeResult(response.result, as: T.self)
+        } catch {
+            throw MCPClientError(message: "Failed to parse server response", cause: error)
+        }
+    }
+
+    func listTools(options: MCPListToolsOptions?) async throws -> ListToolsResult {
+        try await listTools(params: options?.params, options: options?.options)
     }
 
     private func listTools(
@@ -538,15 +621,37 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         args: JSONValue,
         options: RequestOptions?
     ) async throws -> CallToolResult {
-        return try await request(
-            method: "tools/call",
-            params: nil,
-            additionalParams: [
-                "name": .string(name),
-                "arguments": args,
-            ],
-            options: options
+        try await callTool(name: name, arguments: args, options: options)
+    }
+
+    func callTool(name: String, arguments: JSONValue?, options: RequestOptions?) async throws -> CallToolResult {
+        let retry = retryWithExponentialBackoff(
+            maxRetries: maxRetries,
+            abortSignal: options?.signal,
+            shouldRetry: { [self] in isRetryableToolCallError($0) },
+            createRetryError: { message, _, errors in
+                MCPClientError(message: message, cause: errors.last)
+            }
         )
+        return try await retry { [self] in
+            try await request(
+                method: "tools/call",
+                additionalParams: ["name": .string(name), "arguments": arguments ?? .object([:])],
+                options: options
+            )
+        }
+    }
+
+    private func isRetryableToolCallError(_ error: Error) -> Bool {
+        let status = (error as? MCPClientError)?.statusCode ?? (error as? APICallError)?.statusCode
+        if let status { return [408, 409, 429].contains(status) || status >= 500 }
+        if let error = error as? MCPClientError, error.code != nil { return false }
+        let error = error as NSError
+        if error.domain == NSPOSIXErrorDomain {
+            return [POSIXErrorCode.EPIPE, .ECONNRESET, .ECONNREFUSED, .ETIMEDOUT].contains { Int($0.rawValue) == error.code }
+        }
+        return error.domain == NSURLErrorDomain && [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut].contains(error.code)
+
     }
 
     private func listResourcesInternal(
@@ -704,6 +809,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
     private func structuredContent(from result: CallToolResult) -> JSONValue? {
         switch result {
         case .content(_, let structuredContent, _, _):
+            if structuredContent == .null { return nil }
             return structuredContent
         case .toolResult:
             return nil
@@ -718,9 +824,8 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         switch result {
         case .content(let content, _, _, _):
             for part in content {
-                if case .text(let text) = part {
-                    return text.text
-                }
+                if case .text(let text) = part { return text.text }
+                if case .unknown(.object(let raw)) = part, raw["type"] == .string("text"), case .string(let text) = raw["text"] { return text }
             }
             return nil
         case .toolResult:
@@ -783,7 +888,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         return string
     }
 
-    private static func jsonStringify(_ value: JSONRPCResponse) -> String {
+    private static func jsonStringify<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
         guard let data = try? encoder.encode(value),
@@ -797,6 +902,10 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
 
     private func onRequestMessage(_ request: JSONRPCRequest) async {
         do {
+            if request.method == "ping" {
+                try await transport.send(message: .response(JSONRPCResponse(id: request.id, result: .object([:]))))
+                return
+            }
             if request.method != "elicitation/create" {
                 try await transport.send(
                     message: .error(
@@ -812,7 +921,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                 return
             }
 
-            guard let handler = elicitationRequestHandler else {
+            guard let handler = lock.withLock({ elicitationRequestHandler }) else {
                 try await transport.send(
                     message: .error(
                         JSONRPCError(
@@ -990,7 +1099,11 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
         handler(result)
     }
 
-    private func handleErrorResponse(_ id: JSONRPCID, error: MCPClientError) {
+    private func handleErrorResponse(_ response: JSONRPCError, error: MCPClientError) {
+        guard let id = response.id else {
+            handleError(MCPClientError(message: "Protocol error: Received a response without a message ID: \(Self.jsonStringify(response))"))
+            return
+        }
         let messageId: Int
         switch id {
         case .int(let intId):
@@ -1009,7 +1122,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
 
         guard let handler else {
             handleError(MCPClientError(
-                message: "Protocol error: Received an error response for an unknown message ID: \(messageId)"
+                message: "Protocol error: Received a response for an unknown message ID: \(Self.jsonStringify(response))"
             ))
             return
         }

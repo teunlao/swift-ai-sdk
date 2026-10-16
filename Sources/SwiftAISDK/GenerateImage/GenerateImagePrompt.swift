@@ -47,18 +47,18 @@ func toImageModelV4File(_ dataContent: DataContent) throws -> ImageModelV4File {
             if let base64Content {
                 let data = try convertBase64ToData(base64Content)
                 let mediaType = dataUrlMediaType
-                    ?? detectMediaType(data: data, signatures: imageMediaTypeSignatures)
+                    ?? detectMediaType(data: data, topLevelType: "image")
                     ?? "image/png"
                 return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
             }
         }
 
         let data = try convertBase64ToData(string)
-        let mediaType = detectMediaType(data: data, signatures: imageMediaTypeSignatures) ?? "image/png"
+        let mediaType = detectMediaType(data: data, topLevelType: "image") ?? "image/png"
         return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
 
     case .data(let data):
-        let mediaType = detectMediaType(data: data, signatures: imageMediaTypeSignatures) ?? "image/png"
+        let mediaType = detectMediaType(data: data, topLevelType: "image") ?? "image/png"
         return .file(mediaType: mediaType, data: .binary(data), providerOptions: nil)
     }
 }

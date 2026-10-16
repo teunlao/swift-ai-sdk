@@ -13,7 +13,18 @@ public final class MockVideoModelV4: VideoModelV4Generator, @unchecked Sendable 
     public let modelId: String
     public let maxVideosPerCall: VideoModelV4MaxVideosPerCall
 
-    public private(set) var doGenerateCalls: [VideoModelV4CallOptions] = []
+    private let lock = NSLock()
+    private var calls: [VideoModelV4CallOptions] = []
+    public var doGenerateCalls: [VideoModelV4CallOptions] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+    private func record(_ options: VideoModelV4CallOptions) {
+        lock.lock()
+        defer { lock.unlock() }
+        calls.append(options)
+    }
 
     private let doGenerateHandler: @Sendable (VideoModelV4CallOptions) async throws -> VideoModelV4GenerateResult
 
@@ -30,7 +41,7 @@ public final class MockVideoModelV4: VideoModelV4Generator, @unchecked Sendable 
     }
 
     public func doGenerate(options: VideoModelV4CallOptions) async throws -> VideoModelV4GenerateResult {
-        doGenerateCalls.append(options)
+        record(options)
         return try await doGenerateHandler(options)
     }
 }

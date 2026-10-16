@@ -361,7 +361,7 @@ struct TransformFullToUIMessageStreamTests {
         let ui = transformFullToUIMessageStream(stream: stream)
         let chunks = try await collectStream(ui)
         let hasApproval = chunks.contains { chunk in
-            if case let .toolApprovalRequest(approvalId, toolCallId) = chunk {
+            if case let .toolApprovalRequest(approvalId, toolCallId, _, _, _, _, _) = chunk {
                 return approvalId == "ap-1" && toolCallId == "tc-1"
             }
             return false
@@ -413,7 +413,7 @@ struct TransformFullToUIMessageStreamTests {
         let ui = transformFullToUIMessageStream(stream: stream)
         let chunks = try await collectStream(ui)
         let hasOutput = chunks.contains { chunk in
-            if case let .toolOutputAvailable(toolCallId, output, providerExecuted, providerMetadata, _, preliminary) = chunk {
+            if case let .toolOutputAvailable(toolCallId, output, providerExecuted, providerMetadata, _, preliminary, _) = chunk {
                 if toolCallId != "tc-2" || preliminary == true || providerExecuted != true { return false }
                 if providerMetadata != resultMetadata { return false }
                 if case .number(3) = output { return true } else { return false }
@@ -421,7 +421,7 @@ struct TransformFullToUIMessageStreamTests {
             return false
         }
         let hasError = chunks.contains { chunk in
-            if case let .toolOutputError(toolCallId, errorText, providerExecuted, providerMetadata, _) = chunk {
+            if case let .toolOutputError(toolCallId, errorText, providerExecuted, providerMetadata, _, _) = chunk {
                 return toolCallId == "tc-3" &&
                     !errorText.isEmpty &&
                     providerExecuted == true &&

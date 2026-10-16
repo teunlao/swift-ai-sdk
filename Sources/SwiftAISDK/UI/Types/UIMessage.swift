@@ -1,5 +1,9 @@
 import Foundation
 import AISDKProvider
+import AISDKProviderUtils
+
+public typealias Citation = LanguageModelV4Citation
+public typealias UIToolInputEncoding = LanguageModelV4ToolInputEncoding
 
 /**
  UI message domain types used by streaming utilities and chat APIs.
@@ -61,6 +65,8 @@ public struct UIMessage: UIMessageConvertible {
 public enum UIMessagePart: Sendable, Equatable {
     case text(TextUIPart)
     case reasoning(ReasoningUIPart)
+    case custom(CustomContentUIPart)
+    case reasoningFile(ReasoningFileUIPart)
     case tool(UIToolUIPart)
     case dynamicTool(UIDynamicToolUIPart)
     case sourceURL(SourceUrlUIPart)
@@ -74,6 +80,8 @@ public enum UIMessagePart: Sendable, Equatable {
         switch self {
         case .text: return "text"
         case .reasoning: return "reasoning"
+        case .custom: return "custom"
+        case .reasoningFile: return "reasoning-file"
         case .tool(let part): return part.typeIdentifier
         case .dynamicTool: return "dynamic-tool"
         case .sourceURL: return "source-url"
@@ -92,17 +100,20 @@ public struct TextUIPart: Sendable, Equatable {
     }
 
     public var text: String
-    public var state: State
+    public var state: State?
     public var providerMetadata: ProviderMetadata?
+    public var citations: [Citation]?
 
     public init(
         text: String,
-        state: State = .streaming,
-        providerMetadata: ProviderMetadata? = nil
+        state: State? = nil,
+        providerMetadata: ProviderMetadata? = nil,
+        citations: [Citation]? = nil
     ) {
         self.text = text
         self.state = state
         self.providerMetadata = providerMetadata
+        self.citations = citations
     }
 }
 
@@ -113,16 +124,41 @@ public struct ReasoningUIPart: Sendable, Equatable {
     }
 
     public var text: String
-    public var state: State
+    public var state: State?
     public var providerMetadata: ProviderMetadata?
+    public var id: String?
 
     public init(
         text: String,
-        state: State = .streaming,
-        providerMetadata: ProviderMetadata? = nil
+        state: State? = nil,
+        providerMetadata: ProviderMetadata? = nil,
+        id: String? = nil
     ) {
         self.text = text
         self.state = state
+        self.providerMetadata = providerMetadata
+        self.id = id
+    }
+}
+
+public struct CustomContentUIPart: Sendable, Equatable {
+    public var kind: String
+    public var providerMetadata: ProviderMetadata?
+
+    public init(kind: String, providerMetadata: ProviderMetadata? = nil) {
+        self.kind = kind
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public struct ReasoningFileUIPart: Sendable, Equatable {
+    public var mediaType: String
+    public var url: String
+    public var providerMetadata: ProviderMetadata?
+
+    public init(mediaType: String, url: String, providerMetadata: ProviderMetadata? = nil) {
+        self.mediaType = mediaType
+        self.url = url
         self.providerMetadata = providerMetadata
     }
 }
@@ -173,17 +209,20 @@ public struct FileUIPart: Sendable, Equatable {
     public var filename: String?
     public var url: String
     public var providerMetadata: ProviderMetadata?
+    public var providerReference: ProviderReference?
 
     public init(
         mediaType: String,
         filename: String? = nil,
         url: String,
-        providerMetadata: ProviderMetadata? = nil
+        providerMetadata: ProviderMetadata? = nil,
+        providerReference: ProviderReference? = nil
     ) {
         self.mediaType = mediaType
         self.filename = filename
         self.url = url
         self.providerMetadata = providerMetadata
+        self.providerReference = providerReference
     }
 }
 
@@ -208,10 +247,25 @@ public struct UIToolApproval: Sendable, Equatable {
     public var approved: Bool?
     public var reason: String?
 
-    public init(id: String, approved: Bool? = nil, reason: String? = nil) {
+    public var descriptor: JSONValue?
+    public var requestReason: String?
+    public var isAutomatic: Bool?
+    public var signature: String?
+    public var inputSchemaInput: JSONValue?
+
+    public init(
+        id: String, approved: Bool? = nil, reason: String? = nil,
+        descriptor: JSONValue? = nil, requestReason: String? = nil,
+        isAutomatic: Bool? = nil, signature: String? = nil, inputSchemaInput: JSONValue? = nil
+    ) {
         self.id = id
         self.approved = approved
         self.reason = reason
+        self.descriptor = descriptor
+        self.requestReason = requestReason
+        self.isAutomatic = isAutomatic
+        self.signature = signature
+        self.inputSchemaInput = inputSchemaInput
     }
 }
 
@@ -239,6 +293,8 @@ public struct UIToolUIPart: Sendable, Equatable {
     public var resultProviderMetadata: ProviderMetadata?
     public var preliminary: Bool?
     public var approval: UIToolApproval?
+    public var toolMetadata: JSONObject?
+    public var inputEncoding: UIToolInputEncoding?
 
     public init(
         toolName: String,
@@ -253,8 +309,12 @@ public struct UIToolUIPart: Sendable, Equatable {
         resultProviderMetadata: ProviderMetadata? = nil,
         preliminary: Bool? = nil,
         approval: UIToolApproval? = nil,
-        title: String? = nil
+        title: String? = nil,
+        toolMetadata: JSONObject? = nil,
+        inputEncoding: UIToolInputEncoding? = nil
     ) {
+        self.toolMetadata = toolMetadata
+        self.inputEncoding = inputEncoding
         self.toolName = toolName
         self.toolCallId = toolCallId
         self.title = title
@@ -275,17 +335,11 @@ public struct UIToolUIPart: Sendable, Equatable {
     }
 }
 
-public enum UIDynamicToolInvocationState: String, Sendable, Equatable {
-    case inputStreaming = "input-streaming"
-    case inputAvailable = "input-available"
-    case approvalRequested = "approval-requested"
-    case approvalResponded = "approval-responded"
-    case outputAvailable = "output-available"
-    case outputError = "output-error"
-    case outputDenied = "output-denied"
-}
+public typealias UIDynamicToolInvocationState = UIToolInvocationState
 
 public struct UIDynamicToolUIPart: Sendable, Equatable {
+    public var dynamic: Bool?
+    public var rawInput: JSONValue?
     public var toolName: String
     public var toolCallId: String
     public var title: String?
@@ -298,11 +352,15 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
     public var resultProviderMetadata: ProviderMetadata?
     public var preliminary: Bool?
     public var approval: UIToolApproval?
+    public var toolMetadata: JSONObject?
+    public var inputEncoding: UIToolInputEncoding?
 
     public init(
         toolName: String,
         toolCallId: String,
         state: UIDynamicToolInvocationState,
+        dynamic: Bool? = nil,
+        rawInput: JSONValue? = nil,
         input: JSONValue? = nil,
         output: JSONValue? = nil,
         errorText: String? = nil,
@@ -311,12 +369,18 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
         resultProviderMetadata: ProviderMetadata? = nil,
         preliminary: Bool? = nil,
         approval: UIToolApproval? = nil,
-        title: String? = nil
+        title: String? = nil,
+        toolMetadata: JSONObject? = nil,
+        inputEncoding: UIToolInputEncoding? = nil
     ) {
+        self.toolMetadata = toolMetadata
+        self.inputEncoding = inputEncoding
         self.toolName = toolName
         self.toolCallId = toolCallId
         self.title = title
         self.providerExecuted = providerExecuted
+        self.dynamic = dynamic
+        self.rawInput = rawInput
         self.state = state
         self.input = input
         self.output = output
@@ -329,6 +393,33 @@ public struct UIDynamicToolUIPart: Sendable, Equatable {
 }
 
 // MARK: - Tool helpers
+
+public func isCustomContentUIPart(_ part: UIMessagePart) -> Bool {
+    if case .custom = part { return true }
+    return false
+}
+
+public func isReasoningFileUIPart(_ part: UIMessagePart) -> Bool {
+    if case .reasoningFile = part { return true }
+    return false
+}
+
+public enum ToolOutputErrorUIPart: Sendable, Equatable {
+    case tool(UIToolUIPart)
+    case dynamicTool(UIDynamicToolUIPart)
+
+    public init?(_ part: UIMessagePart) {
+        switch part {
+        case .tool(let value) where value.state == .outputError: self = .tool(value)
+        case .dynamicTool(let value) where value.state == .outputError: self = .dynamicTool(value)
+        default: return nil
+        }
+    }
+}
+
+public func isToolOutputErrorUIPart(_ part: UIMessagePart) -> Bool {
+    ToolOutputErrorUIPart(part) != nil
+}
 
 public func isDataUIPart(_ part: UIMessagePart) -> Bool {
     if case .data = part {

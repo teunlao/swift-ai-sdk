@@ -160,7 +160,8 @@ struct ModelMessageCodableTests {
             .assistant(AssistantModelMessage(content: .parts([
                 .toolApprovalRequest(ToolApprovalRequest(
                     approvalId: "approval_1",
-                    toolCallId: "call_1"
+                    toolCallId: "call_1",
+                    inputSchemaInput: .null
                 )),
             ]))),
             .tool(ToolModelMessage(content: [

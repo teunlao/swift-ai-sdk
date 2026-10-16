@@ -7,39 +7,31 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/upload-file/upload-file.ts`.
  */
+@_disfavoredOverload
 public func uploadFile(
     api: any FilesV4,
     data: DataContentOrURL,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     let uploadData = try normalizeUploadData(data)
-    let resolvedMediaType = mediaType ?? detectUploadMediaType(uploadData)
-
-    let result = try await api.uploadFile(
-        options: .init(
-            data: uploadData,
-            mediaType: resolvedMediaType,
-            filename: filename,
-            providerOptions: providerOptions
-        )
-    )
-
-    return DefaultUploadFileResult(
-        providerReference: result.providerReference,
-        mediaType: result.mediaType,
-        filename: result.filename,
-        providerMetadata: result.providerMetadata,
-        warnings: result.warnings
+    return try await uploadFile(
+        api: api, data: uploadData, mediaType: mediaType,
+        filename: filename, abortSignal: abortSignal, headers: headers, providerOptions: providerOptions
     )
 }
 
+@_disfavoredOverload
 public func uploadFile(
     api: any FilesV4,
     data: DataContent,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     try await uploadFile(
@@ -47,22 +39,24 @@ public func uploadFile(
         data: toDataContentOrURL(data),
         mediaType: mediaType,
         filename: filename,
+        abortSignal: abortSignal,
+        headers: headers,
         providerOptions: providerOptions
     )
 }
 
+@_disfavoredOverload
 public func uploadFile(
     api: any ProviderV3,
     data: DataContentOrURL,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     guard let filesProvider = api as? any FilesProvider else {
-        throw InvalidArgumentError(
-            argument: "api",
-            message: "The provider does not support file uploads. Make sure it exposes a files() method."
-        )
+        throw UploadCapabilityError(message: "The provider does not support file uploads. Make sure it exposes a files() method.")
     }
 
     return try await uploadFile(
@@ -70,22 +64,24 @@ public func uploadFile(
         data: data,
         mediaType: mediaType,
         filename: filename,
+        abortSignal: abortSignal,
+        headers: headers,
         providerOptions: providerOptions
     )
 }
 
+@_disfavoredOverload
 public func uploadFile(
     api: any ProviderV4,
     data: DataContentOrURL,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     guard let filesAPI = try api.files() else {
-        throw InvalidArgumentError(
-            argument: "api",
-            message: "The provider does not support file uploads. Make sure it exposes a files() method."
-        )
+        throw UploadCapabilityError(message: "The provider does not support file uploads. Make sure it exposes a files() method.")
     }
 
     return try await uploadFile(
@@ -93,15 +89,20 @@ public func uploadFile(
         data: data,
         mediaType: mediaType,
         filename: filename,
+        abortSignal: abortSignal,
+        headers: headers,
         providerOptions: providerOptions
     )
 }
 
+@_disfavoredOverload
 public func uploadFile(
     api: any ProviderV3,
     data: DataContent,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     try await uploadFile(
@@ -109,15 +110,20 @@ public func uploadFile(
         data: toDataContentOrURL(data),
         mediaType: mediaType,
         filename: filename,
+        abortSignal: abortSignal,
+        headers: headers,
         providerOptions: providerOptions
     )
 }
 
+@_disfavoredOverload
 public func uploadFile(
     api: any ProviderV4,
     data: DataContent,
     mediaType: String? = nil,
     filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil
 ) async throws -> DefaultUploadFileResult {
     try await uploadFile(
@@ -125,8 +131,73 @@ public func uploadFile(
         data: toDataContentOrURL(data),
         mediaType: mediaType,
         filename: filename,
+        abortSignal: abortSignal,
+        headers: headers,
         providerOptions: providerOptions
     )
+}
+
+public func uploadFile(
+    api: any FilesV4,
+    data: FilesV4UploadFileData,
+    mediaType: String? = nil,
+    filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil
+) async throws -> DefaultUploadFileResult {
+    do {
+        let result = try await api.uploadFile(options: .init(
+            data: data, mediaType: mediaType ?? detectUploadMediaType(data),
+            filename: filename, abortSignal: abortSignal,
+            headers: headers, providerOptions: providerOptions
+        ))
+        return DefaultUploadFileResult(
+            providerReference: result.providerReference,
+            mediaType: result.mediaType, filename: result.filename,
+            byteSize: result.byteSize, createdAt: result.createdAt, expiresAt: result.expiresAt,
+            providerMetadata: result.providerMetadata, warnings: result.warnings
+        )
+    } catch {
+        await cancelUploadStream(data)
+        throw error
+    }
+}
+
+public func uploadFile(
+    api: any ProviderV4,
+    data: FilesV4UploadFileData,
+    mediaType: String? = nil,
+    filename: String? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    providerOptions: ProviderOptions? = nil
+) async throws -> DefaultUploadFileResult {
+    let files: any FilesV4
+    do {
+        guard let resolved = try api.files() else {
+            throw UploadCapabilityError(message: "The provider does not support file uploads. Make sure it exposes a files() method.")
+        }
+        files = resolved
+    } catch {
+        await cancelUploadStream(data)
+        throw error
+    }
+    return try await uploadFile(
+        api: files, data: data, mediaType: mediaType, filename: filename,
+        abortSignal: abortSignal, headers: headers, providerOptions: providerOptions
+    )
+}
+
+struct UploadCapabilityError: Error, LocalizedError, CustomStringConvertible {
+    let message: String
+    var errorDescription: String? { message }
+    var description: String { message }
+}
+
+private func cancelUploadStream(_ data: FilesV4UploadFileData) async {
+    guard case .stream(let stream) = data else { return }
+    await cancelStream(stream)
 }
 
 private func normalizeUploadData(_ data: DataContentOrURL) throws -> FilesV4UploadFileData {
@@ -158,17 +229,12 @@ private func normalizeUploadData(_ data: DataContentOrURL) throws -> FilesV4Uplo
 }
 
 private func detectUploadMediaType(_ data: FilesV4UploadFileData) -> String {
-    let signatures = imageMediaTypeSignatures
-        + documentMediaTypeSignatures
-        + audioMediaTypeSignatures
-        + videoMediaTypeSignatures
-
     switch data {
     case .data(let bytes):
-        return detectMediaType(data: bytes, signatures: signatures)
+        return detectMediaType(data: bytes)
             ?? (isLikelyTextUploadData(bytes) ? "text/plain" : "application/octet-stream")
     case .base64(let base64):
-        return detectMediaType(data: base64, signatures: signatures)
+        return detectMediaType(data: base64)
             ?? (isLikelyTextUploadData(base64) ? "text/plain" : "application/octet-stream")
     case .text:
         return "text/plain"

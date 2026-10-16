@@ -184,7 +184,7 @@ struct URLSessionTransportTests {
             var waits = release.stream.makeAsyncIterator()
             _ = await waits.next()
             try? await connection.sendResponse(status: 413, body: Data(#"{"error":"too large"}"#.utf8))
-            connection.close()
+            await connection.close()
         }
         defer { server.stop() }
 
@@ -208,7 +208,7 @@ struct URLSessionTransportTests {
 
         release.continuation.yield()
         let error = await #expect(throws: APICallError.self) { try await upload.value }
-        #expect(error?.statusCode == 413)
+        #expect(error?.statusCode == 413, "cause: \(String(describing: error?.cause))")
     }
 
     @Test("a failing multipart source fails the upload even when the server accepts the body")

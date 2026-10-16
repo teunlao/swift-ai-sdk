@@ -11,5 +11,3 @@ import AISDKProvider
 public typealias LanguageModelMiddleware = LanguageModelV4Middleware
 
 public typealias EmbeddingModelMiddleware = EmbeddingModelV4Middleware
-
-public typealias ImageModelMiddleware = ImageModelV4Middleware

@@ -365,14 +365,14 @@ struct DetectMediaTypeTests {
 
     @Test("should detect MP4 from bytes")
     func testDetectMP4FromBytes() throws {
-        let mp4Bytes = Data([0x66, 0x74, 0x79, 0x70])
+        let mp4Bytes = Data([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20])
         let mediaType = detectMediaType(data: mp4Bytes, signatures: audioMediaTypeSignatures)
         #expect(mediaType == "audio/mp4")
     }
 
     @Test("should detect MP4 from base64")
     func testDetectMP4FromBase64() throws {
-        let mp4Base64 = "ZnR5cA" // Base64 string starting with MP4 signature
+        let mp4Base64 = Data([0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20]).base64EncodedString()
         let mediaType = detectMediaType(data: mp4Base64, signatures: audioMediaTypeSignatures)
         #expect(mediaType == "audio/mp4")
     }

@@ -51,6 +51,7 @@ public final class DelayedPromise<T: Sendable>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        guard case .pending = status else { return }
         status = .resolved(value)
 
         if let continuation {
@@ -63,6 +64,7 @@ public final class DelayedPromise<T: Sendable>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        guard case .pending = status else { return }
         status = .rejected(error)
 
         if let continuation {

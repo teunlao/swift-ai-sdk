@@ -54,14 +54,17 @@ public struct ProviderRegistryOptions: Sendable {
     public var separator: String
     public var languageModelMiddleware: LanguageModelV4MiddlewareInput?
     public var legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
+    public var imageModelMiddleware: ImageModelMiddlewareInput? = nil
 
     public init(
         separator: String = ":",
-        languageModelMiddleware: LanguageModelV4MiddlewareInput? = nil
+        languageModelMiddleware: LanguageModelV4MiddlewareInput? = nil,
+        imageModelMiddleware: ImageModelMiddlewareInput? = nil
     ) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
         self.legacyLanguageModelMiddleware = nil
+        self.imageModelMiddleware = imageModelMiddleware
     }
 
     public init(
@@ -130,6 +133,7 @@ public func createProviderRegistry(
         separator: options.separator,
         languageModelMiddleware: options.languageModelMiddleware,
         legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
+        imageModelMiddleware: options.imageModelMiddleware,
         providers: providers.mapValues(asProviderV4),
         legacyProviders: providers
     )
@@ -150,6 +154,7 @@ public func createProviderRegistryV4(
         separator: options.separator,
         languageModelMiddleware: options.languageModelMiddleware,
         legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
+        imageModelMiddleware: options.imageModelMiddleware,
         providers: providers,
         legacyProviders: [:]
     )
@@ -162,17 +167,20 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     private let separator: String
     private let languageModelMiddleware: LanguageModelV4MiddlewareInput?
     private let legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
+    private let imageModelMiddleware: ImageModelMiddlewareInput?
 
     init(
         separator: String,
         languageModelMiddleware: LanguageModelV4MiddlewareInput?,
         legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?,
+        imageModelMiddleware: ImageModelMiddlewareInput? = nil,
         providers: [String: any ProviderV4] = [:],
         legacyProviders: [String: any ProviderV3] = [:]
     ) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
         self.legacyLanguageModelMiddleware = legacyLanguageModelMiddleware
+        self.imageModelMiddleware = imageModelMiddleware
         self.providers = providers
         self.legacyProviders = legacyProviders
     }
@@ -186,6 +194,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             separator: separator,
             languageModelMiddleware: languageModelMiddleware,
             legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
+            imageModelMiddleware: imageModelMiddleware,
             providers: newProviders,
             legacyProviders: newLegacyProviders
         )
@@ -198,6 +207,7 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
             separator: separator,
             languageModelMiddleware: languageModelMiddleware,
             legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
+            imageModelMiddleware: imageModelMiddleware,
             providers: newProviders,
             legacyProviders: legacyProviders
         )
@@ -265,19 +275,18 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     public func imageModel(id: String) throws -> any ImageModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
         let provider = try getProvider(id: providerId, modelType: .imageModel)
-        return try provider.imageModel(modelId: modelId)
+        let model = try provider.imageModel(modelId: modelId)
+        return imageModelMiddleware.map { wrapImageModel(model: model, middleware: $0) } ?? model
     }
 
     public func videoModel(id: String) throws -> any VideoModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .videoModel)
 
-        guard let legacyProvider = legacyProviders[providerId],
-              let model = try legacyProvider.videoModel(modelId: modelId)
-        else {
+        let provider = try getProvider(id: providerId, modelType: .videoModel)
+        guard let videoProvider = provider as? any VideoProviderV4 else {
             throw NoSuchModelError(modelId: id, modelType: .videoModel)
         }
-
-        return asVideoModelV4(model)
+        return try videoProvider.videoModel(modelId: modelId)
     }
 
     public func rerankingModel(id: String) throws -> any RerankingModelV4 {
@@ -338,8 +347,9 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     }
 }
 
-private struct ProviderRegistryCapabilityError: Error, CustomStringConvertible, Sendable {
+private struct ProviderRegistryCapabilityError: Error, LocalizedError, CustomStringConvertible, Sendable {
     let message: String
+    var errorDescription: String? { message }
 
     var description: String {
         message

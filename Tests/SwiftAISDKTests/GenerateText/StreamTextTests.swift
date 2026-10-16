@@ -1648,11 +1648,12 @@ struct StreamTextBasicTests {
             .textEnd(id: "t", providerMetadata: nil),
             .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
-            parts.forEach { c.yield($0) }
-            c.finish()
-        }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV3(doStream: .function { _ in
+            LanguageModelV3StreamResult(stream: AsyncThrowingStream { continuation in
+                parts.forEach { continuation.yield($0) }
+                continuation.finish()
+            })
+        })
 
         // sendStart=false, sendFinish=true
         let result1 = try streamText(
@@ -1697,7 +1698,7 @@ struct StreamTextBasicTests {
         )
 
         // Case 1: sendStart=false, sendFinish=false
-        let response1 = result.toUIMessageStreamResponse(
+        let response1 = try result.toUIMessageStreamResponse(
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(),
                 streamOptions: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: false)
@@ -1708,7 +1709,7 @@ struct StreamTextBasicTests {
         #expect(!lines1.contains { $0.contains("\"type\":\"finish\"") })
 
         // Case 2: sendStart=true, sendFinish=false
-        let response2 = result.toUIMessageStreamResponse(
+        let response2 = try result.toUIMessageStreamResponse(
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(),
                 streamOptions: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: true)
@@ -1871,7 +1872,7 @@ struct StreamTextBasicTests {
         )
 
         let hasError = chunks.contains { chunk in
-            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _, _) = chunk {
+            if case let .toolOutputError(toolCallId, errorText, providerExecuted, _, _, _) = chunk {
                 return toolCallId == "c2" && !errorText.isEmpty && providerExecuted == true
             }
             return false
@@ -1910,9 +1911,8 @@ struct StreamTextBasicTests {
             messageMetadata: { part in mapper(part) }
         ))
         let chunks = try await convertReadableStreamToArray(uiStream)
-        let hasBegin = chunks.contains { if case let .messageMetadata(meta) = $0, case let .object(obj) = meta { return obj["phase"] == .string("begin") } else { return false } }
-        let hasEnd = chunks.contains { if case let .messageMetadata(meta) = $0, case let .object(obj) = meta { return obj["phase"] == .string("end") } else { return false } }
-        #expect(hasBegin && hasEnd)
+        #expect(chunks.first == .start(messageId: nil, messageMetadata: .object(["phase": .string("begin")])))
+        #expect(chunks.last == .finish(finishReason: .stop, messageMetadata: .object(["phase": .string("end")])))
     }
 
     @Test("onFinish is invoked exactly once")

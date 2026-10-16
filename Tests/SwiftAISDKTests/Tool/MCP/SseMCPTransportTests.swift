@@ -9,6 +9,7 @@ import Testing
 
 @testable import SwiftAISDK
 @testable import AISDKProvider
+import AISDKProviderUtils
 
 @Suite("SseMCPTransport", .serialized)
 struct SseMCPTransportTests {
@@ -139,7 +140,7 @@ struct SseMCPTransportTests {
         )
 
         let payload = String(data: try JSONEncoder().encode(testMessage), encoding: .utf8)!
-        controller.write("event: message\ndata: \(payload)\n\n")
+        controller.write("data: \(payload)\n\n")
 
         let received = try await messagePromise.task.value
         guard case .request(let request) = received else {
@@ -210,68 +211,28 @@ struct SseMCPTransportTests {
     @Test("should send messages as POST requests")
     @available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
     func sendMessagesAsPOST() async throws {
-        let endExclusive = TestURLProtocol.beginExclusiveAccess()
-        defer { endExclusive() }
-        TestURLProtocol.reset()
-        let session = makeTestSession()
-
-        let controller = TestURLProtocol.makeController()
-        let sseUrl = "http://localhost:3000/sse"
-        let messagesUrl = "http://localhost:3000/messages"
-
-        TestURLProtocol.requestHandler = { request, _ in
-            let url = normalizeTestURL(try #require(request.url?.absoluteString))
-            switch (request.httpMethod ?? "GET", url) {
-            case ("GET", sseUrl):
-                return .stream(
-                    status: 200,
-                    headers: ["content-type": "text/event-stream"],
-                    controller: controller
-                )
-            case ("POST", messagesUrl):
-                return .jsonValue(
-                    status: 201,
-                    headers: ["content-type": "application/json"],
-                    body: .object(["ok": .bool(true)])
-                )
-            default:
-                return .empty(status: 404)
+        let sseUrl = "https://mcp.example.com/sse"
+        let messagesUrl = "https://mcp.example.com/messages"
+        let stream = AsyncThrowingStream<Data, Error>.makeStream()
+        defer { stream.continuation.finish() }
+        stream.continuation.yield(Data("event: endpoint\ndata: \(messagesUrl)\n\n".utf8))
+        let posted = createResolvablePromise(of: JSONValue.self)
+        let fetch: FetchFunction = { request in
+            let url = try #require(request.url)
+            if request.httpMethod == "POST" {
+                #expect(url.absoluteString == messagesUrl)
+                posted.resolve(try decodeJSONValue(from: #require(request.httpBody)))
+                return FetchResponse(body: .none, urlResponse: try #require(HTTPURLResponse(url: url, statusCode: 201, httpVersion: nil, headerFields: nil)))
             }
+            #expect(request.httpMethod == "GET")
+            #expect(url.absoluteString == sseUrl)
+            return FetchResponse(body: .stream(stream.stream), urlResponse: try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "text/event-stream"])))
         }
-
-        let transport = try SseMCPTransport(config: MCPTransportConfig(url: sseUrl), session: session)
-
-        do {
-            async let connect: Void = transport.start()
-            controller.write("event: endpoint\ndata: \(messagesUrl)\n\n")
-            try await connect
-        } catch {
-            try? await transport.close()
-            throw error
-        }
-
-        let message = JSONRPCMessage.request(
-            JSONRPCRequest(
-                id: .string("1"),
-                method: "test",
-                params: .object(["foo": .string("bar")])
-            )
-        )
-
+        let transport = try SseMCPTransport(config: .init(url: sseUrl, fetch: fetch))
+        try await transport.start()
+        let message = JSONRPCMessage.request(.init(id: .string("1"), method: "test", params: .object(["foo": .string("bar")])))
         try await transport.send(message: message)
-
-        let calls = TestURLProtocol.takeCalls()
-        #expect(calls.count == 2)
-
-        let postCall = calls[1]
-        #expect(postCall.requestMethod == "POST")
-        #expect(normalizeTestURL(postCall.requestUrl) == messagesUrl)
-
-        let body = try #require(postCall.requestBody)
-        let received = try decodeJSONValue(from: body)
-        let expected = try decodeJSONValue(from: JSONEncoder().encode(message))
-        #expect(received == expected)
-
+        #expect(try await posted.task.value == decodeJSONValue(from: JSONEncoder().encode(message)))
         try await transport.close()
     }
 
@@ -337,19 +298,17 @@ struct SseMCPTransportTests {
             )
         )
 
-        // First send fails but does not throw; it reports error via onerror.
-        try await transport.send(message: message)
-        let error = try await errorPromise.task.value
-        #expect(MCPClientError.isInstance(error))
-        let messageText = (error as? MCPClientError)?.message ?? String(describing: error)
-        #expect(messageText.contains("POSTing to endpoint"))
+        await #expect(throws: MCPClientError.self) { try await transport.send(message: message) }
+        let error = try #require(try await errorPromise.task.value as? MCPClientError)
+        #expect(error.statusCode == 500)
+        #expect(error.url == messagesUrl)
+        #expect(error.responseBody == "Internal Server Error")
 
-        // Transport should remain connected: a subsequent send should still be attempted.
         shouldFailPost.set(false)
         try await transport.send(message: message)
 
-        let calls = TestURLProtocol.takeCalls()
-        #expect(calls.count >= 3)
+        let post = try #require(TestURLProtocol.takeCalls().last { $0.requestMethod == "POST" })
+        #expect(try decodeJSONValue(from: #require(post.requestBody)) == decodeJSONValue(from: JSONEncoder().encode(message)))
 
         try await transport.close()
     }

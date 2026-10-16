@@ -18,6 +18,10 @@ import AISDKProviderUtils
 
  TypeScript equivalent: `string | Experimental_VideoModelV4 | Experimental_VideoModelV3`
  */
+public protocol VideoProviderV4: Sendable {
+    func videoModel(modelId: String) throws -> any VideoModelV4
+}
+
 public enum VideoModel: Sendable {
     /// Model identifier string (will be resolved via the global/default provider).
     case string(String)

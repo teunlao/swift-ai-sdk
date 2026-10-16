@@ -2,12 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- A citation supporting generated text.
-
- Port of `@ai-sdk/ai/src/types/citation.ts`.
- */
-public typealias Citation = LanguageModelV4Citation
 
 /**
  Content part of a generation response.

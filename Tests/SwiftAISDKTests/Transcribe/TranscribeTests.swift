@@ -411,70 +411,32 @@ struct TranscribeTests {
         #expect(response.headers == [:])
     }
 
-    @Test("should throw NoTranscriptGeneratedError when no transcript is returned")
-    func shouldThrowWhenNoTranscriptReturned() async throws {
-        let model = MockTranscriptionModelV3 { _ in
-            makeMockResponse(
-                text: "",
-                segments: [],
-                language: sampleLanguage,
-                durationInSeconds: 0,
-                timestamp: testDate
-            )
+    @Test("ADTS audio is detected at the transcription request boundary")
+    func adtsAudioDetection() async throws {
+        let captured = ValueBox<TranscriptionModelV3CallOptions?>(nil)
+        let model = MockTranscriptionModelV3 { options in
+            captured.value = options
+            return makeMockResponse()
         }
-
-        do {
-            _ = try await transcribe(
-                model: model,
-                audio: .data(audioData)
-            )
-            Issue.record("Expected NoTranscriptGeneratedError to be thrown")
-        } catch let error as NoTranscriptGeneratedError {
-            #expect(error.name == "AI_NoTranscriptGeneratedError")
-            #expect(error.message == "No transcript generated.")
-            #expect(error.responses.count == 1)
-            let response = error.responses[0]
-            #expect(response.timestamp == testDate)
-            #expect(!response.modelId.isEmpty)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        _ = try await transcribe(model: model, audio: .data(Data([0xFF, 0xF1, 0x50, 0x80])))
+        #expect(captured.value?.mediaType == "audio/aac")
     }
 
-    @Test("should include response headers in error when no transcript generated")
-    func shouldIncludeHeadersInError() async throws {
-        let expectedUserAgent = "ai/\(SwiftAISDK.VERSION)"
-        let responseHeaders: [String: String] = [
-            "custom-response-header": "response-header-value",
-            "user-agent": expectedUserAgent
-        ]
-
+    @Test("silent audio returns an empty transcript and response metadata")
+    func silentAudioReturnsEmptyTranscript() async throws {
         let model = MockTranscriptionModelV3 { _ in
             makeMockResponse(
-                text: "",
-                segments: [],
-                language: sampleLanguage,
-                durationInSeconds: 0,
-                warnings: [],
-                timestamp: testDate,
-                headers: responseHeaders
+                text: "", segments: [], language: sampleLanguage,
+                durationInSeconds: 0, timestamp: testDate,
+                headers: ["x-request-id": "silent-audio"]
             )
         }
-
-        do {
-            _ = try await transcribe(
-                model: model,
-                audio: .data(audioData)
-            )
-            Issue.record("Expected NoTranscriptGeneratedError to be thrown")
-        } catch let error as NoTranscriptGeneratedError {
-            #expect(error.responses.count == 1)
-            let response = error.responses[0]
-            #expect(response.headers?["custom-response-header"] == "response-header-value")
-            #expect(response.headers?["user-agent"] == expectedUserAgent)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        let result = try await transcribe(model: model, audio: .data(audioData))
+        #expect(result.text.isEmpty)
+        #expect(result.segments.isEmpty)
+        #expect(result.durationInSeconds == 0)
+        #expect(result.responses.first?.timestamp == testDate)
+        #expect(result.responses.first?.headers?["x-request-id"] == "silent-audio")
     }
 
     @Test("should return response metadata")

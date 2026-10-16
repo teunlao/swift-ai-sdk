@@ -430,7 +430,7 @@ struct JSONRPCMessageTests {
     @Test("JSONRPCMessage encoding preserves variant")
     func testJSONRPCMessageEncodingPreservesVariant() throws {
         let request = JSONRPCMessage.request(JSONRPCRequest(id: .int(1), method: "test"))
-        let response = JSONRPCMessage.response(JSONRPCResponse(id: .int(2), result: .null))
+        let response = JSONRPCMessage.response(JSONRPCResponse(id: .int(2), result: .object([:])))
         let error = JSONRPCMessage.error(JSONRPCError(
             id: .int(3),
             error: JSONRPCErrorObject(code: -32600, message: "Error")

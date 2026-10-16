@@ -2,7 +2,7 @@
  HTTP MCP transport implementing the Streamable HTTP style.
 
  Port of `packages/mcp/src/tool/mcp-http-transport.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  */
 
 import Foundation
@@ -19,22 +19,34 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
         let maxRetries: Int = 2
     }
 
-    private let stateLock = NSLock()
+    private let stateLock = NSRecursiveLock()
     private let url: URL
-    private let session: URLSession
+    private let fetchFn: FetchFunction
     private let headers: [String: String]?
     private let authProvider: OAuthClientProvider?
     private var resourceMetadataUrl: URL?
     private var sessionId: String?
+    private var protocolVersion = LATEST_PROTOCOL_VERSION
+    private let redirect: MCPRedirectMode
+    private let onSessionIdChange: (@Sendable (String?) -> Void)?
+    private let onSessionExpired: (@Sendable (String) -> Void)?
+    private let terminateSessionOnClose: Bool
+    private let authorization = MCPTransportAuthorization()
+
+    public func setProtocolVersion(_ version: String) {
+        stateLock.withLock { protocolVersion = version }
+    }
 
     private var _started: Bool = false
     private var _isClosed: Bool = false
     private var _inboundSseTask: Task<Void, Never>?
+    private var _inboundGeneration: UUID?
     private var _inboundSseConnectionActive: Bool = false
     private var _lastInboundEventId: String?
     private var _inboundReconnectAttempts: Int = 0
     private var _reconnectionTask: Task<Void, Never>?
-    private var _activeTasks: [Task<Void, Never>] = []
+    private var _activeTasks: [UUID: Task<Void, Never>] = [:]
+    private var _sendTasks: [UUID: Task<Void, Error>] = [:]
 
     private let reconnectionOptions = ReconnectionOptions()
 
@@ -43,69 +55,56 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
     public var onmessage: (@Sendable (JSONRPCMessage) -> Void)?
 
     public convenience init(config: MCPTransportConfig) throws {
-        try self.init(config: config, session: .shared)
+        try self.init(config: config, fetch: config.fetch ?? defaultFetchFunction())
     }
 
-    internal init(config: MCPTransportConfig, session: URLSession) throws {
-        guard let parsed = URL(string: config.url) else {
+    public convenience init(config: MCPTransportConfig, session: URLSession) throws {
+        try self.init(config: config, fetch: config.fetch ?? mcpSessionFetch(session))
+    }
+
+    private init(config: MCPTransportConfig, fetch: @escaping FetchFunction) throws {
+        guard let parsed = URL(string: config.url), ["http", "https"].contains(parsed.scheme), parsed.host != nil else {
             throw MCPClientError(message: "Invalid URL: \(config.url)")
         }
-
-        self.url = parsed
-        self.session = session
-        self.headers = config.headers
-        self.authProvider = config.authProvider
+        url = parsed
+        fetchFn = fetch
+        headers = config.headers
+        authProvider = config.authProvider
+        redirect = config.redirect
+        sessionId = config.initialSessionId
+        protocolVersion = config.initialProtocolVersion ?? LATEST_PROTOCOL_VERSION
+        onSessionIdChange = config.onSessionIdChange
+        onSessionExpired = config.onSessionExpired
+        terminateSessionOnClose = config.terminateSessionOnClose
     }
 
-    public convenience init(
-        url: String,
-        headers: [String: String]? = nil,
-        authProvider: OAuthClientProvider? = nil
-    ) throws {
-        try self.init(url: url, headers: headers, authProvider: authProvider, session: .shared)
+    public convenience init(url: String, headers: [String: String]? = nil, authProvider: OAuthClientProvider? = nil) throws {
+        try self.init(config: .init(type: "http", url: url, headers: headers, authProvider: authProvider))
     }
 
-    internal init(
-        url: String,
-        headers: [String: String]? = nil,
-        authProvider: OAuthClientProvider? = nil,
-        session: URLSession
-    ) throws {
-        guard let parsed = URL(string: url) else {
-            throw MCPClientError(message: "Invalid URL: \(url)")
-        }
-
-        self.url = parsed
-        self.session = session
-        self.headers = headers
-        self.authProvider = authProvider
+    internal convenience init(url: String, headers: [String: String]? = nil, authProvider: OAuthClientProvider? = nil, session: URLSession) throws {
+        try self.init(config: .init(type: "http", url: url, headers: headers, authProvider: authProvider), session: session)
     }
 
     public func start() async throws {
-        let alreadyStarted = stateLock.withLock { _started }
-        if alreadyStarted {
-            throw MCPClientError(
-                message: "MCP HTTP Transport Error: Transport already started. Note: client.connect() calls start() automatically."
-            )
-        }
-
-        stateLock.withLock {
+        try stateLock.withLock {
+            guard !_started else {
+                throw MCPClientError(message: "MCP HTTP Transport Error: Transport already started. Note: client.connect() calls start() automatically.")
+            }
             _started = true
             _isClosed = false
         }
 
         // Best-effort, do not await to avoid blocking start().
-        stateLock.withLock {
-            _inboundSseTask = Task { [weak self] in
-                await self?.openInboundSse(triedAuth: false, resumeToken: nil)
-            }
-        }
+        startInboundSse()
 
         // Match upstream async scheduling: allow the inbound SSE task to start before returning.
         await Task.yield()
     }
 
-    public func close() async throws {
+    public func close() async throws { try await close(options: nil) }
+
+    public func close(options: MCPTransportCloseOptions?) async throws {
         let (sessionId, inboundTask, reconnectionTask, activeTasks, isClosed): (String?, Task<Void, Never>?, Task<Void, Never>?, [Task<Void, Never>], Bool) =
             stateLock.withLock {
                 let isClosed = _isClosed
@@ -114,9 +113,12 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                 let inboundTask = _inboundSseTask
                 let reconnectionTask = _reconnectionTask
                 _inboundSseTask = nil
+                _inboundGeneration = nil
                 _reconnectionTask = nil
-                let activeTasks = _activeTasks
+                let activeTasks = Array(_activeTasks.values)
                 _activeTasks.removeAll()
+                _sendTasks.values.forEach { $0.cancel() }
+                _sendTasks.removeAll()
                 return (self.sessionId, inboundTask, reconnectionTask, activeTasks, isClosed)
             }
 
@@ -131,26 +133,23 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
             task.cancel()
         }
 
-        if let inboundTask {
-            _ = await inboundTask.result
-        }
-        if let reconnectionTask {
-            _ = await reconnectionTask.result
-        }
-        for task in activeTasks {
-            _ = await task.result
-        }
-
         do {
-            if sessionId != nil {
-                let headers = await commonHeaders(base: [:], includeSessionId: true)
+            if sessionId?.isEmpty == false, terminateSessionOnClose, options?.signal?() != true {
+                let headers = try await commonHeaders(base: [:], includeSessionId: true)
+                if options?.signal?() == true { onclose?(); return }
                 var request = URLRequest(url: url)
                 request.httpMethod = "DELETE"
                 for (key, value) in headers {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
 
-                _ = try await session.data(for: request)
+                let preparedRequest = request
+                _ = try await runMCPOperation(options: .init(signal: options?.signal)) { [self] in
+                    let (body, response) = try await fetchMCPResponse(preparedRequest, fetch: fetchFn, redirect: redirect)
+                    if let http = response as? HTTPURLResponse {
+                        await cancelResponseBody(.init(url: url, httpResponse: http, body: body))
+                    }
+                }
             }
         } catch {
             // ignore
@@ -161,35 +160,83 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
     }
 
     public func send(message: JSONRPCMessage) async throws {
-        try await attemptSend(message: message, triedAuth: false)
+        try await send(message: message, options: nil)
+    }
+
+    public func send(message: JSONRPCMessage, options: MCPTransportSendOptions?) async throws {
+        try Task.checkCancellation()
+        guard options?.signal?() != true else { throw CancellationError() }
+        let id = UUID()
+        let task = try stateLock.withLock {
+            guard !_isClosed else { throw CancellationError() }
+            let task = Task { try await attemptSend(message: message, triedAuth: false, options: options) }
+            _sendTasks[id] = task
+            return task
+        }
+        defer { task.cancel(); _ = stateLock.withLock { _sendTasks.removeValue(forKey: id) } }
+        try await withTaskCancellationHandler {
+            try await runMCPOperation(options: .init(signal: options?.signal)) { try await task.value }
+        } onCancel: { task.cancel() }
     }
 
     // MARK: - Private
 
-    private func commonHeaders(base: [String: String], includeSessionId: Bool) async -> [String: String] {
+    private func receive(_ message: JSONRPCMessage, generation: UUID? = nil) {
+        stateLock.withLock {
+            guard !_isClosed, !Task.isCancelled else { return }
+            if let generation, _inboundGeneration != generation { return }
+            onmessage?(message)
+        }
+    }
+
+    private func isInitialize(_ message: JSONRPCMessage) -> Bool {
+        if case .request(let request) = message { return request.method == "initialize" }
+        return false
+    }
+
+    private func setSessionId(_ value: String?) {
+        let changed = stateLock.withLock {
+            guard sessionId != value else { return false }
+            sessionId = value
+            return true
+        }
+        if changed { onSessionIdChange?(value) }
+    }
+
+    private func expireSessionId(_ value: String) {
+        let cleared = stateLock.withLock {
+            guard sessionId == value else { return false }
+            sessionId = nil
+            return true
+        }
+        if cleared { onSessionIdChange?(nil) }
+        onSessionExpired?(value)
+    }
+
+    private func commonHeaders(base: [String: String], includeSessionId: Bool) async throws -> [String: String] {
         var merged: [String: String?] = [:]
 
         // user-provided headers first
         if let headers {
             for (k, v) in headers {
-                merged[k] = v
+                merged[k.lowercased()] = v
             }
         }
 
         for (k, v) in base {
-            merged[k] = v
+            merged[k.lowercased()] = v
         }
 
-        merged["mcp-protocol-version"] = LATEST_PROTOCOL_VERSION
+        merged["mcp-protocol-version"] = stateLock.withLock { protocolVersion }
 
         let currentSessionId = stateLock.withLock { sessionId }
-        if includeSessionId, let currentSessionId {
+        if includeSessionId, let currentSessionId, !currentSessionId.isEmpty {
             merged["mcp-session-id"] = currentSessionId
         }
 
-        if let authProvider, let tokens = try? await authProvider.tokens() {
+        if let authProvider, let tokens = try await authProvider.tokens(), !tokens.accessToken.isEmpty {
             let accessToken = tokens.accessToken
-            merged["Authorization"] = "Bearer \(accessToken)"
+            merged["authorization"] = "Bearer \(accessToken)"
         }
 
         return withUserAgentSuffix(
@@ -199,14 +246,16 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
         )
     }
 
-    private func attemptSend(message: JSONRPCMessage, triedAuth: Bool) async throws {
+    private func attemptSend(message: JSONRPCMessage, triedAuth: Bool, options: MCPTransportSendOptions?) async throws {
         do {
-            let headers = await commonHeaders(
+            try Task.checkCancellation()
+            let sessionIdForRequest = isInitialize(message) ? nil : stateLock.withLock { sessionId }
+            let headers = try await commonHeaders(
                 base: [
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",
                 ],
-                includeSessionId: true
+                includeSessionId: { if case .request(let request) = message { return request.method != "initialize" }; return true }()
             )
 
             var request = URLRequest(url: url)
@@ -217,25 +266,29 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
 
             request.httpBody = try JSONEncoder().encode(message)
 
-            let (bytes, response) = try await session.bytes(for: request)
+            let (bytes, response) = try await fetchMCPResponse(request, fetch: fetchFn, redirect: redirect)
+            try Task.checkCancellation()
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw MCPClientError(message: "MCP HTTP Transport Error: Invalid response type")
             }
 
-            if let sessionIdHeader = httpResponse.value(forHTTPHeaderField: "mcp-session-id") {
-                stateLock.withLock { self.sessionId = sessionIdHeader }
+            if let sessionIdHeader = httpResponse.value(forHTTPHeaderField: "mcp-session-id"), !sessionIdHeader.isEmpty {
+                setSessionId(sessionIdHeader)
             }
 
             if httpResponse.statusCode == 401, let authProvider, !triedAuth {
-                resourceMetadataUrl = extractResourceMetadataUrl(httpResponse)
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
+                let challenge = extractWWWAuthenticateParams(httpResponse)
+                resourceMetadataUrl = challenge.resourceMetadataUrl
                 do {
-                    let result = try await auth(
+                    let result = try await authorization.authorize { [self] in try await auth(
                         authProvider,
                         serverUrl: url,
                         authorizationCode: nil,
-                        scope: nil,
-                        resourceMetadataUrl: resourceMetadataUrl
-                    )
+                        scope: challenge.scope,
+                        resourceMetadataUrl: challenge.resourceMetadataUrl,
+                        fetchFn: mcpOAuthFetch(fetchFn)
+                    ) }
                     guard result == .authorized else {
                         let error = UnauthorizedError()
                         onerror?(error)
@@ -246,41 +299,48 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                     throw error
                 }
 
-                try await attemptSend(message: message, triedAuth: true)
+                try await attemptSend(message: message, triedAuth: true, options: options)
                 return
             }
 
             // If server accepted the message (e.g. initialized notification), optionally (re)start inbound SSE.
             if httpResponse.statusCode == 202 {
-                let (isInboundActive, existingInboundTask) = stateLock.withLock { (_inboundSseConnectionActive, _inboundSseTask) }
-                if !isInboundActive {
-                    existingInboundTask?.cancel()
-                    stateLock.withLock {
-                        _inboundSseTask = Task { [weak self] in
-                            await self?.openInboundSse(triedAuth: false, resumeToken: nil)
-                        }
-                    }
-                    // In upstream JS, fire-and-forget async functions run until
-                    // their first await before the caller continues. Give the
-                    // Swift task the same chance to start the GET request.
-                    await Task.yield()
-                }
+                startInboundSse()
+                await Task.yield()
 
                 // Drain any body best-effort (usually empty).
-                Task { _ = try? await self.collectData(from: bytes) }
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
                 return
             }
 
             if !(200...299).contains(httpResponse.statusCode) {
                 let data = try await collectData(from: bytes)
                 let text = String(data: data, encoding: .utf8) ?? "null"
+                if case .error(let response) = try? JSONDecoder().decode(JSONRPCMessage.self, from: data) {
+                    let id: JSONRPCID?
+                    switch message {
+                    case .request(let request): id = request.id
+                    case .response(let response): id = response.id
+                    case .error(let response): id = response.id
+                    case .notification: id = nil
+                    }
+                    if let id {
+                        receive(.error(JSONRPCError(id: response.id ?? id, error: response.error)))
+                        return
+                    }
+                }
                 var errorMessage = "MCP HTTP Transport Error: POSTing to endpoint (HTTP \(httpResponse.statusCode)): \(text)"
 
                 if httpResponse.statusCode == 404 {
-                    errorMessage += ". This server does not support HTTP transport. Try using `sse` transport instead"
+                    if let sessionIdForRequest {
+                        expireSessionId(sessionIdForRequest)
+                        errorMessage += ". The MCP session expired. Create a new client without `initialSessionId` to start a fresh session"
+                    } else {
+                        errorMessage += ". This server does not support HTTP transport. Try using `sse` transport instead"
+                    }
                 }
 
-                let error = MCPClientError(message: errorMessage)
+                let error = MCPClientError(message: errorMessage, statusCode: httpResponse.statusCode, url: url.absoluteString, responseBody: text)
                 onerror?(error)
                 throw error
             }
@@ -292,7 +352,7 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
 
             if isNotification {
                 // Drain any body best-effort; servers may respond with JSON acknowledgements.
-                Task { _ = try? await self.collectData(from: bytes) }
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
                 return
             }
 
@@ -316,71 +376,53 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                 }
 
                 for m in decodedMessages {
-                    onmessage?(m)
+                    receive(m)
                 }
                 return
             }
 
             if contentType.contains("text/event-stream") {
-                // Process event stream response asynchronously; do not await to avoid blocking send().
-                let task = Task { [weak self] in
-                    guard let self else { return }
-                    await self.processEventStreamBytes(bytes)
+                if case .none = bytes {
+                    throw MCPClientError(message: "MCP HTTP Transport Error: text/event-stream response without body", statusCode: httpResponse.statusCode, url: url.absoluteString)
                 }
-                stateLock.withLock { _activeTasks.append(task) }
+                // Process event stream response asynchronously; do not await to avoid blocking send().
+                let id = UUID()
+                let scheduled = stateLock.withLock {
+                    guard !_isClosed, !Task.isCancelled else { return false }
+                    _activeTasks[id] = Task { [weak self] in
+                        guard let self else { return }
+                        defer { _ = stateLock.withLock { _activeTasks.removeValue(forKey: id) } }
+                        try? await runMCPOperation(options: .init(signal: options?.signal)) { [self] in
+                            await processEventStreamBytes(bytes)
+                        }
+                    }
+                    return true
+                }
+                if !scheduled { await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes)) }
                 return
             }
 
             // Drain to avoid leaving the response body unread.
-            Task { _ = try? await self.collectData(from: bytes) }
+            await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
 
-            let error = MCPClientError(message: "MCP HTTP Transport Error: Unexpected content type: \(contentType)")
+            let error = MCPClientError(message: "MCP HTTP Transport Error: Unexpected content type: \(contentType)", statusCode: httpResponse.statusCode, url: url.absoluteString)
             onerror?(error)
             throw error
         } catch {
-            onerror?(error)
+            if !Task.isCancelled && options?.signal?() != true { onerror?(error) }
             throw error
         }
     }
 
-    private func collectData(from bytes: URLSession.AsyncBytes) async throws -> Data {
-        var data = Data()
-        data.reserveCapacity(16_384)
-        for try await byte in bytes {
-            data.append(byte)
-        }
-        return data
+    private func collectData(from bytes: ProviderHTTPResponseBody) async throws -> Data {
+        try await bytes.collectData()
     }
 
-    private func dataStream(from bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                var buffer = Data()
-                buffer.reserveCapacity(16_384)
-
-                do {
-                    for try await byte in bytes {
-                        buffer.append(byte)
-
-                        if buffer.count >= 1024 || byte == UInt8(ascii: "\n") {
-                            continuation.yield(buffer)
-                            buffer.removeAll(keepingCapacity: true)
-                        }
-                    }
-
-                    if !buffer.isEmpty {
-                        continuation.yield(buffer)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
+    private func dataStream(from bytes: ProviderHTTPResponseBody) -> AsyncThrowingStream<Data, Error> {
+        bytes.makeStream()
     }
 
-    private func processEventStreamBytes(_ bytes: URLSession.AsyncBytes) async {
+    private func processEventStreamBytes(_ bytes: ProviderHTTPResponseBody) async {
         let stream = dataStream(from: bytes)
         let eventStream = EventSourceParserStream.makeStream(from: stream)
 
@@ -388,11 +430,11 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
             for try await event in eventStream {
                 if Task.isCancelled { return }
 
-                if event.event == "message" {
+                if event.event == nil || event.event == "message" {
                     do {
                         let data = Data(event.data.utf8)
                         let msg = try JSONDecoder().decode(JSONRPCMessage.self, from: data)
-                        onmessage?(msg)
+                        receive(msg)
                     } catch {
                         let e = MCPClientError(
                             message: "MCP HTTP Transport Error: Failed to parse message",
@@ -405,7 +447,7 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
         } catch is CancellationError {
             return
         } catch {
-            onerror?(error)
+            if !Task.isCancelled { onerror?(error) }
         }
     }
 
@@ -440,31 +482,42 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
 
             let (isClosed, resumeToken) = stateLock.withLock { (_isClosed, _lastInboundEventId) }
             if isClosed { return }
-            stateLock.withLock {
-                _inboundSseTask = Task { [weak self] in
-                    await self?.openInboundSse(triedAuth: false, resumeToken: resumeToken)
-                }
-            }
+            startInboundSse(resumeToken: resumeToken, onlyIfInactive: false)
         }
 
         stateLock.withLock { _reconnectionTask = task }
     }
 
-    // Open optional inbound SSE stream; best-effort and resumable.
-    private func openInboundSse(triedAuth: Bool, resumeToken: String?) async {
+    private func startInboundSse(resumeToken: String? = nil, onlyIfInactive: Bool = true) {
+        stateLock.withLock {
+            guard !_isClosed, !Task.isCancelled, !onlyIfInactive || !_inboundSseConnectionActive else { return }
+            _inboundSseTask?.cancel()
+            let generation = UUID()
+            _inboundGeneration = generation
+            _inboundSseConnectionActive = false
+            _inboundSseTask = Task { [weak self] in
+                await self?.openInboundSse(triedAuth: false, resumeToken: resumeToken, generation: generation)
+            }
+        }
+    }
+
+    private func openInboundSse(triedAuth: Bool, resumeToken: String?, generation: UUID) async {
         defer {
             stateLock.withLock {
+                guard _inboundGeneration == generation else { return }
                 _inboundSseTask = nil
+                _inboundGeneration = nil
                 _inboundSseConnectionActive = false
             }
         }
         do {
+            let sessionIdForRequest = stateLock.withLock { sessionId }
             var baseHeaders: [String: String] = ["Accept": "text/event-stream"]
             if let resumeToken {
                 baseHeaders["last-event-id"] = resumeToken
             }
 
-            let headers = await commonHeaders(base: baseHeaders, includeSessionId: true)
+            let headers = try await commonHeaders(base: baseHeaders, includeSessionId: true)
 
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
@@ -472,26 +525,30 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                 request.setValue(value, forHTTPHeaderField: key)
             }
 
-            let (bytes, response) = try await session.bytes(for: request)
+            let (bytes, response) = try await fetchMCPResponse(request, fetch: fetchFn, redirect: redirect)
+            try Task.checkCancellation()
             guard let httpResponse = response as? HTTPURLResponse else {
                 onerror?(MCPClientError(message: "MCP HTTP Transport Error: Invalid response type"))
                 return
             }
 
-            if let sessionIdHeader = httpResponse.value(forHTTPHeaderField: "mcp-session-id") {
-                stateLock.withLock { self.sessionId = sessionIdHeader }
+            if let sessionIdHeader = httpResponse.value(forHTTPHeaderField: "mcp-session-id"), !sessionIdHeader.isEmpty {
+                setSessionId(sessionIdHeader)
             }
 
             if httpResponse.statusCode == 401, let authProvider, !triedAuth {
-                resourceMetadataUrl = extractResourceMetadataUrl(httpResponse)
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
+                let challenge = extractWWWAuthenticateParams(httpResponse)
+                resourceMetadataUrl = challenge.resourceMetadataUrl
                 do {
-                    let result = try await auth(
+                    let result = try await authorization.authorize { [self] in try await auth(
                         authProvider,
                         serverUrl: url,
                         authorizationCode: nil,
-                        scope: nil,
-                        resourceMetadataUrl: resourceMetadataUrl
-                    )
+                        scope: challenge.scope,
+                        resourceMetadataUrl: challenge.resourceMetadataUrl,
+                        fetchFn: mcpOAuthFetch(fetchFn)
+                    ) }
                     guard result == .authorized else {
                         onerror?(UnauthorizedError())
                         return
@@ -501,25 +558,38 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                     return
                 }
 
-                await openInboundSse(triedAuth: true, resumeToken: resumeToken)
+                await openInboundSse(triedAuth: true, resumeToken: resumeToken, generation: generation)
                 return
             }
 
             if httpResponse.statusCode == 405 {
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
                 return
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
+            let hasBody: Bool
+            if case .none = bytes { hasBody = false } else { hasBody = true }
+            guard (200...299).contains(httpResponse.statusCode), hasBody else {
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
+                if httpResponse.statusCode == 404, let sessionIdForRequest { expireSessionId(sessionIdForRequest) }
                 onerror?(
                     MCPClientError(
-                        message: "MCP HTTP Transport Error: GET SSE failed: \(httpResponse.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode))"
+                            message: "MCP HTTP Transport Error: GET SSE failed: \(httpResponse.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode))",
+                            statusCode: httpResponse.statusCode, url: url.absoluteString
+
                     )
                 )
                 return
             }
 
-            stateLock.withLock {
+            let accepted = stateLock.withLock {
+                guard !_isClosed, _inboundGeneration == generation else { return false }
                 _inboundSseConnectionActive = true
+                return true
+            }
+            guard accepted else {
+                await cancelResponseBody(.init(url: url, httpResponse: httpResponse, body: bytes))
+                return
             }
 
             let eventStream = EventSourceParserStream.makeStream(from: dataStream(from: bytes))
@@ -535,11 +605,11 @@ public final class HttpMCPTransport: MCPTransport, @unchecked Sendable {
                     stateLock.withLock { _lastInboundEventId = id }
                 }
 
-                if event.event == "message" {
+                if event.event == nil || event.event == "message" {
                     do {
                         let data = Data(event.data.utf8)
                         let msg = try JSONDecoder().decode(JSONRPCMessage.self, from: data)
-                        onmessage?(msg)
+                        receive(msg, generation: generation)
                     } catch {
                         onerror?(
                             MCPClientError(

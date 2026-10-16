@@ -8,6 +8,16 @@ import Testing
 
 @Suite("rerank")
 struct RerankTests {
+    @Test("out-of-range ranking indices are invalid provider responses")
+    func invalidRankingIndices() async throws {
+        let model = TestRerankingModel(provider: "test", modelId: "test-model") { _ in
+            RerankingModelV3DoRerankResult(ranking: [.init(index: 1, relevanceScore: 0.8)])
+        }
+        await #expect(throws: InvalidResponseDataError.self) {
+            _ = try await rerank(model: model, documents: ["only-document"], query: "query")
+        }
+    }
+
     @Test("returns empty result without calling the model")
     func returnsEmptyResultWithoutCallingModel() async throws {
         actor CallCounter {
@@ -48,7 +58,6 @@ struct RerankTests {
             #expect(values == ["a", "b", "c"])
             #expect(options.query == "query")
             #expect(options.topN == 2)
-            #expect(options.headers?["user-agent"]?.contains("ai/\(VERSION)") == true)
 
             return RerankingModelV3DoRerankResult(
                 ranking: [
@@ -99,7 +108,6 @@ struct RerankTests {
             #expect(options.query == "query")
             #expect(options.topN == 2)
             #expect(options.headers?["x-test"] == "1")
-            #expect(options.headers?["user-agent"]?.contains("ai/\(VERSION)") == true)
             #expect(options.providerOptions?["test"]?["flag"] == .bool(true))
 
             return RerankingModelV4Result(

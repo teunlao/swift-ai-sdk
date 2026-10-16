@@ -11,7 +11,7 @@ import Foundation
 @testable import SwiftAISDK
 
 private let audioData = Data([1, 2, 3, 4])
-private let mockAudioFile = DefaultGeneratedAudioFile(
+private let mockAudioFile = try! DefaultGeneratedAudioFile(
     data: audioData,
     mediaType: "audio/mp3"
 )
@@ -94,6 +94,24 @@ private func convertSpeechWarningToV3(_ warning: SpeechWarning) -> SharedV3Warni
 
 @Suite(.serialized)
 struct GenerateSpeechTests {
+    @Test("speech uses response media type before the requested raw output format")
+    func responseMediaTypeFallback() async throws {
+        let model = MockSpeechModelV4 { _ in
+            makeMockResultV4(audio: mockAudioFile, headers: ["Content-Type": " Audio/L16; rate=16000 "])
+        }
+        let result = try await generateSpeech(model: model, text: sampleText, outputFormat: "pcm")
+        #expect(result.audio.data == audioData)
+        #expect(result.audio.mediaType == "audio/l16")
+        #expect(result.audio.format == "l16")
+    }
+
+    @Test("invalid audio formats fail with a typed response error")
+    func invalidAudioFormat() {
+        #expect(throws: InvalidResponseDataError.self) {
+            try DefaultGeneratedAudioFile(data: audioData, mediaType: "audio/")
+        }
+    }
+
     @Test("should send args to doGenerate")
     func shouldSendArgsToDoGenerate() async throws {
         let abortCalled = ValueBox(false)
@@ -333,7 +351,7 @@ struct GenerateSpeechTests {
 
     @Test("should throw NoSpeechGeneratedError when no audio is returned")
     func shouldThrowWhenNoAudio() async throws {
-        let emptyFile = DefaultGeneratedAudioFile(
+        let emptyFile = try DefaultGeneratedAudioFile(
             data: Data(),
             mediaType: "audio/mp3"
         )
@@ -365,7 +383,7 @@ struct GenerateSpeechTests {
 
     @Test("should include response headers in error when no audio generated")
     func shouldIncludeHeadersInError() async throws {
-        let emptyFile = DefaultGeneratedAudioFile(
+        let emptyFile = try DefaultGeneratedAudioFile(
             data: Data(),
             mediaType: "audio/mp3"
         )

@@ -17,7 +17,7 @@ struct CreateUIMessageStreamResponseTests {
             AnyUIMessageChunk.textDelta(id: "1", delta: "test-data", providerMetadata: nil)
         ])
 
-        let response = createUIMessageStreamResponse(
+        let response = try createUIMessageStreamResponse(
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(
@@ -54,7 +54,7 @@ struct CreateUIMessageStreamResponseTests {
             AnyUIMessageChunk.error(errorText: "Custom error message")
         ])
 
-        let response: UIMessageStreamResponse<UIMessage> = createUIMessageStreamResponse(stream: stream)
+        let response: UIMessageStreamResponse<UIMessage> = try createUIMessageStreamResponse(stream: stream)
         let chunks = try await collectStream(response.stream)
 
         #expect(chunks == [
@@ -71,7 +71,7 @@ struct CreateUIMessageStreamResponseTests {
             AnyUIMessageChunk.textDelta(id: "1", delta: "test-data-2", providerMetadata: nil)
         ])
 
-        let response = createUIMessageStreamResponse(
+        let response = try createUIMessageStreamResponse(
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(
@@ -104,7 +104,7 @@ struct CreateUIMessageStreamResponseTests {
             AnyUIMessageChunk.textDelta(id: "1", delta: "test-data", providerMetadata: nil)
         ])
 
-        let response = createUIMessageStreamResponse(
+        let response = try createUIMessageStreamResponse(
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(
@@ -141,7 +141,7 @@ struct CreateUIMessageStreamResponseTests {
             AnyUIMessageChunk.textDelta(id: "1", delta: "error-test", providerMetadata: nil)
         ])
 
-        let response = createUIMessageStreamResponse(
+        let response = try createUIMessageStreamResponse(
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
                 responseInit: UIMessageStreamResponseInit(

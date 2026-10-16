@@ -62,7 +62,8 @@ func asGatewayError(_ error: Any?, authMethod: GatewayAuthMethod? = nil) -> Gate
             statusCode: apiError.statusCode ?? 500,
             defaultMessage: "Gateway request failed",
             cause: apiError,
-            authMethod: authMethod
+            authMethod: authMethod,
+            isRetryable: apiError.isRetryable && (apiError.statusCode.map { $0 < 400 } ?? true) ? true : nil
         )
     }
 
@@ -131,7 +132,8 @@ func createGatewayErrorFromResponse(
     statusCode: Int,
     defaultMessage: String = "Gateway request failed",
     cause: Error? = nil,
-    authMethod: GatewayAuthMethod? = nil
+    authMethod: GatewayAuthMethod? = nil,
+    isRetryable: Bool? = nil
 ) -> GatewayError {
     do {
         let decoded = try decodeGatewayErrorResponse(response)
@@ -188,7 +190,8 @@ func createGatewayErrorFromResponse(
             response: response,
             validationError: validationError,
             cause: cause,
-            generationId: gatewayGenerationId(from: response)
+            generationId: gatewayGenerationId(from: response),
+            isRetryable: isRetryable
         )
     } catch {
         let wrapped = TypeValidationError.wrap(value: response, cause: error)
@@ -198,7 +201,8 @@ func createGatewayErrorFromResponse(
             response: response,
             validationError: wrapped,
             cause: cause,
-            generationId: gatewayGenerationId(from: response)
+            generationId: gatewayGenerationId(from: response),
+            isRetryable: isRetryable
         )
     }
 }

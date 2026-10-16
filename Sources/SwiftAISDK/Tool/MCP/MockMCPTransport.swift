@@ -2,7 +2,7 @@
  Mock MCP transport for testing.
  
  Port of `packages/mcp/src/tool/mock-mcp-transport.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  
  This transport simulates an MCP server for testing purposes without requiring
  a real MCP server connection.
@@ -368,9 +368,9 @@ public final class MockMCPTransport: MCPTransport, @unchecked Sendable {
 private extension ResourceContents {
     var uri: String {
         switch self {
-        case .text(let uri, _, _, _, _):
+        case .text(let uri, _, _, _, _, _, _):
             return uri
-        case .blob(let uri, _, _, _, _):
+        case .blob(let uri, _, _, _, _, _, _):
             return uri
         }
     }

@@ -68,7 +68,8 @@ private final class ReadUIMessageStreamController<Message: UIMessageConvertible>
             },
             onError: { error in
                 self.handleError(error)
-            }
+            },
+            resetStateOnMessageIdChange: true
         )
 
         consumeTask = Task {

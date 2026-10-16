@@ -13,8 +13,14 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     originalMessages: [Message] = [],
     onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil,
     onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
-    onError: @escaping ErrorHandler
+    onError: @escaping ErrorHandler,
+    onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
+    onEnd: UIMessageStreamOnEndCallback<Message>? = nil,
+    getOutcome: (@Sendable () -> UIMessageStreamOutcome)? = nil
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
+    let onStepFinish = onStepEnd ?? onStepFinish
+    let onFinish = onEnd ?? onFinish
+    let lifecycle = UIMessageStreamLifecycle(getOutcome: getOutcome)
     var mutableMessageId = messageId
 
     var lastAssistantMessage: Message? = originalMessages.last?.role == .assistant
@@ -27,12 +33,10 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         lastAssistantMessage = nil
     }
 
-    let abortFlag = AbortFlag()
-
     let messageIdForInjection = mutableMessageId
 
     let idInjectedStream = AsyncThrowingStream<AnyUIMessageChunk, Error> { continuation in
-        Task {
+        let task = Task {
             do {
                 for try await chunk in stream {
                     var adjustedChunk = chunk
@@ -44,7 +48,7 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
                     }
 
                     if case .abort = chunk {
-                        await abortFlag.markAborted()
+                        lifecycle.markAborted()
                     }
 
                     continuation.yield(adjustedChunk)
@@ -52,8 +56,12 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
 
                 continuation.finish()
             } catch {
+                if !Task.isCancelled { lifecycle.fail(error) }
                 continuation.finish(throwing: error)
             }
+        }
+        continuation.onTermination = { termination in
+            if case .cancelled = termination { task.cancel() }
         }
     }
 
@@ -67,7 +75,8 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     )
 
     let runUpdateMessageJob: @Sendable (_ job: @escaping StreamingUIMessageJob<Message>) async throws -> Void = { job in
-        try await job(StreamingUIMessageJobContext(state: state, write: {}))
+        do { try await job(StreamingUIMessageJobContext(state: state, write: {})) }
+        catch { lifecycle.fail(error); throw error }
     }
 
     let finishInvoker: FinishInvoker<Message>? = onFinish.map { callback in
@@ -76,7 +85,7 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
             state: state,
             originalMessages: originalMessages.map { $0.clone() },
             lastAssistantMessage: lastAssistantMessage,
-            isAborted: { await abortFlag.isAborted() }
+            lifecycle: lifecycle
         )
     }
 
@@ -108,10 +117,12 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
                 for try await chunk in processedStream {
                     continuation.yield(chunk)
                 }
-                await finishInvoker?.callIfNeeded()
+                try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled)
                 continuation.finish()
             } catch {
-                await finishInvoker?.callIfNeeded()
+                if !Task.isCancelled { lifecycle.fail(error) }
+                do { try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled) }
+                catch { continuation.finish(throwing: error); return }
                 continuation.finish(throwing: error)
             }
         }
@@ -133,23 +144,23 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
     private let state: StreamingUIMessageState<Message>
     private let originalMessages: [Message]
     private let lastAssistantMessage: Message?
-    private let isAborted: @Sendable () async -> Bool
+    private let lifecycle: UIMessageStreamLifecycle
 
     init(
         onFinish: @escaping UIMessageStreamOnFinishCallback<Message>,
         state: StreamingUIMessageState<Message>,
         originalMessages: [Message],
         lastAssistantMessage: Message?,
-        isAborted: @escaping @Sendable () async -> Bool
+        lifecycle: UIMessageStreamLifecycle
     ) {
         self.onFinish = onFinish
         self.state = state
         self.originalMessages = originalMessages
         self.lastAssistantMessage = lastAssistantMessage
-        self.isAborted = isAborted
+        self.lifecycle = lifecycle
     }
 
-    func callIfNeeded() async {
+    func callIfNeeded(isCancelled: Bool) async throws {
         guard !called else { return }
         called = true
 
@@ -167,13 +178,16 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
             messages.append(responseMessage)
         }
 
-        await onFinish(
+        let ending = lifecycle.ending(isCancelled: isCancelled)
+        try await onFinish(
             UIMessageStreamFinishEvent(
                 messages: messages,
                 isContinuation: isContinuation,
-                isAborted: await isAborted(),
+                isAborted: ending.isAborted,
                 responseMessage: responseMessage,
-                finishReason: state.finishReason
+                finishReason: state.finishReason,
+                isCancelled: ending.isCancelled,
+                outcome: ending.outcome
             )
         )
     }
@@ -229,14 +243,26 @@ private actor StepFinishInvoker<Message: UIMessageConvertible> {
     }
 }
 
-private actor AbortFlag {
-    private var value = false
+private final class UIMessageStreamLifecycle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var aborted = false
+    private var processingError: Error?
+    private let getOutcome: (@Sendable () -> UIMessageStreamOutcome)?
 
-    func markAborted() {
-        value = true
-    }
+    init(getOutcome: (@Sendable () -> UIMessageStreamOutcome)?) { self.getOutcome = getOutcome }
 
-    func isAborted() -> Bool {
-        value
+    func markAborted() { lock.lock(); aborted = true; lock.unlock() }
+    func fail(_ error: Error) { lock.lock(); processingError = error; lock.unlock() }
+
+    func ending(isCancelled: Bool) -> (isAborted: Bool, isCancelled: Bool?, outcome: UIMessageStreamOutcome) {
+        lock.lock()
+        let aborted = self.aborted
+        let error = processingError
+        lock.unlock()
+        var outcome = getOutcome?() ?? .unknown
+        if let error { outcome = .failed(error: error) }
+        else if outcome.status == "unknown", aborted { outcome = .aborted }
+        return (aborted || outcome.status == "aborted",
+                isCancelled && outcome.status == "unknown" ? true : nil, outcome)
     }
 }

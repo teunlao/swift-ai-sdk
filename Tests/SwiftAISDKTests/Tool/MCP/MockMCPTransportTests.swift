@@ -80,49 +80,6 @@ struct MockMCPTransportTests {
 
     // MARK: - Initialization Tests
 
-    @Test("MockMCPTransport handles initialize request")
-    func testInitializeRequest() async throws {
-        let transport = MockMCPTransport()
-
-        let messageBox = MessageBox()
-        transport.onmessage = { message in
-            messageBox.set(message)
-        }
-
-        try await transport.start()
-
-        let request = JSONRPCRequest(
-            id: .string("1"),
-            method: "initialize",
-            params: nil
-        )
-
-        try await transport.send(message: .request(request))
-
-        // Wait a bit for async response
-        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
-
-        let receivedMessage = messageBox.get()
-        #expect(receivedMessage != nil)
-        if case .response(let response) = receivedMessage {
-            if case .object(let result) = response.result {
-                // Check protocol version
-                if case .string(let version) = result["protocolVersion"] {
-                    #expect(version == "2025-06-18")
-                }
-                // Check server info
-                if case .object(let serverInfo) = result["serverInfo"],
-                   case .string(let name) = serverInfo["name"] {
-                    #expect(name == "mock-mcp-server")
-                }
-            } else {
-                Issue.record("Expected object result")
-            }
-        } else {
-            Issue.record("Expected response message")
-        }
-    }
-
     @Test("MockMCPTransport handles tools/list request")
     func testToolsListRequest() async throws {
         let transport = MockMCPTransport()

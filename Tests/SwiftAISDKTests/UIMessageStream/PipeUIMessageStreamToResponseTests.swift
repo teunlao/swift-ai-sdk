@@ -13,7 +13,7 @@ struct PipeUIMessageStreamToResponseTests {
             .textEnd(id: "1", providerMetadata: nil)
         ])
 
-        pipeUIMessageStreamToResponse(
+        try await pipeUIMessageStreamToResponse(
             response: response,
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
@@ -53,7 +53,7 @@ struct PipeUIMessageStreamToResponseTests {
             .error(errorText: "Custom error message")
         ])
 
-        pipeUIMessageStreamToResponse(
+        try await pipeUIMessageStreamToResponse(
             response: response,
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(
@@ -77,7 +77,7 @@ struct PipeUIMessageStreamToResponseTests {
             .finish(finishReason: .stop, messageMetadata: nil)
         ])
 
-        pipeUIMessageStreamToResponse(
+        try await pipeUIMessageStreamToResponse(
             response: response,
             stream: stream,
             options: StreamTextUIResponseOptions<UIMessage>(

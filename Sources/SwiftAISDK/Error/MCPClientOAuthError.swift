@@ -5,7 +5,7 @@ import AISDKProvider
  Error types for MCP OAuth flows.
 
  Port of `packages/mcp/src/error/oauth-error.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  */
 
 /// Base marker error for OAuth-related failures inside the MCP client flow.
@@ -18,6 +18,24 @@ public struct MCPClientOAuthError: AISDKError, @unchecked Sendable {
 
     public init(name: String = "MCPClientOAuthError", message: String, cause: (any Error)? = nil) {
         self.name = name
+        self.message = message
+        self.cause = cause
+    }
+
+    public static func isInstance(_ error: any Error) -> Bool {
+        hasMarker(error, marker: errorDomain) || AuthorizationServerMismatchError.isInstance(error)
+    }
+}
+
+public struct AuthorizationServerMismatchError: AISDKError, @unchecked Sendable {
+    public static let errorDomain = "vercel.ai.error.AI_AuthorizationServerMismatchError"
+    public static let errorCode = "authorization_server_mismatch"
+
+    public let name = "AuthorizationServerMismatchError"
+    public let message: String
+    public let cause: (any Error)?
+
+    public init(message: String, cause: (any Error)? = nil) {
         self.message = message
         self.cause = cause
     }

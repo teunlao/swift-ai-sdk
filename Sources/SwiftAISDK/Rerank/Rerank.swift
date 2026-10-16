@@ -17,7 +17,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<String> {
     try await rerank(
         model: .v3(model),
@@ -28,7 +33,10 @@ public func rerank(
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart, experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd, experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -42,7 +50,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<String> {
     try await rerank(
         model: .v4(model),
@@ -53,7 +66,10 @@ public func rerank(
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart, experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd, experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -67,7 +83,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<String>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<String>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<String> {
     try await _rerank(
         model: model,
@@ -80,6 +101,9 @@ public func rerank(
         headers: headers,
         providerOptions: providerOptions,
         telemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart ?? experimentalOnStart,
+        onEnd: onEnd ?? experimentalOnEnd,
         stringifyDocumentForTelemetry: { doc in
             try jsonStringify(doc)
         }
@@ -96,7 +120,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<JSONObject> {
     try await rerank(
         model: .v3(model),
@@ -107,7 +136,10 @@ public func rerank(
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart, experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd, experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -121,7 +153,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<JSONObject> {
     try await rerank(
         model: .v4(model),
@@ -132,7 +169,10 @@ public func rerank(
         abortSignal: abortSignal,
         headers: headers,
         providerOptions: providerOptions,
-        experimentalTelemetry: telemetry
+        experimentalTelemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart, experimentalOnStart: experimentalOnStart,
+        onEnd: onEnd, experimentalOnEnd: experimentalOnEnd
     )
 }
 
@@ -146,7 +186,12 @@ public func rerank(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
     providerOptions: ProviderOptions? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil
+    experimentalTelemetry telemetry: TelemetrySettings? = nil,
+    runtimeContext: [String: any Sendable] = [:],
+    onStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnStart: (@Sendable (RerankStartEvent<JSONObject>) async throws -> Void)? = nil,
+    onEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil,
+    experimentalOnEnd: (@Sendable (RerankEndEvent<JSONObject>) async throws -> Void)? = nil
 ) async throws -> DefaultRerankResult<JSONObject> {
     try await _rerank(
         model: model,
@@ -159,6 +204,9 @@ public func rerank(
         headers: headers,
         providerOptions: providerOptions,
         telemetry: telemetry,
+        runtimeContext: runtimeContext,
+        onStart: onStart ?? experimentalOnStart,
+        onEnd: onEnd ?? experimentalOnEnd,
         stringifyDocumentForTelemetry: { doc in
             try jsonStringify(doc)
         }
@@ -179,11 +227,28 @@ private func _rerank<Value: Sendable>(
     headers: [String: String]?,
     providerOptions: ProviderOptions?,
     telemetry: TelemetrySettings?,
+    runtimeContext: [String: any Sendable],
+    onStart: (@Sendable (RerankStartEvent<Value>) async throws -> Void)?,
+    onEnd: (@Sendable (RerankEndEvent<Value>) async throws -> Void)?,
     stringifyDocumentForTelemetry: @escaping @Sendable (Value) throws -> String
 ) async throws -> DefaultRerankResult<Value> {
     let resolvedModel = try resolveRerankingModelV4(model)
 
+    let callId = try createIDGenerator(prefix: "call", size: 24)()
+    let startEvent = RerankStartEvent(
+        runtimeContext: runtimeContext, callId: callId, operationId: "ai.rerank",
+        provider: resolvedModel.provider, modelId: resolvedModel.modelId,
+        documents: documents, query: query, topN: topN,
+        maxRetries: maxRetries ?? 2, headers: headers, providerOptions: providerOptions
+    )
     if documents.isEmpty {
+        try? await onStart?(startEvent)
+        try? await onEnd?(RerankEndEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.rerank",
+            provider: resolvedModel.provider, modelId: resolvedModel.modelId,
+            documents: documents, query: query, ranking: [], warnings: [],
+            providerMetadata: nil, response: RerankResponse(timestamp: Date(), modelId: resolvedModel.modelId)
+        ))
         return DefaultRerankResult(
             originalDocuments: [],
             ranking: [],
@@ -239,6 +304,7 @@ private func _rerank<Value: Sendable>(
         tracer: tracer,
         attributes: outerAttributes
     ) { span in
+        try? await onStart?(startEvent)
         let (ranking, providerMetadata, responseInfo, warnings) = try await preparedRetries.retry.call {
             try await recordSpan(
                 name: "ai.rerank.doRerank",
@@ -264,7 +330,7 @@ private func _rerank<Value: Sendable>(
                         topN: topN,
                         abortSignal: abortSignal,
                         providerOptions: providerOptions,
-                        headers: headersWithUserAgent
+                        headers: headers
                     )
                 )
 
@@ -289,6 +355,12 @@ private func _rerank<Value: Sendable>(
             }
         }
 
+        for entry in ranking where !documents.indices.contains(entry.index) {
+            throw InvalidResponseDataError(
+                data: ranking,
+                message: "Invalid ranking index \(entry.index). Expected an integer between 0 and \(documents.count - 1)."
+            )
+        }
         logWarnings(warnings.map { .rerankingModel($0) })
 
         let resolvedResponse = RerankResponse(
@@ -318,6 +390,12 @@ private func _rerank<Value: Sendable>(
 
         span.setAttributes(outerResultAttributes)
 
+        try? await onEnd?(RerankEndEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: "ai.rerank",
+            provider: resolvedModel.provider, modelId: resolvedModel.modelId,
+            documents: documents, query: query, ranking: resolvedRanking,
+            warnings: warnings, providerMetadata: providerMetadata, response: resolvedResponse
+        ))
         return DefaultRerankResult(
             originalDocuments: documents,
             ranking: resolvedRanking,

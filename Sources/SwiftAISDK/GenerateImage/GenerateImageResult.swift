@@ -10,7 +10,30 @@ import AISDKProviderUtils
  Exposes generated images, warnings, response metadata, and provider-specific
  metadata aggregated across all underlying model calls.
  */
+public struct GenerateImageCall: Sendable {
+    public let images: [GeneratedFile]
+    public let providerMetadata: ImageModelProviderMetadata?
+    public let response: ImageModelResponseMetadata
+    public let warnings: [ImageGenerationWarning]
+    public let usage: ImageModelUsage?
+
+    public init(
+        images: [GeneratedFile],
+        providerMetadata: ImageModelProviderMetadata?,
+        response: ImageModelResponseMetadata,
+        warnings: [ImageGenerationWarning],
+        usage: ImageModelUsage?
+    ) {
+        self.images = images
+        self.providerMetadata = providerMetadata
+        self.response = response
+        self.warnings = warnings
+        self.usage = usage
+    }
+}
+
 public protocol GenerateImageResult: Sendable {
+    var calls: [GenerateImageCall] { get }
     /// The first generated image.
     var image: GeneratedFile { get }
 
@@ -37,6 +60,7 @@ public protocol GenerateImageResult: Sendable {
  */
 public final class DefaultGenerateImageResult: GenerateImageResult {
     public let images: [GeneratedFile]
+    public let calls: [GenerateImageCall]
     public let warnings: [ImageGenerationWarning]
     public let responses: [ImageModelResponseMetadata]
     public let providerMetadata: ImageModelProviderMetadata
@@ -53,12 +77,14 @@ public final class DefaultGenerateImageResult: GenerateImageResult {
      */
     public init(
         images: [GeneratedFile],
+        calls: [GenerateImageCall] = [],
         warnings: [ImageGenerationWarning],
         responses: [ImageModelResponseMetadata],
         providerMetadata: ImageModelProviderMetadata,
         usage: ImageModelUsage = .init()
     ) {
         self.images = images
+        self.calls = calls
         self.warnings = warnings
         self.responses = responses
         self.providerMetadata = providerMetadata

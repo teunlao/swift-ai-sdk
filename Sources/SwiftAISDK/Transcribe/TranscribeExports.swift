@@ -10,6 +10,25 @@ import AISDKProviderUtils
 
 /// Alias matching upstream export name.
 public typealias Experimental_StreamTranscriptionResult = StreamTranscriptionResult
+public typealias Experimental_TranscriptionResult = TranscriptionResult
+
+@available(*, deprecated, renamed: "transcribe")
+public func experimental_transcribe(
+    model: TranscriptionModel,
+    audio: TranscriptionAudioInput,
+    providerOptions: ProviderOptions = [:],
+    maxRetries: Int? = nil,
+    abortSignal: (@Sendable () -> Bool)? = nil,
+    headers: [String: String]? = nil,
+    experimentalDownload download: DownloadFileFunction? = nil
+) async throws -> any TranscriptionResult {
+    logWarnings([.transcriptionModel(.deprecated(setting: "experimental_transcribe", message: "Use transcribe instead."))])
+    return try await transcribe(
+        model: model, audio: audio, providerOptions: providerOptions,
+        maxRetries: maxRetries, abortSignal: abortSignal, headers: headers,
+        experimentalDownload: download
+    )
+}
 
 /// Experimental streaming transcription entry point (mirrors upstream export name).
 public func experimental_streamTranscribe(

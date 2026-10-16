@@ -25,7 +25,8 @@ public func experimental_generateSpeech(
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil
 ) async throws -> any SpeechResult {
-    try await generateSpeech(
+    logWarnings([.speechModel(.deprecated(setting: "experimental_generateSpeech", message: "Use generateSpeech instead."))])
+    return try await generateSpeech(
         model: model,
         text: text,
         voice: voice,

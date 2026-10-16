@@ -9,11 +9,13 @@ import AISDKProviderUtils
  */
 public func createUIMessageStream<Message: UIMessageConvertible>(
     execute: @escaping @Sendable (_ writer: DefaultUIMessageStreamWriter<Message>) async throws -> Void,
-    onError mapError: @escaping @Sendable (Error) -> String = { AISDKProvider.getErrorMessage($0) },
+    onError mapError: @escaping @Sendable (Error) -> String = { _ in "An error occurred." },
     originalMessages: [Message]? = nil,
     onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil,
     onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
-    generateId: @escaping IDGenerator = generateID
+    generateId: @escaping IDGenerator = generateID,
+    onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
+    onEnd: UIMessageStreamOnEndCallback<Message>? = nil
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     let state = UIMessageStreamState(errorMapper: mapError)
     let rawStream = state.makeStream()
@@ -26,7 +28,7 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
         do {
             try await execute(writer)
         } catch {
-            state.emitError(error)
+            if !Task.isCancelled { state.emitError(error) }
         }
         state.requestFinish()
     }
@@ -41,7 +43,10 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
         originalMessages: originalMessages ?? [],
         onStepFinish: onStepFinish,
         onFinish: onFinish,
-        onError: finishHandler
+        onError: finishHandler,
+        onStepEnd: onStepEnd,
+        onEnd: onEnd,
+        getOutcome: { state.getOutcome() }
     )
 
     // Wrap and forward handledStream while ensuring executeTask is cancelled on termination.
@@ -69,7 +74,7 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
 /**
  Default writer implementation exposed to the execution closure.
  */
-public struct DefaultUIMessageStreamWriter<MessageType: UIMessageConvertible>: UIMessageStreamWriter {
+public struct DefaultUIMessageStreamWriter<MessageType: UIMessageConvertible>: UIMessageStreamWriterWithOutcome {
     public typealias Message = MessageType
 
     private let state: UIMessageStreamState
@@ -91,11 +96,11 @@ public struct DefaultUIMessageStreamWriter<MessageType: UIMessageConvertible>: U
         state.merge(stream: stream, errorMapper: errorMapper)
     }
 
-    public var onError: ErrorHandler? {
-        { error in
-            _ = errorMapper(error)
-        }
+    public func setOutcome(_ outcome: UIMessageStreamOutcome) {
+        state.setOutcome(outcome)
     }
+
+    public var onError: (@Sendable (Error) -> String)? { errorMapper }
 }
 
 // MARK: - Internal State
@@ -106,6 +111,8 @@ final class UIMessageStreamState {
     private var isFinished = false
     private var finishRequested = false
     private var activeMergeCount = 0
+    private var mergeIDs: Set<UUID> = []
+    private var outcome: UIMessageStreamOutcome = .unknown
     private var mergeTasks: [UUID: Task<Void, Never>] = [:]
     private let errorMapper: @Sendable (Error) -> String
 
@@ -134,7 +141,22 @@ final class UIMessageStreamState {
         continuation?.yield(chunk)
     }
 
+    func setOutcome(_ newOutcome: UIMessageStreamOutcome) {
+        lock.lock()
+        if outcome.status == "unknown", newOutcome.status != "unknown" { outcome = newOutcome }
+        lock.unlock()
+    }
+
+    func getOutcome() -> UIMessageStreamOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        return outcome
+    }
+
     func emitError(_ error: Error) {
+        lock.lock()
+        outcome = .failed(error: error)
+        lock.unlock()
         enqueue(.error(errorText: errorMapper(error)))
     }
 
@@ -143,6 +165,11 @@ final class UIMessageStreamState {
         errorMapper: @escaping @Sendable (Error) -> String
     ) {
         let identifier = UUID()
+        lock.lock()
+        guard !isFinished else { lock.unlock(); return }
+        activeMergeCount += 1
+        mergeIDs.insert(identifier)
+        lock.unlock()
         let task = Task {
             defer {
                 self.mergeFinished(id: identifier)
@@ -153,10 +180,8 @@ final class UIMessageStreamState {
                 while let value = try await iterator.next() {
                     self.enqueue(value)
                 }
-            } catch is CancellationError {
-                // Cancellation propagates silently.
             } catch {
-                self.enqueue(.error(errorText: errorMapper(error)))
+                if !Task.isCancelled { self.emitError(error) }
             }
         }
 
@@ -199,7 +224,7 @@ final class UIMessageStreamState {
             return false
         }
 
-        activeMergeCount += 1
+        guard mergeIDs.contains(id) else { return false }
         mergeTasks[id] = task
         return true
     }
@@ -209,9 +234,7 @@ final class UIMessageStreamState {
 
         lock.lock()
         mergeTasks[id] = nil
-        if activeMergeCount > 0 {
-            activeMergeCount -= 1
-        }
+        if mergeIDs.remove(id) != nil { activeMergeCount -= 1 }
         shouldFinish = finishRequested && !isFinished && activeMergeCount == 0
         lock.unlock()
 

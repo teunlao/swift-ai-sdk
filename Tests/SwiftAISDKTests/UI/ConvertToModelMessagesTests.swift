@@ -5,7 +5,7 @@ import Testing
 @Suite("convertToModelMessages")
 struct ConvertToModelMessagesTests {
     @Test("system message merges provider metadata")
-    func systemMessageMetadata() throws {
+    func systemMessageMetadata() async throws {
         let message = UIMessage(
             id: "sys-1",
             role: .system,
@@ -15,7 +15,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 1)
 
         guard case let .system(systemMessage) = result.first else {
@@ -24,12 +24,11 @@ struct ConvertToModelMessagesTests {
         }
 
         #expect(systemMessage.content == "Hello World")
-        #expect(systemMessage.providerOptions?["openai"]?["cache"] == .string("ephemeral"))
-        #expect(systemMessage.providerOptions?["openai"]?["priority"] == .string("high"))
+        #expect(systemMessage.providerOptions == ["openai": ["priority": .string("high")]])
     }
 
     @Test("assistant tool invocations create tool messages")
-    func assistantToolConversion() throws {
+    func assistantToolConversion() async throws {
         let toolPart = UIToolUIPart(
             toolName: "calculator",
             toolCallId: "call-1",
@@ -57,7 +56,7 @@ struct ConvertToModelMessagesTests {
         let tool = Tool(description: "Calculator", inputSchema: toolSchema)
         let options = ConvertToModelMessagesOptions(tools: ["calculator": tool])
 
-        let result = try convertToModelMessages(messages: [message], options: options)
+        let result = try await convertToModelMessages(messages: [message], options: options)
         #expect(result.count == 2)
 
         guard case let .assistant(assistantMessage) = result.first else {
@@ -113,7 +112,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("ignoring incomplete tool calls removes pending inputs")
-    func ignoreIncompleteToolCalls() throws {
+    func ignoreIncompleteToolCalls() async throws {
         let pendingTool = UIToolUIPart(
             toolName: "browser",
             toolCallId: "call-2",
@@ -136,7 +135,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let withoutFiltering = try convertToModelMessages(messages: [message])
+        let withoutFiltering = try await convertToModelMessages(messages: [message])
         #expect(withoutFiltering.count == 1)
 
         guard case let .assistant(assistantMessage) = withoutFiltering.first else {
@@ -149,7 +148,7 @@ struct ConvertToModelMessagesTests {
         }
         #expect(parts.count == 1)
 
-        let filtered = try convertToModelMessages(
+        let filtered = try await convertToModelMessages(
             messages: [message],
             options: ConvertToModelMessagesOptions(ignoreIncompleteToolCalls: true)
         )
@@ -157,7 +156,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("provider-executed tool results prefer result provider metadata")
-    func providerExecutedToolResultsPreferResultProviderMetadata() throws {
+    func providerExecutedToolResultsPreferResultProviderMetadata() async throws {
         let toolPart = UIToolUIPart(
             toolName: "calculator",
             toolCallId: "call-3",
@@ -185,7 +184,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 1)
 
         guard case let .assistant(assistantMessage) = result.first else {
@@ -216,7 +215,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("client-executed dynamic tool results stay in tool messages with provider metadata")
-    func clientExecutedDynamicToolResultsStayInToolMessages() throws {
+    func clientExecutedDynamicToolResultsStayInToolMessages() async throws {
         let metadata: ProviderMetadata = [
             "testProvider": ["itemId": .string("call-item")]
         ]
@@ -243,7 +242,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 2)
 
         guard case let .assistant(assistantMessage) = result.first else {
@@ -280,7 +279,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("provider-executed dynamic tool results stay in assistant message")
-    func providerExecutedDynamicToolResultsStayInAssistantMessage() throws {
+    func providerExecutedDynamicToolResultsStayInAssistantMessage() async throws {
         let callMetadata: ProviderMetadata = [
             "testProvider": ["itemId": .string("call-item")]
         ]
@@ -311,7 +310,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 1)
 
         guard case let .assistant(assistantMessage) = result.first else {
@@ -343,7 +342,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("dynamic approval responses include providerExecuted in tool messages")
-    func dynamicApprovalResponsesIncludeProviderExecuted() throws {
+    func dynamicApprovalResponsesIncludeProviderExecuted() async throws {
         let dynamicPart = UIDynamicToolUIPart(
             toolName: "weather",
             toolCallId: "call-6",
@@ -366,7 +365,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 2)
 
         guard case let .assistant(assistantMessage) = result.first else {
@@ -403,7 +402,7 @@ struct ConvertToModelMessagesTests {
     }
 
     @Test("provider-executed static tool approvals stay in tool messages without duplicate results")
-    func providerExecutedStaticToolApprovalsStayInToolMessages() throws {
+    func providerExecutedStaticToolApprovalsStayInToolMessages() async throws {
         let toolPart = UIToolUIPart(
             toolName: "weather",
             toolCallId: "call-7",
@@ -428,7 +427,7 @@ struct ConvertToModelMessagesTests {
             ]
         )
 
-        let result = try convertToModelMessages(messages: [message])
+        let result = try await convertToModelMessages(messages: [message])
         #expect(result.count == 2)
 
         guard case let .assistant(assistantMessage) = result.first else {

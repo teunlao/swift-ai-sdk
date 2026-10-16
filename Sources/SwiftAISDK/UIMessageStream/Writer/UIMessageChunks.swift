@@ -44,7 +44,7 @@ public struct DataUIMessageChunk: Sendable, Equatable {
 public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equatable {
     case textStart(id: String, providerMetadata: ProviderMetadata?)
     case textDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
-    case textEnd(id: String, providerMetadata: ProviderMetadata?)
+    case textEnd(id: String, providerMetadata: ProviderMetadata?, citations: [Citation]? = nil)
 
     case reasoningStart(id: String, providerMetadata: ProviderMetadata?)
     case reasoningDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
@@ -59,7 +59,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
-        title: String?
+        title: String?,
+        toolMetadata: JSONObject? = nil
     )
 
     case toolInputError(
@@ -70,10 +71,19 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
         errorText: String,
-        title: String?
+        title: String?,
+        toolMetadata: JSONObject? = nil
     )
 
-    case toolApprovalRequest(approvalId: String, toolCallId: String)
+    case toolApprovalRequest(
+        approvalId: String, toolCallId: String,
+        approvalDescriptor: JSONValue? = nil, inputSchemaInput: JSONValue? = nil,
+        reason: String? = nil, isAutomatic: Bool? = nil, signature: String? = nil
+    )
+    case toolApprovalResponse(
+        approvalId: String, approved: Bool, reason: String? = nil,
+        providerExecuted: Bool? = nil, providerMetadata: ProviderMetadata? = nil
+    )
 
     case toolOutputAvailable(
         toolCallId: String,
@@ -81,7 +91,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
-        preliminary: Bool?
+        preliminary: Bool?,
+        toolMetadata: JSONObject? = nil
     )
 
     case toolOutputError(
@@ -89,7 +100,8 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         errorText: String,
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
-        dynamic: Bool?
+        dynamic: Bool?,
+        toolMetadata: JSONObject? = nil
     )
 
     case toolOutputDenied(toolCallId: String)
@@ -100,7 +112,9 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerExecuted: Bool?,
         providerMetadata: ProviderMetadata?,
         dynamic: Bool?,
-        title: String?
+        title: String?,
+        toolMetadata: JSONObject? = nil,
+        inputEncoding: UIToolInputEncoding? = nil
     )
 
     case toolInputDelta(toolCallId: String, inputTextDelta: String)
@@ -126,6 +140,9 @@ public enum UIMessageChunk<MessageMetadata: Sendable & Equatable>: Sendable, Equ
         providerMetadata: ProviderMetadata?
     )
 
+    case custom(kind: String, providerMetadata: ProviderMetadata?)
+    case reasoningFile(url: String, mediaType: String, providerMetadata: ProviderMetadata?)
+    case resetStep
     case data(DataUIMessageChunk)
 
     case startStep
@@ -151,6 +168,10 @@ public extension UIMessageChunk {
         case .toolInputAvailable: return "tool-input-available"
         case .toolInputError: return "tool-input-error"
         case .toolApprovalRequest: return "tool-approval-request"
+        case .toolApprovalResponse: return "tool-approval-response"
+        case .custom: return "custom"
+        case .reasoningFile: return "reasoning-file"
+        case .resetStep: return "reset-step"
         case .toolOutputAvailable: return "tool-output-available"
         case .toolOutputError: return "tool-output-error"
         case .toolOutputDenied: return "tool-output-denied"

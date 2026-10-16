@@ -12,6 +12,20 @@ import Foundation
 
 @Suite("GenerateVideo Tests", .serialized)
 struct GenerateVideoTests {
+    private struct OperationsVideoModel: VideoModelV4Operations {
+        let provider = "test.video"
+        let modelId = "async-video"
+        let maxVideosPerCall: VideoModelV4MaxVideosPerCall = .value(1)
+        let start: @Sendable (VideoModelV4CallOptions, String?) async throws -> VideoModelV4OperationStartResult
+        let status: @Sendable (VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult
+        func doStart(options: VideoModelV4CallOptions, webhookUrl: String?) async throws -> VideoModelV4OperationStartResult {
+            try await start(options, webhookUrl)
+        }
+        func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+            try await status(options)
+        }
+    }
+
     private let prompt = "a cat walking on a beach"
     private let testDate: Date = {
         var components = DateComponents()
@@ -98,6 +112,119 @@ struct GenerateVideoTests {
         logWarningsObserver = nil
         AI_SDK_LOG_WARNINGS = nil
         resetLogWarningsState()
+    }
+
+    @Test("video batches can make progress concurrently")
+    func concurrentVideoBatches() async throws {
+        actor Barrier {
+            var arrived = false
+            var waiter: CheckedContinuation<Bool, Never>?
+            func enter() async -> Bool {
+                if arrived { waiter?.resume(returning: true); waiter = nil; return true }
+                arrived = true
+                return await withCheckedContinuation { waiter = $0 }
+            }
+            func expire() { waiter?.resume(returning: false); waiter = nil }
+        }
+        let barrier = Barrier()
+        let deadline = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if !Task.isCancelled { await barrier.expire() }
+        }
+        defer { deadline.cancel() }
+        let model = MockVideoModelV4(maxVideosPerCall: .value(1)) { _ in
+            let concurrent = await barrier.enter()
+            return .init(videos: [.binary(data: Data([concurrent ? 1 : 0]), mediaType: "video/mp4")], response: .init(timestamp: testDate, modelId: "concurrent"))
+        }
+        let result = try await experimental_generateVideo(model: model, prompt: prompt, n: 2)
+        #expect(result.videos.map(\.data) == [Data([1]), Data([1])])
+    }
+
+    @Test("non-finite polling options are rejected before a billable start", arguments: [
+        ("poll.intervalMs", Double.nan, 1000.0),
+        ("poll.timeoutMs", 0.0, Double.nan),
+        ("poll.intervalMs", Double.infinity, 1000.0),
+        ("poll.timeoutMs", 0.0, Double.infinity)
+    ])
+    func rejectsNonFinitePolling(parameter: String, interval: Double, timeout: Double) async throws {
+        enum StartReached: Error { case unexpected }
+        let model = OperationsVideoModel(
+            start: { _, _ in throw StartReached.unexpected },
+            status: { _ in throw StartReached.unexpected }
+        )
+        do {
+            _ = try await experimental_generateVideo(
+                model: model, prompt: prompt, maxRetries: 0,
+                poll: .init(intervalMs: interval, timeoutMs: timeout)
+            )
+            Issue.record("Expected invalid polling configuration")
+        } catch let error as InvalidArgumentError {
+            #expect(error.parameter == parameter)
+        }
+    }
+
+    @Test("operations-only models retry one idempotent start and poll to completion")
+    func operationsModelPolling() async throws {
+        actor Calls {
+            var keys: [String] = []
+            var statuses = 0
+            func start(_ key: String) -> Int { keys.append(key); return keys.count }
+            func status() -> Int { statuses += 1; return statuses }
+        }
+        let calls = Calls()
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let model = OperationsVideoModel(
+            start: { options, _ in
+                #expect(options.aspectRatio == "adaptive")
+                let key = options.headers?["idempotency-key"] ?? ""
+                let attempt = await calls.start(key)
+                if attempt == 1 {
+                    throw APICallError(message: "retry", url: "https://example.com/video", requestBodyValues: nil, statusCode: 503, responseHeaders: ["retry-after-ms": "0"])
+                }
+                return .init(operation: .string("operation-1"), providerMetadata: ["test": ["phase": .string("start")]], response: response)
+            },
+            status: { options in
+                #expect(options.operation == .string("operation-1"))
+                if await calls.status() == 1 {
+                    return .pending(warnings: [.other(message: "queued")], providerMetadata: nil, response: response)
+                }
+                return .completed(videos: [.binary(data: Data([1]), mediaType: "video/mp4")], warnings: [], providerMetadata: ["test": ["done": .bool(true)]], response: response)
+            }
+        )
+        let result = try await experimental_generateVideo(
+            model: model, prompt: prompt, aspectRatio: "adaptive", maxRetries: 1,
+            poll: .init(intervalMs: 0, timeoutMs: 1000, delay: { _, _ in })
+        )
+        #expect(result.video.data == Data([1]))
+        #expect(result.providerMetadata["test"] == ["phase": .string("start"), "done": .bool(true)])
+        #expect(result.warnings == [.other(message: "queued")])
+        let keys = await calls.keys
+        #expect(keys.count == 2 && !keys[0].isEmpty && keys[0] == keys[1])
+    }
+
+    @Test("poll deadline bounds a status request that ignores cancellation")
+    func boundsPendingStatusRequest() async throws {
+        let response = VideoModelV4ResponseInfo(timestamp: testDate, modelId: "async-video")
+        let pending = DelayedPromise<VideoModelV4OperationStatusResult>()
+        let model = OperationsVideoModel(
+            start: { _, _ in .init(operation: .string("slow"), response: response) },
+            status: { _ in try await pending.task.value }
+        )
+        let cleanup = Task {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            pending.resolve(.completed(videos: [.binary(data: Data([1]), mediaType: "video/mp4")], warnings: [], providerMetadata: nil, response: response))
+        }
+        defer { cleanup.cancel() }
+        do {
+            _ = try await experimental_generateVideo(
+                model: model, prompt: prompt,
+                poll: .init(intervalMs: 0, timeoutMs: 20, delay: { _, _ in })
+            )
+            Issue.record("Expected the polling deadline to terminate the request")
+        } catch {
+            #expect(error.localizedDescription == "Video generation timed out after 20ms.")
+        }
+        pending.resolve(.pending(warnings: nil, providerMetadata: nil, response: response))
     }
 
     @Test("should send args to doGenerate")
@@ -486,16 +613,13 @@ struct GenerateVideoTests {
 
     @Test("should generate videos when several calls are required")
     func generatesAcrossMultipleCalls() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4"),
@@ -503,7 +627,6 @@ struct GenerateVideoTests {
                             ]
                         )
                     case 1:
-                        #expect(options.n == 1)
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.webmBase64, mediaType: "video/webm")
@@ -526,15 +649,13 @@ struct GenerateVideoTests {
     func aggregatesWarningsAcrossCalls() async throws {
         let warning1: VideoGenerationWarning = .other(message: "Warning from call 1")
         let warning2: VideoGenerationWarning = .other(message: "Warning from call 2")
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -555,7 +676,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.warnings == [warning1, warning2])
@@ -563,7 +684,6 @@ struct GenerateVideoTests {
 
     @Test("should generate with maxVideosPerCall returned by model")
     func supportsModelMaxVideosPerCallFunction() async throws {
-        let counter = Counter()
         let maxVideosCalls = SingleValueBox<String>()
 
         let model = MockVideoModelV3(
@@ -572,10 +692,8 @@ struct GenerateVideoTests {
                 return 2
             }),
             doGenerate: { options in
-                let index = await counter.next()
-                switch index {
-                case 0:
-                    #expect(options.n == 2)
+                switch options.n {
+                case 2:
                     return self.createMockResponse(
                         videos: [
                             .base64(data: self.mp4Base64, mediaType: "video/mp4"),
@@ -583,7 +701,6 @@ struct GenerateVideoTests {
                         ]
                     )
                 case 1:
-                    #expect(options.n == 1)
                     return self.createMockResponse(
                         videos: [
                             .base64(data: self.webmBase64, mediaType: "video/webm")
@@ -723,15 +840,13 @@ struct GenerateVideoTests {
 
     @Test("should merge provider metadata from multiple calls")
     func mergesProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -764,7 +879,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.providerMetadata == [
@@ -779,15 +894,13 @@ struct GenerateVideoTests {
 
     @Test("should handle gateway provider metadata")
     func mergesGatewayProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -822,7 +935,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.providerMetadata["gateway"] == [
@@ -862,15 +975,13 @@ struct GenerateVideoTests {
 
     @Test("should preserve per-call providerMetadata in responses array")
     func preservesPerCallProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -905,7 +1016,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.responses.count == 2)
@@ -1102,14 +1213,6 @@ private actor SingleValueBox<Value: Sendable> {
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
-    }
-}
-
-private actor Counter {
-    private var value = 0
-    func next() -> Int {
-        defer { value += 1 }
-        return value
     }
 }
 

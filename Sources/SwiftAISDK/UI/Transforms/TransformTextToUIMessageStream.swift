@@ -20,7 +20,7 @@ public struct UIMessageTransformOptions: Sendable {
     public init(
         sendStart: Bool = true,
         sendFinish: Bool = true,
-        sendReasoning: Bool = false,
+        sendReasoning: Bool = true,
         sendSources: Bool = false,
         messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)? = nil
     ) {

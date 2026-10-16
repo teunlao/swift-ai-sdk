@@ -40,10 +40,10 @@ public func transcribe(
     let result = try await preparedRetries.retry.call {
         try await resolvedModel.doGenerate(
             options: TranscriptionModelV4CallOptions(
-                audio: .binary(audioData),
-                mediaType: detectMediaType(
-                    data: audioData,
-                    signatures: audioMediaTypeSignatures
+                audio: .binary(audioData.data),
+                mediaType: audioData.mediaType ?? detectMediaType(
+                    data: audioData.data,
+                    topLevelType: "audio"
                 ) ?? "audio/wav",
                 providerOptions: providerOptions,
                 abortSignal: abortSignal,
@@ -53,18 +53,6 @@ public func transcribe(
     }
 
     logWarningsForTranscribe(result.warnings.map { Warning.transcriptionModel($0) })
-
-    if result.text.isEmpty {
-        let responseMetadata = TranscriptionModelResponseMetadata(
-            timestamp: result.response.timestamp,
-            modelId: result.response.modelId,
-            headers: result.response.headers
-        )
-
-        throw NoTranscriptGeneratedError(
-            responses: [responseMetadata]
-        )
-    }
 
     let segments = result.segments.map { segment in
         TranscriptionSegment(
@@ -181,20 +169,21 @@ private func resolveAudioData(
     _ audio: TranscriptionAudioInput,
     download: DownloadFileFunction,
     abortSignal: (@Sendable () -> Bool)?
-) async throws -> Data {
+) async throws -> (data: Data, mediaType: String?) {
     switch audio {
     case .data(let data):
-        return data
+        return (data, nil)
 
     case .base64(let base64):
-        return try convertBase64ToData(base64)
+        return (try convertBase64ToData(base64), nil)
 
     case .url(let url):
-        return try await download(
+        let result = try await download(
             DownloadFileRequest(
                 url: url,
                 abortSignal: abortSignal
             )
-        ).data
+        )
+        return (result.data, result.mediaType)
     }
 }

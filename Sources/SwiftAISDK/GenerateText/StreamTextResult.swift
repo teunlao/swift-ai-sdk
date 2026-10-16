@@ -123,7 +123,7 @@ public protocol StreamTextResult: Sendable {
     func pipeUIMessageStreamToResponse<Message: UIMessageConvertible>(
         _ response: any StreamTextResponseWriter,
         options: StreamTextUIResponseOptions<Message>?
-    )
+    ) async throws
 
     /**
      Pipe the text stream to a response writer (e.g. HTTP response).
@@ -145,7 +145,7 @@ public protocol StreamTextResult: Sendable {
      */
     func toUIMessageStreamResponse<Message: UIMessageConvertible>(
         options: StreamTextUIResponseOptions<Message>?
-    ) -> UIMessageStreamResponse<Message>
+    ) throws -> UIMessageStreamResponse<Message>
 
     /**
      Convert the stream to a plain text response object.
@@ -184,6 +184,9 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
     public var originalMessages: [Message]?
     public var generateMessageId: (@Sendable () -> String)?
     public var onFinish: UIMessageStreamOnFinishCallback<Message>?
+    public var onEnd: UIMessageStreamOnEndCallback<Message>?
+    public var onStepEnd: UIMessageStreamOnStepEndCallback<Message>?
+    public var onStepFinish: UIMessageStreamOnStepFinishCallback<Message>?
     public var messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)?
     public var sendReasoning: Bool
     public var sendSources: Bool
@@ -200,11 +203,17 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
         sendSources: Bool = false,
         sendFinish: Bool = true,
         sendStart: Bool = true,
-        onError: (@Sendable (Error) -> String)? = nil
+        onError: (@Sendable (Error) -> String)? = nil,
+        onEnd: UIMessageStreamOnEndCallback<Message>? = nil,
+        onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
+        onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil
     ) {
         self.originalMessages = originalMessages
         self.generateMessageId = generateMessageId
         self.onFinish = onFinish
+        self.onEnd = onEnd
+        self.onStepEnd = onStepEnd
+        self.onStepFinish = onStepFinish
         self.messageMetadata = messageMetadata
         self.sendReasoning = sendReasoning
         self.sendSources = sendSources
@@ -223,17 +232,20 @@ public struct UIMessageStreamResponseInit: Sendable {
     public var status: Int?
     public var statusText: String?
     public var consumeSSEStream: UIMessageStreamConsumer?
+    public var keepAliveMs: Double?
 
     public init(
         headers: [String: String]? = nil,
         status: Int? = nil,
         statusText: String? = nil,
-        consumeSSEStream: UIMessageStreamConsumer? = nil
+        consumeSSEStream: UIMessageStreamConsumer? = nil,
+        keepAliveMs: Double? = nil
     ) {
         self.headers = headers
         self.status = status
         self.statusText = statusText
         self.consumeSSEStream = consumeSSEStream
+        self.keepAliveMs = keepAliveMs
     }
 }
 

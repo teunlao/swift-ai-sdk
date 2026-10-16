@@ -10,6 +10,9 @@ public protocol UploadFileResult: Sendable {
     var providerReference: ProviderReference { get }
     var mediaType: String? { get }
     var filename: String? { get }
+    var byteSize: Int? { get }
+    var createdAt: Date? { get }
+    var expiresAt: Date? { get }
     var providerMetadata: ProviderMetadata? { get }
     var warnings: [SharedV4Warning] { get }
 }
@@ -18,6 +21,9 @@ public struct DefaultUploadFileResult: UploadFileResult, Equatable {
     public let providerReference: ProviderReference
     public let mediaType: String?
     public let filename: String?
+    public let byteSize: Int?
+    public let createdAt: Date?
+    public let expiresAt: Date?
     public let providerMetadata: ProviderMetadata?
     public let warnings: [SharedV4Warning]
 
@@ -25,12 +31,18 @@ public struct DefaultUploadFileResult: UploadFileResult, Equatable {
         providerReference: ProviderReference,
         mediaType: String? = nil,
         filename: String? = nil,
+        byteSize: Int? = nil,
+        createdAt: Date? = nil,
+        expiresAt: Date? = nil,
         providerMetadata: ProviderMetadata? = nil,
         warnings: [SharedV4Warning] = []
     ) {
         self.providerReference = providerReference
         self.mediaType = mediaType
         self.filename = filename
+        self.byteSize = byteSize
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
         self.providerMetadata = providerMetadata
         self.warnings = warnings
     }

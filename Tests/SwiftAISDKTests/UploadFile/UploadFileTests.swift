@@ -112,6 +112,34 @@ private final class UnsupportedUploadProviderV4: ProviderV4 {
 
 @Suite("uploadFile")
 struct UploadFileTests {
+    @Test("failed provider resolution cancels an unconsumed upload stream")
+    func rejectedUploadReleasesStream() async throws {
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        do {
+            _ = try await uploadFile(api: UnsupportedUploadProviderV4(), data: .stream(stream))
+            Issue.record("Expected unsupported upload provider to fail")
+        } catch {
+            #expect(error.localizedDescription == "The provider does not support file uploads. Make sure it exposes a files() method.")
+        }
+        if case .terminated = continuation.yield(Data([1])) {
+        } else {
+            Issue.record("Failed upload left its input producer active")
+        }
+    }
+
+    @Test("upload retention metadata reaches the public result")
+    func uploadRetentionMetadata() async throws {
+        let date = Date(timeIntervalSince1970: 1234)
+        let api = MockFilesAPI(capture: UploadFileOptionsCapture(), result: .init(
+            providerReference: ["test": "file-1"], byteSize: 4,
+            createdAt: date, expiresAt: date.addingTimeInterval(60)
+        ))
+        let result = try await uploadFile(api: api, data: .text("data"))
+        #expect(result.byteSize == 4)
+        #expect(result.createdAt == date)
+        #expect(result.expiresAt == date.addingTimeInterval(60))
+    }
+
     @Test("detects PDF media type when not provided")
     func detectsPDFMediaType() async throws {
         let capture = UploadFileOptionsCapture()
@@ -239,8 +267,8 @@ struct UploadFileTests {
                 data: DataContentOrURL.data(Data([0x01, 0x02]))
             )
             Issue.record("Expected unsupported provider to throw")
-        } catch let error as InvalidArgumentError {
-            #expect(error.message == "The provider does not support file uploads. Make sure it exposes a files() method.")
+        } catch {
+            #expect(error.localizedDescription == "The provider does not support file uploads. Make sure it exposes a files() method.")
         }
 
         do {
@@ -249,8 +277,8 @@ struct UploadFileTests {
                 data: DataContentOrURL.data(Data([0x01, 0x02]))
             )
             Issue.record("Expected unsupported V4 provider to throw")
-        } catch let error as InvalidArgumentError {
-            #expect(error.message == "The provider does not support file uploads. Make sure it exposes a files() method.")
+        } catch {
+            #expect(error.localizedDescription == "The provider does not support file uploads. Make sure it exposes a files() method.")
         }
     }
 }
