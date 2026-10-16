@@ -32,7 +32,7 @@ private let anthropicDescriptionConstraintKeys = [
     "not",
 ]
 
-func sanitizeAnthropicJSONSchema(_ schema: JSONValue) -> JSONValue {
+public func sanitizeAnthropicJSONSchema(_ schema: JSONValue) -> JSONValue {
     guard case .object(let object) = schema else {
         return schema
     }

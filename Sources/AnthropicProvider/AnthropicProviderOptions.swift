@@ -7,10 +7,6 @@ import AISDKProviderUtils
 ///
 /// Port of `@ai-sdk/anthropic/src/anthropic-messages-options.ts`.
 public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
-    "claude-3-5-haiku-20241022",
-    "claude-3-5-haiku-latest",
-    "claude-3-7-sonnet-20250219",
-    "claude-3-7-sonnet-latest",
     "claude-3-haiku-20240307",
     "claude-haiku-4-5-20251001",
     "claude-haiku-4-5",
@@ -30,7 +26,11 @@ public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
     "claude-opus-4-8",
     "claude-fable-5",
     "claude-sonnet-5",
-    "claude-opus-5-5"
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-1",
+    "claude-sonnet-5-5",
 ].map(AnthropicMessagesModelId.init(rawValue:))
 
 public struct AnthropicThinkingOptions: Sendable, Equatable {
@@ -41,6 +41,7 @@ public struct AnthropicThinkingOptions: Sendable, Equatable {
         /// to use extended thinking based on the complexity of each request.
         /// Supported on claude-opus-4-6 and claude-sonnet-4-6 and later.
         case adaptive
+        case betweenTools = "between_tools"
     }
 
     /// Controls how thinking content is returned in API responses.
@@ -60,14 +61,28 @@ public struct AnthropicThinkingOptions: Sendable, Equatable {
         case updates
     }
 
-    public var type: Mode
-    public var budgetTokens: Int?
-    public var display: Display?
+    public struct BlockBinding: Sendable, Equatable {
+        public enum PrefixMismatchBehavior: String, Sendable, Equatable {
+            case error
+            case dropBlock = "drop_block"
+        }
+        public var prefixMismatchBehavior: PrefixMismatchBehavior
 
-    public init(type: Mode, budgetTokens: Int? = nil, display: Display? = nil) {
+        public init(prefixMismatchBehavior: PrefixMismatchBehavior) {
+            self.prefixMismatchBehavior = prefixMismatchBehavior
+        }
+    }
+
+    public var type: Mode?
+    public var budgetTokens: Double?
+    public var display: Display?
+    public var blockBinding: BlockBinding?
+
+    public init(type: Mode? = nil, budgetTokens: Double? = nil, display: Display? = nil, blockBinding: BlockBinding? = nil) {
         self.type = type
         self.budgetTokens = budgetTokens
         self.display = display
+        self.blockBinding = blockBinding
     }
 }
 
@@ -90,6 +105,11 @@ public enum AnthropicEffort: String, Sendable, Equatable {
 public enum AnthropicSpeed: String, Sendable, Equatable {
     case fast
     case standard
+}
+
+public enum AnthropicServiceTier: String, Sendable, Equatable {
+    case auto
+    case standardOnly = "standard_only"
 }
 
 public enum AnthropicInferenceGeo: String, Sendable, Equatable {
@@ -143,6 +163,55 @@ public struct AnthropicFallback: Sendable, Equatable {
     }
 }
 
+public enum AnthropicFallbacks: Sendable, Equatable, ExpressibleByArrayLiteral {
+    case `default`
+    case models([AnthropicFallback])
+
+    public init(arrayLiteral elements: AnthropicFallback...) {
+        self = .models(elements)
+    }
+}
+
+public struct AnthropicCompaction: Sendable, Equatable {
+    public let type = "summarize"
+    public var instructions: String?
+
+    public init(instructions: String? = nil) {
+        self.instructions = instructions
+    }
+}
+
+public struct AnthropicSafeguard: Sendable, Equatable {
+    public let type = "dangerous_tool_use"
+    public var classifierContext: [String: JSONValue]?
+
+    public init(classifierContext: [String: JSONValue]? = nil) {
+        self.classifierContext = classifierContext
+    }
+}
+
+public struct AnthropicSystemMessageProviderOptions: Sendable, Equatable {
+    public struct ToolChange: Sendable, Equatable {
+        public var type: String
+        public var toolName: String
+
+        public init(type: String, toolName: String) {
+            self.type = type
+            self.toolName = toolName
+        }
+    }
+
+    public var clearAt: String?
+    public var effort: AnthropicEffort?
+    public var toolChanges: [ToolChange]?
+
+    public init(clearAt: String? = nil, effort: AnthropicEffort? = nil, toolChanges: [ToolChange]? = nil) {
+        self.clearAt = clearAt
+        self.effort = effort
+        self.toolChanges = toolChanges
+    }
+}
+
 public struct AnthropicMCPServer: Sendable, Equatable {
     public enum ServerType: String, Sendable, Equatable {
         case url
@@ -187,12 +256,14 @@ public struct AnthropicContainerOptions: Sendable, Equatable {
         }
 
         public var type: SkillType
-        public var skillId: String
+        public var skillId: String?
+        public var providerReference: [String: String]?
         public var version: String?
 
-        public init(type: SkillType, skillId: String, version: String? = nil) {
+        public init(type: SkillType, skillId: String? = nil, providerReference: [String: String]? = nil, version: String? = nil) {
             self.type = type
             self.skillId = skillId
+            self.providerReference = providerReference
             self.version = version
         }
     }
@@ -359,8 +430,11 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
     public var taskBudget: AnthropicTaskBudget?
     /// Enable fast mode for faster inference. Only supported on claude-opus-4-6.
     public var speed: AnthropicSpeed?
+    public var serviceTier: AnthropicServiceTier?
     public var inferenceGeo: AnthropicInferenceGeo?
-    public var fallbacks: [AnthropicFallback]?
+    public var fallbacks: AnthropicFallbacks?
+    public var safeguards: [AnthropicSafeguard]?
+    public var compaction: AnthropicCompaction?
     public var contextManagement: AnthropicContextManagement?
     /// Extra `anthropic-beta` values to merge into the request header.
     /// Use for betas the SDK doesn't auto-detect (e.g.
@@ -380,8 +454,11 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         effort: AnthropicEffort? = nil,
         taskBudget: AnthropicTaskBudget? = nil,
         speed: AnthropicSpeed? = nil,
+        serviceTier: AnthropicServiceTier? = nil,
         inferenceGeo: AnthropicInferenceGeo? = nil,
-        fallbacks: [AnthropicFallback]? = nil,
+        fallbacks: AnthropicFallbacks? = nil,
+        safeguards: [AnthropicSafeguard]? = nil,
+        compaction: AnthropicCompaction? = nil,
         contextManagement: AnthropicContextManagement? = nil,
         anthropicBeta: [String]? = nil
     ) {
@@ -397,8 +474,11 @@ public struct AnthropicProviderOptions: Sendable, Equatable {
         self.effort = effort
         self.taskBudget = taskBudget
         self.speed = speed
+        self.serviceTier = serviceTier
         self.inferenceGeo = inferenceGeo
         self.fallbacks = fallbacks
+        self.safeguards = safeguards
+        self.compaction = compaction
         self.contextManagement = contextManagement
         self.anthropicBeta = anthropicBeta
     }
@@ -428,6 +508,12 @@ public struct AnthropicFilePartProviderOptions: Sendable, Equatable {
         self.citations = citations
         self.title = title
         self.context = context
+    }
+}
+
+private func rejectNullOptions(_ dict: [String: JSONValue], keys: [String]) throws {
+    if let key = keys.first(where: { dict[$0] == .null }) {
+        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "\(key) must not be null")
     }
 }
 
@@ -498,6 +584,51 @@ private func parseOptionalObject(
     return object
 }
 
+public let anthropicSystemMessageProviderOptionsSchema = FlexibleSchema(
+    Schema<AnthropicSystemMessageProviderOptions>(
+        jsonSchemaResolver: { .object(["type": .string("object")]) },
+        validator: { value in
+            do {
+                guard case .object(let dict) = try jsonValue(from: value) else {
+                    throw SchemaValidationIssuesError(vendor: "anthropic", issues: "System options must be an object")
+                }
+                try rejectNullOptions(dict, keys: ["clearAt", "effort", "toolChanges"])
+                let clearAt = try parseOptionalString(dict, key: "clearAt")
+                if let clearAt, clearAt != "next_user_message" {
+                    throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid clearAt")
+                }
+                let effort: AnthropicEffort?
+                if let raw = try parseOptionalString(dict, key: "effort") {
+                    guard let parsed = AnthropicEffort(rawValue: raw) else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid effort")
+                    }
+                    effort = parsed
+                } else {
+                    effort = nil
+                }
+                var changes: [AnthropicSystemMessageProviderOptions.ToolChange]?
+                if let value = dict["toolChanges"] {
+                    guard case .array(let array) = value else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "toolChanges must be an array")
+                    }
+                    changes = try array.map { value in
+                        guard case .object(let change) = value,
+                              let type = try parseOptionalString(change, key: "type"),
+                              type == "tool_addition" || type == "tool_removal",
+                              let name = try parseOptionalString(change, key: "toolName") else {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid tool change")
+                        }
+                        return .init(type: type, toolName: name)
+                    }
+                }
+                return .success(value: .init(clearAt: clearAt, effort: effort, toolChanges: changes))
+            } catch {
+                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+            }
+        }
+    )
+)
+
 private let anthropicProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(true)
@@ -514,6 +645,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
+                try rejectNullOptions(dict, keys: ["sendReasoning", "structuredOutputMode", "thinking", "disableParallelToolUse", "cacheControl", "metadata", "mcpServers", "container", "toolStreaming", "effort", "taskBudget", "speed", "serviceTier", "inferenceGeo", "fallbacks", "anthropicBeta", "safeguards", "compaction", "contextManagement"])
                 var options = AnthropicProviderOptions()
                 options.sendReasoning = try parseOptionalBool(dict, key: "sendReasoning")
 
@@ -532,41 +664,46 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
                     }
 
-                    guard let typeValue = thinkingDict["type"], case .string(let typeRaw) = typeValue else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled', 'disabled', or 'adaptive'")
-                        return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
-                    }
-
-                    guard let mode = AnthropicThinkingOptions.Mode(rawValue: typeRaw) else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.type must be 'enabled', 'disabled', or 'adaptive'")
-                        return .failure(error: TypeValidationError.wrap(value: thinkingValue, cause: error))
-                    }
-
-                    var budget: Int?
-                    if let budgetValue = thinkingDict["budgetTokens"], budgetValue != .null {
-                        guard case .number(let number) = budgetValue else {
-                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.budgetTokens must be a number")
-                            return .failure(error: TypeValidationError.wrap(value: budgetValue, cause: error))
+                    try rejectNullOptions(thinkingDict, keys: ["type"])
+                    let mode: AnthropicThinkingOptions.Mode?
+                    if let typeRaw = try parseOptionalString(thinkingDict, key: "type") {
+                        guard let parsed = AnthropicThinkingOptions.Mode(rawValue: typeRaw) else {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid thinking type")
                         }
-                        let intValue = Int(number)
-                        if Double(intValue) != number {
-                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.budgetTokens must be an integer")
-                            return .failure(error: TypeValidationError.wrap(value: budgetValue, cause: error))
-                        }
-                        budget = intValue
+                        mode = parsed
+                    } else {
+                        mode = nil
                     }
-
-                    var display: AnthropicThinkingOptions.Display?
-                    if let displayValue = thinkingDict["display"], displayValue != .null {
-                        guard case .string(let raw) = displayValue,
-                              let parsed = AnthropicThinkingOptions.Display(rawValue: raw) else {
-                            let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.display must be 'summarized', 'omitted', or 'updates'")
-                            return .failure(error: TypeValidationError.wrap(value: displayValue, cause: error))
+                    var thinking = AnthropicThinkingOptions(type: mode)
+                    if mode == .enabled, let value = thinkingDict["budgetTokens"] {
+                        guard case .number(let number) = value else {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.budgetTokens must be a number")
                         }
-                        display = parsed
+                        thinking.budgetTokens = number
                     }
-
-                    options.thinking = AnthropicThinkingOptions(type: mode, budgetTokens: budget, display: display)
+                    if mode == .adaptive {
+                        try rejectNullOptions(thinkingDict, keys: ["display"])
+                        if let raw = try parseOptionalString(thinkingDict, key: "display") {
+                            guard let display = AnthropicThinkingOptions.Display(rawValue: raw) else {
+                                throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid thinking display")
+                            }
+                            thinking.display = display
+                        }
+                    }
+                    if mode == .adaptive || mode == nil {
+                        try rejectNullOptions(thinkingDict, keys: ["blockBinding"])
+                        if let binding = try parseOptionalObject(thinkingDict, key: "blockBinding") {
+                            guard let raw = try parseOptionalString(binding, key: "prefixMismatchBehavior"),
+                                  let behavior = AnthropicThinkingOptions.BlockBinding.PrefixMismatchBehavior(rawValue: raw) else {
+                                throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid prefixMismatchBehavior")
+                            }
+                            thinking.blockBinding = .init(prefixMismatchBehavior: behavior)
+                        }
+                        if mode == nil && thinking.blockBinding == nil {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Thinking requires a type or blockBinding")
+                        }
+                    }
+                    options.thinking = thinking
                 }
 
                 options.disableParallelToolUse = try parseOptionalBool(dict, key: "disableParallelToolUse")
@@ -582,6 +719,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: cacheValue, cause: error))
                     }
 
+                    try rejectNullOptions(cacheDict, keys: ["ttl"])
                     var ttl: AnthropicCacheControl.TTL?
                     if let ttlValue = cacheDict["ttl"], ttlValue != .null {
                         guard case .string(let ttlRaw) = ttlValue, let parsed = AnthropicCacheControl.TTL(rawValue: ttlRaw) else {
@@ -591,16 +729,10 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         ttl = parsed
                     }
 
-                    var additional = cacheDict
-                    additional.removeValue(forKey: "type")
-                    if ttl != nil {
-                        additional.removeValue(forKey: "ttl")
-                    }
-
                     options.cacheControl = AnthropicCacheControl(
                         type: typeString,
                         ttl: ttl,
-                        additionalFields: additional
+                        additionalFields: [:]
                     )
                 }
 
@@ -609,6 +741,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "metadata must be an object")
                         return .failure(error: TypeValidationError.wrap(value: metadataValue, cause: error))
                     }
+                    try rejectNullOptions(metadataDict, keys: ["userId"])
                     options.metadata = AnthropicMetadataOptions(
                         userId: try parseOptionalString(metadataDict, key: "userId")
                     )
@@ -679,6 +812,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         return .failure(error: TypeValidationError.wrap(value: containerValue, cause: error))
                     }
 
+                    try rejectNullOptions(containerDict, keys: ["id", "skills"])
                     var skills: [AnthropicContainerOptions.Skill]? = nil
                     if let skillsValue = containerDict["skills"], skillsValue != .null {
                         guard case .array(let skillsArray) = skillsValue else {
@@ -701,14 +835,25 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                 return .failure(error: TypeValidationError.wrap(value: skillValue, cause: error))
                             }
 
-                            guard let skillIdValue = skillDict["skillId"], case .string(let skillId) = skillIdValue else {
-                                let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "container.skills[].skillId must be a string")
-                                return .failure(error: TypeValidationError.wrap(value: skillValue, cause: error))
-                            }
-
+                            try rejectNullOptions(skillDict, keys: ["version"])
                             let version = try parseOptionalString(skillDict, key: "version")
-
-                            parsedSkills.append(.init(type: type, skillId: skillId, version: version))
+                            if type == .anthropic {
+                                guard let skillId = try parseOptionalString(skillDict, key: "skillId") else {
+                                    throw SchemaValidationIssuesError(vendor: "anthropic", issues: "container.skills[].skillId is required")
+                                }
+                                parsedSkills.append(.init(type: type, skillId: skillId, version: version))
+                            } else {
+                                guard let reference = try parseOptionalObject(skillDict, key: "providerReference") else {
+                                    throw SchemaValidationIssuesError(vendor: "anthropic", issues: "container.skills[].providerReference is required")
+                                }
+                                let strings = try reference.mapValues { value -> String in
+                                    guard case .string(let string) = value else {
+                                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Provider reference values must be strings")
+                                    }
+                                    return string
+                                }
+                                parsedSkills.append(.init(type: type, providerReference: strings, version: version))
+                            }
                         }
 
                         skills = parsedSkills
@@ -742,6 +887,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                         let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "taskBudget.type must be 'tokens'")
                         return .failure(error: TypeValidationError.wrap(value: taskBudgetValue, cause: error))
                     }
+                    try rejectNullOptions(taskBudgetDict, keys: ["remaining"])
                     guard let total = try parseOptionalInteger(taskBudgetDict, key: "total", minimum: 20_000) else {
                         let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "taskBudget.total is required")
                         return .failure(error: TypeValidationError.wrap(value: taskBudgetValue, cause: error))
@@ -762,6 +908,35 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     options.speed = speed
                 }
 
+                if let tier = try parseOptionalString(dict, key: "serviceTier") {
+                    guard let parsed = AnthropicServiceTier(rawValue: tier) else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid serviceTier")
+                    }
+                    options.serviceTier = parsed
+                }
+
+                if let compaction = try parseOptionalObject(dict, key: "compaction") {
+                    guard compaction["type"] == .string("summarize") else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid compaction type")
+                    }
+                    try rejectNullOptions(compaction, keys: ["instructions"])
+                    options.compaction = .init(instructions: try parseOptionalString(compaction, key: "instructions"))
+                }
+
+                if let value = dict["safeguards"] {
+                    guard case .array(let safeguards) = value else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "safeguards must be an array")
+                    }
+                    options.safeguards = try safeguards.map { value in
+                        guard case .object(let safeguard) = value,
+                              safeguard["type"] == .string("dangerous_tool_use") else {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "Invalid safeguard")
+                        }
+                        try rejectNullOptions(safeguard, keys: ["classifierContext"])
+                        return .init(classifierContext: try parseOptionalObject(safeguard, key: "classifierContext"))
+                    }
+                }
+
                 if let inferenceGeoValue = dict["inferenceGeo"], inferenceGeoValue != .null {
                     guard case .string(let raw) = inferenceGeoValue,
                           let inferenceGeo = AnthropicInferenceGeo(rawValue: raw) else {
@@ -772,9 +947,14 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                 }
 
                 if let fallbacksValue = dict["fallbacks"], fallbacksValue != .null {
-                    guard case .array(let fallbackValues) = fallbacksValue else {
-                        let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "fallbacks must be an array")
-                        return .failure(error: TypeValidationError.wrap(value: fallbacksValue, cause: error))
+                    let fallbackValues: [JSONValue]
+                    if fallbacksValue == .string("default") {
+                        options.fallbacks = .default
+                        fallbackValues = []
+                    } else if case .array(let values) = fallbacksValue {
+                        fallbackValues = values
+                    } else {
+                        throw SchemaValidationIssuesError(vendor: "anthropic", issues: "fallbacks must be 'default' or an array")
                     }
 
                     var fallbacks: [AnthropicFallback] = []
@@ -787,6 +967,11 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                             return .failure(error: TypeValidationError.wrap(value: fallbackValue, cause: error))
                         }
 
+                        try rejectNullOptions(fallbackDict, keys: ["max_tokens", "thinking", "output_config", "speed"])
+                        let maxTokens = try parseOptionalInteger(fallbackDict, key: "max_tokens")
+                        if let maxTokens, maxTokens <= 0 {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "fallbacks[].max_tokens must be positive")
+                        }
                         var fallbackSpeed: AnthropicSpeed?
                         if let speedValue = fallbackDict["speed"], speedValue != .null {
                             guard case .string(let raw) = speedValue,
@@ -799,13 +984,13 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
 
                         fallbacks.append(AnthropicFallback(
                             model: model,
-                            maxTokens: try parseOptionalInteger(fallbackDict, key: "max_tokens"),
+                            maxTokens: maxTokens,
                             thinking: try parseOptionalObject(fallbackDict, key: "thinking"),
                             outputConfig: try parseOptionalObject(fallbackDict, key: "output_config"),
                             speed: fallbackSpeed
                         ))
                     }
-                    options.fallbacks = fallbacks
+                    if fallbacksValue != .string("default") { options.fallbacks = .models(fallbacks) }
                 }
 
                 if let contextManagementValue = dict["contextManagement"], contextManagementValue != .null {
@@ -832,6 +1017,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                             return .failure(error: TypeValidationError.wrap(value: editValue, cause: error))
                         }
 
+                        try rejectNullOptions(editDict, keys: ["trigger", "keep", "clearAtLeast", "clearToolInputs", "excludeTools", "pauseAfterCompaction", "instructions"])
                         switch type {
                         case "clear_tool_uses_20250919":
                             var trigger: AnthropicContextManagement.ClearToolUses20250919.Trigger? = nil
@@ -919,6 +1105,7 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                             var trigger: AnthropicContextManagement.Compact20260112.Trigger? = nil
                             if let triggerValue = editDict["trigger"], triggerValue != .null {
                                 guard case .object(let triggerDict) = triggerValue,
+                                      triggerDict["type"] == .string("input_tokens"),
                                       let triggerNumber = triggerDict["value"],
                                       case .number(let triggerValueNumber) = triggerNumber else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].trigger must be a valid trigger object")
@@ -990,6 +1177,7 @@ public let anthropicFilePartProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
+                try rejectNullOptions(dict, keys: ["containerUpload", "citations", "title", "context"])
                 var options = AnthropicFilePartProviderOptions()
 
                 options.containerUpload = try parseOptionalBool(dict, key: "containerUpload")

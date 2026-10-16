@@ -63,7 +63,7 @@ public final class AnthropicSkills: SkillsV4 {
         let versionMetadata: AnthropicSkillVersionResponse?
         if let latestVersion = response.latestVersion {
             versionMetadata = try await getFromAPI(
-                url: "\(config.baseURL)/skills/\(response.id)/versions/\(latestVersion)",
+                url: "\(config.baseURL)/skills/\(encodeSkillPathSegment(response.id))/versions/\(encodeSkillPathSegment(latestVersion))",
                 headers: baseHeaders,
                 failedResponseHandler: anthropicFailedResponseHandler,
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: anthropicSkillVersionResponseSchema),
@@ -91,6 +91,13 @@ public final class AnthropicSkills: SkillsV4 {
             ],
             warnings: []
         )
+    }
+
+    private func encodeSkillPathSegment(_ value: String) -> String {
+        if value == "." { return "%252E" }
+        if value == ".." { return "%252E%252E" }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.!~*'()")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     private func requestHeaders(extra: [String: String?]) throws -> [String: String] {

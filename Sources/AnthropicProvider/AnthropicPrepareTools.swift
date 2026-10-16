@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct AnthropicPreparedTools: Sendable {
     public let tools: [JSONValue]?
     public let toolChoice: JSONValue?
-    public let warnings: [SharedV3Warning]
+    public let warnings: [SharedV4Warning]
     public let betas: Set<String>
 }
 
@@ -52,8 +52,8 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
 }
 
 public func prepareAnthropicTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?,
     disableParallelToolUse: Bool?,
     supportsStructuredOutput: Bool = false,
     supportsStrictTools: Bool = false,
@@ -66,7 +66,7 @@ public func prepareAnthropicTools(
     }
 
     var anthropicTools: [JSONValue] = []
-    var toolWarnings: [SharedV3Warning] = []
+    var toolWarnings: [SharedV4Warning] = []
     var betas: Set<String> = []
     let validator = cacheControlValidator ?? CacheControlValidator()
 

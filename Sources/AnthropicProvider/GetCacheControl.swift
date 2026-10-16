@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public func getAnthropicCacheControl(from metadata: SharedV3ProviderMetadata?) -> AnthropicCacheControl? {
+public func getAnthropicCacheControl(from metadata: SharedV4ProviderMetadata?) -> AnthropicCacheControl? {
     guard let anthropic = metadata?["anthropic"] else { return nil }
     let value = anthropic["cacheControl"] ?? anthropic["cache_control"]
     guard case .object(let object) = value else { return nil }
@@ -53,12 +53,12 @@ public struct CacheControlContext: Sendable {
 /// Port of `CacheControlValidator` from `@ai-sdk/anthropic/src/get-cache-control.ts`.
 public final class CacheControlValidator: @unchecked Sendable {
     private var breakpointCount: Int = 0
-    private var warnings: [SharedV3Warning] = []
+    private var warnings: [SharedV4Warning] = []
 
     public init() {}
 
     public func getCacheControl(
-        _ providerMetadata: SharedV3ProviderMetadata?,
+        _ providerMetadata: SharedV4ProviderMetadata?,
         context: CacheControlContext
     ) -> AnthropicCacheControl? {
         guard let cacheControlValue = getAnthropicCacheControl(from: providerMetadata) else {
@@ -85,7 +85,7 @@ public final class CacheControlValidator: @unchecked Sendable {
         return cacheControlValue
     }
 
-    public func getWarnings() -> [SharedV3Warning] {
+    public func getWarnings() -> [SharedV4Warning] {
         warnings
     }
 }

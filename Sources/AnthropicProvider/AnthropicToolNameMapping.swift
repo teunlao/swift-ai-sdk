@@ -17,7 +17,7 @@ struct AnthropicToolNameMapping: Sendable {
     }
 
     static func create(
-        tools: [LanguageModelV3Tool]?,
+        tools: [LanguageModelV4Tool]?,
         providerToolNames: [String: String]
     ) -> AnthropicToolNameMapping {
         var customToProvider: [String: String] = [:]

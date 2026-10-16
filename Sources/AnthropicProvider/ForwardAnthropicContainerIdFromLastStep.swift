@@ -10,8 +10,8 @@ import AISDKProvider
  container ID between steps (e.g. when using code execution tools).
  */
 public func forwardAnthropicContainerIdFromLastStep(
-    steps: [SharedV3ProviderMetadata?]
-) -> SharedV3ProviderOptions? {
+    steps: [SharedV4ProviderMetadata?]
+) -> SharedV4ProviderOptions? {
     for metadata in steps.reversed() {
         guard let metadata,
               let anthropic = metadata["anthropic"],

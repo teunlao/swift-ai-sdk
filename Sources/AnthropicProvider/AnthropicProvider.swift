@@ -47,7 +47,7 @@ public struct AnthropicProviderSettings: Sendable {
     }
 }
 
-public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider {
+public final class AnthropicProvider: ProviderV4, FilesProvider, SkillsProvider {
     private let makeMessagesModel: @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel
     private let makeFilesAPI: @Sendable () -> any FilesV4
     private let makeSkillsAPI: @Sendable () -> any SkillsV4
@@ -65,11 +65,23 @@ public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider 
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         makeMessagesModel(AnthropicMessagesModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(_ modelId: String) throws -> any LanguageModelV4 {
+        try languageModel(modelId: modelId)
+    }
+
+    public func chat(_ modelId: String) -> AnthropicMessagesLanguageModel {
+        chat(modelId: AnthropicMessagesModelId(rawValue: modelId))
+    }
+
+    public func messages(_ modelId: String) -> AnthropicMessagesLanguageModel {
+        messages(modelId: AnthropicMessagesModelId(rawValue: modelId))
+    }
+
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         makeMessagesModel(AnthropicMessagesModelId(rawValue: modelId))
     }
 
@@ -81,19 +93,11 @@ public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider 
         makeMessagesModel(modelId)
     }
 
-    public func chatV4(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModelV4 {
-        makeMessagesModel(modelId).asV4()
-    }
-
-    public func messagesV4(modelId: AnthropicMessagesModelId) -> AnthropicMessagesLanguageModelV4 {
-        makeMessagesModel(modelId).asV4()
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
@@ -106,7 +110,7 @@ public final class AnthropicProvider: ProviderV3, FilesProvider, SkillsProvider 
     }
 }
 
-public func createAnthropicProvider(settings: AnthropicProviderSettings = .init()) -> AnthropicProvider {
+public func createAnthropic(settings: AnthropicProviderSettings = .init()) -> AnthropicProvider {
     let baseURL = normalizeAnthropicBaseURL(
         loadOptionalSetting(settingValue: settings.baseURL, environmentVariableName: "ANTHROPIC_BASE_URL")
     ) ?? anthropicVersionedAPIURL
@@ -114,15 +118,16 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
     let providerName = settings.name ?? "anthropic.messages"
 
     let headersClosure: @Sendable () throws -> [String: String?] = {
-        // Match upstream semantics: apiKey/authToken conflict should not crash the process.
-        if settings.apiKey != nil, settings.authToken != nil {
+        if let apiKey = settings.apiKey, !apiKey.isEmpty,
+           let authToken = settings.authToken, !authToken.isEmpty {
             throw InvalidArgumentError(
                 argument: "apiKey/authToken",
                 message: "Both apiKey and authToken were provided. Please use only one authentication method."
             )
         }
 
-        let authToken = settings.authToken
+        let authToken = settings.authToken.flatMap { $0.isEmpty ? nil : $0 }
+        _ = try validateBaseURL(baseURL)
 
         var baseHeaders: [String: String?] = [
             "anthropic-version": "2023-06-01"
@@ -146,7 +151,7 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
             }
         }
 
-        let userAgentHeaders = withUserAgentSuffix(baseHeaders, "ai-sdk/anthropic/\(ANTHROPIC_VERSION)")
+        let userAgentHeaders = withUserAgentSuffix(baseHeaders, "ai-sdk-anthropic/\(ANTHROPIC_VERSION)")
         return userAgentHeaders.mapValues { Optional($0) }
     }
 
@@ -197,9 +202,9 @@ public func createAnthropicProvider(settings: AnthropicProviderSettings = .init(
 }
 
 public extension AnthropicProvider {
-    func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 }
 
-public let anthropic: AnthropicProviderV4 = createAnthropic()
+public let anthropic = createAnthropic()

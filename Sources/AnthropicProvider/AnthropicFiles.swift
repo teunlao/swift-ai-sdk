@@ -12,8 +12,8 @@ struct AnthropicFilesConfig: Sendable {
 private struct AnthropicUploadFileResponse: Codable, Sendable, Equatable {
     let id: String
     let type: String
-    let filename: String?
-    let mimeType: String?
+    let filename: String
+    let mimeType: String
     let sizeBytes: Int
     let createdAt: String
     let downloadable: Bool?
@@ -26,6 +26,20 @@ private struct AnthropicUploadFileResponse: Codable, Sendable, Equatable {
         case sizeBytes = "size_bytes"
         case createdAt = "created_at"
         case downloadable
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        type = try container.decode(String.self, forKey: .type)
+        guard type == "file" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected file response")
+        }
+        filename = try container.decode(String.self, forKey: .filename)
+        mimeType = try container.decode(String.self, forKey: .mimeType)
+        sizeBytes = try container.decode(Int.self, forKey: .sizeBytes)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        downloadable = try container.decodeIfPresent(Bool.self, forKey: .downloadable)
     }
 }
 
@@ -82,16 +96,17 @@ public final class AnthropicFiles: FilesV4 {
 
         let response = try await postToAPI(
             url: "\(config.baseURL)/files",
-            headers: headers,
+            headers: combineHeaders(headers.mapValues { Optional($0) }, options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: PostBody(content: .data(multipart.data), values: nil),
             failedResponseHandler: anthropicFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: anthropicUploadFileResponseSchema),
+            isAborted: options.abortSignal,
             fetch: config.fetch
         ).value
 
         var anthropicMetadata: [String: JSONValue] = [
-            "filename": .string(response.filename ?? options.filename ?? "blob"),
-            "mimeType": .string(response.mimeType ?? options.mediaType),
+            "filename": .string(response.filename),
+            "mimeType": .string(response.mimeType),
             "sizeBytes": .number(Double(response.sizeBytes)),
             "createdAt": .string(response.createdAt)
         ]
@@ -101,8 +116,8 @@ public final class AnthropicFiles: FilesV4 {
 
         return FilesV4UploadFileResult(
             providerReference: ["anthropic": response.id],
-            mediaType: response.mimeType ?? options.mediaType,
-            filename: response.filename ?? options.filename,
+            mediaType: response.mimeType,
+            filename: response.filename,
             providerMetadata: ["anthropic": anthropicMetadata],
             warnings: []
         )
