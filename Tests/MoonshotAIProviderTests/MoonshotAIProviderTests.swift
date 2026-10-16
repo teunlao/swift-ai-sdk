@@ -66,7 +66,7 @@ struct MoonshotAIProviderTests {
         }
 
         let provider = createMoonshotAI(settings: .init(fetch: fetch))
-        let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2.rawValue)
+        let model = provider.chatModel(modelId: MoonshotAIChatModelId.kimiK3.rawValue)
         _ = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt))
 
         let request = await capture.current()
@@ -111,7 +111,7 @@ struct MoonshotAIProviderTests {
             fetch: fetch
         ))
 
-        let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2.rawValue)
+        let model = provider.chatModel(modelId: MoonshotAIChatModelId.kimiK3.rawValue)
         _ = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt))
 
         let request = await capture.current()
@@ -122,7 +122,7 @@ struct MoonshotAIProviderTests {
         #expect(headers["authorization"] == "Bearer custom-auth")
     }
 
-    @Test("transformRequestBody converts thinking + reasoningHistory keys")
+    @Test("Kimi K2.6 preserves reasoning history and warns about unsupported thinking budgets")
     func transformsThinkingAndReasoningHistory() async throws {
         let capture = RequestCapture()
         let responseData = try makeMoonshotChatResponseData(usage: [
@@ -138,9 +138,9 @@ struct MoonshotAIProviderTests {
         }
 
         let provider = createMoonshotAI(settings: .init(apiKey: "test-key", fetch: fetch))
-        let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2Thinking.rawValue)
+        let model = provider.chatModel(modelId: MoonshotAIChatModelId.kimiK26.rawValue)
 
-        _ = try await model.doGenerate(options: .init(
+        let result = try await model.doGenerate(options: .init(
             prompt: moonshotTestPrompt,
             providerOptions: [
                 "moonshotai": [
@@ -148,7 +148,7 @@ struct MoonshotAIProviderTests {
                         "type": .string("enabled"),
                         "budgetTokens": .number(2048),
                     ]),
-                    "reasoningHistory": .string("interleaved"),
+                    "reasoningHistory": .string("preserved"),
                 ]
             ]
         ))
@@ -157,16 +157,23 @@ struct MoonshotAIProviderTests {
         let bodyData = try #require(request?.httpBody)
         let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
 
-        #expect(body["reasoningHistory"] == nil)
-        #expect(body["reasoning_history"] == .string("interleaved"))
+        #expect(result.warnings.contains { if case .deprecated(let setting, _) = $0 { setting == "providerOptions.moonshotai.thinking.budgetTokens" } else { false } })
 
         guard case .object(let thinking)? = body["thinking"] else {
             Issue.record("Expected thinking object")
             return
         }
         #expect(thinking["type"] == .string("enabled"))
-        #expect(thinking["budgetTokens"] == nil)
-        #expect(thinking["budget_tokens"] == .number(2048))
+        #expect(thinking == ["type": .string("enabled"), "keep": .string("all")])
+    }
+
+    @Test("missing credentials fail lazily before fetch even with a custom Authorization header")
+    func missingCredentials() async throws {
+        let original = getenv("MOONSHOT_API_KEY").map { String(cString: $0) }
+        unsetenv("MOONSHOT_API_KEY")
+        defer { if let original { setenv("MOONSHOT_API_KEY", original, 1) } else { unsetenv("MOONSHOT_API_KEY") } }
+        let model = createMoonshotAI(settings: .init(headers: ["Authorization": "Bearer custom"], fetch: { _ in Issue.record("Missing credentials cannot send HTTP"); throw CancellationError() }))("kimi-k3")
+        await #expect(throws: LoadAPIKeyError.self) { _ = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt)) }
     }
 
     @Test("MoonshotAI usage conversion uses cached_tokens when present")
@@ -188,7 +195,7 @@ struct MoonshotAIProviderTests {
         }
 
         let provider = createMoonshotAI(settings: .init(apiKey: "test-key", fetch: fetch))
-        let model = try provider.chatModel(modelId: MoonshotAIChatModelId.kimiK2.rawValue)
+        let model = provider.chatModel(modelId: MoonshotAIChatModelId.kimiK3.rawValue)
         let result = try await model.doGenerate(options: .init(prompt: moonshotTestPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
