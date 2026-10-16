@@ -44,11 +44,11 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
     public var modelId: String { modelIdentifier.rawValue }
     public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
     private var modelAPI: BFLImageAPI {
-        if modelId == "flux-pro" || modelId == "flux-dev" || modelId.hasPrefix("flux-pro-") || modelId.hasPrefix("flux-kontext-") || modelId.range(of: "^flux-[12](?:[.-]|$)", options: .regularExpression) != nil { return .legacy }
+        if modelId == "flux-pro" || modelId == "flux-dev" || modelId.hasPrefix("flux-pro-") || modelId.hasPrefix("flux-kontext-") || modelId.range(of: "^flux-[12](?:[.-]|$)", options: .regularExpression) != nil { return .flux12 }
         return modelId == "flux-3-image" ? .flux3 : .latest
     }
     public var supportsFileInputs: Bool? {
-        if modelAPI != .legacy || ["flux-kontext-pro", "flux-kontext-max", "flux-pro-1.0-fill"].contains(modelId) { return true }
+        if modelAPI != .flux12 || ["flux-kontext-pro", "flux-kontext-max", "flux-pro-1.0-fill"].contains(modelId) { return true }
         if ["flux-pro-1.1-ultra", "flux-pro-1.1"].contains(modelId) { return false }
         return nil
     }
@@ -79,7 +79,7 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
         if images.count > 10 { throw InvalidArgumentError(argument: "files", message: "Black Forest Labs supports up to 10 input images.") }
         var body: [String: JSONValue] = [:]
         if let prompt = options.prompt { body["prompt"] = .string(prompt) }
-        if api == .legacy {
+        if api == .flux12 {
             if let seed = options.seed { body["seed"] = .number(Double(seed)) }
             if let aspect { body["aspect_ratio"] = .string(aspect) }
             if let size = options.size {

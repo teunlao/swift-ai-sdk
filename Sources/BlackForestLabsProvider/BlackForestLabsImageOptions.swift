@@ -23,7 +23,7 @@ public struct BlackForestLabsImageModelOptions: Sendable, Codable, Equatable {
     public init() {}
 }
 
-enum BFLImageAPI { case legacy, flux3, latest }
+enum BFLImageAPI { case flux12, flux3, latest }
 
 func bflImageOptions(_ options: SharedV4ProviderOptions?, api: BFLImageAPI, size: String?) async throws -> [String: JSONValue] {
     var properties: [String: JSONValue] = [:]
@@ -42,7 +42,7 @@ func bflImageOptions(_ options: SharedV4ProviderOptions?, api: BFLImageAPI, size
     for key in ["width", "height"] {
         properties[key] = .object(["type": .string("integer"), "minimum": .number(api == .latest ? 64 : 256), "maximum": .number(api == .latest ? 6256 : 1920)])
     }
-    properties["safetyTolerance"] = .object(["type": .string("integer"), "minimum": .number(0), "maximum": .number(api == .legacy ? 6 : 7)])
+    properties["safetyTolerance"] = .object(["type": .string("integer"), "minimum": .number(0), "maximum": .number(api == .flux12 ? 6 : 7)])
     var providerOptions = options ?? [:]
     if api == .latest, let size {
         let parts = size.components(separatedBy: "x")
