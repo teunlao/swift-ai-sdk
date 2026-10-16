@@ -23,6 +23,10 @@ public extension ReplicateImageModelId {
     static let fluxDev: Self = "black-forest-labs/flux-dev"
     static let fluxPro: Self = "black-forest-labs/flux-pro"
     static let fluxSchnell: Self = "black-forest-labs/flux-schnell"
+    static let fluxFillPro: Self = "black-forest-labs/flux-fill-pro"
+    static let fluxFillDev: Self = "black-forest-labs/flux-fill-dev"
+    static let flux2Pro: Self = "black-forest-labs/flux-2-pro"
+    static let flux2Dev: Self = "black-forest-labs/flux-2-dev"
 
     // bytedance
     static let sdxlLightning4Step: Self = "bytedance/sdxl-lightning-4step"

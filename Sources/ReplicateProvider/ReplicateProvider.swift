@@ -30,7 +30,7 @@ public struct ReplicateProviderSettings: Sendable {
     }
 }
 
-public final class ReplicateProvider: ProviderV3 {
+public final class ReplicateProvider: ProviderV4 {
     private let imageFactory: @Sendable (ReplicateImageModelId) -> ReplicateImageModel
     private let videoFactory: @Sendable (ReplicateVideoModelId) -> ReplicateVideoModel
 
@@ -42,20 +42,20 @@ public final class ReplicateProvider: ProviderV3 {
         self.videoFactory = videoFactory
     }
 
-    // MARK: ProviderV3
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    // MARK: ProviderV4
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         imageFactory(ReplicateImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
         videoFactory(ReplicateVideoModelId(rawValue: modelId))
     }
 
@@ -84,6 +84,7 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
     let fetch = settings.fetch
 
     let headersClosure: @Sendable () throws -> [String: String?] = {
+        _ = try validateBaseURL(baseURL)
         let apiToken = try loadAPIKey(
             apiKey: settings.apiToken,
             environmentVariableName: "REPLICATE_API_TOKEN",
@@ -95,7 +96,7 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
             for (k, v) in extra { headers[k] = v }
         }
 
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/replicate/\(REPLICATE_PROVIDER_VERSION)")
+        let withUA = withUserAgentSuffix(headers, "ai-sdk-replicate/\(REPLICATE_PROVIDER_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 

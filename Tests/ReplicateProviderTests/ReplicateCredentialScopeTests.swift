@@ -37,7 +37,7 @@ struct ReplicateCredentialScopeTests {
                 headerFields: ["Content-Type": isOutput ? "image/webp" : "application/json"]
             )!
             return FetchResponse(
-                body: .data(isOutput ? Data([1, 2, 3]) : Data(#"{"output":["\#(outputURL)"]}"#.utf8)),
+                body: .data(isOutput ? Data([1, 2, 3]) : Data(#"{"status":"succeeded","urls":{"get":"https://api.replicate.com/v1/predictions/id"},"output":["\#(outputURL)"]}"#.utf8)),
                 urlResponse: response
             )
         }

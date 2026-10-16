@@ -31,8 +31,8 @@ struct ReplicateImageModelTests {
                     "model": "black-forest-labs/flux-schnell",
                     "version": "dp-4d0bcc010b3049749a251855f12800be",
                     "input": ["num_outputs": 1, "prompt": prompt],
-                    "output": ["https://replicate.delivery/xezq/abc/out-0.webp"],
-                    "status": "processing"
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
+                    "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
                 let resp = HTTPURLResponse(
@@ -60,7 +60,7 @@ struct ReplicateImageModelTests {
 
         let model = provider.image("black-forest-labs/flux-schnell")
 
-        _ = try await model.doGenerate(options: ImageModelV3CallOptions(
+        _ = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             size: "1024x768",
@@ -111,6 +111,7 @@ struct ReplicateImageModelTests {
             await cap.store(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -128,7 +129,7 @@ struct ReplicateImageModelTests {
             fetch: fetch
         ))
 
-        _ = try await provider.image("black-forest-labs/flux-schnell").doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.image("black-forest-labs/flux-schnell").doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:],
@@ -157,6 +158,7 @@ struct ReplicateImageModelTests {
             await calls.add(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -178,7 +180,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        _ = try await model.doGenerate(options: ImageModelV3CallOptions(
+        _ = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
@@ -198,6 +200,7 @@ struct ReplicateImageModelTests {
             await calls.add(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": "https://replicate.delivery/xezq/abc/out-0.webp"
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -219,7 +222,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        let result = try await model.doGenerate(options: ImageModelV3CallOptions(
+        let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
@@ -244,6 +247,7 @@ struct ReplicateImageModelTests {
         let fetch: FetchFunction = { request in
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -266,7 +270,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        let result = try await model.doGenerate(options: ImageModelV3CallOptions(
+        let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
@@ -286,6 +290,7 @@ struct ReplicateImageModelTests {
             await callsStore1.add(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -307,7 +312,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        let result = try await model.doGenerate(options: ImageModelV3CallOptions(
+        let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
@@ -338,6 +343,7 @@ struct ReplicateImageModelTests {
             await callsStore2.add(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": "https://replicate.delivery/xezq/abc/out-0.webp"
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -359,7 +365,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        _ = try await model.doGenerate(options: ImageModelV3CallOptions(
+        _ = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
@@ -386,6 +392,7 @@ struct ReplicateImageModelTests {
             await callsStore3.add(request)
             if request.httpMethod == "POST" {
                 let body: [String: Any] = [
+                    "status": "succeeded", "urls": ["get": "https://api.replicate.com/v1/predictions/id"],
                     "output": ["https://replicate.delivery/xezq/abc/out-0.webp"]
                 ]
                 let data = try JSONSerialization.data(withJSONObject: body)
@@ -416,7 +423,7 @@ struct ReplicateImageModelTests {
             )
         )
 
-        let result = try await model.doGenerate(options: ImageModelV3CallOptions(
+        let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: prompt,
             n: 1,
             providerOptions: [:]
