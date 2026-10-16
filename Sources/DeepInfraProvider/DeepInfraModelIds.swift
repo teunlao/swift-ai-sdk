@@ -139,6 +139,8 @@ public extension DeepInfraImageModelId {
     static let blackForestLabsFLUX1Schnell: Self = "black-forest-labs/FLUX-1-schnell"
     static let blackForestLabsFLUX1Dev: Self = "black-forest-labs/FLUX-1-dev"
     static let blackForestLabsFLUXPro: Self = "black-forest-labs/FLUX-pro"
+    static let blackForestLabsFLUX1KontextDev: Self = "black-forest-labs/FLUX.1-Kontext-dev"
+    static let blackForestLabsFLUX1KontextPro: Self = "black-forest-labs/FLUX.1-Kontext-pro"
     static let stabilityaiSd35Medium: Self = "stabilityai/sd3.5-medium"
     static let stabilityaiSdxlTurbo: Self = "stabilityai/sdxl-turbo"
 }

@@ -484,7 +484,7 @@ struct DeepInfraImageModelTests {
             }
             let bodyString = String(decoding: body, as: UTF8.self)
             #expect(bodyString.contains("name=\"mask\""))
-            #expect(bodyString.contains("filename=\"mask.png\""))
+            #expect(bodyString.contains("name=\"mask\"; filename=\"blob\""))
         }
 
         @Test("sends edit request with multiple images")

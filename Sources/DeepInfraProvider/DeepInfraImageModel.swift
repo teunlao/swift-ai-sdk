@@ -35,6 +35,14 @@ public final class DeepInfraImageModel: ImageModelV4 {
     public let specificationVersion: String = "v4"
     public let modelId: String
     public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
+    public var supportsFileInputs: Bool? {
+        get async throws {
+            ["stabilityai/sd3.5", "black-forest-labs/FLUX-1.1-pro", "black-forest-labs/FLUX-1-schnell",
+             "black-forest-labs/FLUX-1-dev", "black-forest-labs/FLUX-pro", "black-forest-labs/FLUX.1-Kontext-dev",
+             "black-forest-labs/FLUX.1-Kontext-pro", "Qwen/Qwen-Image-Edit", "stabilityai/sd3.5-medium", "stabilityai/sdxl-turbo"].contains(modelId) ? true : nil
+        }
+    }
+    public var supportsMaskInputs: Bool? { get async throws { try await supportsFileInputs } }
 
     private let modelIdentifier: DeepInfraImageModelId
     private let config: DeepInfraImageModelConfig
@@ -50,6 +58,7 @@ public final class DeepInfraImageModel: ImageModelV4 {
     public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
         let currentDate = config.currentDate()
         let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) })
+        let deepinfraOptions = try await parseProviderOptions(provider: "deepinfra", providerOptions: options.providerOptions, schema: deepInfraImageModelOptionsSchema) ?? [:]
 
         // Image editing mode - use OpenAI-compatible /images/edits endpoint.
         let files = options.files ?? []
@@ -60,7 +69,7 @@ public final class DeepInfraImageModel: ImageModelV4 {
                 mask: options.mask,
                 n: options.n,
                 size: options.size,
-                providerOptions: options.providerOptions
+                providerOptions: deepinfraOptions
             )
 
             var multipartHeaders = headers
@@ -101,22 +110,16 @@ public final class DeepInfraImageModel: ImageModelV4 {
         }
 
         if let size = options.size {
-            let parts = size.split(separator: "x", omittingEmptySubsequences: true)
-            if parts.count == 2 {
-                payload["width"] = .string(String(parts[0]))
-                payload["height"] = .string(String(parts[1]))
-            }
+            let parts = size.components(separatedBy: "x")
+            payload["width"] = .string(parts[0])
+            if parts.count > 1 { payload["height"] = .string(parts[1]) }
         }
 
         if let seed = options.seed {
             payload["seed"] = .number(Double(seed))
         }
 
-        if let providerOptions = options.providerOptions?["deepinfra"] {
-            for (key, value) in providerOptions {
-                payload[key] = value
-            }
-        }
+        payload.merge(deepinfraOptions) { _, new in new }
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/\(modelIdentifier.rawValue)",
@@ -149,53 +152,40 @@ public final class DeepInfraImageModel: ImageModelV4 {
     }
 
     private func prepareEditRequest(
-        prompt: String?,
-        files: [ImageModelV4File],
-        mask: ImageModelV4File?,
-        n: Int,
-        size: String?,
-        providerOptions: SharedV4ProviderOptions?
+        prompt: String?, files: [ImageModelV4File], mask: ImageModelV4File?, n: Int, size: String?,
+        providerOptions: [String: JSONValue]
     ) async throws -> PreparedMultipartRequest {
-        var builder = MultipartFormDataBuilder()
-        builder.appendField(name: "model", value: modelIdentifier.rawValue)
-
-        if let prompt {
-            builder.appendField(name: "prompt", value: prompt)
-        }
-
-        builder.appendField(name: "n", value: String(n))
-        if let size {
-            builder.appendField(name: "size", value: size)
-        }
-
+        var images: [FormDataValue] = []
         for file in files {
-            let upload = try await resolveUpload(for: file, defaultFilename: "image")
-            builder.appendFile(name: "image", filename: upload.filename, contentType: upload.contentType, data: upload.data)
+            let upload = try await resolveUpload(for: file)
+            images.append(.data(upload.data, filename: upload.filename, contentType: upload.contentType))
         }
-
+        var fields: [String: FormDataInputValue?] = [
+            "model": .value(.string(modelId)), "prompt": prompt.map { .value(.string($0)) },
+            "n": .value(.string(String(n))), "size": size.map { .value(.string($0)) }, "image": .array(images)
+        ]
         if let mask {
-            let upload = try await resolveUpload(for: mask, defaultFilename: "mask")
-            builder.appendFile(name: "mask", filename: upload.filename, contentType: upload.contentType, data: upload.data)
+            let upload = try await resolveUpload(for: mask)
+            fields["mask"] = .value(.data(upload.data, filename: upload.filename, contentType: upload.contentType))
         }
-
-        if let deepinfraOptions = providerOptions?["deepinfra"], !deepinfraOptions.isEmpty {
-            for (key, value) in deepinfraOptions {
-                guard let string = stringifyMultipartValue(value) else { continue }
-                builder.appendField(name: key, value: string)
+        for (key, value) in providerOptions {
+            switch value {
+            case .null: fields.removeValue(forKey: key)
+            case .array(let values): fields[key] = .array(values.map { .string(stringifyMultipartValue($0)) })
+            default: fields[key] = .value(.string(stringifyMultipartValue(value)))
             }
         }
-
-        let (data, contentType) = builder.build()
-        return PreparedMultipartRequest(body: data, contentType: contentType)
+        let form = convertToFormData(fields, useArrayBrackets: false).build()
+        return .init(body: form.data, contentType: form.contentType)
     }
 
     private struct UploadPart: Sendable {
         let filename: String
-        let contentType: String
+        let contentType: String?
         let data: Data
     }
 
-    private func resolveUpload(for file: ImageModelV4File, defaultFilename: String) async throws -> UploadPart {
+    private func resolveUpload(for file: ImageModelV4File) async throws -> UploadPart {
         switch file {
         case let .file(mediaType, data, _):
             let resolvedData: Data
@@ -206,45 +196,35 @@ public final class DeepInfraImageModel: ImageModelV4 {
                 resolvedData = data
             }
 
-            let ext = mediaTypeToExtension(mediaType)
-            let filename = ext.isEmpty ? defaultFilename : "\(defaultFilename).\(ext)"
-            return UploadPart(filename: filename, contentType: mediaType, data: resolvedData)
+            return UploadPart(filename: "blob", contentType: mediaType, data: resolvedData)
 
         case let .url(urlString, _):
-            guard let url = URL(string: urlString) else {
-                throw URLError(.badURL)
-            }
-            let (data, _) = try await URLSession.shared.data(from: url)
-            return UploadPart(filename: defaultFilename, contentType: "application/octet-stream", data: data)
+            let blob = try await downloadBlob(url: urlString)
+            return UploadPart(filename: "blob", contentType: blob.mediaType, data: blob.data)
         }
     }
 
-    private func stringifyMultipartValue(_ value: JSONValue) -> String? {
+    private func stringifyMultipartValue(_ value: JSONValue, insideArray: Bool = false) -> String {
         switch value {
-        case .null:
-            return nil
-        case .string(let string):
-            return string
+        case .null: return insideArray ? "" : "null"
+        case .string(let string): return string
         case .number(let number):
-            if number.rounded(.towardZero) == number {
-                return String(Int(number))
-            }
-            return String(number)
-        case .bool(let bool):
-            return bool ? "true" : "false"
-        case .array, .object:
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.withoutEscapingSlashes]
-            guard let data = try? encoder.encode(value) else { return nil }
-            return String(decoding: data, as: UTF8.self)
+            if number.isNaN { return "NaN" }
+            if number == .infinity { return "Infinity" }
+            if number == -.infinity { return "-Infinity" }
+            return Int(exactly: number).map(String.init) ?? String(number)
+        case .bool(let bool): return bool ? "true" : "false"
+        case .array(let values): return values.map { stringifyMultipartValue($0, insideArray: true) }.joined(separator: ",")
+        case .object: return "[object Object]"
         }
     }
 
     private func getEditUrl() -> String {
         // baseURL is typically https://api.deepinfra.com/v1/inference
         // We need to use https://api.deepinfra.com/v1/openai/images/edits
-        let baseUrl = config.baseURL.replacingOccurrences(of: "/inference", with: "/openai")
-        return "\(baseUrl)/images/edits"
+        var baseURL = config.baseURL
+        if let range = baseURL.range(of: "/inference") { baseURL.replaceSubrange(range, with: "/openai") }
+        return "\(baseURL)/images/edits"
     }
 }
 

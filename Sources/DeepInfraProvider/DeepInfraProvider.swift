@@ -3,6 +3,8 @@ import AISDKProvider
 import AISDKProviderUtils
 import OpenAICompatibleProvider
 
+public typealias DeepInfraErrorData = OpenAICompatibleErrorData
+
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
@@ -144,6 +146,7 @@ public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> De
             headers: headersClosure,
             url: urlBuilder,
             fetch: fetch,
+            supportsStructuredOutputs: true,
             convertUsage: { usage in
                 guard let usage else { return .init() }
                 let prompt = usage.promptTokens ?? 0
@@ -199,7 +202,7 @@ public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> De
 }
 
 
-public let deepinfra = createDeepInfra()
+public let deepInfra = createDeepInfra()
 
 // MARK: - DeepInfra-specific Usage Fix
 
@@ -215,24 +218,22 @@ private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV4Usage) -> 
         return usage
     }
 
-    guard case .number(let completionNumber) = dict["completion_tokens"] else {
-        return usage
-    }
-
     guard case .object(let completionDetails) = dict["completion_tokens_details"],
-          case .number(let reasoningNumber) = completionDetails["reasoning_tokens"] else {
+          case .number(let reasoningNumber) = completionDetails["reasoning_tokens"],
+          let reasoningTokens = Int(exactly: reasoningNumber), reasoningTokens != 0 else {
         return usage
     }
-
-    let completionTokens = Int(completionNumber)
-    let reasoningTokens = Int(reasoningNumber)
+    let completionTokens: Int
+    if case .number(let completionNumber) = dict["completion_tokens"], let value = Int(exactly: completionNumber) { completionTokens = value }
+    else { completionTokens = 0 }
 
     // If reasoning tokens exceed completion tokens, DeepInfra is returning invalid OpenAI-compatible usage.
     guard reasoningTokens > completionTokens else {
         return usage
     }
 
-    let correctedCompletionTokens = completionTokens + reasoningTokens
+    let (correctedCompletionTokens, overflow) = completionTokens.addingReportingOverflow(reasoningTokens)
+    guard !overflow else { return usage }
     dict["completion_tokens"] = .number(Double(correctedCompletionTokens))
 
     // Match upstream: only adjust total_tokens if present; remove if it was explicitly null.
@@ -244,7 +245,7 @@ private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV4Usage) -> 
 
     let promptTokens: Int
     if case .number(let promptNumber) = dict["prompt_tokens"] {
-        promptTokens = Int(promptNumber)
+        promptTokens = Int(exactly: promptNumber) ?? usage.inputTokens.total ?? 0
     } else {
         promptTokens = usage.inputTokens.total ?? 0
     }
@@ -252,7 +253,7 @@ private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV4Usage) -> 
     let cacheReadTokens: Int
     if case .object(let promptDetails) = dict["prompt_tokens_details"],
        case .number(let cachedNumber) = promptDetails["cached_tokens"] {
-        cacheReadTokens = Int(cachedNumber)
+        cacheReadTokens = Int(exactly: cachedNumber) ?? usage.inputTokens.cacheRead ?? 0
     } else {
         cacheReadTokens = usage.inputTokens.cacheRead ?? 0
     }
