@@ -12,6 +12,8 @@ struct ResolveModelV4Tests {
             func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
             func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
         }
+        let custom = customProvider(fallbackProvider: Provider())
+        #expect(throws: NoSuchModelError.self) { try custom.speechModel(modelId: "unsupported") }
         try withGlobalProviderV4(Provider()) {
             do {
                 _ = try resolveSpeechModelV4(.string("unsupported"))

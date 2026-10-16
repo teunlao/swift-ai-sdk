@@ -359,7 +359,7 @@ private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
             return asTranscriptionModelV4(model)
         }
 
-        if let fallbackProvider { return try fallbackProvider.transcriptionModel(modelId: modelId) }
+        if let model = try fallbackProvider?.transcriptionModel(modelId: modelId) { return model }
         throw NoSuchModelError(modelId: modelId, modelType: .transcriptionModel)
     }
 
@@ -372,7 +372,7 @@ private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
             return asSpeechModelV4(model)
         }
 
-        if let fallbackProvider { return try fallbackProvider.speechModel(modelId: modelId) }
+        if let model = try fallbackProvider?.speechModel(modelId: modelId) { return model }
         throw NoSuchModelError(modelId: modelId, modelType: .speechModel)
     }
 
@@ -385,7 +385,7 @@ private final class CustomProviderV4Impl: ProviderV4, VideoProviderV4 {
             return asRerankingModelV4(model)
         }
 
-        if let fallbackProvider { return try fallbackProvider.rerankingModel(modelId: modelId) }
+        if let model = try fallbackProvider?.rerankingModel(modelId: modelId) { return model }
         throw NoSuchModelError(modelId: modelId, modelType: .rerankingModel)
     }
 
