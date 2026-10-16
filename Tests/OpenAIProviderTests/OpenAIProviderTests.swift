@@ -111,7 +111,7 @@ struct OpenAIProviderTests {
 
             do {
                 _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
-                    options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                    options: EmbeddingModelV4CallOptions(values: ["hello"])
                 )
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
@@ -141,7 +141,7 @@ struct OpenAIProviderTests {
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
             _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
-                options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
             #expect(url == "https://api.openai.com/v1/embeddings")
@@ -165,7 +165,7 @@ struct OpenAIProviderTests {
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
             _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
-                options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
             #expect(url == "https://proxy.openai.example/v1/embeddings")
@@ -192,7 +192,7 @@ struct OpenAIProviderTests {
                     fetch: makeFetch(capture: capture))
             )
             _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
-                options: EmbeddingModelV3DoEmbedOptions(values: ["hello"])
+                options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
             #expect(url == "https://option.openai.example/v1/embeddings")
@@ -347,8 +347,10 @@ struct OpenAIProviderTests {
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
             ))
+            let api: any ProviderV4 = provider
+            let model = try #require(try api.transcriptionModel(modelId: "whisper-1"))
             do {
-                _ = try await provider.transcription("whisper-1").doGenerate(
+                _ = try await model.doGenerate(
                     options: .init(audio: .binary(Data("audio".utf8)), mediaType: "audio/wav")
                 )
             } catch {}
@@ -363,8 +365,10 @@ struct OpenAIProviderTests {
                 apiKey: "test-api-key",
                 fetch: makeFailingFetch(capture: capture)
             ))
+            let api: any ProviderV4 = provider
+            let model = try #require(try api.speechModel(modelId: "tts-1"))
             do {
-                _ = try await provider.speech("tts-1").doGenerate(options: .init(text: "hello"))
+                _ = try await model.doGenerate(options: .init(text: "hello"))
             } catch {}
 
             #expect(await capture.current() == "https://proxy.openai.example/v1/audio/speech")
@@ -403,7 +407,7 @@ struct OpenAIProviderTests {
         #expect(normalizedHeaders["openai-project"] == "custom-project")
         #expect(normalizedHeaders["x-custom-header"] == "custom-header-value")
         #expect(normalizedHeaders["user-agent"]?.contains("Client/1.0") == true)
-        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/openai/") == true)
+        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk-openai/") == true)
         #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk-provider-utils/") == true)
     }
 

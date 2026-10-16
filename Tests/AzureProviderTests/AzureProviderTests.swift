@@ -11,7 +11,7 @@ import Testing
  Port of `@ai-sdk/azure/src/azure-openai-provider.test.ts`.
  */
 
-let TEST_PROMPT: LanguageModelV3Prompt = [
+let TEST_PROMPT: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -113,7 +113,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -176,7 +176,7 @@ struct AzureProviderTests {
             apiVersion: "2025-04-01-preview"
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -239,7 +239,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -252,7 +252,7 @@ struct AzureProviderTests {
         #expect(request.value(forHTTPHeaderField: "api-key") == "test-api-key")
         #expect(request.value(forHTTPHeaderField: "Custom-Provider-Header") == "provider-header-value")
         #expect(request.value(forHTTPHeaderField: "Custom-Request-Header") == "request-header-value")
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk/azure") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
     }
 
     @Test("should use the baseURL correctly for chat")
@@ -304,7 +304,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -363,7 +363,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.completion(.init(rawValue: "gpt-35-turbo-instruct")).doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.completion(.init(rawValue: "gpt-35-turbo-instruct")).doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -423,7 +423,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.completion(.init(rawValue: "gpt-35-turbo-instruct")).doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider.completion(.init(rawValue: "gpt-35-turbo-instruct")).doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -436,7 +436,7 @@ struct AzureProviderTests {
         #expect(request.value(forHTTPHeaderField: "api-key") == "test-api-key")
         #expect(request.value(forHTTPHeaderField: "Custom-Provider-Header") == "provider-header-value")
         #expect(request.value(forHTTPHeaderField: "Custom-Request-Header") == "request-header-value")
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk/azure") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
     }
 
     // MARK: - Transcription Tests
@@ -477,10 +477,13 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.transcription(.init(rawValue: "whisper-1")).doGenerate(options: TranscriptionModelV3CallOptions(
+        let api: any ProviderV4 = provider
+        let model = try #require(try api.transcriptionModel(modelId: "whisper-1"))
+        let result = try await model.doGenerate(options: TranscriptionModelV4CallOptions(
             audio: .binary(Data()),
             mediaType: "audio/wav"
         ))
+        #expect(result.text == "Hello, world!")
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -528,10 +531,13 @@ struct AzureProviderTests {
             useDeploymentBasedUrls: true
         ))
 
-        _ = try await provider.transcription(.init(rawValue: "whisper-1")).doGenerate(options: TranscriptionModelV3CallOptions(
+        let api: any ProviderV4 = provider
+        let model = try #require(try api.transcriptionModel(modelId: "whisper-1"))
+        let result = try await model.doGenerate(options: TranscriptionModelV4CallOptions(
             audio: .binary(Data()),
             mediaType: "audio/wav"
         ))
+        #expect(result.text == "Hello, world!")
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -573,7 +579,10 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.speech(.init(rawValue: "tts-1")).doGenerate(options: SpeechModelV3CallOptions(text: "Hello, world!"))
+        let api: any ProviderV4 = provider
+        let model = try #require(try api.speechModel(modelId: "tts-1"))
+        let result = try await model.doGenerate(options: SpeechModelV4CallOptions(text: "Hello, world!"))
+        #expect(result.audio == .binary(audioData))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -636,7 +645,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["sunny day at the beach", "rainy day in the city"]))
+        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(values: ["sunny day at the beach", "rainy day in the city"]))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -700,7 +709,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV3DoEmbedOptions(
+        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(
             values: ["sunny day at the beach", "rainy day in the city"],
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -713,7 +722,7 @@ struct AzureProviderTests {
         #expect(request.value(forHTTPHeaderField: "api-key") == "test-api-key")
         #expect(request.value(forHTTPHeaderField: "Custom-Provider-Header") == "provider-header-value")
         #expect(request.value(forHTTPHeaderField: "Custom-Request-Header") == "request-header-value")
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk/azure") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
     }
 
     // MARK: - Image Tests
@@ -760,7 +769,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -820,7 +829,7 @@ struct AzureProviderTests {
             apiVersion: "2025-04-01-preview"
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -880,7 +889,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024",
@@ -895,7 +904,7 @@ struct AzureProviderTests {
         #expect(request.value(forHTTPHeaderField: "api-key") == "test-api-key")
         #expect(request.value(forHTTPHeaderField: "Custom-Provider-Header") == "provider-header-value")
         #expect(request.value(forHTTPHeaderField: "Custom-Request-Header") == "request-header-value")
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk/azure") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
     }
 
     @Test("should use the baseURL correctly for image")
@@ -940,7 +949,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -988,7 +997,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let result = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        let result = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -1043,7 +1052,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV3CallOptions(
+        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 2,
             size: "1024x1024",
@@ -1135,7 +1144,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -1203,7 +1212,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -1216,7 +1225,7 @@ struct AzureProviderTests {
         #expect(request.value(forHTTPHeaderField: "api-key") == "test-api-key")
         #expect(request.value(forHTTPHeaderField: "Custom-Provider-Header") == "provider-header-value")
         #expect(request.value(forHTTPHeaderField: "Custom-Request-Header") == "request-header-value")
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk/azure") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
     }
 
     @Test("should use the baseURL correctly for responses")
@@ -1273,7 +1282,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -1338,12 +1347,12 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "You are a helpful assistant.", providerOptions: nil),
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
         ]
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(
             prompt: prompt,
             providerOptions: ["azure": ["forceReasoning": true]]
         ))
@@ -1410,7 +1419,7 @@ struct AzureProviderTests {
         ))
 
         let result = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(
-            options: LanguageModelV3CallOptions(prompt: TEST_PROMPT)
+            options: LanguageModelV4CallOptions(prompt: TEST_PROMPT)
         )
 
         guard case .text(let part) = result.content.first else {
@@ -1475,14 +1484,14 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let testPromptWithAzureFile: LanguageModelV3Prompt = [
+        let testPromptWithAzureFile: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "Analyze this image")),
                 .file(.init(data: .base64("assistant-abc123"), mediaType: "image/jpeg"))
             ], providerOptions: nil)
         ]
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(prompt: testPromptWithAzureFile))
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(prompt: testPromptWithAzureFile))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -1557,14 +1566,14 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let testPromptWithAzurePDF: LanguageModelV3Prompt = [
+        let testPromptWithAzurePDF: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "Analyze this PDF")),
                 .file(.init(data: .base64("assistant-pdf123"), mediaType: "application/pdf"))
             ], providerOptions: nil)
         ]
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(prompt: testPromptWithAzurePDF))
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(prompt: testPromptWithAzurePDF))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -1639,14 +1648,14 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let testPromptWithOpenAIFile: LanguageModelV3Prompt = [
+        let testPromptWithOpenAIFile: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "Analyze this image")),
                 .file(.init(data: .base64("file-abc123"), mediaType: "image/jpeg"))  // OpenAI prefix, should fall back to base64
             ], providerOptions: nil)
         ]
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(prompt: testPromptWithOpenAIFile))
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(prompt: testPromptWithOpenAIFile))
 
         guard let request = await capture.value() else {
             Issue.record("Expected to capture request")
@@ -1721,8 +1730,8 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let fileSearchTool: LanguageModelV3Tool = .provider(
-            LanguageModelV3ProviderTool(
+        let fileSearchTool: LanguageModelV4Tool = .provider(
+            LanguageModelV4ProviderTool(
                 id: "openai.file_search",
                 name: "file_search",
                 args: [
@@ -1733,7 +1742,7 @@ struct AzureProviderTests {
             )
         )
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             tools: [fileSearchTool]
         ))
@@ -1812,7 +1821,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await provider.responses(.init(rawValue: "test-deployment")).doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             providerOptions: ["openai": ["include": ["file_search_call.results"]]]
         ))
@@ -1871,7 +1880,7 @@ struct AzureProviderTests {
             ))
 
             do {
-                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("AZURE_API_KEY environment variable"))
@@ -1919,7 +1928,7 @@ struct AzureProviderTests {
             ))
 
             do {
-                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV3CallOptions(prompt: TEST_PROMPT))
+                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
                 Issue.record("Expected missing resourceName error")
             } catch let error as LoadSettingError {
                 #expect(error.message.contains("AZURE_RESOURCE_NAME environment variable"))

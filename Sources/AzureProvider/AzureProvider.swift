@@ -35,24 +35,24 @@ public struct AzureProviderSettings: Sendable {
 
 /// Azure OpenAI provider implementation.
 /// Mirrors `packages/azure/src/azure-openai-provider.ts`.
-public final class AzureProvider: ProviderV3 {
-    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
-    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
-    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
+public final class AzureProvider: ProviderV4 {
+    private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4
+    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
+    private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
-    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
-    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
-    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
+    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
+    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
+    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
     public let tools: AzureProviderTools
 
     init(
-        chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
-        responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
-        completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
+        chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4,
+        responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
+        completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
-        imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
-        transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
-        speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
+        imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
+        transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
+        speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
         tools: AzureProviderTools
     ) {
         self.chatFactory = chatFactory
@@ -65,52 +65,59 @@ public final class AzureProvider: ProviderV3 {
         self.tools = tools
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
     }
 
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
+    public func chatModel(modelId: String) throws -> any LanguageModelV4 {
         chatFactory(OpenAIChatModelId(rawValue: modelId))
     }
 
-    public func completionModel(modelId: String) -> any LanguageModelV3 {
+    public func completionModel(modelId: String) -> any LanguageModelV4 {
         completionFactory(OpenAICompletionModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        try embeddingModel(modelId: modelId)
+    }
+
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         imageFactory(OpenAIImageModelId(rawValue: modelId))
     }
 
-    public func transcriptionModel(modelId: String) -> any TranscriptionModelV3 {
+    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
         transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
     }
 
-    public func speechModel(modelId: String) -> any SpeechModelV3 {
+    public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
         speechFactory(OpenAISpeechModelId(rawValue: modelId))
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
+    public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModelV4 {
         chatFactory(modelId)
     }
 
-    public func responses(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
+    public func responses(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 {
         responsesFactory(modelId)
     }
 
-    public func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModel {
+    public func completion(_ modelId: OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 {
         completionFactory(modelId)
     }
 
-    @available(*, deprecated, message: "Use textEmbedding instead.")
     public func embedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
+        embeddingFactory(modelId)
+    }
+
+    public func embeddingModel(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
         embeddingFactory(modelId)
     }
 
@@ -118,19 +125,19 @@ public final class AzureProvider: ProviderV3 {
         embeddingFactory(modelId)
     }
 
-    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
+    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
         imageFactory(modelId)
     }
 
-    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
+    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
         imageFactory(modelId)
     }
 
-    public func transcription(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
+    public func transcription(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
         transcriptionFactory(modelId)
     }
 
-    public func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
+    public func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
         speechFactory(modelId)
     }
 }
@@ -186,7 +193,7 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
             }
         }
 
-        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk/azure/\(AZURE_PROVIDER_VERSION)")
+        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk-azure/\(AZURE_PROVIDER_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
@@ -293,22 +300,22 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
         fetch: fetch
     )
 
-    let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel = { modelId in
-        OpenAIChatLanguageModel(
+    let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModelV4 = { modelId in
+        OpenAIChatLanguageModelV4(
             modelId: modelId,
             config: chatConfig
         )
     }
 
-    let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
-        OpenAIResponsesLanguageModel(
+    let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 = { modelId in
+        OpenAIResponsesLanguageModelV4(
             modelId: modelId,
             config: responsesConfig
         )
     }
 
-    let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel = { modelId in
-        OpenAICompletionLanguageModel(
+    let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModelV4 = { modelId in
+        OpenAICompletionLanguageModelV4(
             modelId: modelId,
             config: completionConfig
         )
@@ -321,22 +328,22 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
         )
     }
 
-    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel = { modelId in
-        OpenAIImageModel(
+    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4 = { modelId in
+        OpenAIImageModelV4(
             modelId: modelId,
             config: imageConfig
         )
     }
 
-    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel = { modelId in
-        OpenAITranscriptionModel(
+    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 = { modelId in
+        OpenAITranscriptionModelV4(
             modelId: modelId,
             config: transcriptionConfig
         )
     }
 
-    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel = { modelId in
-        OpenAISpeechModel(
+    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4 = { modelId in
+        OpenAISpeechModelV4(
             modelId: modelId,
             config: speechConfig
         )

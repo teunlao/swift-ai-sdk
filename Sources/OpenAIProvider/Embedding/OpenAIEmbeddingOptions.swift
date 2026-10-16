@@ -11,7 +11,7 @@ private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allow
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
-    guard case .number(let number) = value else {
+    guard case .number(let number) = value, number.isFinite else {
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
@@ -34,7 +34,7 @@ private func parseOptionalString(_ dict: [String: JSONValue], key: String, allow
     return string
 }
 
-public struct OpenAIEmbeddingProviderOptions: Sendable, Equatable {
+public struct OpenAIEmbeddingModelOptions: Sendable, Equatable {
     public let dimensions: Double?
     public let user: String?
 
@@ -43,8 +43,6 @@ public struct OpenAIEmbeddingProviderOptions: Sendable, Equatable {
         self.user = user
     }
 }
-
-public typealias OpenAIEmbeddingModelOptions = OpenAIEmbeddingProviderOptions
 
 private let openaiEmbeddingProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -59,7 +57,7 @@ private let openaiEmbeddingProviderOptionsJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiEmbeddingProviderOptionsSchema = FlexibleSchema<OpenAIEmbeddingProviderOptions>(
+public let openaiEmbeddingProviderOptionsSchema = FlexibleSchema<OpenAIEmbeddingModelOptions>(
     Schema(
         jsonSchemaResolver: { openaiEmbeddingProviderOptionsJSONSchema },
         validator: { value in
@@ -70,7 +68,7 @@ public let openaiEmbeddingProviderOptionsSchema = FlexibleSchema<OpenAIEmbedding
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                let options = OpenAIEmbeddingProviderOptions(
+                let options = OpenAIEmbeddingModelOptions(
                     dimensions: try parseOptionalNumber(dict, key: "dimensions", allowNull: false),
                     user: try parseOptionalString(dict, key: "user", allowNull: false)
                 )

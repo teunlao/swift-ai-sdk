@@ -1,6 +1,7 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import SwiftAISDK
 
 enum ProviderFactory {
     static func makeLanguageModel(
@@ -8,25 +9,25 @@ enum ProviderFactory {
         modelId: String,
         configuration: PlaygroundConfiguration,
         logger: PlaygroundLogger
-    ) throws -> any LanguageModelV3 {
+    ) throws -> LanguageModel {
         switch provider.lowercased() {
         case "gateway":
             guard let apiKey = configuration.keys.gateway, !apiKey.isEmpty else {
                 throw ContextError.missingAPIKey(provider: "gateway")
             }
             let baseURL = configuration.baseURLOverrides["gateway"]
-            return GatewayLanguageModel(
+            return .v3(GatewayLanguageModel(
                 modelId: modelId,
                 apiKey: apiKey,
                 baseURL: baseURL
-            )
+            ))
 
         case "openai":
-            return try OpenAIPlaygroundFactory.makeLanguageModel(
+            return .v4(try OpenAIPlaygroundFactory.makeLanguageModel(
                 modelId: modelId,
                 configuration: configuration,
                 logger: logger
-            )
+            ))
 
         default:
             throw ContextError.unsupportedProvider(provider)

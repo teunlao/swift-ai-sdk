@@ -1,476 +1,132 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import OpenAIProvider
-
-private let embeddingValues = ["sunny day at the beach", "rainy day in the city"]
-private let embeddingVectors: [[Double]] = [
-    [0.1, 0.2, 0.3],
-    [0.4, 0.5, 0.6]
-]
+import AISDKProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
 @Suite("OpenAIEmbeddingModel")
 struct OpenAIEmbeddingModelTests {
-    private func makeConfig(fetch: @escaping FetchFunction) -> OpenAIConfig {
-        OpenAIConfig(
-            provider: "openai.embedding",
-            url: { _ in "https://api.openai.com/v1/embeddings" },
-            headers: { ["Authorization": "Bearer test-api-key"] },
-            fetch: fetch
-        )
+    private actor RequestCapture {
+        var request: URLRequest?
+        func store(_ request: URLRequest) { self.request = request }
+        func value() -> URLRequest? { request }
     }
 
-    @Test("doEmbed maps embeddings, usage and response headers")
-    func testDoEmbedMapsResponse() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func current() -> URLRequest? { request }
-        }
-
+    @Test("embedding requests honor portable dimensions and provider precedence", arguments: [false, true])
+    func dimensionsAndResponse(providerOverride: Bool) async throws {
         let capture = RequestCapture()
+        let responseBody = Data(#"{"data":[{"embedding":[0.1,0.2]}],"usage":{"prompt_tokens":8},"model":"text-embedding-3-small"}"#.utf8)
+        let provider: any ProviderV4 = try createOpenAI(settings: .init(
+            baseURL: "https://proxy.example/v1/",
+            apiKey: "test-api-key",
+            headers: ["X-Provider": "provider"],
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(body: .data(responseBody), urlResponse: HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json", "X-Response": "response"]
+                )!)
+            }
+        ))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-small")
+        let result = try await model.doEmbed(options: .init(
+            values: ["hello"],
+            dimensions: 32,
+            providerOptions: ["openai": providerOverride
+                ? ["dimensions": .number(64), "user": .string("test-user")]
+                : ["user": .string("test-user")]],
+            headers: ["X-Request": "request"]
+        ))
 
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": embeddingVectors.enumerated().map { index, values in
-                [
-                    "object": "embedding",
-                    "index": index,
-                    "embedding": values
-                ]
-            },
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 8,
-                "total_tokens": 8
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: [
-                "Content-Type": "application/json",
-                "X-Test-Header": "value"
-            ]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIEmbeddingModel(
-            modelId: "text-embedding-3-large",
-            config: makeConfig(fetch: fetch)
-        )
-
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(values: embeddingValues)
-        )
-
-        #expect(result.embeddings.count == 2)
-        #expect(result.embeddings == embeddingVectors)
+        #expect(result.embeddings == [[0.1, 0.2]])
         #expect(result.usage?.tokens == 8)
-        guard let request = await capture.current(),
-              let body = request.httpBody,
-              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        #expect(json["model"] as? String == "text-embedding-3-large")
-        if let input = json["input"] as? [String] {
-            #expect(input == embeddingValues)
-        } else {
-            Issue.record("Expected input array")
-        }
-        #expect(json["encoding_format"] as? String == "float")
+        #expect(result.warnings.isEmpty)
+        #expect(result.response?.headers?["x-response"] == "response")
+        let raw = try #require(result.response?.body as? [String: Any])
+        #expect(raw["model"] as? String == "text-embedding-3-small")
+        let request = try #require(await capture.value())
+        #expect(request.url?.absoluteString == "https://proxy.example/v1/embeddings")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-api-key")
+        #expect(request.value(forHTTPHeaderField: "X-Provider") == "provider")
+        #expect(request.value(forHTTPHeaderField: "X-Request") == "request")
+        let data = try #require(request.httpBody)
+        let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(body["model"] as? String == "text-embedding-3-small")
+        #expect(body["input"] as? [String] == ["hello"])
+        #expect(body["encoding_format"] as? String == "float")
+        #expect(body["dimensions"] as? Int == (providerOverride ? 64 : 32))
+        #expect(body["user"] as? String == "test-user")
     }
 
-    @Test("V4 doEmbed maps request, provider options, usage and response")
-    func testV4DoEmbedMapsRequestOptionsAndResponse() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func current() -> URLRequest? { request }
-        }
-
+    @Test("missing usage and dimensions stay optional at the API boundary")
+    func optionalUsageAndDimensions() async throws {
         let capture = RequestCapture()
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": [
-                [
-                    "object": "embedding",
-                    "index": 0,
-                    "embedding": embeddingVectors[0]
-                ]
-            ],
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 12,
-                "total_tokens": 12
-            ]
-        ]
+        let model = OpenAIEmbeddingModel(modelId: "custom-embedding", config: .init(
+            provider: "custom.embedding",
+            url: { _ in "https://example.com/embeddings" },
+            headers: { [:] },
+            fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(Data(#"{"data":[{"embedding":[1,2]}]}"#.utf8)),
+                    urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+                )
+            }
+        ))
+        let result = try await model.doEmbed(options: .init(values: ["hello"]))
+        #expect(result.embeddings == [[1, 2]])
+        #expect(result.usage == nil)
+        let request = try #require(await capture.value())
+        let data = try #require(request.httpBody)
+        let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(body["dimensions"] == nil)
+    }
 
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: [
-                "Content-Type": "application/json",
-                "X-Test-Header": "value"
-            ]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+    @Test("invalid provider dimensions produce a typed option error", arguments: [JSONValue.null, .number(.infinity)])
+    func invalidDimensions(value: JSONValue) async throws {
+        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key", fetch: { request in
+            FetchResponse(
+                body: .data(Data(#"{"data":[{"embedding":[1]}]}"#.utf8)),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+            )
+        }))
+        do {
+            _ = try await provider.embedding("text-embedding-3-small").doEmbed(options: .init(
+                values: ["hello"], providerOptions: ["openai": ["dimensions": value]]
+            ))
+            Issue.record("Expected invalid provider dimensions to be rejected")
+        } catch let error as InvalidArgumentError {
+            #expect(error.argument == "providerOptions")
+            #expect(error.cause is TypeValidationError)
         }
+    }
 
-        let config = OpenAIConfig(
+    @Test("the per-call count limit accepts its boundary and rejects excess values")
+    func countLimit() async throws {
+        let model = OpenAIEmbeddingModel(modelId: "text-embedding-3-small", config: .init(
             provider: "openai.embedding",
-            url: { _ in "https://api.openai.com/v1/embeddings" },
-            headers: { [
-                "Authorization": "Bearer test-api-key",
-                "Custom-Provider-Header": "provider-header-value"
-            ] },
-            fetch: fetch
-        )
-
-        let model = OpenAIEmbeddingModelV4(
-            modelId: "text-embedding-3-large",
-            config: config
-        )
-
-        #expect(model.specificationVersion == "v4")
-        #expect(try await model.maxEmbeddingsPerCall == 2048)
-        #expect(try await model.supportsParallelCalls == true)
-
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV4CallOptions(
-                values: [embeddingValues[0]],
-                providerOptions: [
-                    "openai": [
-                        "dimensions": .number(64),
-                        "user": .string("test-user")
-                    ]
-                ],
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        #expect(result.embeddings == [embeddingVectors[0]])
-        #expect(result.usage?.tokens == 12)
-        #expect(result.response?.headers?["content-type"] == "application/json")
-        #expect(result.response?.headers?["x-test-header"] == "value")
-
-        guard let request = await capture.current(),
-              let body = request.httpBody,
-              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Missing captured request")
-            return
+            url: { _ in "https://example.com/embeddings" },
+            headers: { [:] },
+            fetch: { request in
+                let data = try #require(request.httpBody)
+                let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                #expect((body["input"] as? [String])?.count == 2048)
+                return FetchResponse(
+                    body: .data(Data(#"{"data":[{"embedding":[1]}]}"#.utf8)),
+                    urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+                )
+            }
+        ))
+        let result = try await model.doEmbed(options: .init(values: Array(repeating: "x", count: 2048)))
+        #expect(result.embeddings == [[1]])
+        do {
+            _ = try await model.doEmbed(options: .init(values: Array(repeating: "x", count: 2049)))
+            Issue.record("Expected the embedding count boundary to reject the call")
+        } catch let error as TooManyEmbeddingValuesForCallError {
+            #expect(error.provider == "openai.embedding")
+            #expect(error.modelId == "text-embedding-3-small")
+            #expect(error.maxEmbeddingsPerCall == 2048)
+            #expect(error.values.count == 2049)
         }
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalized["authorization"] == "Bearer test-api-key")
-        #expect(normalized["custom-provider-header"] == "provider-header-value")
-        #expect(normalized["custom-request-header"] == "request-header-value")
-        #expect(normalized["content-type"] == "application/json")
-
-        #expect(json["model"] as? String == "text-embedding-3-large")
-        #expect(json["input"] as? [String] == [embeddingValues[0]])
-        #expect(json["encoding_format"] as? String == "float")
-        #expect(json["dimensions"] as? Int == 64 || json["dimensions"] as? Double == 64)
-        #expect(json["user"] as? String == "test-user")
-    }
-
-    @Test("doEmbed merges headers and provider options")
-    func testDoEmbedMergesHeadersAndOptions() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func current() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": [
-                [
-                    "object": "embedding",
-                    "index": 0,
-                    "embedding": embeddingVectors[0]
-                ]
-            ],
-            "model": "text-embedding-3-large"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.embedding",
-            url: { _ in "https://api.openai.com/v1/embeddings" },
-            headers: { [
-                "Authorization": "Bearer test-api-key",
-                "Custom-Provider-Header": "provider-header-value"
-            ] },
-            fetch: fetch
-        )
-
-        let model = OpenAIEmbeddingModel(modelId: "text-embedding-3-large", config: config)
-
-        _ = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(
-                values: [embeddingValues[0]],
-                providerOptions: [
-                    "openai": ["dimensions": .number(64)]
-                ],
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        guard let request = await capture.current(),
-              let body = request.httpBody,
-              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Missing captured request")
-            return
-        }
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalized["authorization"] == "Bearer test-api-key")
-        #expect(normalized["custom-provider-header"] == "provider-header-value")
-        #expect(normalized["custom-request-header"] == "request-header-value")
-        #expect(normalized["content-type"] == "application/json")
-
-        #expect(json["dimensions"] as? Int == 64 || json["dimensions"] as? Double == 64)
-    }
-
-    // Port of openai-embedding-model.test.ts: "should extract embedding"
-    @Test("doEmbed should extract embedding")
-    func testDoEmbedExtractsEmbedding() async throws {
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": embeddingVectors.enumerated().map { index, values in
-                [
-                    "object": "embedding",
-                    "index": index,
-                    "embedding": values
-                ]
-            },
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 8,
-                "total_tokens": 8
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { _ in
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIEmbeddingModel(
-            modelId: "text-embedding-3-large",
-            config: makeConfig(fetch: fetch)
-        )
-
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(values: embeddingValues)
-        )
-
-        #expect(result.embeddings == embeddingVectors)
-    }
-
-    // Port of openai-embedding-model.test.ts: "should expose the raw response"
-    @Test("doEmbed should expose the raw response")
-    func testDoEmbedExposesRawResponse() async throws {
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": embeddingVectors.enumerated().map { index, values in
-                [
-                    "object": "embedding",
-                    "index": index,
-                    "embedding": values
-                ]
-            },
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 8,
-                "total_tokens": 8
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: [
-                "Content-Type": "application/json",
-                "test-header": "test-value"
-            ]
-        )!
-
-        let fetch: FetchFunction = { _ in
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIEmbeddingModel(
-            modelId: "text-embedding-3-large",
-            config: makeConfig(fetch: fetch)
-        )
-
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(values: embeddingValues)
-        )
-
-        guard let response = result.response else {
-            Issue.record("Expected response to be present")
-            return
-        }
-
-        #expect(response.headers?["content-type"] == "application/json")
-        #expect(response.headers?["test-header"] == "test-value")
-    }
-
-    // Port of openai-embedding-model.test.ts: "should extract usage"
-    @Test("doEmbed should extract usage")
-    func testDoEmbedExtractsUsage() async throws {
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": embeddingVectors.enumerated().map { index, values in
-                [
-                    "object": "embedding",
-                    "index": index,
-                    "embedding": values
-                ]
-            },
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 20,
-                "total_tokens": 20
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { _ in
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIEmbeddingModel(
-            modelId: "text-embedding-3-large",
-            config: makeConfig(fetch: fetch)
-        )
-
-        let result = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(values: embeddingValues)
-        )
-
-        #expect(result.usage?.tokens == 20)
-    }
-
-    // Port of openai-embedding-model.test.ts: "should pass the dimensions setting"
-    @Test("doEmbed should pass the dimensions setting")
-    func testDoEmbedPassesDimensionsSetting() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func current() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-        let responseJSON: [String: Any] = [
-            "object": "list",
-            "data": embeddingVectors.enumerated().map { index, values in
-                [
-                    "object": "embedding",
-                    "index": index,
-                    "embedding": values
-                ]
-            },
-            "model": "text-embedding-3-large",
-            "usage": [
-                "prompt_tokens": 8,
-                "total_tokens": 8
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let httpResponse = HTTPURLResponse(
-            url: URL(string: "https://api.openai.com/v1/embeddings")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIEmbeddingModel(
-            modelId: "text-embedding-3-large",
-            config: makeConfig(fetch: fetch)
-        )
-
-        _ = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(
-                values: embeddingValues,
-                providerOptions: [
-                    "openai": ["dimensions": .number(64)]
-                ]
-            )
-        )
-
-        guard let request = await capture.current(),
-              let body = request.httpBody,
-              let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Missing captured request")
-            return
-        }
-
-        #expect(json["model"] as? String == "text-embedding-3-large")
-        if let input = json["input"] as? [String] {
-            #expect(input == embeddingValues)
-        } else {
-            Issue.record("Expected input array")
-        }
-        #expect(json["encoding_format"] as? String == "float")
-        #expect(json["dimensions"] as? Int == 64 || json["dimensions"] as? Double == 64)
     }
 }

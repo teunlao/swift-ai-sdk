@@ -129,7 +129,7 @@ struct OpenAIProviderOptionsParsingTests {
             ]
         ]
 
-        let parsed: OpenAIEmbeddingProviderOptions? = try await parseProviderOptions(
+        let parsed: OpenAIEmbeddingModelOptions? = try await parseProviderOptions(
             provider: "openai",
             providerOptions: providerOptions,
             schema: openaiEmbeddingProviderOptionsSchema
@@ -147,7 +147,7 @@ struct OpenAIProviderOptionsParsingTests {
         ]
 
         do {
-            let _: OpenAIEmbeddingProviderOptions? = try await parseProviderOptions(
+            let _: OpenAIEmbeddingModelOptions? = try await parseProviderOptions(
                 provider: "openai",
                 providerOptions: providerOptions,
                 schema: openaiEmbeddingProviderOptionsSchema

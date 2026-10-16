@@ -60,32 +60,12 @@ struct ChatCommand: AsyncParsableCommand {
         let tools: ToolSet? = withTools ? createDemoTools() : nil
 
         if stream {
-            if #available(macOS 13.0, *) {
-                try await runStreaming(
-                    model: languageModel,
-                    promptText: inputText,
-                    tools: tools,
-                    logger: context.logger
-                )
-            } else if tools != nil {
-                await context.logger.verbose("⚠️ Streaming with tools requires macOS 13.0+")
-                throw ContextError.toolsRequireMacOS13
-            } else {
-                // Fallback for old macOS without tools
-                let callOptions = try await buildCallOptions(for: languageModel, promptText: inputText)
-                let streamResult = try await languageModel.doStream(options: callOptions)
-
-                for try await part in streamResult.stream {
-                    switch part {
-                    case .textDelta(_, let delta, _):
-                        print(delta, terminator: "")
-                        fflush(stdout)
-                    default:
-                        break
-                    }
-                }
-                print()
-            }
+            try await runStreaming(
+                model: languageModel,
+                promptText: inputText,
+                tools: tools,
+                logger: context.logger
+            )
         } else {
             try await runSynchronous(
                 model: languageModel,
@@ -121,37 +101,27 @@ struct ChatCommand: AsyncParsableCommand {
     }
 
     private func runSynchronous(
-        model: any LanguageModelV3,
+        model: LanguageModel,
         promptText: String,
         tools: ToolSet?,
         jsonOutput: Bool,
         logger: PlaygroundLogger
     ) async throws {
-        if let tools = tools {
-            if #available(macOS 13.0, *) {
-                try await runWithTools(model: model, promptText: promptText, tools: tools, jsonOutput: jsonOutput, logger: logger)
-            } else {
-                await logger.verbose("⚠️ Tools require macOS 13.0+")
-                throw ContextError.toolsRequireMacOS13
-            }
+        if let tools {
+            try await runWithTools(model: model, promptText: promptText, tools: tools, jsonOutput: jsonOutput, logger: logger)
             return
         }
-
-        // Non-tools synchronous path
-
-        let callOptions = try await buildCallOptions(for: model, promptText: promptText)
-        let response = try await model.doGenerate(options: callOptions)
-
-        let text = extractText(from: response.content)
+        let response = try await generateText(model: model, prompt: promptText)
+        let text = response.text
 
         if jsonOutput {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let payload = PlaygroundJSONResult(
                 text: text,
-                usage: asLanguageModelUsage(response.usage),
-                finishReason: asFinishReason(response.finishReason.unified),
-                warnings: response.warnings.map(asCallWarning)
+                usage: response.usage,
+                finishReason: response.finishReason,
+                warnings: response.warnings
             )
             let data = try encoder.encode(payload)
             print(String(decoding: data, as: UTF8.self))
@@ -163,7 +133,7 @@ struct ChatCommand: AsyncParsableCommand {
 
     @available(macOS 13.0, *)
     private func runStreaming(
-        model: any LanguageModelV3,
+        model: LanguageModel,
         promptText: String,
         tools: ToolSet?,
         logger: PlaygroundLogger
@@ -173,64 +143,19 @@ struct ChatCommand: AsyncParsableCommand {
             return
         }
 
-        let callOptions = try await buildCallOptions(for: model, promptText: promptText)
-        let streamResult = try await model.doStream(options: callOptions)
-
-        var aggregatedText = ""
-        var finishReason: FinishReason?
-
-        for try await part in streamResult.stream {
-            switch part {
-            case .textDelta(_, let delta, _):
-                aggregatedText.append(delta)
-                print(delta, terminator: "")
-                fflush(stdout)
-            case .textStart, .textEnd:
-                break
-            case .finish(let reason, _, _):
-                finishReason = asFinishReason(reason.unified)
-            default:
-                await logger.verbose("Skipped stream chunk: \(part)")
-            }
+        let result = try streamText(model: model, prompt: promptText)
+        for try await delta in result.textStream {
+            print(delta, terminator: "")
+            fflush(stdout)
         }
-
         print()
-
-        if let finishReason {
-            await logger.verbose("finishReason: \(finishReason.rawValue)")
-        }
-    }
-
-    private func buildCallOptions(
-        for model: any LanguageModelV3,
-        promptText: String
-    ) async throws -> LanguageModelV3CallOptions {
-        let prompt = Prompt.text(promptText)
-        let standardized = try standardizePrompt(prompt)
-        let supported = try await model.supportedUrls
-        let languagePrompt = try await convertToLanguageModelPrompt(
-            prompt: standardized,
-            supportedUrls: supported
-        )
-        return LanguageModelV3CallOptions(prompt: languagePrompt)
-    }
-
-    private func extractText(from content: [LanguageModelV3Content]) -> String {
-        var output = ""
-        for part in content {
-            switch part {
-            case .text(let textPart):
-                output.append(textPart.text)
-            case .toolCall, .toolResult, .toolApprovalRequest, .reasoning, .custom, .file, .source:
-                continue
-            }
-        }
-        return output
+        let finishReason = try await result.finishReason
+        await logger.verbose("finishReason: \(finishReason.rawValue)")
     }
 
     @available(macOS 13.0, *)
     private func runWithTools(
-        model: any LanguageModelV3,
+        model: LanguageModel,
         promptText: String,
         tools: ToolSet,
         jsonOutput: Bool,
@@ -239,7 +164,7 @@ struct ChatCommand: AsyncParsableCommand {
         await logger.verbose("Using \(tools.count) tool(s)")
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: promptText
         )
@@ -305,7 +230,7 @@ struct ChatCommand: AsyncParsableCommand {
 
     @available(macOS 13.0, *)
     private func runStreamingWithTools(
-        model: any LanguageModelV3,
+        model: LanguageModel,
         promptText: String,
         tools: ToolSet,
         logger: PlaygroundLogger
@@ -313,7 +238,7 @@ struct ChatCommand: AsyncParsableCommand {
         await logger.verbose("Streaming with \(tools.count) tool(s)")
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: promptText
         )

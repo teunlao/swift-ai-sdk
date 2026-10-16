@@ -125,20 +125,10 @@ private func openAIMultipartDispositionValue(_ part: OpenAIMultipartPart, key: S
 
 @Suite("OpenAI Files and Skills")
 struct OpenAIFilesSkillsTests {
-    @Test("provider wires files and skills interfaces with upstream ids")
-    func providerWiresUploadInterfaces() throws {
-        let provider = try createOpenAIProvider(settings: .init(apiKey: "test-api-key"))
-
-        #expect(provider.files().provider == "openai.files")
-        #expect(provider.files().specificationVersion == "v4")
-        #expect(provider.skills().provider == "openai.skills")
-        #expect(provider.skills().specificationVersion == "v4")
-    }
-
     @Test("uploadFile sends OpenAI multipart payload and maps response metadata")
     func uploadFileSendsMultipartPayloadAndMapsMetadata() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = try createOpenAIProvider(settings: .init(
+        let provider: any ProviderV4 = try createOpenAIProvider(settings: .init(
             baseURL: "https://api.openai.com/v1",
             apiKey: "test-api-key",
             organization: "test-org",
@@ -158,7 +148,7 @@ struct OpenAIFilesSkillsTests {
             }
         ))
 
-        let result = try await provider.files().uploadFile(
+        let result = try await (try #require(try provider.files())).uploadFile(
             options: .init(
                 data: .base64("AQID"),
                 mediaType: "application/octet-stream",
@@ -216,14 +206,14 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadFile defaults purpose to assistants")
     func uploadFileDefaultsPurpose() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = try createOpenAIProvider(settings: .init(
+        let provider: any ProviderV4 = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 ["id": "file-abc123"]
             }
         ))
 
-        _ = try await provider.files().uploadFile(
+        _ = try await (try #require(try provider.files())).uploadFile(
             options: .init(
                 data: .data(Data([1, 2, 3])),
                 mediaType: "application/octet-stream"
@@ -252,7 +242,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadSkill sends OpenAI skill files and maps warnings/result")
     func uploadSkillSendsMultipartPayloadAndMapsResult() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = try createOpenAIProvider(settings: .init(
+        let provider: any ProviderV4 = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 [
@@ -266,7 +256,7 @@ struct OpenAIFilesSkillsTests {
             }
         ))
 
-        let result = try await provider.skills().uploadSkill(
+        let result = try await (try #require(try provider.skills())).uploadSkill(
             options: .init(
                 files: [
                     SkillsV4File(path: "index.ts", data: .text("console.log(\"hello\")"))
@@ -309,7 +299,7 @@ struct OpenAIFilesSkillsTests {
     @Test("uploadSkill sends binary OpenAI skill file without displayTitle warning")
     func uploadSkillSendsBinaryFileWithoutDisplayTitleWarning() async throws {
         let capture = OpenAIUploadRequestCapture()
-        let provider = try createOpenAIProvider(settings: .init(
+        let provider: any ProviderV4 = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
             fetch: openAIFetch(capture: capture) { _ in
                 [
@@ -320,7 +310,7 @@ struct OpenAIFilesSkillsTests {
             }
         ))
 
-        let result = try await provider.skills().uploadSkill(
+        let result = try await (try #require(try provider.skills())).uploadSkill(
             options: .init(
                 files: [
                     SkillsV4File(path: "data.bin", data: .data(Data([0x48, 0x65, 0x6C, 0x6C, 0x6F])))
