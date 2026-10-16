@@ -372,7 +372,7 @@ private final class TestLanguageModel: LanguageModelV3, @unchecked Sendable {
     func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
         LanguageModelV3GenerateResult(
             content: [],
-            finishReason: .stop,
+            finishReason: .init(unified: .stop),
             usage: LanguageModelV3Usage(inputTokens: .init(total: 0), outputTokens: .init(total: 0)),
             warnings: []
         )
