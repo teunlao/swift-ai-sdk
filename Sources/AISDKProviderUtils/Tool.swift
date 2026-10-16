@@ -32,13 +32,6 @@ public enum ToolExecutionResult<Output: Sendable>: Sendable {
 
     /// Convert any result type to a unified AsyncThrowingStream.
     ///
-    /// Port of upstream executeTool behavior that normalizes all result types
-    /// into an async generator.
-    ///
-    /// - `.value`: Yields single value then finishes
-    /// - `.future`: Awaits operation, yields result, then finishes
-    /// - `.stream`: Returns the stream as-is
-    ///
     /// **Note**: AsyncThrowingStream is single-use (like JS AsyncIterable).
     /// Call this method at the consumption point, not for storage.
     public func asAsyncStream() -> AsyncThrowingStream<Output, Error> {
@@ -73,8 +66,6 @@ public enum ToolExecutionResult<Output: Sendable>: Sendable {
 
     /// Resolve to a single value (for non-streaming cases).
     ///
-    /// Port of upstream behavior that awaits promises or returns immediate values.
-    ///
     /// - Throws: `ToolExecutionResultError.streamingResultRequiresStreamConsumption`
     ///   if called on a `.stream` case.
     public func resolve() async throws -> Output {
@@ -105,126 +96,197 @@ public enum ToolExecutionResultError: Error, LocalizedError {
 }
 
 /**
+ A context object that is passed into tool execution.
+
+ Port of `@ai-sdk/provider-utils/src/types/context.ts`. Upstream allows any
+ value (`Record<string, unknown>`); the Swift port keeps context JSON so it can
+ be validated against a `contextSchema` and filtered for telemetry.
+ */
+public typealias Context = [String: JSONValue]
+
+/**
+ Output of a tool result that is sent to the language model.
+
+ Port of `ToolResultOutput` from `@ai-sdk/provider-utils/src/types/content-part.ts`.
+ */
+public typealias ToolResultOutput = LanguageModelV3ToolResultOutput
+
+/**
+ Description of a function tool: fixed text, or text resolved per call from the
+ tool context.
+
+ Port of the `description` field of upstream `BaseFunctionTool`
+ (`string | ((options: { context }) => string)`).
+ */
+public enum ToolDescription: Sendable, ExpressibleByStringLiteral, ExpressibleByStringInterpolation {
+    case text(String)
+    case resolve(@Sendable (ToolDescriptionOptions) -> String)
+
+    public init(stringLiteral value: String) {
+        self = .text(value)
+    }
+
+    public init(stringInterpolation: DefaultStringInterpolation) {
+        self = .text(String(stringInterpolation: stringInterpolation))
+    }
+
+    /// Resolves the description for the given tool context.
+    public func resolve(context: Context?) -> String {
+        switch self {
+        case .text(let text):
+            return text
+        case .resolve(let resolver):
+            return resolver(ToolDescriptionOptions(context: context))
+        }
+    }
+
+    /// The fixed description text, or `nil` when the description is resolved per call.
+    public var text: String? {
+        if case .text(let text) = self { return text }
+        return nil
+    }
+}
+
+/// Options passed to a description resolver.
+public struct ToolDescriptionOptions: Sendable {
+    /// The tool context of the current call.
+    public let context: Context?
+
+    public init(context: Context?) {
+        self.context = context
+    }
+}
+
+/// Options passed to `Tool.toModelOutput`.
+public struct ToolModelOutputOptions: Sendable {
+    /// The ID of the tool call.
+    public let toolCallId: String
+
+    /// The input of the tool call.
+    public let input: JSONValue
+
+    /// The output of the tool call.
+    public let output: JSONValue
+
+    public init(toolCallId: String, input: JSONValue, output: JSONValue) {
+        self.toolCallId = toolCallId
+        self.input = input
+        self.output = output
+    }
+}
+
+/**
  A tool contains the description and the schema of the input that the tool expects.
  This enables the language model to generate the input.
 
  The tool can also contain an optional execute function for the actual execution function of the tool.
 
- Port of `@ai-sdk/provider-utils/types/tool.ts`.
-
- Uses `ModelMessage` from `ProviderUtils/ModelMessage.swift` for callback signatures.
-
- **Upstream reference**: `@ai-sdk/provider-utils/types/tool.ts`
+ Port of `@ai-sdk/provider-utils/src/types/tool.ts`. The upstream union of
+ function, dynamic, provider-defined and provider-executed tools is one struct
+ discriminated by `type` (`nil` means `function`).
  */
-
 public struct Tool: Sendable {
     /// Defers exposing the tool until it is discovered by tool search.
     /// Discovered tools become available on the next model step.
     public let deferLoading: Bool?
 
-    /// An optional description of what the tool does.
-    /// Will be used by the language model to decide whether to use the tool.
-    /// Not used for provider-defined tools.
-    public let description: String?
+    /// Description of what the tool does: fixed text, or resolved per call from the tool context.
+    /// Used by the language model to decide whether to use the tool. Not used for provider tools.
+    public let description: ToolDescription?
 
-    /// An optional title of the tool.
+    /// An optional title of the tool. Upstream deprecates it in favor of `metadata`.
     public let title: String?
 
-    /// Additional provider-specific metadata.
+    /// Additional provider-specific metadata, passed through to the provider.
     public let providerOptions: [String: JSONValue]?
 
     /// Optional metadata for the tool (used by some adapters like MCP).
     public let _meta: [String: JSONValue]?
+
+    /// Metadata about the tool itself (e.g. its source). Not sent to the language model;
+    /// propagated onto the resulting tool call's `toolMetadata`.
     public let metadata: [String: JSONValue]?
 
     /// The schema of the input that the tool expects.
     public let inputSchema: FlexibleSchema<JSONValue>
 
-    /// An optional list of input examples that show the language
-    /// model what the input should look like.
+    /// An optional schema describing the context that the tool expects.
+    /// The context is validated against it and passed to execution as `options.context`.
+    public let contextSchema: FlexibleSchema<JSONValue>?
+
+    /// An optional list of input examples that show the language model what the input should look like.
     public let inputExamples: [LanguageModelV3ToolInputExample]?
 
     /// Strict mode setting for the tool.
-    ///
-    /// Providers that support strict mode will use this setting to determine how the
-    /// input should be generated. Strict mode will always produce valid inputs, but
-    /// it might limit what input schemas are supported.
     public let strict: Bool?
 
     /// Whether the tool needs approval before it can be executed.
+    ///
+    /// Upstream deprecates this in favor of `toolApproval` on `generateText` / `streamText`.
     public let needsApproval: NeedsApproval?
 
-    /// Optional function that is called when the argument streaming starts.
-    /// Only called when the tool is used in a streaming context.
-    public let onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)?
+    /// Called when the model starts generating the tool input.
+    /// In non-streaming contexts, it is called immediately before `onInputAvailable`.
+    public let onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)?
 
-    /// Optional function that is called when an argument streaming delta is available.
-    /// Only called when the tool is used in a streaming context.
+    /// Called when an argument streaming delta is available (streaming only).
     public let onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)?
 
-    /// Optional function that is called when a tool call can be started.
+    /// Called when a tool call can be started, even if the execute function is not provided.
     public let onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)?
 
-    /// Async function that is called with the arguments from the tool call and produces a result.
-    ///
-    /// Returns `ToolExecutionResult<JSONValue>` to support streaming and non-streaming execution.
-    /// Port of TypeScript `ToolExecuteFunction<INPUT, OUTPUT>` which returns
-    /// `AsyncIterable<OUTPUT> | PromiseLike<OUTPUT> | OUTPUT`.
-    public let execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
+    /// Called with the arguments from the tool call; produces a result.
+    public let execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
 
-    /// Optional output schema for validation.
+    /// Optional output schema.
     public let outputSchema: FlexibleSchema<JSONValue>?
 
-    /// Optional conversion function that maps the tool result to an output for the language model.
-    public let toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
+    /// Maps the tool result to an output for the language model.
+    /// If not provided, the tool result is sent as JSON (or text for a string output).
+    public let toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)?
 
-    /// The type of the tool.
+    /// The type of the tool (`nil` means `function`).
     public let type: ToolType?
 
-    /// For provider-defined tools: the ID (format: "<provider>.<tool-name>")
+    /// For provider tools: the ID (format: "<provider>.<tool-name>").
     public let id: String?
 
-    /// For provider-defined tools: the name
+    /// For provider tools: the name.
     public let name: String?
 
-    /// For provider-defined tools: the arguments
+    /// For provider tools: the arguments.
     public let args: [String: JSONValue]?
 
-    /// For provider-defined tools: whether this provider-executed tool supports
-    /// deferred results.
-    ///
-    /// When true, the tool result may not be returned in the same turn as the
-    /// tool call (e.g., when using programmatic tool calling where a server tool
-    /// triggers a client-executed tool, and the server tool's result is deferred
-    /// until the client tool is resolved).
-    ///
-    /// This flag allows the AI SDK to handle tool results that arrive without a
-    /// matching tool call in the current response.
-    ///
-    /// Upstream reference: `@ai-sdk/provider-utils/src/types/tool.ts`.
+    /// For provider tools: whether the provider executes the tool.
+    public let isProviderExecuted: Bool?
+
+    /// For provider-executed tools: whether the tool result may arrive in a later turn
+    /// than the tool call.
     public let supportsDeferredResults: Bool?
 
     public init(
         deferLoading: Bool? = nil,
-        description: String? = nil,
+        description: ToolDescription? = nil,
         title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
         _meta: [String: JSONValue]? = nil,
         metadata: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
+        contextSchema: FlexibleSchema<JSONValue>? = nil,
         inputExamples: [LanguageModelV3ToolInputExample]? = nil,
         strict: Bool? = nil,
         needsApproval: NeedsApproval? = nil,
-        onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+        onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
         onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
         onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-        execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
+        execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
         outputSchema: FlexibleSchema<JSONValue>? = nil,
-        toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil,
+        toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? = nil,
         type: ToolType? = nil,
         id: String? = nil,
         name: String? = nil,
         args: [String: JSONValue]? = nil,
+        isProviderExecuted: Bool? = nil,
         supportsDeferredResults: Bool? = nil
     ) {
         self.deferLoading = deferLoading
@@ -234,6 +296,7 @@ public struct Tool: Sendable {
         self._meta = _meta
         self.metadata = metadata
         self.inputSchema = inputSchema
+        self.contextSchema = contextSchema
         self.inputExamples = inputExamples
         self.strict = strict
         self.needsApproval = needsApproval
@@ -247,6 +310,7 @@ public struct Tool: Sendable {
         self.id = id
         self.name = name
         self.args = args
+        self.isProviderExecuted = isProviderExecuted
         self.supportsDeferredResults = supportsDeferredResults
     }
 }
@@ -266,155 +330,55 @@ public enum ToolType: String, Sendable {
 /**
  Whether the tool needs approval before it can be executed.
 
- ## TypeScript Mapping
-
- In TypeScript, the upstream type is:
- ```typescript
- needsApproval?: boolean | ((input, options) => boolean | Promise<boolean>)
- ```
-
- Swift adaptation using enum for better type safety:
- - TypeScript `true` → Swift `.always`
- - TypeScript `false` → Swift `.never`
- - TypeScript `function` → Swift `.conditional(function)`
-
- ## Usage Examples
-
- ```swift
- // Static approval (TypeScript: needsApproval: true)
- let tool1 = tool(
-     inputSchema: schema,
-     needsApproval: .always
- )
-
- // No approval (TypeScript: needsApproval: false)
- let tool2 = tool(
-     inputSchema: schema,
-     needsApproval: .never
- )
-
- // Dynamic approval (TypeScript: needsApproval: async (input, options) => {...})
- let tool3 = tool(
-     inputSchema: schema,
-     needsApproval: .conditional { input, options in
-         // Check if input contains sensitive data
-         guard case .object(let obj) = input,
-               case .bool(let sensitive) = obj["sensitive"] else {
-             return false
-         }
-         return sensitive
-     }
- )
- ```
-
- ## Rationale
-
- Using an enum instead of `Bool | Closure` provides:
- - **Type safety**: Compiler enforces correct usage
- - **Pattern matching**: Easy to handle all cases exhaustively
- - **Clarity**: Intent is explicit (`.always` vs `true`)
+ Port of upstream `needsApproval?: boolean | ToolNeedsApprovalFunction`:
+ `true` → `.always`, `false` → `.never`, a function → `.conditional`.
  */
 public enum NeedsApproval: Sendable {
     /// Always needs approval before execution.
-    ///
-    /// TypeScript equivalent: `needsApproval: true`
     case always
 
-    /// Never needs approval, executes immediately.
-    ///
-    /// TypeScript equivalent: `needsApproval: false` or `needsApproval: undefined`
+    /// Never needs approval.
     case never
 
-    /// Conditional approval based on input and execution context.
-    ///
-    /// The closure receives the tool input and approval options, and returns
-    /// whether approval is needed for this specific invocation.
-    ///
-    /// TypeScript equivalent:
-    /// ```typescript
-    /// needsApproval: async (input, options) => boolean
-    /// ```
-    ///
-    /// - Parameters:
-    ///   - input: The tool input (JSONValue)
-    ///   - options: Approval context (tool call ID, messages, experimental context)
-    /// - Returns: `true` if approval is needed, `false` otherwise
+    /// Approval decided per call from the tool input and approval options.
     case conditional(@Sendable (JSONValue, ToolCallApprovalOptions) async throws -> Bool)
 }
 
-/// Additional options that are sent into each tool call.
-public struct ToolCallOptions: Sendable {
+/**
+ Additional options that are sent into each tool execution.
+
+ Port of `ToolExecutionOptions` from `@ai-sdk/provider-utils/src/types/tool-execute-function.ts`.
+ */
+public struct ToolExecutionOptions: Sendable {
     /// The ID of the tool call.
     public let toolCallId: String
 
-    /// Messages that were sent to the language model.
+    /// Messages that were sent to the language model to initiate the response that contained the tool call.
     /// The messages do not include the system prompt nor the assistant response that contained the tool call.
     public let messages: [ModelMessage]
 
-    /// An optional abort signal closure.
+    /// An optional abort signal that indicates that the overall operation should be aborted.
     public let abortSignal: (@Sendable () -> Bool)?
 
-    /// Additional context (experimental).
-    public let experimentalContext: JSONValue?
+    /// Tool context as defined by the tool's context schema.
+    /// Treat it as immutable; update context in `prepareStep` instead.
+    public let context: Context?
 
     public init(
         toolCallId: String,
         messages: [ModelMessage],
         abortSignal: (@Sendable () -> Bool)? = nil,
-        experimentalContext: JSONValue? = nil
+        context: Context? = nil
     ) {
         self.toolCallId = toolCallId
         self.messages = messages
         self.abortSignal = abortSignal
-        self.experimentalContext = experimentalContext
+        self.context = context
     }
 }
 
-// MARK: - Experimental Context Decoding
-
-private enum ExperimentalContextDecodingError: LocalizedError {
-    case missing
-    case invalid
-
-    var errorDescription: String? {
-        switch self {
-        case .missing:
-            return "experimentalContext was not provided."
-        case .invalid:
-            return "experimentalContext could not be decoded to the requested type."
-        }
-    }
-}
-
-private func decodeExperimentalContextValue<T: Decodable>(_ value: JSONValue?) throws -> T {
-    guard let value else { throw ExperimentalContextDecodingError.missing }
-
-    do {
-        let foundation = jsonValueToFoundation(value)
-        let data = try JSONSerialization.data(withJSONObject: foundation)
-        return try JSONDecoder().decode(T.self, from: data)
-    } catch {
-        throw ExperimentalContextDecodingError.invalid
-    }
-}
-
-public extension ToolCallOptions {
-    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
-        try decodeExperimentalContextValue(experimentalContext)
-    }
-}
-
-public extension ToolCallDeltaOptions {
-    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
-        try decodeExperimentalContextValue(experimentalContext)
-    }
-}
-
-public extension ToolCallInputOptions {
-    func decodeExperimentalContext<T: Decodable>(_ type: T.Type) throws -> T {
-        try decodeExperimentalContextValue(experimentalContext)
-    }
-}
+@available(*, deprecated, renamed: "ToolExecutionOptions")
+public typealias ToolCallOptions = ToolExecutionOptions
 
 /// Options for tool call delta (streaming).
 public struct ToolCallDeltaOptions: Sendable {
@@ -430,21 +394,21 @@ public struct ToolCallDeltaOptions: Sendable {
     /// An optional abort signal closure.
     public let abortSignal: (@Sendable () -> Bool)?
 
-    /// Additional context (experimental).
-    public let experimentalContext: JSONValue?
+    /// Tool context as defined by the tool's context schema.
+    public let context: Context?
 
     public init(
         inputTextDelta: String,
         toolCallId: String,
         messages: [ModelMessage],
         abortSignal: (@Sendable () -> Bool)? = nil,
-        experimentalContext: JSONValue? = nil
+        context: Context? = nil
     ) {
         self.inputTextDelta = inputTextDelta
         self.toolCallId = toolCallId
         self.messages = messages
         self.abortSignal = abortSignal
-        self.experimentalContext = experimentalContext
+        self.context = context
     }
 }
 
@@ -462,25 +426,25 @@ public struct ToolCallInputOptions: Sendable {
     /// An optional abort signal closure.
     public let abortSignal: (@Sendable () -> Bool)?
 
-    /// Additional context (experimental).
-    public let experimentalContext: JSONValue?
+    /// Tool context as defined by the tool's context schema.
+    public let context: Context?
 
     public init(
         input: JSONValue,
         toolCallId: String,
         messages: [ModelMessage],
         abortSignal: (@Sendable () -> Bool)? = nil,
-        experimentalContext: JSONValue? = nil
+        context: Context? = nil
     ) {
         self.input = input
         self.toolCallId = toolCallId
         self.messages = messages
         self.abortSignal = abortSignal
-        self.experimentalContext = experimentalContext
+        self.context = context
     }
 }
 
-/// Options for tool approval.
+/// Options for a tool's `needsApproval` function.
 public struct ToolCallApprovalOptions: Sendable {
     /// The ID of the tool call.
     public let toolCallId: String
@@ -488,17 +452,17 @@ public struct ToolCallApprovalOptions: Sendable {
     /// Messages that were sent to the language model.
     public let messages: [ModelMessage]
 
-    /// Additional context (experimental).
-    public let experimentalContext: JSONValue?
+    /// Tool context as defined by the tool's context schema.
+    public let context: Context?
 
     public init(
         toolCallId: String,
         messages: [ModelMessage],
-        experimentalContext: JSONValue? = nil
+        context: Context? = nil
     ) {
         self.toolCallId = toolCallId
         self.messages = messages
-        self.experimentalContext = experimentalContext
+        self.context = context
     }
 }
 
@@ -508,29 +472,33 @@ public struct ToolCallApprovalOptions: Sendable {
  Port of `@ai-sdk/provider-utils` `tool()` helper function.
  */
 public func tool(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     _meta: [String: JSONValue]? = nil,
     metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
+    contextSchema: FlexibleSchema<JSONValue>? = nil,
     inputExamples: [LanguageModelV3ToolInputExample]? = nil,
     strict: Bool? = nil,
     needsApproval: NeedsApproval? = nil,
-    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
+    execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
     outputSchema: FlexibleSchema<JSONValue>? = nil,
-    toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
+    toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? = nil,
+    deferLoading: Bool? = nil
 ) -> Tool {
     Tool(
+        deferLoading: deferLoading,
         description: description,
         title: title,
         providerOptions: providerOptions,
         _meta: _meta,
         metadata: metadata,
         inputSchema: inputSchema,
+        contextSchema: contextSchema,
         inputExamples: inputExamples,
         strict: strict,
         needsApproval: needsApproval,
@@ -550,24 +518,36 @@ public func tool(
  Port of `@ai-sdk/provider-utils` `dynamicTool()` helper function.
  */
 public func dynamicTool(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     _meta: [String: JSONValue]? = nil,
     metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
+    contextSchema: FlexibleSchema<JSONValue>? = nil,
     strict: Bool? = nil,
-    execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>,
-    toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil
+    needsApproval: NeedsApproval? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
+    onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
+    onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
+    execute: @escaping @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>,
+    toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? = nil,
+    deferLoading: Bool? = nil
 ) -> Tool {
     Tool(
+        deferLoading: deferLoading,
         description: description,
         title: title,
         providerOptions: providerOptions,
         _meta: _meta,
         metadata: metadata,
         inputSchema: inputSchema,
+        contextSchema: contextSchema,
         strict: strict,
+        needsApproval: needsApproval,
+        onInputStart: onInputStart,
+        onInputDelta: onInputDelta,
+        onInputAvailable: onInputAvailable,
         execute: execute,
         toModelOutput: toModelOutput,
         type: .dynamic

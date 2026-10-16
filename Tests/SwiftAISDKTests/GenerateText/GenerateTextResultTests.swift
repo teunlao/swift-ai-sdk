@@ -29,7 +29,7 @@ struct GenerateTextResultTests {
         )
 
         let content: [ContentPart] = [
-            .text(text: "text-\(identifier)", providerMetadata: nil),
+            .text(text: "text-\(identifier)", citations: nil, providerMetadata: nil),
             .reasoning(ReasoningOutput(text: "why-\(identifier)")),
             .source(
                 type: "doc",
@@ -70,10 +70,10 @@ struct GenerateTextResultTests {
         )
     }
 
-    @Test("returns final step values")
-    func finalStepAccessors() throws {
+    @Test("aggregates content of all steps and reads text, finish reason and request from the final step")
+    func aggregatesStepsAndReadsFinalStep() throws {
         let steps: [StepResult] = [
-            makeStep(identifier: "one"),
+            makeStep(identifier: "one", finishReason: .toolCalls),
             makeStep(identifier: "two")
         ]
 
@@ -90,23 +90,19 @@ struct GenerateTextResultTests {
         )
 
         #expect(result.text == "text-two")
-        #expect(result.content.count == 5)
-        #expect(result.files.isEmpty)
-        #expect(result.sources.count == 1)
-        #expect(result.toolCalls.map(\.toolName) == ["tool-two"])
-        #expect(result.toolResults.count == 1)
+        #expect(result.content.count == 10)
+        #expect(result.sources.count == 2)
+        #expect(result.toolCalls.map(\.toolName) == ["tool-one", "tool-two"])
+        #expect(result.toolResults.count == 2)
         #expect(result.finishReason == .stop)
-        #expect(result.usage.totalTokens == 10)
-        #expect(result.totalUsage == totalUsage)
-        #expect(result.steps.count == 2)
-        #expect(result.response.messages.count == 1)
+        #expect(result.usage == totalUsage)
+        #expect(result.responseMessages.count == 2)
         #expect(result.request.body == .string("request-two"))
-        #expect(try result.experimentalOutput == "structured-output")
-        #expect(try result.experimentalOutputIfSpecified == "structured-output")
+        #expect(try result.output == "structured-output")
     }
 
-    @Test("throws when experimental output missing")
-    func experimentalOutputMissing() throws {
+    @Test("output throws NoOutputGeneratedError when no output was parsed")
+    func outputMissing() throws {
         let steps: [StepResult] = [makeStep(identifier: "solo")]
 
         let result = DefaultGenerateTextResult<String>(
@@ -115,10 +111,8 @@ struct GenerateTextResultTests {
             resolvedOutput: nil
         )
 
-        #expect(throws: NoOutputSpecifiedError.self) {
-            _ = try result.experimentalOutput
+        #expect(throws: NoOutputGeneratedError.self) {
+            _ = try result.output
         }
-
-        #expect(try result.experimentalOutputIfSpecified == nil)
     }
 }

@@ -80,10 +80,10 @@ struct StreamTextToolErrorProviderMetadataTests {
             ])
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "test",
             tools: tools,
+            prompt: "test",
             stopWhen: [stepCountIs(3)]
         )
 

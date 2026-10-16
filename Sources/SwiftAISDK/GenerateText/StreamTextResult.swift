@@ -84,11 +84,17 @@ public protocol StreamTextResult: Sendable {
     /// Stream of all events (text, reasoning, tool calls/results, etc.).
     var fullStream: AsyncThrowingStream<TextStreamPart, Error> { get }
 
-    /// Stream of partial structured outputs.
-    var experimentalPartialOutputStream: AsyncThrowingStream<PartialOutput, Error> { get }
+    /// Stream of partial outputs.
+    var partialOutputStream: AsyncThrowingStream<PartialOutput, Error> { get }
 
-    /// Parsed structured output when `experimentalOutput` is configured.
-    var experimentalOutput: Output { get async throws }
+    /// The parsed output of the final step.
+    var output: Output { get async throws }
+
+    /// The final step.
+    var finalStep: StepResult { get async throws }
+
+    /// The response messages of all steps, after the messages of initial tool approvals.
+    var responseMessages: [ResponseMessage] { get async throws }
 
     /**
      Consume the underlying stream without processing individual parts.
@@ -155,23 +161,6 @@ public protocol StreamTextResult: Sendable {
     func toSSEStream(includeUsage: Bool) -> AsyncThrowingStream<String, Error>
 }
 
-public extension StreamTextResult {
-    /**
-     Parsed structured output when `experimentalOutput` is configured, if specified.
-
-     - Returns: The parsed structured output when available; otherwise `nil`.
-     - Throws: Any error thrown by `experimentalOutput` other than `NoOutputSpecifiedError`.
-     */
-    var experimentalOutputIfSpecified: Output? {
-        get async throws {
-            do {
-                return try await experimentalOutput
-            } catch is NoOutputSpecifiedError {
-                return nil
-            }
-        }
-    }
-}
 
 /**
 Options for consuming a stream result.

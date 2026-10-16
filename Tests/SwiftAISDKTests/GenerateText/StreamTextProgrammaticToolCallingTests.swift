@@ -267,10 +267,11 @@ struct StreamTextProgrammaticToolCallingTests {
             "rollDie": rollDieTool(executions: executions),
         ]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "Play a dice game between two players.",
             tools: tools,
+            prompt: "Play a dice game between two players.",
+            stopWhen: [isStepCount(10)],
             prepareStep: { options in
                 prepareStepCalls.withValue { $0.append(options.stepNumber) }
 
@@ -292,19 +293,18 @@ struct StreamTextProgrammaticToolCallingTests {
                     ]
                 ])
             },
-            stopWhen: [stepCountIs(10)],
-            onStepFinish: { stepResult in
-                onStepProviderMetadata.withValue { $0.append(stepResult.providerMetadata) }
-                onStepFinishReasons.withValue { $0.append(stepResult.finishReason) }
-            },
-            onFinish: { finalStep, steps, _, finishReason in
+            onEnd: { end in
                 onFinishCapture.withValue {
                     $0 = FinishCapture(
-                        stepCount: steps.count,
-                        finishReason: finishReason,
-                        responseMessageCount: finalStep.response.messages.count
+                        stepCount: end.event.steps.count,
+                        finishReason: end.event.finishReason,
+                        responseMessageCount: end.event.responseMessages.count
                     )
                 }
+            },
+            onStepEnd: { stepResult in
+                onStepProviderMetadata.withValue { $0.append(stepResult.providerMetadata) }
+                onStepFinishReasons.withValue { $0.append(stepResult.finishReason) }
             }
         )
 
@@ -343,10 +343,11 @@ struct StreamTextProgrammaticToolCallingTests {
         #expect(recordedExecutions.filter { $0 == "player1" }.count == 3)
         #expect(recordedExecutions.filter { $0 == "player2" }.count == 3)
 
-        let finalToolCalls = try await result.toolCalls
+        let finalStep = try await result.finalStep
+        let finalToolCalls = finalStep.toolCalls
         #expect(finalToolCalls.isEmpty)
 
-        let finalToolResults = try await result.toolResults
+        let finalToolResults = finalStep.toolResults
         #expect(finalToolResults.count == 1)
         if finalToolResults.count == 1 {
             if case .static(let staticResult) = finalToolResults[0] {
@@ -361,7 +362,7 @@ struct StreamTextProgrammaticToolCallingTests {
         }
 
         // Final content should contain the deferred provider tool result and final text.
-        let finalContent = try await result.content
+        let finalContent = finalStep.content
         #expect(finalContent.count == 2)
         if finalContent.count == 2 {
             if case .toolResult(let toolResult, _) = finalContent[0],
@@ -375,16 +376,16 @@ struct StreamTextProgrammaticToolCallingTests {
                 Issue.record("Expected provider tool result as first content part.")
             }
 
-            if case .text(let text, _) = finalContent[1] {
+            if case .text(let text, _, _) = finalContent[1] {
                 #expect(text == "**Game Over!**")
             } else {
                 Issue.record("Expected final text as second content part.")
             }
         }
 
-        let response = try await result.response
-        #expect(response.messages.count == 9)
-        if let lastResponseMessage = response.messages.last {
+        let responseMessages = try await result.responseMessages
+        #expect(responseMessages.count == 9)
+        if let lastResponseMessage = responseMessages.last {
             if case .assistant(let assistantMessage) = lastResponseMessage,
                case .parts(let parts) = assistantMessage.content {
                 #expect(parts.count == 2)

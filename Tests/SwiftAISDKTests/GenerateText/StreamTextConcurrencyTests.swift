@@ -40,7 +40,7 @@ struct StreamTextConcurrencyTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hello")
+        let result = try streamText(model: .v3(model), prompt: "hello")
 
         let collector1 = StringCollector()
         let collector2 = StringCollector()
@@ -58,9 +58,10 @@ struct StreamTextConcurrencyTests {
         #expect(snapshot2 == ["X","Y"])
     }
 
-    @Test("stop() emits abort before finish")
-    func stopEmitsAbortBeforeFinish() async throws {
+    @Test("an abort ends the stream with an abort part")
+    func abortEndsStreamWithAbortPart() async throws {
         let yielded = Flag()
+        let aborted = AbortFlag()
         // Build a slow stream to allow stop() to interleave
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             _ = Task {
@@ -77,20 +78,29 @@ struct StreamTextConcurrencyTests {
             }
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello"
+            prompt: "hello",
+            settings: CallSettings(abortSignal: { aborted.isSet })
         )
 
-        // Wait until first delta observed from provider, then stop
+        let collected = Task { try await result.collectFullStream() }
         _ = await waitUntil(0.5) { await yielded.get() }
-        result.stop()
+        aborted.set()
 
-        let partsCollected = try await result.collectFullStream()
-        // Ensure .abort appears before .finish
-        let idxAbort = partsCollected.firstIndex { if case .abort = $0 { return true } else { return false } }
-        let idxFinish = partsCollected.firstIndex { if case .finish = $0 { return true } else { return false } }
-        #expect(idxAbort != nil && idxFinish != nil && idxAbort! < idxFinish!)
+        let partsCollected = try await collected.value
+        guard case .abort = partsCollected.last else {
+            Issue.record("Expected the stream to end with an abort part, got \(String(describing: partsCollected.last))")
+            return
+        }
+        #expect(!partsCollected.contains { if case .finish = $0 { return true } else { return false } })
+    }
+
+    final class AbortFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var isSet: Bool { lock.withLock { value } }
+        func set() { lock.withLock { value = true } }
     }
 
     actor EventLog {
@@ -160,10 +170,10 @@ struct StreamTextConcurrencyTests {
             )
         ]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
-            tools: tools
+            tools: tools,
+            prompt: "hello"
         )
 
         _ = try await result.collectFullStream()
@@ -182,11 +192,12 @@ struct StreamTextConcurrencyTests {
         )
     }
 
-    @Test("stop() cancels in-flight tool tasks",
+    @Test("an abort cancels in-flight tool executions",
           .timeLimit(.minutes(1)))
-    func stopCancelsInFlightToolTasks() async throws {
+    func abortCancelsInFlightToolExecutions() async throws {
         let toolStarted = Flag()
         let toolCancelled = Flag()
+        let aborted = AbortFlag()
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             _ = Task {
@@ -228,21 +239,21 @@ struct StreamTextConcurrencyTests {
         ]
 
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
+            tools: tools,
             prompt: "hello",
-            tools: tools
+            settings: CallSettings(abortSignal: { aborted.isSet })
         )
 
-        // Wait for the tool execute closure to start running
+        let consumer = Task { try await result.collectFullStream() }
         let started = await waitUntil(2.0) { await toolStarted.get() }
         #expect(started, "Tool execute closure should have started")
 
-        result.stop()
+        aborted.set()
 
-        // The tool task should be cancelled promptly — if stop() doesn't
-        // cancel in-flight tool tasks, this will hang for ~60 seconds
         let cancelled = await waitUntil(2.0) { await toolCancelled.get() }
-        #expect(cancelled, "Tool task should be cancelled when stop() is called")
+        #expect(cancelled, "Tool task should be cancelled when the call is aborted")
+        _ = try? await consumer.value
     }
 }

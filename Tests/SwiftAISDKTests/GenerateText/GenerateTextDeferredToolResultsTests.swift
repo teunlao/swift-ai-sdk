@@ -84,7 +84,7 @@ struct GenerateTextDeferredToolResultsTests {
             doGenerate: .array([step1, step2])
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test",
@@ -109,7 +109,7 @@ struct GenerateTextDeferredToolResultsTests {
                 Issue.record("Expected tool-error content part.")
             }
 
-            if case .text(let text, _) = result.content[1] {
+            if case .text(let text, _, _) = result.content[1] {
                 #expect(text == "Final response")
             } else {
                 Issue.record("Expected text content part.")

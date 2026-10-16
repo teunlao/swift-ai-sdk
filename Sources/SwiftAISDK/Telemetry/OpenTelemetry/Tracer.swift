@@ -16,8 +16,13 @@ import AISDKProviderUtils
 public struct SpanOptions: Sendable {
     public let attributes: Attributes?
 
-    public init(attributes: Attributes? = nil) {
+    /// The parent span; `nil` starts a span in the current context.
+    /// Stands in for the OpenTelemetry context argument of `startSpan`.
+    public let parent: (any Span)?
+
+    public init(attributes: Attributes? = nil, parent: (any Span)? = nil) {
         self.attributes = attributes
+        self.parent = parent
     }
 }
 

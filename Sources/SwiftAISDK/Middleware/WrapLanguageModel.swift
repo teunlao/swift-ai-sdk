@@ -103,6 +103,46 @@ public func wrapLanguageModel(
     )
 }
 
+/// Wraps a V4 model with one middleware.
+public func wrapLanguageModel(
+    model: any LanguageModelV4,
+    middleware: LanguageModelV4Middleware,
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    wrapLanguageModel(model: model, middleware: .single(middleware), modelId: modelId, providerId: providerId)
+}
+
+/// Wraps a V4 model with middlewares; the first transforms the input first, the last wraps the model directly.
+public func wrapLanguageModel(
+    model: any LanguageModelV4,
+    middleware: [LanguageModelV4Middleware],
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    wrapLanguageModel(model: model, middleware: .multiple(middleware), modelId: modelId, providerId: providerId)
+}
+
+/// Wraps a V3 model with one V4 middleware, resolving the model to V4 first.
+public func wrapLanguageModel(
+    model: any LanguageModelV3,
+    middleware: LanguageModelV4Middleware,
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    wrapLanguageModel(model: asLanguageModelV4(model), middleware: .single(middleware), modelId: modelId, providerId: providerId)
+}
+
+/// Wraps a V3 model with V4 middlewares, resolving the model to V4 first.
+public func wrapLanguageModel(
+    model: any LanguageModelV3,
+    middleware: [LanguageModelV4Middleware],
+    modelId: String? = nil,
+    providerId: String? = nil
+) -> any LanguageModelV4 {
+    wrapLanguageModel(model: asLanguageModelV4(model), middleware: .multiple(middleware), modelId: modelId, providerId: providerId)
+}
+
 /// Input type for middleware parameter - can be single or multiple
 public enum MiddlewareInput: Sendable {
     case single(LanguageModelV3Middleware)

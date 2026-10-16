@@ -11,8 +11,8 @@ struct OpenAICodeInterpreterInputContractRegressionTests {
             "code_interpreter": openaiTools.codeInterpreter()
         ]
 
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "ci_1",
                 toolName: "code_interpreter",
                 input: #"{"code":"print(\"hi\")","containerId":"cntr_test"}"#,
@@ -20,7 +20,7 @@ struct OpenAICodeInterpreterInputContractRegressionTests {
             ),
             tools: tools,
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 

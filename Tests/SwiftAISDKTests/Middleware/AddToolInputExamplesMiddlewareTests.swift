@@ -48,7 +48,7 @@ struct AddToolInputExamplesMiddlewareTests {
     struct TransformParamsTests {
         @Test("appends examples to tool description")
         func appendsExamples() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -79,7 +79,7 @@ Input Examples:
 
         @Test("handles tool without existing description")
         func noExistingDescription() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -109,7 +109,7 @@ Input Examples:
     struct PrefixTests {
         @Test("uses provided prefix")
         func usesPrefix() async throws {
-            let middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
                 prefix: "Here are some example inputs:"
             ))
 
@@ -143,7 +143,7 @@ Here are some example inputs:
     struct FormatTests {
         @Test("uses default JSON stringify format")
         func defaultFormat() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -181,7 +181,7 @@ Input Examples:
 
         @Test("uses custom format function")
         func customFormat() async throws {
-            let middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
                 format: { example, index in
                     let encoder = JSONEncoder()
                     guard let data = try? encoder.encode(JSONValue.object(example.input)) else {
@@ -223,7 +223,7 @@ Input Examples:
     struct RemoveTests {
         @Test("removes inputExamples by default")
         func removesByDefault() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -246,7 +246,7 @@ Input Examples:
 
         @Test("keeps inputExamples when remove is false")
         func keepsWhenRemoveFalse() async throws {
-            let middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(remove: false))
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(remove: false))
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -274,7 +274,7 @@ Input Examples:
     struct EdgeCaseTests {
         @Test("passes through tools without inputExamples")
         func noInputExamples() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [makeFunctionTool(name: "weather", description: "Get the weather")])
@@ -289,7 +289,7 @@ Input Examples:
 
         @Test("passes through tools with empty inputExamples array")
         func emptyInputExamples() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -310,7 +310,7 @@ Input Examples:
 
         @Test("passes through provider tools unchanged")
         func providerToolsUnchanged() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let providerTool = LanguageModelV3ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
@@ -332,7 +332,7 @@ Input Examples:
 
         @Test("handles multiple tools with mixed examples")
         func mixedExamples() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -360,16 +360,49 @@ Input Examples:
 
         @Test("handles empty tools array")
         func emptyToolsArray() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(middleware, makeBaseOptions(tools: []))
             #expect(result.tools == [])
         }
 
         @Test("handles nil tools")
         func nilTools() async throws {
-            let middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(middleware, makeBaseOptions(tools: nil))
             #expect(result.tools == nil)
         }
+    }
+
+    @Test("appends examples to V4 function tools and leaves provider tools and other parameters unchanged")
+    func v4() async throws {
+        let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
+        let providerTool = LanguageModelV4Tool.provider(LanguageModelV4ProviderTool(id: "openai.web_search", name: "web_search", args: [:]))
+        let result = try await middleware.transformParams!(
+            .generate,
+            LanguageModelV4CallOptions(
+                prompt: middlewareTestPrompt,
+                tools: [
+                    .function(LanguageModelV4FunctionTool(
+                        name: "weather",
+                        inputSchema: .object([:]),
+                        inputExamples: [LanguageModelV4ToolInputExample(input: ["location": .string("San Francisco/CA")])],
+                        description: "Get the weather"
+                    )),
+                    providerTool,
+                ],
+                reasoning: .low
+            ),
+            MockLanguageModelV4()
+        )
+
+        #expect(result.tools == [
+            .function(LanguageModelV4FunctionTool(
+                name: "weather",
+                inputSchema: .object([:]),
+                description: "Get the weather\n\nInput Examples:\n{\"location\":\"San Francisco/CA\"}"
+            )),
+            providerTool,
+        ])
+        #expect(result.reasoning == .low)
     }
 }

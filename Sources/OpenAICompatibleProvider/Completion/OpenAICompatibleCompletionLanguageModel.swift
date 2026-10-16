@@ -251,16 +251,16 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
                         switch parseResult {
                         case .failure(let error, _):
                             finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                            continuation.yield(.error(error: .error(error)))
                         case .success(let chunk, let raw):
                             switch chunk {
                             case .error(let errorData):
                                 finishReason = .init(unified: .error, raw: nil)
-                                continuation.yield(.error(error: streamErrorValue(
+                                continuation.yield(.error(error: .value(streamErrorValue(
                                     errorData,
                                     rawJSON: try? jsonValue(from: raw),
                                     contract: options.contract
-                                )))
+                                ))))
                             case .data(let data):
                                 if isFirstChunk {
                                     isFirstChunk = false
@@ -714,7 +714,7 @@ private func convertOpenAICompatibleCompletionStreamPartToV3(
     case let .raw(rawValue):
         return .raw(rawValue: rawValue)
     case let .error(error):
-        return .error(error: error)
+        return .error(error: error.jsonValue)
     default:
         throw UnsupportedFunctionalityError(
             functionality: "OpenAI-compatible Completion V4 stream part on V3 facade"

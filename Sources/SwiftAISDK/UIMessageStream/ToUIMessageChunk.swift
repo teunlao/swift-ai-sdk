@@ -39,7 +39,7 @@ public func toUIMessageChunk(
     switch part {
     case .textStart(let id, let metadata): return .textStart(id: id, providerMetadata: metadata)
     case .textDelta(let id, let text, let metadata): return .textDelta(id: id, delta: text, providerMetadata: metadata)
-    case .textEnd(let id, let metadata): return .textEnd(id: id, providerMetadata: metadata)
+    case .textEnd(let id, let metadata, _): return .textEnd(id: id, providerMetadata: metadata)
     case .reasoningStart(let id, let metadata):
         return options.sendReasoning ? .reasoningStart(id: id, providerMetadata: metadata) : nil
     case .reasoningDelta(let id, let text, let metadata):
@@ -47,8 +47,8 @@ public func toUIMessageChunk(
     case .reasoningEnd(let id, let metadata):
         return options.sendReasoning ? .reasoningEnd(id: id, providerMetadata: metadata) : nil
     case .custom(let kind, let metadata): return .custom(kind: kind, providerMetadata: metadata)
-    case .file(let file):
-        return .file(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: file.providerMetadata)
+    case .file(let file, let metadata):
+        return .file(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: metadata ?? file.providerMetadata)
     case .reasoningFile(let file, let metadata):
         return options.sendReasoning
             ? .reasoningFile(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: metadata)
@@ -61,7 +61,7 @@ public func toUIMessageChunk(
         case .document(let id, let mediaType, let title, let filename, let metadata):
             return .sourceDocument(sourceId: id, mediaType: mediaType, title: title, filename: filename, providerMetadata: metadata)
         }
-    case .toolInputStart(let id, let name, let metadata, let executed, let isDynamic, let title):
+    case .toolInputStart(let id, let name, let metadata, let executed, let isDynamic, let title, _, _):
         return .toolInputStart(toolCallId: id, toolName: name, providerExecuted: executed,
                                providerMetadata: metadata, dynamic: dynamic(name, isDynamic), title: title)
     case .toolInputDelta(let id, let text, _): return .toolInputDelta(toolCallId: id, inputTextDelta: text)
@@ -95,7 +95,7 @@ public func toUIMessageChunk(
     case .finish(let reason, _, _):
         return options.sendFinish ? .finish(finishReason: reason, messageMetadata: options.messageMetadata) : nil
     case .abort(let reason): return .abort(reason: reason)
-    case .toolInputEnd, .raw: return nil
+    case .toolInputEnd, .raw, .toolApprovalResponse: return nil
     }
 }
 

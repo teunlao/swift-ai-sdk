@@ -410,12 +410,12 @@ struct OpenAICompatibleCompletionLanguageModelV4Tests {
                 "code": .null
             ])
         ])))
-        #expect(parts.dropFirst(2).first == .error(error: .object([
+        #expect(parts.dropFirst(2).first == .error(error: .value(.object([
             "message": .string("Test error"),
             "type": .string("server_error"),
             "param": .null,
             "code": .null
-        ])))
+        ]))))
 
         guard case let .finish(finishReason, usage, providerMetadata) = parts.last else {
             Issue.record("Missing V4 error finish")

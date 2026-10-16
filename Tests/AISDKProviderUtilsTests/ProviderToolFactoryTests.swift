@@ -93,9 +93,9 @@ struct ProviderToolFactoryTests {
                 execute: execute,
                 outputSchema: outputSchema,
                 needsApproval: .always,
-                toModelOutput: { value in
-                    #expect(value == JSONValue.object(["result": JSONValue.string("ok")]))
-                    return .json(value: value)
+                toModelOutput: { options in
+                    #expect(options.output == JSONValue.object(["result": JSONValue.string("ok")]))
+                    return .json(value: options.output)
                 },
                 onInputStart: { _ in await onStart.set() },
                 onInputDelta: { _ in await onDelta.set() },

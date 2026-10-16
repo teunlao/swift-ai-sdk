@@ -103,7 +103,7 @@ struct ServerUIStreamParityTests {
             .textDelta(id: "text", text: "answer", providerMetadata: nil),
             .textEnd(id: "text", providerMetadata: nil),
             .finishStep(response: LanguageModelResponseMetadata(id: "response", timestamp: Date(), modelId: "model"),
-                        usage: LanguageModelUsage(), finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
+                        usage: LanguageModelUsage(), performance: .empty, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
             .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let input = AsyncThrowingStream<TextStreamPart, Error> { continuation in
@@ -142,7 +142,7 @@ struct ServerUIStreamParityTests {
     func generatedFileMetadata() {
         let metadata: ProviderMetadata = ["provider": ["id": .string("file")]]
         let file = DefaultGeneratedFile(data: Data([1]), mediaType: "image/png", providerMetadata: metadata)
-        #expect(toUIMessageChunk(.file(file)) == .file(url: "data:image/png;base64,AQ==",
+        #expect(toUIMessageChunk(.file(file: file, providerMetadata: nil)) == .file(url: "data:image/png;base64,AQ==",
                                                       mediaType: "image/png", providerMetadata: metadata))
     }
 

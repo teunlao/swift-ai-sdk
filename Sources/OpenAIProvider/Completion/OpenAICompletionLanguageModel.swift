@@ -129,16 +129,16 @@ private struct OpenAICompletionLanguageModelCore: Sendable {
                         switch parseResult {
                         case .failure(let error, _):
                             finishReason = LanguageModelV4FinishReason(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                            continuation.yield(.error(error: .error(error)))
 
                         case .success(let chunk, _):
                             switch chunk {
                             case .error(let errorData):
                                 finishReason = LanguageModelV4FinishReason(unified: .error, raw: nil)
                                 if let errorValue = try? JSONEncoder().encodeToJSONValue(errorData) {
-                                    continuation.yield(.error(error: errorValue))
+                                    continuation.yield(.error(error: .value(errorValue)))
                                 } else {
-                                    continuation.yield(.error(error: .string(errorData.error.message)))
+                                    continuation.yield(.error(error: .value(.string(errorData.error.message))))
                                 }
 
                             case .data(let data):
@@ -575,7 +575,7 @@ private func convertLanguageModelV4StreamPartToV3(
     case let .raw(rawValue):
         return .raw(rawValue: rawValue)
     case let .error(error):
-        return .error(error: error)
+        return .error(error: error.jsonValue)
     default:
         throw UnsupportedFunctionalityError(functionality: "OpenAI completion V4 stream part \(value) on V3 facade")
     }

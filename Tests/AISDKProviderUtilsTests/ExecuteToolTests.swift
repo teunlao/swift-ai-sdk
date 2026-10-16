@@ -283,7 +283,7 @@ struct ExecuteToolTests {
             toolCallId: "call-123",
             messages: [], // Empty messages array for simplicity
             abortSignal: { false },
-            experimentalContext: JSONValue.string("context")
+            context: ["key": .string("context")]
         )
 
         let stream = executeTool(
@@ -298,7 +298,7 @@ struct ExecuteToolTests {
         let capturedOptions = await capture.getCaptured()
         #expect(capturedOptions?.toolCallId == "call-123")
         #expect(capturedOptions?.messages.isEmpty == true)
-        #expect(capturedOptions?.experimentalContext == JSONValue.string("context"))
+        #expect(capturedOptions?.context == ["key": .string("context")])
     }
 
     @Test("executeTool supports cancellation")

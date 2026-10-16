@@ -22,8 +22,8 @@ struct ParseToolCallTests {
 
     @Test("should successfully parse a valid tool call")
     func testSuccessfullyParseValidToolCall() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: #"{"param1": "test", "param2": 42}"#
@@ -45,7 +45,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -70,8 +70,8 @@ struct ParseToolCallTests {
 
     @Test("should successfully parse a valid tool call with provider metadata")
     func testSuccessfullyParseValidToolCallWithProviderMetadata() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: #"{"param1": "test", "param2": 42}"#,
@@ -97,7 +97,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -115,8 +115,8 @@ struct ParseToolCallTests {
 
     @Test("should successfully process empty tool calls for tools that have no inputSchema")
     func testSuccessfullyProcessEmptyToolCallsWithNoInputSchema() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: ""
@@ -133,7 +133,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -148,8 +148,8 @@ struct ParseToolCallTests {
 
     @Test("should successfully process empty object tool calls for tools that have no inputSchema")
     func testSuccessfullyProcessEmptyObjectToolCalls() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: "{}"
@@ -166,7 +166,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -183,15 +183,15 @@ struct ParseToolCallTests {
 
     @Test("should return invalid dynamic call when tools is nil")
     func testReturnsInvalidDynamicCallWhenToolsIsNil() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: "{}"
             ),
             tools: nil,
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -210,8 +210,8 @@ struct ParseToolCallTests {
 
     @Test("should return invalid dynamic call when tool is not found")
     func testReturnsInvalidDynamicCallWhenToolNotFound() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "nonExistentTool",
                 input: "{}"
@@ -232,7 +232,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -254,8 +254,8 @@ struct ParseToolCallTests {
 
     @Test("should return invalid dynamic call when args are invalid")
     func testReturnsInvalidDynamicCallWhenArgsAreInvalid() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: #"{"param1": "test"}"#  // Missing required param2
@@ -277,7 +277,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -326,15 +326,15 @@ struct ParseToolCallTests {
             await capture.increment()
             await capture.capture(options)
 
-            return LanguageModelV3ToolCall(
+            return LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: #"{"param1": "test", "param2": 42}"#
             )
         }
 
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: "invalid json"  // This will trigger repair
@@ -356,7 +356,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: repairFunction,
-            system: "test system",
+            instructions: "test system",
             messages: [.user(UserModelMessage(content: .text("test message")))]
         )
 
@@ -395,8 +395,8 @@ struct ParseToolCallTests {
             return nil  // Repair not possible
         }
 
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: "invalid json"
@@ -418,7 +418,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: repairFunction,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -442,8 +442,8 @@ struct ParseToolCallTests {
             throw TestError()
         }
 
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: "invalid json"
@@ -465,7 +465,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: repairFunction,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 
@@ -484,8 +484,8 @@ struct ParseToolCallTests {
 
     @Test("should set dynamic to true for dynamic tools")
     func testSetsDynamicToTrueForDynamicTools() async throws {
-        let result = await parseToolCall(
-            toolCall: LanguageModelV3ToolCall(
+        let result = try await parseToolCall(
+            toolCall: LanguageModelV4ToolCall(
                 toolCallId: "123",
                 toolName: "testTool",
                 input: #"{"param1": "test", "param2": 42}"#
@@ -508,7 +508,7 @@ struct ParseToolCallTests {
                 )
             ],
             repairToolCall: nil,
-            system: nil,
+            instructions: nil,
             messages: []
         )
 

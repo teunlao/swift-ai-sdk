@@ -17,7 +17,7 @@ import AISDKProviderUtils
    or the tool call text, depending on the model.
  */
 public struct NoObjectGeneratedError: AISDKError, Sendable {
-    public static let errorDomain = "ai.error.NoObjectGeneratedError"
+    public static let errorDomain = "vercel.ai.error.AI_NoObjectGeneratedError"
 
     public let name = "AI_NoObjectGeneratedError"
     public let message: String

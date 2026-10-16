@@ -238,7 +238,7 @@ struct ChatCommand: AsyncParsableCommand {
     ) async throws {
         await logger.verbose("Using \(tools.count) tool(s)")
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: promptText
@@ -265,7 +265,7 @@ struct ChatCommand: AsyncParsableCommand {
 
             for (index, content) in result.content.enumerated() {
                 switch content {
-                case .text(let text, _):
+                case .text(let text, _, _):
                     print("[\(index)] 💬 \(text)")
                 case .toolCall(let call, _):
                     print("[\(index)] 🔧 Tool: \(call.toolName)")
@@ -294,7 +294,7 @@ struct ChatCommand: AsyncParsableCommand {
         var output = ""
         for part in content {
             switch part {
-            case .text(let text, _):
+            case .text(let text, _, _):
                 output.append(text)
             default:
                 continue
@@ -312,10 +312,10 @@ struct ChatCommand: AsyncParsableCommand {
     ) async throws {
         await logger.verbose("Streaming with \(tools.count) tool(s)")
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: promptText,
-            tools: tools
+            tools: tools,
+            prompt: promptText
         )
 
         var stepNumber = 0
@@ -347,7 +347,7 @@ struct ChatCommand: AsyncParsableCommand {
                     await logger.verbose("   Output: \(result.output)")
                 }
 
-            case .finishStep(_, let usage, let finishReason, let rawFinishReason, _):
+            case .finishStep(_, let usage, _, let finishReason, let rawFinishReason, _):
                 stepNumber += 1
                 print("\n")
                 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

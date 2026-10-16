@@ -11,7 +11,7 @@ public struct TypedTool<Input: Codable & Sendable, Output: Codable & Sendable>: 
     public let tool: Tool
 
     /// Strongly-typed execute closure (if provided).
-    public let execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)?
+    public let execute: (@Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>)?
 
     /// Strongly-typed input schema (defaults to `.auto(Input.self)`).
     public let inputSchema: FlexibleSchema<Input>
@@ -20,7 +20,7 @@ public struct TypedTool<Input: Codable & Sendable, Output: Codable & Sendable>: 
     public let outputSchema: FlexibleSchema<Output>?
 
     /// Convenience accessor for the erased execute closure.
-    public var erasedExecute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? {
+    public var erasedExecute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)? {
         tool.execute
     }
 
@@ -35,17 +35,19 @@ public struct TypedTool<Input: Codable & Sendable, Output: Codable & Sendable>: 
 /// - validates/decodes incoming `JSONValue` into `Input`,
 /// - encodes the result `Output` back into `JSONValue`, preserving streaming behavior.
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
+    metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
+    contextSchema: FlexibleSchema<JSONValue>? = nil,
     strict: Bool? = nil,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)? = nil,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: (@Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>)? = nil,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> TypedTool<Input, Output> {
     let resolvedInputSchema = inputSchema.resolve()
     let jsonInputSchema = FlexibleSchema<JSONValue>(
@@ -57,7 +59,7 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
         FlexibleSchema<JSONValue>(jsonSchema { try await schema.jsonSchema() })
     }
 
-    let wrappedExecute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
+    let wrappedExecute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     if let execute = execute {
         wrappedExecute = { rawInput, options in
             let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
@@ -75,27 +77,18 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
         wrappedExecute = nil
     }
 
-    let wrappedToModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
-    if let toModelOutput {
-        wrappedToModelOutput = { json in
-            do {
-                let output = try decodeTypedOutput(json, schema: resolvedOutputSchema)
-                return toModelOutput(output)
-            } catch {
-                // DX: do not crash the process if tool output decoding fails.
-                // Fall back to returning the raw JSON output to the model and surface the issue via stderr.
-                fputs("tool(toModelOutput): Failed to decode tool output to typed value; falling back to raw JSON. Error: \(error)\n", stderr)
-                return .json(value: json)
-            }
-        }
-    } else {
-        wrappedToModelOutput = nil
-    }
+    let wrappedToModelOutput = wrapTypedToModelOutput(
+        toModelOutput,
+        inputSchema: resolvedInputSchema,
+        outputSchema: resolvedOutputSchema
+    )
 
     let erased = AISDKProviderUtils.tool(
         description: description,
         providerOptions: providerOptions,
+        metadata: metadata,
         inputSchema: jsonInputSchema,
+        contextSchema: contextSchema,
         strict: strict,
         needsApproval: needsApproval,
         onInputStart: onInputStart,
@@ -140,16 +133,16 @@ public extension TypedTool {
 
 
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema inputType: Input.Type,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: (@Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>)? = nil,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: (@Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>)? = nil,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> TypedTool<Input, Output> {
     tool(
         description: description,
@@ -167,17 +160,17 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 
 /// Convenience overload for simple (non-streaming) execute functions.
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
     strict: Bool? = nil,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> Output,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> TypedTool<Input, Output> {
     tool(
         description: description,
@@ -198,17 +191,17 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 }
 
 public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     strict: Bool? = nil,
     inputSchema inputType: Input.Type,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+    onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
     onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
     onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> Output,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> TypedTool<Input, Output> {
     tool(
         description: description,
@@ -228,13 +221,13 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 // MARK: - Dynamic Tool Helpers
 
 public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> Tool {
     let resolvedInputSchema = inputSchema.resolve()
     let jsonInputSchema = FlexibleSchema<JSONValue>(
@@ -246,7 +239,7 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
         FlexibleSchema<JSONValue>(jsonSchema { try await schema.jsonSchema() })
     }
 
-    let wrappedExecute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { rawInput, options in
+    let wrappedExecute: @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue> = { rawInput, options in
         let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
         let typedResult = try await execute(typedInput, options)
         return try mapToolExecutionResult(typedResult) { output in
@@ -254,22 +247,11 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
         }
     }
 
-    let wrappedToModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
-    if let toModelOutput {
-        wrappedToModelOutput = { json in
-            do {
-                let output = try decodeTypedOutput(json, schema: resolvedOutputSchema)
-                return toModelOutput(output)
-            } catch {
-                // DX: do not crash the process if tool output decoding fails.
-                // Fall back to returning the raw JSON output to the model and surface the issue via stderr.
-                fputs("dynamicTool(toModelOutput): Failed to decode tool output to typed value; falling back to raw JSON. Error: \(error)\n", stderr)
-                return .json(value: json)
-            }
-        }
-    } else {
-        wrappedToModelOutput = nil
-    }
+    let wrappedToModelOutput = wrapTypedToModelOutput(
+        toModelOutput,
+        inputSchema: resolvedInputSchema,
+        outputSchema: resolvedOutputSchema
+    )
 
     return Tool(
         description: description,
@@ -284,13 +266,13 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
 }
 
 public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema inputType: Input.Type,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> Tool {
     dynamicTool(
         description: description,
@@ -304,13 +286,13 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
 }
 
 public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<Input> = FlexibleSchema.auto(Input.self),
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> Output,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> Tool {
     dynamicTool(
         description: description,
@@ -327,13 +309,13 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
 }
 
 public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
-    description: String? = nil,
+    description: ToolDescription? = nil,
     providerOptions: [String: JSONValue]? = nil,
     inputSchema inputType: Input.Type,
     outputSchema: FlexibleSchema<Output>? = nil,
     needsApproval: NeedsApproval? = nil,
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> Output,
-    toModelOutput: (@Sendable (Output) -> LanguageModelV3ToolResultOutput)? = nil
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> Output,
+    toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> Tool {
     dynamicTool(
         description: description,
@@ -346,7 +328,34 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
     )
 }
 
+/// Options passed to a typed tool's `toModelOutput`.
+public struct TypedToolModelOutputOptions<Input: Sendable, Output: Sendable>: Sendable {
+    /// The ID of the tool call.
+    public let toolCallId: String
+
+    /// The input of the tool call.
+    public let input: Input
+
+    /// The output of the tool call.
+    public let output: Output
+}
+
 // MARK: - Bridging Helpers
+
+private func wrapTypedToModelOutput<Input: Codable & Sendable, Output: Codable & Sendable>(
+    _ toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)?,
+    inputSchema: Schema<Input>,
+    outputSchema: Schema<Output>?
+) -> (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? {
+    guard let toModelOutput else { return nil }
+    return { options in
+        let input = try await decodeTypedInput(options.input, schema: inputSchema)
+        let output = try decodeTypedOutput(options.output, schema: outputSchema)
+        return try await toModelOutput(
+            TypedToolModelOutputOptions(toolCallId: options.toolCallId, input: input, output: output)
+        )
+    }
+}
 
 private func decodeTypedInput<Input: Codable & Sendable>(
     _ input: JSONValue,

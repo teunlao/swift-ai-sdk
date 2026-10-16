@@ -3,82 +3,76 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Standardized prompt structure containing system message and messages.
+ Standardized prompt: the instructions and a non-empty list of messages.
+
+ Port of `StandardizedPrompt` from `@ai-sdk/ai/src/prompt/standardize-prompt.ts`.
  */
-public struct StandardizedPrompt: Sendable {
-    public let system: String?
+public struct StandardizedPrompt: Sendable, Equatable {
+    /// Instructions for the model.
+    public let instructions: Instructions?
+
+    /// Messages of the prompt.
     public let messages: [ModelMessage]
 
-    public init(system: String?, messages: [ModelMessage]) {
-        self.system = system
+    public init(instructions: Instructions?, messages: [ModelMessage]) {
+        self.instructions = instructions
         self.messages = messages
     }
+
+    public init(system: String?, messages: [ModelMessage]) {
+        self.init(instructions: system.map(Instructions.text), messages: messages)
+    }
+
+    /// The instructions as plain text when they are a string.
+    public var system: String? { instructions?.text }
 }
 
 /**
- Standardizes a prompt into a consistent format with system message and message list.
+ Standardizes a prompt into instructions and a non-empty message list.
 
- Port of `@ai-sdk/ai/src/prompt/standardize-prompt.ts`.
+ Port of `@ai-sdk/ai/src/prompt/standardize-prompt.ts`. Message shape
+ validation is enforced by the `ModelMessage` type instead of a runtime schema.
 
- Converts various prompt formats into a standardized structure:
- - Extracts system message
- - Converts text prompts to user messages
- - Normalizes message arrays
- - Validates that messages are not empty
-
- TypeScript version is async due to zod schema validation. Swift version is
- synchronous since type system guarantees `[ModelMessage]` correctness.
-
- - Parameter prompt: The prompt to standardize
- - Returns: StandardizedPrompt containing optional system message and array of messages
- - Throws: `InvalidPromptError` if messages are empty or prompt is invalid
+ - Throws: `InvalidPromptError` when neither or both of `prompt`/`messages` are
+   set, when the messages are empty, or when system messages appear without
+   `allowSystemInMessages`.
  */
 public func standardizePrompt(_ prompt: Prompt) throws -> StandardizedPrompt {
-    // Extract system message
-    let system = prompt.system
+    let instructions = prompt.instructions ?? prompt.system
+    let description = String(describing: prompt)
 
-    var messages: [ModelMessage]
-
-    // Handle prompt content
-    if let promptContent = prompt.prompt {
-        switch promptContent {
-        case .text(let text):
-            // Convert simple text to user message (matches upstream line 46-47)
-            messages = [.user(UserModelMessage(
-                content: .text(text),
-                providerOptions: nil
-            ))]
-
-        case .messages(let msgs):
-            // Already have messages
-            messages = msgs
-        }
+    if prompt.prompt == nil && prompt.messages == nil {
+        throw InvalidPromptError(prompt: description, message: "prompt or messages must be defined")
     }
-    // Handle messages array
-    else if let msgs = prompt.messages {
-        messages = msgs
-    }
-    // This should never happen due to Prompt's XOR constraint via init,
-    // but we check defensively to match upstream behavior
-    else {
+
+    if prompt.prompt != nil && prompt.messages != nil {
         throw InvalidPromptError(
-            prompt: "Prompt(system: \(system ?? "nil"), prompt: nil, messages: nil)",
-            message: "prompt or messages must be defined"
+            prompt: description,
+            message: "prompt and messages cannot be defined at the same time"
         )
     }
 
-    // Validate messages are not empty (matches upstream line 59-64)
+    let messages: [ModelMessage]
+    switch prompt.prompt {
+    case .text(let text):
+        messages = [.user(UserModelMessage(content: .text(text), providerOptions: nil))]
+    case .messages(let promptMessages):
+        messages = promptMessages
+    case nil:
+        messages = prompt.messages ?? []
+    }
+
     if messages.isEmpty {
+        throw InvalidPromptError(prompt: description, message: "messages must not be empty")
+    }
+
+    if prompt.allowSystemInMessages != true,
+       messages.contains(where: { if case .system = $0 { return true } else { return false } }) {
         throw InvalidPromptError(
-            prompt: "Prompt(system: \(system ?? "nil"), messages: [])",
-            message: "messages must not be empty"
+            prompt: description,
+            message: "System messages are not allowed in the prompt or messages fields. Use the instructions option instead."
         )
     }
 
-    // Note: TypeScript version validates message schema via zod (line 66-79).
-    // Swift relies on type system: [ModelMessage] is compile-time guaranteed.
-    // No runtime schema validation needed.
-
-    // Return StandardizedPrompt struct (matches upstream line 81-84)
-    return StandardizedPrompt(system: system, messages: messages)
+    return StandardizedPrompt(instructions: instructions, messages: messages)
 }

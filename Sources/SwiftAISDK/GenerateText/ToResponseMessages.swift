@@ -1,200 +1,228 @@
-/**
- Convert generation content parts into assistant/tool response messages.
-
- Port of `@ai-sdk/ai/src/generate-text/to-response-messages.ts`.
- */
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Convert generated content parts to response messages for assistant and tool roles.
+ Converts the content of a `generateText` or `streamText` step to response messages.
 
- Port of `@ai-sdk/ai/src/generate-text/to-response-messages.ts`.
+ Port of `@ai-sdk/ai/src/generate-text/to-response-messages.ts`: an assistant
+ message with the model content (and provider-executed tool results), then a
+ tool message with approval responses and client tool results sorted by tool
+ call order.
  */
 public func toResponseMessages(
     content inputContent: [ContentPart],
     tools: ToolSet?
-) -> [ModelMessage] {
-    var messages: [ModelMessage] = []
+) async throws -> [ResponseMessage] {
+    var responseMessages: [ResponseMessage] = []
+    var toolCallOrder: [String: Int] = [:]
+    var assistantParts: [AssistantContentPart] = []
 
-    let assistantParts: [AssistantContentPart] = inputContent
-        .filter { part in
-            if case .source = part { return false }
-            return true
-        }
-        .filter { part in
-            switch part {
-            case .toolResult(let result, _):
-                return result.providerExecuted == true
-            case .toolError(let error, _):
-                return error.providerExecuted == true
-            default:
-                return true
-            }
-        }
-        .compactMap { part in
-            assistantContentPart(from: part, tools: tools)
-        }
-
-    if !assistantParts.isEmpty {
-        messages.append(
-            .assistant(
-                AssistantModelMessage(content: .parts(assistantParts))
-            )
-        )
-    }
-
-    let toolParts: [ToolContentPart] = inputContent.compactMap { part in
+    for part in inputContent {
         switch part {
-        case .toolResult(let result, _):
-            guard result.providerExecuted != true else { return nil }
-            let output = createToolModelOutput(
-                output: jsonValueToAny(result.output),
+        case .source:
+            continue
+
+        case .text(let text, _, let providerMetadata):
+            guard !text.isEmpty else { continue }
+            assistantParts.append(.text(TextPart(text: text, providerOptions: providerMetadata)))
+
+        case .custom(let kind, let providerMetadata):
+            assistantParts.append(.custom(CustomPart(kind: kind, providerOptions: providerMetadata)))
+
+        case .reasoning(let reasoning):
+            assistantParts.append(.reasoning(ReasoningPart(
+                text: reasoning.text,
+                providerOptions: reasoning.providerMetadata
+            )))
+
+        case .file(let file, let providerMetadata):
+            assistantParts.append(.file(FilePart(
+                data: .string(file.base64),
+                mediaType: file.mediaType,
+                providerOptions: providerMetadata
+            )))
+
+        case .reasoningFile(let file, let providerMetadata):
+            assistantParts.append(.reasoningFile(ReasoningFilePart(
+                data: .string(file.base64),
+                mediaType: file.mediaType,
+                providerOptions: providerMetadata
+            )))
+
+        case .toolCall(let toolCall, let providerMetadata):
+            if toolCallOrder[toolCall.toolCallId] == nil {
+                toolCallOrder[toolCall.toolCallId] = toolCallOrder.count
+            }
+            let input: JSONValue
+            if toolCall.invalid == true, !toolCall.input.isJavaScriptObject {
+                input = .object([:])
+            } else {
+                input = toolCall.input
+            }
+            assistantParts.append(.toolCall(ToolCallPart(
+                toolCallId: toolCall.toolCallId,
+                toolName: toolCall.toolName,
+                input: input,
+                providerOptions: providerMetadata,
+                providerExecuted: toolCall.providerExecuted
+            )))
+
+        case .toolResult(let result, let providerMetadata):
+            guard result.providerExecuted == true else { continue }
+            let output = try await createToolModelOutput(
+                toolCallId: result.toolCallId,
+                input: result.input,
+                output: result.output,
                 tool: tools?[result.toolName],
                 errorMode: .none
             )
-            let part = ToolResultPart(
+            assistantParts.append(.toolResult(ToolResultPart(
                 toolCallId: result.toolCallId,
                 toolName: result.toolName,
-                output: output
+                output: output,
+                providerOptions: providerMetadata
+            )))
+
+        case .toolError(let error, let providerMetadata):
+            guard error.providerExecuted == true else { continue }
+            let output = try await createToolModelOutput(
+                toolCallId: error.toolCallId,
+                input: error.input,
+                output: toolErrorValue(error.error),
+                tool: tools?[error.toolName],
+                errorMode: .json
             )
-            return .toolResult(part)
+            assistantParts.append(.toolResult(ToolResultPart(
+                toolCallId: error.toolCallId,
+                toolName: error.toolName,
+                output: output,
+                providerOptions: providerMetadata
+            )))
+
+        case .toolApprovalRequest(let approval):
+            let inputSchemaInput = approval.toolCall.inputSchemaInput
+            assistantParts.append(.toolApprovalRequest(ToolApprovalRequest(
+                approvalId: approval.approvalId,
+                toolCallId: approval.toolCall.toolCallId,
+                reason: approval.reason,
+                isAutomatic: approval.isAutomatic,
+                signature: approval.signature,
+                inputSchemaInput: inputSchemaInput != approval.toolCall.input ? inputSchemaInput : nil
+            )))
+
+        case .toolApprovalResponse:
+            continue
+        }
+    }
+
+    if !assistantParts.isEmpty {
+        responseMessages.append(.assistant(AssistantModelMessage(content: .parts(assistantParts))))
+    }
+
+    var toolContent: [ToolContentPart] = []
+    for part in inputContent {
+        switch part {
+        case .toolApprovalResponse(let response):
+            toolContent.append(.toolApprovalResponse(ToolApprovalResponse(
+                approvalId: response.approvalId,
+                approved: response.approved,
+                reason: response.reason,
+                providerExecuted: response.providerExecuted
+            )))
+            if !response.approved {
+                toolContent.append(.toolResult(ToolResultPart(
+                    toolCallId: response.toolCall.toolCallId,
+                    toolName: response.toolCall.toolName,
+                    output: .executionDenied(reason: response.reason)
+                )))
+            }
+
+        case .toolResult(let result, _):
+            guard result.providerExecuted != true else { continue }
+            let output = try await createToolModelOutput(
+                toolCallId: result.toolCallId,
+                input: result.input,
+                output: result.output,
+                tool: tools?[result.toolName],
+                errorMode: .none
+            )
+            toolContent.append(.toolResult(ToolResultPart(
+                toolCallId: result.toolCallId,
+                toolName: result.toolName,
+                output: output,
+                providerOptions: result.providerMetadata
+            )))
 
         case .toolError(let error, _):
-            guard error.providerExecuted != true else { return nil }
-            let errorMessage = AISDKProvider.getErrorMessage(error.error)
-            let output = createToolModelOutput(
-                output: errorMessage,
+            guard error.providerExecuted != true else { continue }
+            let output = try await createToolModelOutput(
+                toolCallId: error.toolCallId,
+                input: error.input,
+                output: toolErrorValue(error.error),
                 tool: tools?[error.toolName],
                 errorMode: .text
             )
-            let part = ToolResultPart(
+            toolContent.append(.toolResult(ToolResultPart(
                 toolCallId: error.toolCallId,
                 toolName: error.toolName,
-                output: output
-            )
-            return .toolResult(part)
+                output: output,
+                providerOptions: error.providerMetadata
+            )))
 
         default:
-            return nil
+            continue
         }
     }
 
-    if !toolParts.isEmpty {
-        messages.append(.tool(ToolModelMessage(content: toolParts)))
+    if !toolContent.isEmpty {
+        responseMessages.append(.tool(ToolModelMessage(
+            content: sortToolResultsByToolCallOrder(toolContent, toolCallOrder: toolCallOrder)
+        )))
     }
 
-    return messages
+    return responseMessages
 }
 
-// MARK: - Helpers
+/// The error value as the model sees it: provider error payloads stay JSON.
+private func toolErrorValue(_ error: any Error) -> Any {
+    if let providerError = error as? ProviderToolExecutionError {
+        return providerError.value
+    }
+    return error
+}
 
-private func assistantContentPart(
-    from part: ContentPart,
-    tools: ToolSet?
-) -> AssistantContentPart? {
-    switch part {
-    case .text(let text, let providerMetadata):
-        guard !text.isEmpty else { return nil }
-        let textPart = TextPart(text: text, providerOptions: providerMetadata)
-        return .text(textPart)
-
-    case .custom(let kind, let providerMetadata):
-        return .custom(CustomPart(kind: kind, providerOptions: providerMetadata))
-
-    case .reasoning(let reasoning):
-        let reasoningPart = ReasoningPart(
-            text: reasoning.text,
-            providerOptions: reasoning.providerMetadata
-        )
-        return .reasoning(reasoningPart)
-
-    case .reasoningFile(let file, let providerMetadata):
-        return .reasoningFile(ReasoningFilePart(
-            data: .string(file.base64),
-            mediaType: file.mediaType,
-            providerOptions: providerMetadata
-        ))
-
-    case .file(let file, let providerMetadata):
-        let filePart = FilePart(
-            data: .string(file.base64),
-            mediaType: file.mediaType,
-            providerOptions: providerMetadata
-        )
-        return .file(filePart)
-
-    case .toolCall(let toolCall, let providerMetadata):
-        let toolCallPart = ToolCallPart(
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            input: toolCall.input,
-            providerOptions: providerMetadata,
-            providerExecuted: toolCall.providerExecuted
-        )
-        return .toolCall(toolCallPart)
-
-    case .toolResult(let result, let providerMetadata):
-        guard result.providerExecuted == true else { return nil }
-        let output = createToolModelOutput(
-            output: jsonValueToAny(result.output),
-            tool: tools?[result.toolName],
-            errorMode: .none
-        )
-        let resultPart = ToolResultPart(
-            toolCallId: result.toolCallId,
-            toolName: result.toolName,
-            output: output,
-            providerOptions: providerMetadata
-        )
-        return .toolResult(resultPart)
-
-    case .toolError(let error, let providerMetadata):
-        guard error.providerExecuted == true else { return nil }
-        let errorMessage = AISDKProvider.getErrorMessage(error.error)
-        let output = createToolModelOutput(
-            output: errorMessage,
-            tool: tools?[error.toolName],
-            errorMode: .json
-        )
-        let resultPart = ToolResultPart(
-            toolCallId: error.toolCallId,
-            toolName: error.toolName,
-            output: output,
-            providerOptions: providerMetadata
-        )
-        return .toolResult(resultPart)
-
-    case .toolApprovalRequest(let approval):
-        let request = ToolApprovalRequest(
-            approvalId: approval.approvalId,
-            toolCallId: approval.toolCall.toolCallId
-        )
-        return .toolApprovalRequest(request)
-
-    case .source:
+private func sortToolResultsByToolCallOrder(
+    _ content: [ToolContentPart],
+    toolCallOrder: [String: Int]
+) -> [ToolContentPart] {
+    let toolResults = content.enumerated().compactMap { index, part -> (index: Int, part: ToolContentPart, toolCallId: String)? in
+        if case .toolResult(let result) = part { return (index, part, result.toolCallId) }
         return nil
     }
+
+    let sorted = toolResults.sorted { lhs, rhs in
+        switch (toolCallOrder[lhs.toolCallId], toolCallOrder[rhs.toolCallId]) {
+        case (nil, nil): return lhs.index < rhs.index
+        case (nil, _): return false
+        case (_, nil): return true
+        case (let left?, let right?): return left == right ? lhs.index < rhs.index : left < right
+        }
+    }
+
+    var next = sorted.makeIterator()
+    return content.map { part in
+        if case .toolResult = part { return next.next()!.part }
+        return part
+    }
 }
 
-private func jsonValueToAny(_ value: JSONValue) -> Any {
-    switch value {
-    case .string(let string):
-        return string
-    case .number(let number):
-        return number
-    case .bool(let bool):
-        return bool
-    case .null:
-        return NSNull()
-    case .array(let array):
-        return array.map { jsonValueToAny($0) }
-    case .object(let dictionary):
-        var result: [String: Any] = [:]
-        for (key, entry) in dictionary {
-            result[key] = jsonValueToAny(entry)
+extension JSONValue {
+    /// Whether JavaScript's `typeof` reports `'object'` for the value (objects, arrays, null).
+    var isJavaScriptObject: Bool {
+        switch self {
+        case .object, .array, .null: return true
+        default: return false
         }
-        return result
     }
 }

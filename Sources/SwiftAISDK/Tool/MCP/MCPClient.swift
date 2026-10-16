@@ -436,26 +436,26 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
             case .automatic:
                 let schema = normalizeToolInputSchema(mcpTool.inputSchema)
                 tool = AISDKProviderUtils.dynamicTool(
-                    description: mcpTool.description,
+                    description: mcpTool.description.map(ToolDescription.text),
                     title: resolvedTitle,
                     _meta: mcpTool.meta,
                     metadata: metadata,
                     inputSchema: FlexibleSchema(jsonSchema(schema)),
                     execute: execute,
-                    toModelOutput: Self.mcpToModelOutput
+                    toModelOutput: { Self.mcpToModelOutput($0.output) }
                 )
 
             case .schemas(let schemaDict):
                 guard let schemaDefinition = schemaDict[name] else { continue }
                 tool = AISDKProviderUtils.tool(
-                    description: mcpTool.description,
+                    description: mcpTool.description.map(ToolDescription.text),
                     title: resolvedTitle,
                     _meta: mcpTool.meta,
                     metadata: metadata,
                     inputSchema: schemaDefinition.inputSchema,
                     execute: execute,
                     outputSchema: outputSchema,
-                    toModelOutput: Self.mcpToModelOutput
+                    toModelOutput: { Self.mcpToModelOutput($0.output) }
                 )
             }
 

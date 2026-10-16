@@ -2,69 +2,15 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Result of preparing call settings (omits abortSignal, headers, maxRetries).
-
- Port of `@ai-sdk/ai/src/prompt/prepare-call-settings.ts` return type.
- */
-public struct PreparedCallSettings: Sendable, Equatable {
-    public var maxOutputTokens: Int?
-    public var temperature: Double?
-    public var topP: Double?
-    public var topK: Int?
-    public var presencePenalty: Double?
-    public var frequencyPenalty: Double?
-    public var stopSequences: [String]?
-    public var seed: Int?
-    public var reasoning: LanguageModelV4ReasoningEffort?
-
-    public init(
-        maxOutputTokens: Int? = nil,
-        temperature: Double? = nil,
-        topP: Double? = nil,
-        topK: Int? = nil,
-        presencePenalty: Double? = nil,
-        frequencyPenalty: Double? = nil,
-        stopSequences: [String]? = nil,
-        seed: Int? = nil,
-        reasoning: LanguageModelV4ReasoningEffort? = nil
-    ) {
-        self.maxOutputTokens = maxOutputTokens
-        self.temperature = temperature
-        self.topP = topP
-        self.topK = topK
-        self.presencePenalty = presencePenalty
-        self.frequencyPenalty = frequencyPenalty
-        self.stopSequences = stopSequences
-        self.seed = seed
-        self.reasoning = reasoning
-    }
-}
+/// Validated language model call options.
+public typealias PreparedCallSettings = LanguageModelCallOptions
 
 /**
- Validates call settings and returns a new object with limited values.
+ Validates call settings.
 
- Port of `@ai-sdk/ai/src/prompt/prepare-call-settings.ts::prepareCallSettings`.
+ Port of `@ai-sdk/ai/src/prompt/prepare-language-model-call-options.ts`.
 
- - Parameters:
-   - maxOutputTokens: Maximum number of tokens to generate (must be >= 1 if provided)
-   - temperature: Temperature setting for randomness
-   - topP: Nucleus sampling parameter
-   - topK: Top-K sampling parameter
-   - presencePenalty: Presence penalty setting
-   - frequencyPenalty: Frequency penalty setting
-   - stopSequences: Stop sequences
-   - seed: Random seed for deterministic sampling
-   - reasoning: V4 reasoning effort setting
-
- - Throws: `InvalidArgumentError` if validation fails
-
- - Returns: A `PreparedCallSettings` with validated values
-
- ## Note
- Swift's type system eliminates many runtime type checks from the TypeScript version:
- - `temperature`, `topP`, etc. are guaranteed to be numbers by Swift's type system
- - Only business logic validation (e.g., maxOutputTokens >= 1) is needed
+ - Throws: `InvalidArgumentError` when `maxOutputTokens` is below 1.
  */
 public func prepareCallSettings(
     maxOutputTokens: Int? = nil,
@@ -76,24 +22,8 @@ public func prepareCallSettings(
     stopSequences: [String]? = nil,
     seed: Int? = nil,
     reasoning: LanguageModelV4ReasoningEffort? = nil
-) throws -> PreparedCallSettings {
-    // Validate maxOutputTokens
-    if let maxOutputTokens = maxOutputTokens {
-        if maxOutputTokens < 1 {
-            throw InvalidArgumentError(
-                parameter: "maxOutputTokens",
-                value: JSONValue.number(Double(maxOutputTokens)),
-                message: "maxOutputTokens must be >= 1"
-            )
-        }
-    }
-
-    // Swift's type system guarantees that temperature, topP, topK,
-    // presencePenalty, frequencyPenalty, and seed are the correct types,
-    // so no additional validation is needed beyond what TypeScript does
-
-    // Return validated settings
-    return PreparedCallSettings(
+) throws -> LanguageModelCallOptions {
+    try LanguageModelCallOptions(
         maxOutputTokens: maxOutputTokens,
         temperature: temperature,
         topP: topP,
@@ -103,5 +33,22 @@ public func prepareCallSettings(
         stopSequences: stopSequences,
         seed: seed,
         reasoning: reasoning
-    )
+    ).prepared()
+}
+
+extension CallSettings {
+    /// The language model call options of these settings.
+    public var languageModelCallOptions: LanguageModelCallOptions {
+        LanguageModelCallOptions(
+            maxOutputTokens: maxOutputTokens,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            stopSequences: stopSequences,
+            seed: seed,
+            reasoning: reasoning
+        )
+    }
 }

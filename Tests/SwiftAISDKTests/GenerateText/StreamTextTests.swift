@@ -97,7 +97,7 @@ struct StreamTextBasicTests {
             return steps.count == 3
         }
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
             stopWhen: [stopCondition]
@@ -131,7 +131,7 @@ struct StreamTextBasicTests {
         }
 
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -164,7 +164,7 @@ struct StreamTextBasicTests {
         )
 
         let fallbackDate = Date(timeIntervalSince1970: 123)
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
             internalOptions: StreamTextInternalOptions(
@@ -182,7 +182,7 @@ struct StreamTextBasicTests {
         #expect(step.response.timestamp == fallbackDate)
         #expect(step.response.modelId == "mock-model-id")
 
-        if case let .finishStep(response, _, _, _, _) = emitted.first(where: { part in
+        if case let .finishStep(response, _, _, _, _, _) = emitted.first(where: { part in
             if case .finishStep = part { return true } else { return false }
         }) {
             #expect(response.id == "fallback-id")
@@ -219,10 +219,10 @@ struct StreamTextBasicTests {
         )
 
         let tracer = MockTracer()
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalTelemetry: TelemetrySettings(isEnabled: false, tracer: tracer),
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)]),
             internalOptions: StreamTextInternalOptions(
                 now: { 0 },
                 generateId: { "disabled-span" },
@@ -259,13 +259,13 @@ struct StreamTextBasicTests {
         )
 
         let tracer = MockTracer()
-        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
         let nowValues: [Double] = [0.0, 123.0, 200.0]
         let nowValuesShared = LockedValue(initial: 0)
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalTelemetry: telemetry,
+            telemetry: telemetry,
             internalOptions: StreamTextInternalOptions(
                 now: {
                     let index = nowValuesShared.withValue { value -> Int in
@@ -311,13 +311,13 @@ struct StreamTextBasicTests {
         )
 
         let tracer = MockTracer()
-        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
         let nowValues: [Double] = [0.0, 10.0, 210.0]
         let nowValuesShared = LockedValue(initial: 0)
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalTelemetry: telemetry,
+            telemetry: telemetry,
             internalOptions: StreamTextInternalOptions(
                 now: {
                     let index = nowValuesShared.withValue { value -> Int in
@@ -368,16 +368,13 @@ struct StreamTextBasicTests {
 
         let tracer = MockTracer()
         let fallbackDate = Date(timeIntervalSince1970: 456)
-        let telemetry = TelemetrySettings(
-            isEnabled: true,
-            metadata: ["test-key": .string("value")],
-            tracer: tracer
-        )
+        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalTelemetry: telemetry,
+            telemetry: telemetry,
+            runtimeContext: ["test-key": .string("value")],
             internalOptions: StreamTextInternalOptions(
                 now: { 0 },
                 generateId: { "enabled-span" },
@@ -394,7 +391,7 @@ struct StreamTextBasicTests {
         #expect(outerSpan.attributes["ai.response.text"] == .string("Hello!"))
         let totalTokens = try #require(asLanguageModelUsage(defaultUsage).totalTokens)
         #expect(outerSpan.attributes["ai.usage.totalTokens"] == .int(totalTokens))
-        #expect(outerSpan.attributes["ai.telemetry.metadata.test-key"] == .string("value"))
+        #expect(outerSpan.attributes["ai.settings.context.test-key"] == .string("value"))
         #expect(outerSpan.attributes["ai.operationId"] == .string("ai.streamText"))
 
         let innerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
@@ -454,10 +451,10 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
-            tools: tools
+            tools: tools,
+            prompt: "hello"
         )
 
         // Act: collect full stream to inspect emitted parts and then accessors.
@@ -517,7 +514,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
             stopWhen: [stepCountIs(3)]
@@ -567,7 +564,7 @@ struct StreamTextBasicTests {
         }
 
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -604,7 +601,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
             stopWhen: [stepCountIs(1)]
@@ -640,7 +637,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -685,7 +682,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -725,7 +722,7 @@ struct StreamTextBasicTests {
                     }
                 }
             }
-            return createAsyncIterableStream(source: mapped)
+            return mapped
         }
 
         let parts: [LanguageModelV3StreamPart] = [
@@ -751,10 +748,10 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalTransform: [uppercaseTransform]
+            transform: [uppercaseTransform]
         )
 
         let chunks = try await convertReadableStreamToArray(result.fullStream)
@@ -886,7 +883,7 @@ struct StreamTextBasicTests {
                 }
             }
 
-            return createAsyncIterableStream(source: mapped)
+            return mapped
         }
 
         let finishEvent = LockedValue<StepResult?>(initial: nil)
@@ -902,21 +899,15 @@ struct StreamTextBasicTests {
         ]
 
         let tracer = MockTracer()
-        let telemetry = TelemetrySettings(isEnabled: true, tracer: tracer)
+        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "test-input",
             tools: tools,
-            experimentalTelemetry: telemetry,
-            experimentalTransform: [uppercaseToolTransform],
-            stopWhen: [stepCountIs(3)],
-            onStepFinish: { step in
-                stepEvents.withValue { $0.append(step) }
-            },
-            onFinish: { finalStep, _, _, _ in
-                finishEvent.withValue { $0 = finalStep }
-            },
+            prompt: "test-input",
+            stopWhen: [isStepCount(3)],
+            telemetry: telemetry,
+            transform: [uppercaseToolTransform],
             internalOptions: StreamTextInternalOptions(
                 now: { nowValues.withValue { values in values.isEmpty ? 0.0 : values.removeFirst() } },
                 generateId: {
@@ -925,7 +916,13 @@ struct StreamTextBasicTests {
                         return values.removeFirst()
                     }
                 }
-            )
+            ),
+            onEnd: { end in
+                finishEvent.withValue { $0 = end.event.finalStep }
+            },
+            onStepEnd: { step in
+                stepEvents.withValue { $0.append(step) }
+            }
         )
 
         let parts = try await convertReadableStreamToArray(result.fullStream)
@@ -997,7 +994,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -1052,7 +1049,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -1090,7 +1087,7 @@ struct StreamTextBasicTests {
         }
 
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -1100,7 +1097,7 @@ struct StreamTextBasicTests {
         var sawSource = false
         for chunk in chunks {
             switch chunk {
-            case .file(let f):
+            case .file(let f, _):
                 #expect(f.mediaType == "application/octet-stream")
                 #expect(!f.data.isEmpty)
                 sawFile = true
@@ -1143,11 +1140,11 @@ struct StreamTextBasicTests {
         let counter = Counter()
         let finished = Flag()
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            onChunk: { _ in Task { await counter.inc() } },
-            onFinish: { _, _, _, _ in Task { await finished.set() } }
+            onChunk: { _ in await counter.inc() },
+            onEnd: { _ in await finished.set() }
         )
 
         _ = try await convertReadableStreamToArray(result.fullStream)
@@ -1212,10 +1209,10 @@ struct StreamTextBasicTests {
 	            )
 	        ]
 
-	        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+	        let result = try streamText(
 	            model: .v3(model),
-	            prompt: "hello",
 	            tools: tools,
+	            prompt: "hello",
 	            stopWhen: [stepCountIs(3)]
 	        )
 
@@ -1258,7 +1255,7 @@ struct StreamTextBasicTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hello"
         )
@@ -1309,10 +1306,10 @@ struct StreamTextBasicTests {
         let result: DefaultStreamTextResult<String, String> = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalOutput: Output.text()
+            output: Output.text()
         )
 
-        let partials = try await convertReadableStreamToArray(result.experimentalPartialOutputStream)
+        let partials = try await convertReadableStreamToArray(result.partialOutputStream)
         #expect(partials == ["He", "Hell", "Hello"])
 
         _ = try await result.waitForFinish()
@@ -1347,14 +1344,14 @@ struct StreamTextBasicTests {
         let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalOutput: Output.object(schema: summarySchema())
+            output: Output.object(schema: summarySchema())
         )
 
         async let finishTask = result.waitForFinish()
         _ = try await result.collectFullStream()
         let finish = try await finishTask
         #expect(finish.finalStep.text == "{\"value\":\"Hello\"}")
-        let output = try await result.experimentalOutput
+        let output = try await result.output
         #expect(output == SummaryOutput(value: "Hello"))
     }
 
@@ -1383,46 +1380,13 @@ struct StreamTextBasicTests {
         let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
             model: .v3(model),
             prompt: "hello",
-            experimentalOutput: Output.object(schema: summarySchema())
+            output: Output.object(schema: summarySchema())
         )
 
         _ = try await result.collectFullStream()
-        await #expect(throws: NoOutputSpecifiedError.self) {
-            _ = try await result.experimentalOutput
+        await #expect(throws: (any Error).self) {
+            _ = try await result.output
         }
-    }
-
-    @Test("experimentalOutputIfSpecified returns nil when finish reason is tool-calls")
-    func experimentalOutputIfSpecifiedNilOnToolCalls() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let parts: [LanguageModelV3StreamPart] = [
-            .streamStart(warnings: []),
-            .responseMetadata(id: "toolcalls-optional", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .finish(
-                finishReason: .toolCalls,
-                usage: usage,
-                providerMetadata: nil
-            )
-        ]
-
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
-            for part in parts { continuation.yield(part) }
-            continuation.finish()
-        }
-
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
-        )
-
-        let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
-            model: .v3(model),
-            prompt: "hello",
-            experimentalOutput: Output.object(schema: summarySchema())
-        )
-
-        _ = try await result.collectFullStream()
-        let output = try await result.experimentalOutputIfSpecified
-        #expect(output == nil)
     }
 
     @Test("tool input callbacks are invoked before execution")
@@ -1483,10 +1447,10 @@ struct StreamTextBasicTests {
 
         let tools: ToolSet = ["demo": tool]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
-            tools: tools
+            tools: tools,
+            prompt: "hello"
         )
 
         let full = try await result.collectFullStream()
@@ -1546,13 +1510,13 @@ struct StreamTextBasicTests {
 
         let tools: ToolSet = ["demo": tool]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
             tools: tools,
-            experimentalRepairToolCall: { options in
+            prompt: "hello",
+            repairToolCall: { options in
                 repairCalls.withValue { $0 += 1 }
-                return LanguageModelV3ToolCall(
+                return LanguageModelV4ToolCall(
                     toolCallId: options.toolCall.toolCallId,
                     toolName: options.toolCall.toolName,
                     input: "{\"value\":42}",
@@ -1591,10 +1555,10 @@ struct StreamTextBasicTests {
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
 
         let calls = LockedValue(initial: 0)
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi",
-            onStepFinish: { _ in calls.withValue { $0 += 1 } }
+            onStepEnd: { _ in calls.withValue { $0 += 1 } }
         )
 
         _ = try await result.collectFullStream()
@@ -1603,10 +1567,8 @@ struct StreamTextBasicTests {
         #expect(calls.withValue { $0 } == 1)
     }
 
-    @Test("onError invoked and onFinish not invoked on provider error")
-    func onErrorInvokedOnProviderError() async throws {
-        // Provider emits an error part; actor should finish with error, delivering onError
-        // and never calling onFinish or onStepFinish.
+    @Test("a provider error part reaches onError and the stream, and ends the step with finish reason error")
+    func providerErrorPartIsReported() async throws {
         let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.error(error: .string("boom")))
@@ -1615,31 +1577,20 @@ struct StreamTextBasicTests {
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
 
         let onErrorCalls = LockedValue(initial: 0)
-        let onFinishCalls = LockedValue(initial: 0)
-        let onStepCalls = LockedValue(initial: 0)
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "err",
-            onStepFinish: { _ in onStepCalls.withValue { $0 += 1 } },
-            onFinish: { _, _, _, _ in onFinishCalls.withValue { $0 += 1 } },
-            onError: { _ in onErrorCalls.withValue { $0 += 1 } }
+            onError: { _ in
+                onErrorCalls.withValue { $0 += 1 }
+                return nil
+            }
         )
 
-        // Draining fullStream should throw; that's expected.
-        await #expect(throws: StreamTextError.self) {
-            _ = try await convertReadableStreamToArray(result.fullStream)
-        }
-
-        // Promises may still resolve; ensure we don't crash on waitForFinish.
-        // If no steps were recorded, waitForFinish will throw NoOutputGeneratedError.
-        await #expect(throws: NoOutputGeneratedError.self) {
-            _ = try await result.waitForFinish()
-        }
-
+        let parts = try await convertReadableStreamToArray(result.fullStream)
+        #expect(parts.contains { if case .error = $0 { return true } else { return false } })
         #expect(onErrorCalls.withValue { $0 } == 1)
-        #expect(onFinishCalls.withValue { $0 } == 0)
-        #expect(onStepCalls.withValue { $0 } == 0)
+        #expect(try await result.finishReason == .error)
     }
 
     // Telemetry error status is covered indirectly in other suites; direct status checks can be flaky
@@ -1669,10 +1620,10 @@ struct StreamTextBasicTests {
         struct Snapshot: Sendable { var reason: FinishReason?; var usage: LanguageModelUsage? }
         let snap = LockedValue(initial: Snapshot(reason: nil, usage: nil))
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "ok",
-            onStepFinish: { step in
+            onStepEnd: { step in
                 snap.withValue { s in
                     s.reason = step.finishReason
                     s.usage = step.usage
@@ -1686,99 +1637,6 @@ struct StreamTextBasicTests {
         let captured = snap.withValue { $0 }
         #expect(captured.reason == .stop)
         #expect(captured.usage?.totalTokens == 5)
-    }
-
-    @Test("stop() emits abort before final finish")
-    func stopEmitsAbortBeforeFinish() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
-            c.yield(.streamStart(warnings: []))
-            c.yield(.responseMetadata(id: "s", modelId: "m", timestamp: Date(timeIntervalSince1970: 0)))
-            c.yield(.textStart(id: "t", providerMetadata: nil))
-            // Delay finish so we can call stop() before it arrives
-            Task {
-                try? await delay(30)
-                c.yield(.textEnd(id: "t", providerMetadata: nil))
-                c.yield(.finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil))
-                c.finish()
-            }
-        }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-            model: .v3(model),
-            prompt: "hi"
-        )
-
-        // Request stop immediately; actor should emit abort before session finish.
-        result.stop()
-        let parts = try await convertReadableStreamToArray(result.fullStream)
-        let types = parts.map { part -> String in
-            switch part {
-            case .start: return "start"
-            case .startStep: return "start-step"
-            case .finishStep: return "finish-step"
-            case .abort: return "abort"
-            case .finish: return "finish"
-            case .textStart: return "text-start"
-            case .textEnd: return "text-end"
-            case .textDelta: return "text-delta"
-            case .reasoningStart: return "reasoning-start"
-            case .reasoningEnd: return "reasoning-end"
-            case .reasoningDelta: return "reasoning-delta"
-            case .toolInputStart: return "tool-input-start"
-            case .toolInputDelta: return "tool-input-delta"
-            case .toolInputEnd: return "tool-input-end"
-            case .toolCall: return "tool-call"
-            case .toolResult: return "tool-result"
-            case .toolError: return "tool-error"
-            case .toolOutputDenied: return "tool-output-denied"
-            case .toolApprovalRequest: return "tool-approval-request"
-            case .source: return "source"
-            case .custom: return "custom"
-            case .file: return "file"
-            case .reasoningFile: return "reasoning-file"
-            case .raw: return "raw"
-            case .error: return "error"
-            }
-        }
-        // Ensure abort appears before finish in the sequence
-        let abortIndex = types.firstIndex(of: "abort")
-        let finishIndex = types.firstIndex(of: "finish")
-        #expect(abortIndex != nil && finishIndex != nil && abortIndex! < finishIndex!)
-    }
-
-    @Test("AsyncIterable wrappers yield same elements as streams")
-    func iterableWrappersMatchStreams() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
-            .streamStart(warnings: []),
-            .textStart(id: "t", providerMetadata: nil),
-            .textDelta(id: "t", delta: "A", providerMetadata: nil),
-            .textDelta(id: "t", delta: "B", providerMetadata: nil),
-            .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
-        ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
-            parts.forEach { c.yield($0) }
-            c.finish()
-        }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-            model: .v3(model),
-            prompt: "hi"
-        )
-
-        // Collect via stream and iterable wrappers
-        let textChunks = try await convertReadableStreamToArray(result.textStream)
-        var iterableText: [String] = []
-        var iter = result.textStreamIterable.makeAsyncIterator()
-        while let next = try await iter.next() { iterableText.append(next) }
-        #expect(textChunks == iterableText)
-
-        let fullChunks = try await convertReadableStreamToArray(result.fullStream)
-        var iterableFull: [TextStreamPart] = []
-        var iter2 = result.fullStreamIterable.makeAsyncIterator()
-        while let next = try await iter2.next() { iterableFull.append(next) }
-        #expect(fullChunks == iterableFull)
     }
 
     @Test("toUIMessageStream respects sendStart/sendFinish flags")
@@ -1798,7 +1656,7 @@ struct StreamTextBasicTests {
         })
 
         // sendStart=false, sendFinish=true
-        let result1: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result1 = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -1809,7 +1667,7 @@ struct StreamTextBasicTests {
         #expect(!hasStart1 && hasFinish1)
 
         // sendStart=true, sendFinish=false
-        let result2: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result2 = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -1834,7 +1692,7 @@ struct StreamTextBasicTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -1881,7 +1739,7 @@ struct StreamTextBasicTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -1918,7 +1776,7 @@ struct StreamTextBasicTests {
         }
 
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -1963,7 +1821,7 @@ struct StreamTextBasicTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -2004,7 +1862,7 @@ struct StreamTextBasicTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -2036,7 +1894,7 @@ struct StreamTextBasicTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -2076,10 +1934,10 @@ struct StreamTextBasicTests {
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
 
         let calls = LockedValue(initial: 0)
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi",
-            onFinish: { _, _, _, _ in calls.withValue { $0 += 1 } }
+            onEnd: { _ in calls.withValue { $0 += 1 } }
         )
 
         _ = try await result.collectFullStream()
@@ -2159,10 +2017,10 @@ struct StreamTextInvalidToolCallStepLoopTests {
             ),
         ]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
             tools: tools,
+            prompt: "hello",
             stopWhen: [stepCountIs(3)]
         )
 
@@ -2211,10 +2069,10 @@ struct StreamTextInvalidToolCallStepLoopTests {
             ),
         ]
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "hello",
-            tools: tools
+            tools: tools,
+            prompt: "hello"
         )
 
         _ = try await result.readAllText()

@@ -75,7 +75,7 @@ struct GenerateTextV4Tests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: model,
             tools: tools,
             toolChoice: .required,
@@ -177,7 +177,7 @@ struct GenerateTextV4Tests {
                     .file(.init(data: .text("inline notes"), mediaType: "text/plain")),
                 ])))
             ]
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let options = try #require(await captured.recorded())
         guard case .user(let content, _) = try #require(options.prompt.first) else {

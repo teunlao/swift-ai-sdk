@@ -38,6 +38,9 @@ public struct StaticToolError: Sendable {
     /// Provider-specific metadata for the tool error.
     public let providerMetadata: ProviderMetadata?
 
+    /// Metadata of the tool that produced the error (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
+
     /// Whether this is a dynamic tool error.
     /// For StaticToolError, this is always false or nil.
     public let dynamic: Bool?
@@ -49,7 +52,8 @@ public struct StaticToolError: Sendable {
         input: JSONValue,
         error: any Error,
         providerExecuted: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
+        providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -58,6 +62,7 @@ public struct StaticToolError: Sendable {
         self.error = error
         self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
         self.dynamic = false
     }
 }
@@ -93,6 +98,9 @@ public struct DynamicToolError: Sendable {
     /// Provider-specific metadata for the tool error.
     public let providerMetadata: ProviderMetadata?
 
+    /// Metadata of the tool that produced the error (`Tool.metadata`).
+    public let toolMetadata: [String: JSONValue]?
+
     public init(
         toolCallId: String,
         toolName: String,
@@ -100,7 +108,8 @@ public struct DynamicToolError: Sendable {
         input: JSONValue,
         error: any Error,
         providerExecuted: Bool? = nil,
-        providerMetadata: ProviderMetadata? = nil
+        providerMetadata: ProviderMetadata? = nil,
+        toolMetadata: [String: JSONValue]? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -109,6 +118,7 @@ public struct DynamicToolError: Sendable {
         self.error = error
         self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
+        self.toolMetadata = toolMetadata
     }
 }
 
@@ -173,6 +183,13 @@ public enum TypedToolError: Sendable {
         switch self {
         case .static(let error): return error.providerMetadata
         case .dynamic(let error): return error.providerMetadata
+        }
+    }
+
+    public var toolMetadata: [String: JSONValue]? {
+        switch self {
+        case .static(let error): return error.toolMetadata
+        case .dynamic(let error): return error.toolMetadata
         }
     }
 

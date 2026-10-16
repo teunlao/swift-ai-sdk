@@ -226,7 +226,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             "rollDie": rollDieTool(executions: executions),
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "Play a dice game between two players.",
@@ -252,11 +252,11 @@ struct GenerateTextProgrammaticToolCallingTests {
                     ]
                 ])
             },
-            onStepFinish: { stepResult in
+            onStepEnd: { stepResult in
                 onStepProviderMetadata.withValue { $0.append(stepResult.providerMetadata) }
                 onStepFinishReasons.withValue { $0.append(stepResult.finishReason) }
             },
-            onFinish: { event in
+            onEnd: { event in
                 onFinishEvent.withValue { $0 = event }
             }
         )
@@ -315,7 +315,7 @@ struct GenerateTextProgrammaticToolCallingTests {
                 Issue.record("Expected provider tool result as first content part.")
             }
 
-            if case .text(let text, _) = result.content[1] {
+            if case .text(let text, _, _) = result.content[1] {
                 #expect(text == "**Game Over!**")
             } else {
                 Issue.record("Expected final text as second content part.")

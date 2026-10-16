@@ -1,69 +1,49 @@
-/**
- Stop conditions for multi-step generation.
-
- Port of `@ai-sdk/ai/src/generate-text/stop-condition.ts`.
-
- Provides functions to check when multi-step generation should stop:
- - `stepCountIs(n)`: Stop when step count reaches n
- - `hasToolCall(name)`: Stop when specific tool is called
- - `isStopConditionMet()`: Check if any stop condition is satisfied
- */
-
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Stop condition function type
-/// - Parameter steps: Array of step results
-/// - Returns: true if generation should stop, false otherwise
-public typealias StopCondition = @Sendable (_ steps: [StepResult]) async -> Bool
+/**
+ Condition evaluated after each step with tool results; the loop stops when it returns `true`.
 
-/// Creates a stop condition that stops after a specific number of steps
-/// - Parameter stepCount: Number of steps after which to stop
-/// - Returns: Stop condition function
+ Port of `@ai-sdk/ai/src/generate-text/stop-condition.ts`.
+ */
+public typealias StopCondition = @Sendable (_ steps: [StepResult]) async throws -> Bool
+
+/// Stops when the number of steps equals `stepCount`.
+public func isStepCount(_ stepCount: Int) -> StopCondition {
+    { steps in steps.count == stepCount }
+}
+
+@available(*, deprecated, renamed: "isStepCount")
 public func stepCountIs(_ stepCount: Int) -> StopCondition {
-    return { steps in
-        return steps.count == stepCount
+    isStepCount(stepCount)
+}
+
+/// Never stops the loop; the loop ends when the model stops calling tools.
+public func isLoopFinished() -> StopCondition {
+    { _ in false }
+}
+
+/// Stops when the last step called one of the given tools.
+public func hasToolCall(_ toolNames: String...) -> StopCondition {
+    { steps in
+        steps.last?.toolCalls.contains { toolNames.contains($0.toolName) } ?? false
     }
 }
 
-/// Creates a stop condition that stops when a specific tool is called
-/// - Parameter toolName: Name of the tool to check for
-/// - Returns: Stop condition function
-public func hasToolCall(_ toolName: String) -> StopCondition {
-    return { steps in
-        guard let lastStep = steps.last else {
-            return false
-        }
-
-        return lastStep.toolCalls.contains { toolCall in
-            toolCall.toolName == toolName
-        }
-    }
-}
-
-/// Check if any stop condition is met
-/// - Parameters:
-///   - stopConditions: Array of stop conditions to check
-///   - steps: Array of step results to evaluate
-/// - Returns: true if any stop condition is satisfied, false otherwise
+/// Whether any stop condition is met. The conditions run concurrently.
 public func isStopConditionMet(
     stopConditions: [StopCondition],
     steps: [StepResult]
-) async -> Bool {
-    let results = await withTaskGroup(of: Bool.self) { group in
+) async throws -> Bool {
+    try await withThrowingTaskGroup(of: Bool.self) { group in
         for condition in stopConditions {
-            group.addTask {
-                await condition(steps)
-            }
+            group.addTask { try await condition(steps) }
         }
-
-        var results: [Bool] = []
-        for await result in group {
-            results.append(result)
+        var met = false
+        for try await result in group where result {
+            met = true
         }
-        return results
+        return met
     }
-
-    return results.contains(true)
 }

@@ -128,50 +128,27 @@ struct TypedToolTests {
         #expect(type == "string")
     }
 
-    @Test("toModelOutput falls back to raw JSON when decoding fails")
-    func toModelOutputDecodingFailureFallsBack() async throws {
-        struct Output: Codable, Equatable, Sendable { let value: String }
-
-        let typedTool = tool(
-            description: "Fallback",
+    @Test("toModelOutput receives the tool call id with typed input and output")
+    func toModelOutputReceivesTypedCall() async throws {
+        let weatherTool = tool(
             inputSchema: WeatherQuery.self,
-            outputSchema: FlexibleSchema.auto(Output.self),
-            execute: { (_: WeatherQuery, _) async throws -> Output in
-                Output(value: "ok")
+            outputSchema: FlexibleSchema.auto(WeatherReport.self),
+            execute: { (query: WeatherQuery, _) async throws -> WeatherReport in
+                WeatherReport(location: query.location, condition: "Sunny")
             },
-            toModelOutput: { output in
-                .text(value: output.value)
+            toModelOutput: { options in
+                .text(value: "\(options.toolCallId):\(options.input.location):\(options.output.condition)")
             }
         )
 
-        guard let toModelOutput = typedTool.tool.toModelOutput else {
-            Issue.record("Expected tool.toModelOutput to be set")
-            return
-        }
-
-        let raw: JSONValue = .string("not-an-object")
-        let converted = toModelOutput(raw)
-
-        #expect(converted == .json(value: raw))
-
-        let dynamic = dynamicTool(
-            description: "DynamicFallback",
-            inputSchema: WeatherQuery.self,
-            outputSchema: FlexibleSchema.auto(Output.self),
-            execute: { (_: WeatherQuery, _) async throws -> ToolExecutionResult<Output> in
-                .value(Output(value: "ok"))
-            },
-            toModelOutput: { output in
-                .text(value: output.value)
-            }
+        let modelOutput = try await createToolModelOutput(
+            toolCallId: "call-1",
+            input: ["location": .string("Paris")],
+            output: JSONValue.object(["location": .string("Paris"), "condition": .string("Sunny")]),
+            tool: weatherTool.tool,
+            errorMode: .none
         )
 
-        guard let dynamicToModelOutput = dynamic.toModelOutput else {
-            Issue.record("Expected dynamicTool.toModelOutput to be set")
-            return
-        }
-
-        let dynamicConverted = dynamicToModelOutput(raw)
-        #expect(dynamicConverted == .json(value: raw))
+        #expect(modelOutput == .text(value: "call-1:Paris:Sunny"))
     }
 }

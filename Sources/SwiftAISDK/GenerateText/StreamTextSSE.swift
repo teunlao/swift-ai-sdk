@@ -63,7 +63,7 @@ private final class StreamTextSSEEncoder {
             }
             return [encode(event: payload)]
 
-        case let .finishStep(response, usage, finishReason, rawFinishReason, metadata):
+        case let .finishStep(response, usage, _, finishReason, rawFinishReason, metadata):
             var payload: [String: Any] = [
                 "type": "finish-step",
                 "finishReason": finishReason.rawValue,
@@ -93,7 +93,7 @@ private final class StreamTextSSEEncoder {
             if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
-        case let .textEnd(id, providerMetadata):
+        case let .textEnd(id, providerMetadata, _):
             var payload: [String: Any] = ["type": "text-end", "id": id]
             if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
@@ -119,7 +119,7 @@ private final class StreamTextSSEEncoder {
         case let .toolResult(result):
             return encodeToolResult(result)
 
-        case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag, title):
+        case let .toolInputStart(id, toolName, providerMetadata, executed, dynamicFlag, title, _, _):
             var payload: [String: Any] = ["type": "tool-input-start", "id": id, "toolName": toolName]
             if let executed { payload["providerExecuted"] = executed }
             if let dynamicFlag { payload["dynamic"] = dynamicFlag }
@@ -151,7 +151,7 @@ private final class StreamTextSSEEncoder {
             if let meta = providerMetadataDictionary(providerMetadata) { payload["providerMetadata"] = meta }
             return [encode(event: payload)]
 
-        case let .file(file):
+        case let .file(file, _):
             let payload: [String: Any] = [
                 "type": "file",
                 "base64": file.base64,
@@ -190,6 +190,16 @@ private final class StreamTextSSEEncoder {
                 "toolName": denied.toolName
             ]
             if let executed = denied.providerExecuted { payload["providerExecuted"] = executed }
+            return [encode(event: payload)]
+
+        case let .toolApprovalResponse(response):
+            var payload: [String: Any] = [
+                "type": "tool-approval-response",
+                "approvalId": response.approvalId,
+                "toolCallId": response.toolCall.toolCallId,
+                "approved": response.approved,
+            ]
+            if let reason = response.reason { payload["reason"] = reason }
             return [encode(event: payload)]
 
         case let .toolApprovalRequest(request):

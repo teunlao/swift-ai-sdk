@@ -1,84 +1,136 @@
-/**
- Step preparation utilities for multi-step tool orchestration.
-
- Port of `@ai-sdk/ai/src/generate-text/prepare-step.ts`.
- */
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Options for preparing a generation step.
+ Options passed to `prepareStep`.
 
  Port of `@ai-sdk/ai/src/generate-text/prepare-step.ts`.
  */
 public struct PrepareStepOptions: Sendable {
-    /// Steps that have been executed so far.
+    /// Steps executed so far.
     public let steps: [StepResult]
 
-    /// Number of the step that is being executed (0-based).
+    /// Number of the step that is being prepared.
     public let stepNumber: Int
 
-    /// Model that will be used for the next step.
+    /// The model of the call.
     public let model: LanguageModel
 
-    /// Messages that were exchanged up to this point.
+    /// Instructions the step would use: the previous step's instructions.
+    public let instructions: Instructions?
+
+    /// Instructions of the call.
+    public let initialInstructions: Instructions?
+
+    /// Messages the step would send: the previous step's messages and its response.
     public let messages: [ModelMessage]
 
-    /// Context passed via `experimentalContext` (experimental).
-    public let experimentalContext: JSONValue?
+    /// Messages of the call.
+    public let initialMessages: [ModelMessage]
+
+    /// Response messages accumulated so far.
+    public let responseMessages: [ResponseMessage]
+
+    /// Tool contexts of the call.
+    public let toolsContext: ToolsContext
+
+    /// Runtime context of the call.
+    public let runtimeContext: Context
 
     public init(
         steps: [StepResult],
         stepNumber: Int,
         model: LanguageModel,
+        instructions: Instructions? = nil,
+        initialInstructions: Instructions? = nil,
         messages: [ModelMessage],
-        experimentalContext: JSONValue? = nil
+        initialMessages: [ModelMessage] = [],
+        responseMessages: [ResponseMessage] = [],
+        toolsContext: ToolsContext = [:],
+        runtimeContext: Context = [:]
     ) {
         self.steps = steps
         self.stepNumber = stepNumber
         self.model = model
+        self.instructions = instructions
+        self.initialInstructions = initialInstructions
         self.messages = messages
-        self.experimentalContext = experimentalContext
+        self.initialMessages = initialMessages
+        self.responseMessages = responseMessages
+        self.toolsContext = toolsContext
+        self.runtimeContext = runtimeContext
     }
 }
 
 /**
- Result of preparing a generation step.
+ Settings for one step; unset fields keep the call's settings.
 
- Port of `@ai-sdk/ai/src/generate-text/prepare-step.ts`.
+ Port of `PrepareStepResult` from `@ai-sdk/ai/src/generate-text/prepare-step.ts`,
+ including the per-step model call setting overrides.
  */
 public struct PrepareStepResult: Sendable {
     public var model: LanguageModel?
     public var toolChoice: ToolChoice?
     public var activeTools: [String]?
-    public var system: String?
+    public var toolOrder: [String]?
+    public var instructions: Instructions?
+    /// Deprecated alias for `instructions`.
+    public var system: Instructions?
     public var messages: [ModelMessage]?
-    public var experimentalContext: JSONValue?
+    public var toolsContext: ToolsContext?
+    public var runtimeContext: Context?
     public var providerOptions: ProviderOptions?
+    /// Model call settings for this step.
+    public var callOptions: LanguageModelCallOptions
 
     public init(
         model: LanguageModel? = nil,
         toolChoice: ToolChoice? = nil,
         activeTools: [String]? = nil,
-        system: String? = nil,
+        toolOrder: [String]? = nil,
+        instructions: Instructions? = nil,
+        system: Instructions? = nil,
         messages: [ModelMessage]? = nil,
-        experimentalContext: JSONValue? = nil,
-        providerOptions: ProviderOptions? = nil
+        toolsContext: ToolsContext? = nil,
+        runtimeContext: Context? = nil,
+        providerOptions: ProviderOptions? = nil,
+        maxOutputTokens: Int? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        stopSequences: [String]? = nil,
+        seed: Int? = nil,
+        reasoning: LanguageModelV4ReasoningEffort? = nil
     ) {
         self.model = model
         self.toolChoice = toolChoice
         self.activeTools = activeTools
+        self.toolOrder = toolOrder
+        self.instructions = instructions
         self.system = system
         self.messages = messages
-        self.experimentalContext = experimentalContext
+        self.toolsContext = toolsContext
+        self.runtimeContext = runtimeContext
         self.providerOptions = providerOptions
+        self.callOptions = LanguageModelCallOptions(
+            maxOutputTokens: maxOutputTokens,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            stopSequences: stopSequences,
+            seed: seed,
+            reasoning: reasoning
+        )
     }
+
+    /// Instructions of the step: `instructions`, then the deprecated `system`.
+    var resolvedInstructions: Instructions? { instructions ?? system }
 }
 
-/**
- Function type that allows customizing settings for each generation step.
-
- Port of `@ai-sdk/ai/src/generate-text/prepare-step.ts`.
- */
+/// Customizes the settings of each step.
 public typealias PrepareStepFunction = @Sendable (PrepareStepOptions) async throws -> PrepareStepResult?

@@ -19,7 +19,7 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi")
 
         var gotError = false
         do {
@@ -43,7 +43,7 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi")
 
         // Drain fully first
         _ = try await result.collectFullStream()
@@ -64,7 +64,7 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi")
 
         let (errorStream, continuation) = AsyncStream.makeStream(of: Error.self)
         await result.consumeStream(options: ConsumeStreamOptions(onError: { error in
@@ -92,7 +92,7 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi")
 
         let writer = MockStreamTextResponseWriter()
         let initOptions = TextStreamResponseInit(headers: ["X-Test": "1"], status: 202, statusText: "Accepted")
@@ -120,7 +120,7 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi")
 
         let response = result.toTextStreamResponse(init: TextStreamResponseInit(status: 201, statusText: "Created"))
         let textChunks = try await convertReadableStreamToArray(response.stream)

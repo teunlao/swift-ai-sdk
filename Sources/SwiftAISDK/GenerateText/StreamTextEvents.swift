@@ -155,7 +155,7 @@ private final class StreamTextEventEncoder {
         case let .textDelta(id, text, _):
             return [.textDelta(text: text, id: id)]
 
-        case let .textEnd(id, _):
+        case let .textEnd(id, _, _):
             return [.textEnd(id: id)]
 
         case let .reasoningDelta(id, text, _):
@@ -182,7 +182,7 @@ private final class StreamTextEventEncoder {
         case let .custom(kind, providerMetadata):
             return [.custom(kind: kind, providerMetadata: providerMetadata)]
 
-        case let .file(file):
+        case let .file(file, _):
             return [.file(file)]
 
         case let .reasoningFile(file, _):
@@ -206,7 +206,7 @@ private final class StreamTextEventEncoder {
             return []
 
         case .toolInputStart, .toolInputDelta, .toolInputEnd,
-             .reasoningStart, .reasoningEnd:
+             .reasoningStart, .reasoningEnd, .toolApprovalResponse:
             return []
         }
     }

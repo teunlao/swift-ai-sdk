@@ -17,21 +17,21 @@ import AISDKProvider
  TypeScript implementation.
  */
 public struct ProviderToolFactoryOptions: Sendable {
-    public var execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
+    public var execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     public var outputSchema: FlexibleSchema<JSONValue>?
     public var needsApproval: NeedsApproval?
-    public var toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
-    public var onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)?
+    public var toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)?
+    public var onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)?
     public var onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)?
     public var onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)?
     public var args: [String: JSONValue]
 
     public init(
-        execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
+        execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
         outputSchema: FlexibleSchema<JSONValue>? = nil,
         needsApproval: NeedsApproval? = nil,
-        toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil,
-        onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+        toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? = nil,
+        onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
         onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
         onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
         args: [String: JSONValue] = [:]
@@ -54,19 +54,19 @@ public struct ProviderToolFactoryOptions: Sendable {
  adaptation mirrors that contract.
  */
 public struct ProviderToolFactoryWithOutputSchemaOptions: Sendable {
-    public var execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)?
+    public var execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     public var needsApproval: NeedsApproval?
-    public var toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)?
-    public var onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)?
+    public var toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)?
+    public var onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)?
     public var onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)?
     public var onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)?
     public var args: [String: JSONValue]
 
     public init(
-        execute: (@Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
+        execute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)? = nil,
         needsApproval: NeedsApproval? = nil,
-        toModelOutput: (@Sendable (JSONValue) -> LanguageModelV3ToolResultOutput)? = nil,
-        onInputStart: (@Sendable (ToolCallOptions) async throws -> Void)? = nil,
+        toModelOutput: (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? = nil,
+        onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
         onInputDelta: (@Sendable (ToolCallDeltaOptions) async throws -> Void)? = nil,
         onInputAvailable: (@Sendable (ToolCallInputOptions) async throws -> Void)? = nil,
         args: [String: JSONValue] = [:]

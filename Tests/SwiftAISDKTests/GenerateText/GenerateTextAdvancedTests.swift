@@ -54,15 +54,12 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
-                tracer: tracer
-            ),
+            telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)]),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
             )
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let spans = tracer.spanRecords
         #expect(spans.count == 3)
@@ -112,15 +109,12 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
-                tracer: tracer
-            ),
+            telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)]),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
             )
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let spans = tracer.spanRecords
         #expect(spans.count == 3)
@@ -219,7 +213,7 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             toolChoice: .required,
             prompt: "test-input"
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let records = await recorder.entries()
         #expect(records.count == 1)
@@ -270,7 +264,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             toolChoice: .required,
@@ -463,7 +457,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input"
@@ -526,7 +520,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input"
@@ -584,7 +578,7 @@ struct GenerateTextAdvancedTests {
             "contextTool": tool(
                 inputSchema: toolInputSchema(),
                 execute: { _, options in
-                    await contextRecorder.append(options.experimentalContext)
+                    await contextRecorder.append(options.context.map(JSONValue.object))
                     return .value(.object(["value": .string("result")]))
                 }
             )
@@ -596,8 +590,8 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
-            experimentalContext: context
-        ) as DefaultGenerateTextResult<JSONValue>
+            toolsContext: ["contextTool": ["context": .string("test")]]
+        )
 
         let recorded = await contextRecorder.entries().last ?? nil
         #expect(recorded == context)
@@ -854,7 +848,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(modelReference),
             messages: messages
         )
@@ -865,8 +859,8 @@ struct GenerateTextAdvancedTests {
 
     // MARK: - Structured output
 
-    @Test("experimental output access throws when unspecified")
-    func experimentalOutputAccessThrowsWhenUnspecified() async throws {
+    @Test("output defaults to the text of the final step")
+    func outputDefaultsToText() async throws {
         let model = MockLanguageModelV3(
             doGenerate: .singleValue(
                 LanguageModelV3GenerateResult(
@@ -877,35 +871,12 @@ struct GenerateTextAdvancedTests {
             )
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
 
-        #expect(throws: NoOutputSpecifiedError.self) {
-            _ = try result.experimentalOutput
-        }
-    }
-
-    @Test("text output returns experimental text")
-    func textOutputReturnsExperimentalText() async throws {
-        let model = MockLanguageModelV3(
-            doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
-                    content: [textContent("Hello, world!")],
-                    finishReason: .stop,
-                    usage: testUsage
-                )
-            )
-        )
-
-        let result: DefaultGenerateTextResult<String> = try await generateText(
-            model: .v3(model),
-            prompt: "prompt",
-            experimentalOutput: textOutputSpecification()
-        )
-
-        #expect(try result.experimentalOutput == "Hello, world!")
+        #expect(try result.output == "Hello, world!")
     }
 
     @Test("text output sets response format")
@@ -923,10 +894,10 @@ struct GenerateTextAdvancedTests {
         let result: DefaultGenerateTextResult<String> = try await generateText(
             model: .v3(model),
             prompt: "prompt",
-            experimentalOutput: textOutputSpecification()
+            output: textOutputSpecification()
         )
 
-        #expect(try result.experimentalOutput == "Hello, world!")
+        #expect(try result.output == "Hello, world!")
 
         guard let options = model.doGenerateCalls.first else {
             Issue.record("Expected language model call")
@@ -965,10 +936,10 @@ struct GenerateTextAdvancedTests {
         let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
             model: .v3(model),
             prompt: "prompt",
-            experimentalOutput: Output.object(schema: summaryOutputSchema())
+            output: Output.object(schema: summaryOutputSchema())
         )
 
-        #expect(try result.experimentalOutput == SummaryOutput(summary: "result"))
+        #expect(try result.output == SummaryOutput(summary: "result"))
     }
 
     @Test("object output sets json response format")
@@ -989,10 +960,10 @@ struct GenerateTextAdvancedTests {
         let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
             model: .v3(model),
             prompt: "prompt",
-            experimentalOutput: Output.object(schema: summaryOutputSchema())
+            output: Output.object(schema: summaryOutputSchema())
         )
 
-        #expect(try result.experimentalOutput == SummaryOutput(summary: "value"))
+        #expect(try result.output == SummaryOutput(summary: "value"))
 
         let options = await callRecorder.entries().first
         if let options {
@@ -1040,11 +1011,11 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             prompt: "prompt",
             stopWhen: [stepCountIs(3)],
-            experimentalOutput: textOutputSpecification()
+            output: textOutputSpecification()
         )
 
-        #expect(throws: NoOutputSpecifiedError.self) {
-            _ = try result.experimentalOutput
+        #expect(throws: NoOutputGeneratedError.self) {
+            _ = try result.output
         }
 
         #expect(result.toolCalls.count == 1)
@@ -1093,7 +1064,7 @@ struct GenerateTextAdvancedTests {
             _ = try await generateText(
                 model: .v3(model),
                 prompt: "Hello"
-            ) as DefaultGenerateTextResult<JSONValue>
+            )
 
             let entries = collector.entries()
             #expect(entries.count == 1)
@@ -1163,7 +1134,7 @@ struct GenerateTextAdvancedTests {
                 )
             ]
 
-            let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+            let result = try await generateText(
                 model: .v3(model),
                 tools: tools,
                 prompt: "Hello",
@@ -1216,7 +1187,7 @@ struct GenerateTextAdvancedTests {
             _ = try await generateText(
                 model: .v3(model),
                 prompt: "Hello"
-            ) as DefaultGenerateTextResult<JSONValue>
+            )
 
             let entries = collector.entries()
             #expect(entries.isEmpty)
@@ -1579,13 +1550,13 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(modelWithSupport),
             messages: messages,
             prepareStep: { _ in
                 PrepareStepResult(model: .v3(modelWithoutSupport))
             },
-            experimentalDownload: downloadFunction
+            download: downloadFunction
         )
 
         #expect(result.text == "response from without-image-url-support")
@@ -1754,13 +1725,8 @@ struct GenerateTextAdvancedTests {
         .text(LanguageModelV3Text(text: text, providerMetadata: nil))
     }
 
-    private func textOutputSpecification() -> Output.Specification<String, JSONValue> {
-        Output.Specification<String, JSONValue>(
-            type: .text,
-            responseFormat: { .text },
-            parsePartial: { _ in nil },
-            parseOutput: { text, _ in text }
-        )
+    private func textOutputSpecification() -> Output.Specification<String, String> {
+        Output.text()
     }
 
     private func summaryOutputSchema(requiredKey: String = "summary") -> FlexibleSchema<SummaryOutput> {
@@ -1860,7 +1826,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input"
@@ -1907,7 +1873,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
@@ -1968,7 +1934,7 @@ struct GenerateTextAdvancedTests {
             args: [:]
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: ["web_search": providerTool],
             prompt: "test-input",
@@ -2001,7 +1967,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "What are the tourist attractions in San Francisco?"
@@ -2010,7 +1976,7 @@ struct GenerateTextAdvancedTests {
         return InvalidToolCallScenario(result: result)
     }
 
-    private func runAlwaysNeedsApprovalScenario() async throws -> DefaultGenerateTextResult<JSONValue> {
+    private func runAlwaysNeedsApprovalScenario() async throws -> DefaultGenerateTextResult<String> {
         let model = MockLanguageModelV3(
             doGenerate: .singleValue(
                 LanguageModelV3GenerateResult(
@@ -2097,7 +2063,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
@@ -2169,7 +2135,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             messages: messages,
@@ -2246,7 +2212,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             messages: messages,
@@ -2338,7 +2304,7 @@ struct GenerateTextAdvancedTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             messages: messages,
@@ -2396,23 +2362,23 @@ private struct SummaryOutput: Codable, Equatable, Sendable {
 }
 
 private struct PreliminaryToolScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
 }
 
 private struct ToolExecutionErrorScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
 }
 
 private struct ProviderExecutedToolsScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
 }
 
 private struct InvalidToolCallScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
 }
 
 private struct NeedsApprovalFunctionScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
     let approvalCalls: [ToolApprovalCallRecord]
 }
 
@@ -2422,7 +2388,7 @@ private struct ToolApprovalCallRecord: Sendable {
 }
 
 private struct ToolApprovalExecutionScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
     let modelCalls: [LanguageModelV3CallOptions]
     let executeCallCount: Int
 }
