@@ -71,7 +71,7 @@ struct OpenAICompatibleCustomStreamErrorTests {
                 urlResponse: makeHTTPResponse(url: url)
             )
         }
-        let model = OpenAICompatibleChatLanguageModelV4(
+        let model = OpenAICompatibleChatLanguageModel(
             modelId: .init(rawValue: "chat-model"),
             config: .init(
                 provider: "custom.chat",
@@ -88,7 +88,7 @@ struct OpenAICompatibleCustomStreamErrorTests {
             parts.append(part)
         }
 
-        #expect(parts.contains(.error(error: .value(.string("Error 4290: overloaded")))))
+        #expect(parts.contains(.error(error: .value(.string("overloaded")))))
         guard case let .finish(reason, _, _) = parts.last else {
             Issue.record("Missing chat error finish")
             return
@@ -105,7 +105,7 @@ struct OpenAICompatibleCustomStreamErrorTests {
                 urlResponse: makeHTTPResponse(url: url)
             )
         }
-        let model = OpenAICompatibleCompletionLanguageModelV4(
+        let model = OpenAICompatibleCompletionLanguageModel(
             modelId: .init(rawValue: "completion-model"),
             config: .init(
                 provider: "custom.completion",

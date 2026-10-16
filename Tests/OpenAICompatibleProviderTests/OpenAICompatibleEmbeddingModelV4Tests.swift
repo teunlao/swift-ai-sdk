@@ -4,7 +4,7 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAICompatibleProvider
 
-@Suite("OpenAICompatibleEmbeddingModelV4")
+@Suite("OpenAICompatibleEmbeddingModel")
 struct OpenAICompatibleEmbeddingModelV4Tests {
     actor RequestCapture {
         private var request: URLRequest?
@@ -217,7 +217,7 @@ struct OpenAICompatibleEmbeddingModelV4Tests {
                 urlResponse: makeHTTPResponse(url: targetURL)
             )
         }
-        let model = OpenAICompatibleEmbeddingModelV4(
+        let model = OpenAICompatibleEmbeddingModel(
             modelId: .init(rawValue: "text-embedding-3-large"),
             config: .init(
                 provider: "test-provider.embedding",

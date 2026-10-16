@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 public struct OpenAICompatibleChatConfig: Sendable {
     public let provider: String
-    public let headers: @Sendable () -> [String: String]
+    public let headers: @Sendable () throws -> [String: String]
     public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
     public let fetch: FetchFunction?
     public let includeUsage: Bool
@@ -14,11 +14,10 @@ public struct OpenAICompatibleChatConfig: Sendable {
     public let supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])?
     public let transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])?
     public let convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)?
-    public let usagePostprocessor: (@Sendable (_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage)?
 
     public init(
         provider: String,
-        headers: @escaping @Sendable () -> [String: String],
+        headers: @escaping @Sendable () throws -> [String: String],
         url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
         fetch: FetchFunction? = nil,
         includeUsage: Bool = false,
@@ -27,8 +26,7 @@ public struct OpenAICompatibleChatConfig: Sendable {
         supportsStructuredOutputs: Bool = false,
         supportedUrls: (@Sendable () async throws -> [String: [NSRegularExpression]])? = nil,
         transformRequestBody: (@Sendable (_ body: [String: JSONValue]) -> [String: JSONValue])? = nil,
-        convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)? = nil,
-        usagePostprocessor: (@Sendable (_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage)? = nil
+        convertUsage: (@Sendable (_ usage: OpenAICompatibleChatUsage?) -> LanguageModelV4Usage)? = nil
     ) {
         self.provider = provider
         self.headers = headers
@@ -41,127 +39,34 @@ public struct OpenAICompatibleChatConfig: Sendable {
         self.supportedUrls = supportedUrls
         self.transformRequestBody = transformRequestBody
         self.convertUsage = convertUsage
-        self.usagePostprocessor = usagePostprocessor
     }
 }
 
-private enum OpenAICompatibleChatPromptInput: Sendable {
-    case v3(LanguageModelV3Prompt)
-    case v4(LanguageModelV4Prompt)
-}
-
-private enum OpenAICompatibleChatToolsInput: Sendable {
-    case v3([LanguageModelV3Tool]?, LanguageModelV3ToolChoice?)
-    case v4([LanguageModelV4Tool]?, LanguageModelV4ToolChoice?)
-}
-
-private enum OpenAICompatibleChatContract: Sendable {
-    case v3
-    case v4
-
-    private var isV4: Bool {
-        switch self {
-        case .v3: return false
-        case .v4: return true
-        }
-    }
-
-    var textBlockId: String { isV4 ? "txt-0" : "0" }
-    var emitsEmptyInitialToolArgumentDelta: Bool { !isV4 }
-    var usesReasoningFallbackInGenerate: Bool { isV4 }
-    var usesCamelCaseProviderOptions: Bool { isV4 }
-    var usesV4StreamBlockLifecycle: Bool { isV4 }
-    var buffersToolCallsUntilName: Bool { isV4 }
-    var includesToolCallProviderMetadata: Bool { isV4 }
-    var includesEmptyStreamProviderMetadata: Bool { isV4 }
-    var usesV4StreamErrorPayload: Bool { isV4 }
-    var toolCallTypeValidation: StreamingToolCallTypeValidation { isV4 ? .none : .ifPresent }
-}
-
-private struct OpenAICompatibleChatCallSettings: Sendable {
-    let contract: OpenAICompatibleChatContract
-    let prompt: OpenAICompatibleChatPromptInput
-    let maxOutputTokens: Int?
-    let temperature: Double?
-    let stopSequences: [String]?
-    let topP: Double?
-    let topK: Int?
-    let presencePenalty: Double?
-    let frequencyPenalty: Double?
-    let responseFormat: LanguageModelV4ResponseFormat?
-    let seed: Int?
-    let tools: OpenAICompatibleChatToolsInput
-    let includeRawChunks: Bool?
-    let abortSignal: (@Sendable () -> Bool)?
-    let headers: SharedV4Headers?
-    let reasoning: LanguageModelV4ReasoningEffort?
-    let providerOptions: SharedV4ProviderOptions?
-
-    init(v3 options: LanguageModelV3CallOptions) {
-        contract = .v3
-        prompt = .v3(options.prompt)
-        maxOutputTokens = options.maxOutputTokens
-        temperature = options.temperature
-        stopSequences = options.stopSequences
-        topP = options.topP
-        topK = options.topK
-        presencePenalty = options.presencePenalty
-        frequencyPenalty = options.frequencyPenalty
-        responseFormat = options.responseFormat.map(convertOpenAICompatibleResponseFormatToV4)
-        seed = options.seed
-        tools = .v3(options.tools, options.toolChoice)
-        includeRawChunks = options.includeRawChunks
-        abortSignal = options.abortSignal
-        headers = options.headers
-        reasoning = nil
-        providerOptions = options.providerOptions
-    }
-
-    init(v4 options: LanguageModelV4CallOptions) {
-        contract = .v4
-        prompt = .v4(options.prompt)
-        maxOutputTokens = options.maxOutputTokens
-        temperature = options.temperature
-        stopSequences = options.stopSequences
-        topP = options.topP
-        topK = options.topK
-        presencePenalty = options.presencePenalty
-        frequencyPenalty = options.frequencyPenalty
-        responseFormat = options.responseFormat
-        seed = options.seed
-        tools = .v4(options.tools, options.toolChoice)
-        includeRawChunks = options.includeRawChunks
-        abortSignal = options.abortSignal
-        headers = options.headers
-        reasoning = options.reasoning
-        providerOptions = options.providerOptions
-    }
-}
-
-private struct OpenAICompatibleChatLanguageModelCore: Sendable {
+public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
+    public let specificationVersion = "v4"
     private let modelIdentifier: OpenAICompatibleChatModelId
     private let config: OpenAICompatibleChatConfig
     private let providerOptionsName: String
 
-    init(modelId: OpenAICompatibleChatModelId, config: OpenAICompatibleChatConfig) {
+    public init(modelId: OpenAICompatibleChatModelId, config: OpenAICompatibleChatConfig) {
         self.modelIdentifier = modelId
         self.config = config
         self.providerOptionsName = config.provider.split(separator: ".").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
     }
 
-    var provider: String { config.provider }
-    var modelId: String { modelIdentifier.rawValue }
+    public var provider: String { config.provider }
+    public var modelId: String { modelIdentifier.rawValue }
 
-    var supportedUrls: [String: [NSRegularExpression]] {
+    public var supportedUrls: [String: [NSRegularExpression]] {
         get async throws {
             try await config.supportedUrls?() ?? [:]
         }
     }
 
-    func doGenerate(options: OpenAICompatibleChatCallSettings) async throws -> LanguageModelV4GenerateResult {
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options)
         let transformedBody = transformRequestBody(prepared.body)
-        let defaultHeaders = config.headers().mapValues { Optional($0) }
+        let defaultHeaders = try config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
@@ -176,21 +81,13 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         )
 
         guard let choice = response.value.choices.first else {
-            throw APICallError(
-                message: "OpenAI-compatible response did not include choices.",
-                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
-                requestBodyValues: transformedBody
-            )
+            throw InvalidResponseDataError(data: response.rawValue, message: "Response did not contain any choices.")
         }
 
-        var content: [LanguageModelV4Content] = []
-
-        if let text = choice.message.content, !text.isEmpty {
-            content.append(.text(LanguageModelV4Text(text: text)))
-        }
+        var content = choice.message.content?.parts ?? []
 
         let reasoning = choice.message.reasoningContent
-            ?? (options.contract.usesReasoningFallbackInGenerate ? choice.message.reasoning : nil)
+            ?? choice.message.reasoning
         if let reasoning, !reasoning.isEmpty {
             content.append(.reasoning(LanguageModelV4Reasoning(text: reasoning)))
         }
@@ -198,15 +95,13 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         if let toolCalls = choice.message.toolCalls {
             for toolCall in toolCalls {
                 let function = toolCall.function
-                let toolCallId = toolCall.id ?? generateID()
+                let toolCallId = toolCall.id.flatMap { $0.isEmpty ? nil : $0 } ?? generateID()
                 let thoughtSignature = toolCall.extraContent?.google?.thoughtSignature.flatMap {
                     $0.isEmpty ? nil : $0
                 }
-                let toolMetadata = options.contract.includesToolCallProviderMetadata
-                    ? thoughtSignature.map {
+                let toolMetadata = thoughtSignature.map {
                         [prepared.metadataKey: ["thoughtSignature": JSONValue.string($0)]]
                     }
-                    : nil
                 content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: function.name,
@@ -222,7 +117,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         let usage = convertUsage(response.value.usage, raw: usageRaw)
         let rawFinishReason = choice.finishReason
         let finishReason = LanguageModelV4FinishReason(
-            unified: mapOpenAICompatibleFinishReasonV4(rawFinishReason),
+            unified: mapOpenAICompatibleFinishReason(rawFinishReason),
             raw: rawFinishReason
         )
         let metadata = responseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
@@ -251,7 +146,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         )
     }
 
-    func doStream(options: OpenAICompatibleChatCallSettings) async throws -> LanguageModelV4StreamResult {
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         let prepared = try await prepareRequest(options: options)
         var body = prepared.body
         body["stream"] = .bool(true)
@@ -260,7 +155,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         }
         let transformedBody = transformRequestBody(body)
 
-        let defaultHeaders = config.headers().mapValues { Optional($0) }
+        let defaultHeaders = try config.headers().mapValues { Optional($0) }
         let requestHeaders = options.headers?.mapValues { Optional($0) }
         let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
 
@@ -285,7 +180,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
             let task = Task {
-                var finishReason = LanguageModelV4FinishReason(unified: .other, raw: nil)
+                var finishReason: LanguageModelV4FinishReason?
                 var usage: OpenAICompatibleChatUsage?
                 var usageRaw: JSONValue?
                 var isFirstChunk = true
@@ -297,12 +192,10 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                 let toolCallTracker = StreamingToolCallTracker(
                     enqueue: { part in continuation.yield(part) },
                     options: StreamingToolCallTrackerOptions(
-                        typeValidation: options.contract.toolCallTypeValidation,
-                        emitsEmptyInitialArgumentDelta: options.contract.emitsEmptyInitialToolArgumentDelta,
+                        typeValidation: .none,
+                        emitsEmptyInitialArgumentDelta: false,
                         extractMetadata: {
-                            options.contract.includesToolCallProviderMetadata
-                                ? $0.providerMetadata
-                                : nil
+                            $0.providerMetadata
                         },
                         buildToolCallProviderMetadata: { $0 }
                     )
@@ -326,16 +219,18 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                             switch chunk {
                             case .error(let errorData):
                                 finishReason = .init(unified: .error, raw: nil)
-                                if options.contract.usesV4StreamErrorPayload {
-                                    continuation.yield(.error(error: .value(.string(errorData.message))))
-                                } else {
-                                    continuation.yield(.error(error: .value(errorData.rawValue)))
-                                }
+                                let payload: JSONValue
+                                if case .object(let object) = errorData.rawValue, let error = object["error"] { payload = error }
+                                else { payload = .string(errorData.message) }
+                                continuation.yield(.error(error: .value(payload)))
+
                             case .data(let data):
                                 if isFirstChunk {
-                                    isFirstChunk = false
                                     let meta = responseMetadata(id: data.id, model: data.model, created: data.created)
-                                    continuation.yield(.responseMetadata(id: meta.id, modelId: meta.modelId, timestamp: meta.timestamp))
+                                    if meta.id?.isEmpty == false || meta.modelId?.isEmpty == false || meta.timestamp != nil {
+                                        isFirstChunk = false
+                                        continuation.yield(.responseMetadata(id: meta.id, modelId: meta.modelId, timestamp: meta.timestamp))
+                                    }
                                 }
 
                                 if let usageValue = data.usage {
@@ -347,41 +242,45 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
 
                                 if let finish = choice.finishReason {
                                     finishReason = LanguageModelV4FinishReason(
-                                        unified: mapOpenAICompatibleFinishReasonV4(finish),
+                                        unified: mapOpenAICompatibleFinishReason(finish),
                                         raw: finish
                                     )
                                 }
 
                                 if let delta = choice.delta {
+                                    var pieces: [LanguageModelV4Content] = []
                                     if let reasoning = delta.reasoningContent ?? delta.reasoning, !reasoning.isEmpty {
-                                        if !isActiveReasoning {
-                                            isActiveReasoning = true
-                                            continuation.yield(.reasoningStart(id: "reasoning-0", providerMetadata: nil))
-                                        }
-                                        continuation.yield(.reasoningDelta(id: "reasoning-0", delta: reasoning, providerMetadata: nil))
+                                        pieces.append(.reasoning(.init(text: reasoning)))
                                     }
-
-                                    if let text = delta.content, !text.isEmpty {
-                                        if options.contract.usesV4StreamBlockLifecycle, isActiveReasoning {
-                                            isActiveReasoning = false
-                                            continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
+                                    pieces += delta.content?.parts ?? []
+                                    for piece in pieces {
+                                        switch piece {
+                                        case .reasoning(let reasoning):
+                                            if isActiveText {
+                                                continuation.yield(.textEnd(id: "txt-0", providerMetadata: nil))
+                                                isActiveText = false
+                                            }
+                                            if !isActiveReasoning {
+                                                continuation.yield(.reasoningStart(id: "reasoning-0", providerMetadata: nil))
+                                                isActiveReasoning = true
+                                            }
+                                            continuation.yield(.reasoningDelta(id: "reasoning-0", delta: reasoning.text, providerMetadata: nil))
+                                        case .text(let text):
+                                            if isActiveReasoning {
+                                                continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
+                                                isActiveReasoning = false
+                                            }
+                                            if !isActiveText {
+                                                continuation.yield(.textStart(id: "txt-0", providerMetadata: nil))
+                                                isActiveText = true
+                                            }
+                                            continuation.yield(.textDelta(id: "txt-0", delta: text.text, providerMetadata: nil))
+                                        default: break
                                         }
-                                        if !isActiveText {
-                                            isActiveText = true
-                                            continuation.yield(.textStart(
-                                                id: options.contract.textBlockId,
-                                                providerMetadata: nil
-                                            ))
-                                        }
-                                        continuation.yield(.textDelta(
-                                            id: options.contract.textBlockId,
-                                            delta: text,
-                                            providerMetadata: nil
-                                        ))
                                     }
 
                                     if let toolCallDeltas = delta.toolCalls {
-                                        if options.contract.usesV4StreamBlockLifecycle, isActiveReasoning {
+                                        if isActiveReasoning {
                                             isActiveReasoning = false
                                             continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
                                         }
@@ -391,8 +290,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                                                 metadataKey: metadataKey,
                                                 pending: &pendingToolCalls,
                                                 forwardedIndices: &forwardedToolCallIndices,
-                                                tracker: toolCallTracker,
-                                                contract: options.contract
+                                                tracker: toolCallTracker
                                             )
                                         }
                                     }
@@ -401,26 +299,14 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                         }
                     }
 
-                    if options.contract.usesV4StreamBlockLifecycle {
-                        if isActiveReasoning {
-                            continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
-                        }
-                        if isActiveText {
-                            continuation.yield(.textEnd(
-                                id: options.contract.textBlockId,
-                                providerMetadata: nil
-                            ))
-                        }
-                    } else {
-                        if isActiveText {
-                            continuation.yield(.textEnd(
-                                id: options.contract.textBlockId,
-                                providerMetadata: nil
-                            ))
-                        }
-                        if isActiveReasoning {
-                            continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
-                        }
+                    if isActiveReasoning {
+                        continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
+                    }
+                    if isActiveText {
+                        continuation.yield(.textEnd(
+                            id: "txt-0",
+                            providerMetadata: nil
+                        ))
                     }
 
                     for (index, pending) in pendingToolCalls.sorted(by: { $0.key < $1.key }) {
@@ -433,9 +319,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                     }
                     toolCallTracker.flush()
 
-                    var providerMetadata: SharedV4ProviderMetadata = options.contract.includesEmptyStreamProviderMetadata
-                        ? [metadataKey: [:]]
-                        : [:]
+                    var providerMetadata: SharedV4ProviderMetadata = [metadataKey: [:]]
                     if let extracted = metadataExtractor?.buildMetadata() {
                         providerMetadata.merge(extracted) { _, new in new }
                     }
@@ -446,14 +330,14 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                     if let rejected = usage?.completionTokensDetails?.rejectedPredictionTokens {
                         providerEntry["rejectedPredictionTokens"] = .number(Double(rejected))
                     }
-                    if options.contract.includesEmptyStreamProviderMetadata
-                        || providerMetadata[metadataKey] != nil
-                        || !providerEntry.isEmpty {
-                        providerMetadata[metadataKey] = providerEntry
-                    }
+                    providerMetadata[metadataKey] = providerEntry
 
+                    if finishReason == nil {
+                        finishReason = .init(unified: .error)
+                        continuation.yield(.error(error: .error(InvalidResponseDataError(data: nil, message: "Response stream ended without a finish reason."))))
+                    }
                     continuation.yield(.finish(
-                        finishReason: finishReason,
+                        finishReason: finishReason ?? .init(unified: .error),
                         usage: convertUsage(usage, raw: usageRaw),
                         providerMetadata: providerMetadata.isEmpty ? nil : providerMetadata
                     ))
@@ -481,7 +365,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         let metadataKey: String
     }
 
-    private func prepareRequest(options: OpenAICompatibleChatCallSettings) async throws -> PreparedRequest {
+    private func prepareRequest(options: LanguageModelV4CallOptions) async throws -> PreparedRequest {
         var warnings: [SharedV4Warning] = []
 
         if options.topK != nil {
@@ -502,8 +386,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         }
 
         let camelCaseProviderOptionsName = openAICompatibleCamelCase(providerOptionsName)
-        if options.contract.usesCamelCaseProviderOptions,
-           let warning = openAICompatibleDeprecatedProviderOptionsWarning(
+        if let warning = openAICompatibleDeprecatedProviderOptionsWarning(
                rawName: providerOptionsName,
                providerOptions: options.providerOptions
            ) {
@@ -523,15 +406,11 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         ) ?? OpenAICompatibleChatProviderOptions()
 
         let camelCaseProviderOptions: OpenAICompatibleChatProviderOptions
-        if options.contract.usesCamelCaseProviderOptions {
-            camelCaseProviderOptions = try await parseProviderOptions(
-                provider: camelCaseProviderOptionsName,
-                providerOptions: options.providerOptions,
-                schema: openAICompatibleProviderOptionsSchema
-            ) ?? OpenAICompatibleChatProviderOptions()
-        } else {
-            camelCaseProviderOptions = OpenAICompatibleChatProviderOptions()
-        }
+        camelCaseProviderOptions = try await parseProviderOptions(
+            provider: camelCaseProviderOptionsName,
+            providerOptions: options.providerOptions,
+            schema: openAICompatibleProviderOptionsSchema
+        ) ?? OpenAICompatibleChatProviderOptions()
 
         // V4 merge order matches upstream: deprecated -> compatible -> raw provider -> camel provider.
         var mergedOptions = deprecatedOptions ?? OpenAICompatibleChatProviderOptions()
@@ -553,36 +432,27 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             mergedOptions.strictJsonSchema = strictJsonSchema
         }
 
-        if options.contract.usesCamelCaseProviderOptions {
-            if let user = camelCaseProviderOptions.user {
-                mergedOptions.user = user
-            }
-            if let reasoningEffort = camelCaseProviderOptions.reasoningEffort {
-                mergedOptions.reasoningEffort = reasoningEffort
-            }
-            if let textVerbosity = camelCaseProviderOptions.textVerbosity {
-                mergedOptions.textVerbosity = textVerbosity
-            }
-            if let strictJsonSchema = camelCaseProviderOptions.strictJsonSchema {
-                mergedOptions.strictJsonSchema = strictJsonSchema
-            }
+        if let user = camelCaseProviderOptions.user {
+            mergedOptions.user = user
+        }
+        if let reasoningEffort = camelCaseProviderOptions.reasoningEffort {
+            mergedOptions.reasoningEffort = reasoningEffort
+        }
+        if let textVerbosity = camelCaseProviderOptions.textVerbosity {
+            mergedOptions.textVerbosity = textVerbosity
+        }
+        if let strictJsonSchema = camelCaseProviderOptions.strictJsonSchema {
+            mergedOptions.strictJsonSchema = strictJsonSchema
         }
 
         var providerSpecificRaw = options.providerOptions?[providerOptionsName] ?? [:]
-        if options.contract.usesCamelCaseProviderOptions {
-            providerSpecificRaw.merge(options.providerOptions?[camelCaseProviderOptionsName] ?? [:]) { _, new in new }
-        }
+        providerSpecificRaw.merge(options.providerOptions?[camelCaseProviderOptionsName] ?? [:]) { _, new in new }
+
         let forwardedOptions = providerSpecificRaw.filter { key, _ in
             !["user", "reasoningEffort", "textVerbosity", "strictJsonSchema"].contains(key)
         }
 
-        let messages: [JSONValue]
-        switch options.prompt {
-        case .v3(let prompt):
-            messages = try convertToOpenAICompatibleChatMessages(prompt: prompt)
-        case .v4(let prompt):
-            messages = try convertToOpenAICompatibleChatMessages(prompt: prompt)
-        }
+        let messages = try convertToOpenAICompatibleChatMessages(prompt: options.prompt)
 
         // Warning only if schema is present but structuredOutputs not supported
         if case let .json(schema, _, _) = options.responseFormat,
@@ -594,18 +464,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             ))
         }
 
-        let preparedTools: OpenAICompatiblePreparedToolsV4
-        switch options.tools {
-        case let .v3(tools, toolChoice):
-            let prepared = OpenAICompatibleToolPreparer.prepare(tools: tools, toolChoice: toolChoice)
-            preparedTools = OpenAICompatiblePreparedToolsV4(
-                tools: prepared.tools,
-                toolChoice: prepared.toolChoice,
-                warnings: prepared.warnings.map(convertOpenAICompatibleWarningToV4)
-            )
-        case let .v4(tools, toolChoice):
-            preparedTools = OpenAICompatibleToolPreparer.prepare(tools: tools, toolChoice: toolChoice)
-        }
+        let preparedTools = OpenAICompatibleToolPreparer.prepare(tools: options.tools, toolChoice: options.toolChoice)
         warnings.append(contentsOf: preparedTools.warnings)
 
         var body: [String: JSONValue] = [
@@ -664,10 +523,8 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             }
         }
 
-        if options.contract.usesCamelCaseProviderOptions {
-            for (key, value) in forwardedOptions {
-                body[key] = value
-            }
+        for (key, value) in forwardedOptions {
+            body[key] = value
         }
 
         let topLevelReasoning: String?
@@ -693,18 +550,10 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             body["tool_choice"] = toolChoice
         }
 
-        if !options.contract.usesCamelCaseProviderOptions {
-            for (key, value) in forwardedOptions {
-                body[key] = value
-            }
-        }
-
-        let metadataKey = options.contract.usesCamelCaseProviderOptions
-            ? openAICompatibleProviderOptionsKey(
+        let metadataKey = openAICompatibleProviderOptionsKey(
                 rawName: providerOptionsName,
                 providerOptions: options.providerOptions
             )
-            : providerOptionsName
 
         return PreparedRequest(body: body, warnings: warnings, metadataKey: metadataKey)
     }
@@ -731,7 +580,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                 ),
                 outputTokens: .init(
                     total: completionTokens,
-                    text: completionTokens - reasoningTokens,
+                    text: max(0, completionTokens - reasoningTokens),
                     reasoning: reasoningTokens
                 ),
                 raw: raw == .null ? nil : raw
@@ -740,13 +589,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
             converted = LanguageModelV4Usage()
         }
 
-        guard let usagePostprocessor = config.usagePostprocessor else {
-            return converted
-        }
-
-        return convertOpenAICompatibleUsageToV4(
-            usagePostprocessor(convertOpenAICompatibleUsageToV3(converted))
-        )
+        return converted
     }
 
     private func extractUsage(from json: JSONValue?) -> JSONValue? {
@@ -800,29 +643,14 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         metadataKey: String,
         pending: inout [Int: PendingToolCall],
         forwardedIndices: inout Set<Int>,
-        tracker: StreamingToolCallTracker,
-        contract: OpenAICompatibleChatContract
+        tracker: StreamingToolCallTracker
     ) throws {
         let thoughtSignature = delta.extraContent?.google?.thoughtSignature.flatMap {
             $0.isEmpty ? nil : $0
         }
-        let providerMetadata = contract.includesToolCallProviderMetadata
-            ? thoughtSignature.map {
+        let providerMetadata = thoughtSignature.map {
                 [metadataKey: ["thoughtSignature": JSONValue.string($0)]]
             }
-            : nil
-
-        if !contract.buffersToolCallsUntilName {
-            try tracker.processDelta(StreamingToolCallDelta(
-                index: delta.index,
-                id: delta.id,
-                function: StreamingToolCallFunctionDelta(
-                    name: delta.function.name,
-                    arguments: delta.function.arguments
-                )
-            ))
-            return
-        }
 
         guard let index = delta.index else {
             try tracker.processDelta(StreamingToolCallDelta(
@@ -877,264 +705,6 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
         ))
         pending.removeValue(forKey: index)
         forwardedIndices.insert(index)
-    }
-}
-
-public final class OpenAICompatibleChatLanguageModel: LanguageModelV3 {
-    public let specificationVersion: String = "v3"
-    public let modelIdentifier: OpenAICompatibleChatModelId
-    private let core: OpenAICompatibleChatLanguageModelCore
-
-    public init(modelId: OpenAICompatibleChatModelId, config: OpenAICompatibleChatConfig) {
-        modelIdentifier = modelId
-        core = OpenAICompatibleChatLanguageModelCore(modelId: modelId, config: config)
-    }
-
-    public var provider: String { core.provider }
-    public var modelId: String { core.modelId }
-
-    public var supportedUrls: [String: [NSRegularExpression]] {
-        get async throws { try await core.supportedUrls }
-    }
-
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        let result = try await core.doGenerate(options: OpenAICompatibleChatCallSettings(v3: options))
-        return try convertOpenAICompatibleGenerateResultToV3(result)
-    }
-
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        let result = try await core.doStream(options: OpenAICompatibleChatCallSettings(v3: options))
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-            let task = Task {
-                do {
-                    for try await part in result.stream {
-                        continuation.yield(try convertOpenAICompatibleStreamPartToV3(part))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-
-            continuation.onTermination = { @Sendable _ in
-                task.cancel()
-            }
-        }
-
-        return LanguageModelV3StreamResult(
-            stream: stream,
-            request: result.request.map { LanguageModelV3RequestInfo(body: $0.body) },
-            response: result.response.map { LanguageModelV3StreamResponseInfo(headers: $0.headers) }
-        )
-    }
-}
-
-public final class OpenAICompatibleChatLanguageModelV4: LanguageModelV4 {
-    private let core: OpenAICompatibleChatLanguageModelCore
-
-    public init(modelId: OpenAICompatibleChatModelId, config: OpenAICompatibleChatConfig) {
-        core = OpenAICompatibleChatLanguageModelCore(modelId: modelId, config: config)
-    }
-
-    public var provider: String { core.provider }
-    public var modelId: String { core.modelId }
-
-    public var supportedUrls: [String: [NSRegularExpression]] {
-        get async throws { try await core.supportedUrls }
-    }
-
-    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
-        try await core.doGenerate(options: OpenAICompatibleChatCallSettings(v4: options))
-    }
-
-    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
-        try await core.doStream(options: OpenAICompatibleChatCallSettings(v4: options))
-    }
-}
-
-private func convertOpenAICompatibleResponseFormatToV4(
-    _ value: LanguageModelV3ResponseFormat
-) -> LanguageModelV4ResponseFormat {
-    switch value {
-    case .text:
-        return .text
-    case let .json(schema, name, description):
-        return .json(schema: schema, name: name, description: description)
-    }
-}
-
-private func convertOpenAICompatibleGenerateResultToV3(
-    _ result: LanguageModelV4GenerateResult
-) throws -> LanguageModelV3GenerateResult {
-    LanguageModelV3GenerateResult(
-        content: try result.content.map(convertOpenAICompatibleContentToV3),
-        finishReason: convertOpenAICompatibleFinishReasonToV3(result.finishReason),
-        usage: convertOpenAICompatibleUsageToV3(result.usage),
-        providerMetadata: result.providerMetadata,
-        request: result.request.map { LanguageModelV3RequestInfo(body: $0.body) },
-        response: result.response.map {
-            LanguageModelV3ResponseInfo(
-                id: $0.id,
-                timestamp: $0.timestamp,
-                modelId: $0.modelId,
-                headers: $0.headers,
-                body: $0.body
-            )
-        },
-        warnings: result.warnings.map(convertOpenAICompatibleWarningToV3)
-    )
-}
-
-private func convertOpenAICompatibleContentToV3(
-    _ value: LanguageModelV4Content
-) throws -> LanguageModelV3Content {
-    switch value {
-    case .text(let content):
-        return .text(LanguageModelV3Text(text: content.text, providerMetadata: content.providerMetadata))
-    case .reasoning(let content):
-        return .reasoning(LanguageModelV3Reasoning(text: content.text, providerMetadata: content.providerMetadata))
-    case .toolCall(let toolCall):
-        return .toolCall(LanguageModelV3ToolCall(
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            input: toolCall.input,
-            providerExecuted: toolCall.providerExecuted,
-            dynamic: toolCall.dynamic,
-            providerMetadata: toolCall.providerMetadata
-        ))
-    default:
-        throw UnsupportedFunctionalityError(functionality: "OpenAI-compatible V4 content \(value) on V3 facade")
-    }
-}
-
-private func convertOpenAICompatibleStreamPartToV3(
-    _ value: LanguageModelV4StreamPart
-) throws -> LanguageModelV3StreamPart {
-    switch value {
-    case let .textStart(id, providerMetadata):
-        return .textStart(id: id, providerMetadata: providerMetadata)
-    case let .textDelta(id, delta, providerMetadata):
-        return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .textEnd(id, providerMetadata, _):
-        return .textEnd(id: id, providerMetadata: providerMetadata)
-    case let .reasoningStart(id, providerMetadata):
-        return .reasoningStart(id: id, providerMetadata: providerMetadata)
-    case let .reasoningDelta(id, delta, providerMetadata):
-        return .reasoningDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .reasoningEnd(id, providerMetadata):
-        return .reasoningEnd(id: id, providerMetadata: providerMetadata)
-    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title, _):
-        return .toolInputStart(
-            id: id,
-            toolName: toolName,
-            providerMetadata: providerMetadata,
-            providerExecuted: providerExecuted,
-            dynamic: dynamic,
-            title: title
-        )
-    case let .toolInputDelta(id, delta, providerMetadata):
-        return .toolInputDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .toolInputEnd(id, providerMetadata):
-        return .toolInputEnd(id: id, providerMetadata: providerMetadata)
-    case .toolCall(let toolCall):
-        return .toolCall(LanguageModelV3ToolCall(
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            input: toolCall.input,
-            providerExecuted: toolCall.providerExecuted,
-            dynamic: toolCall.dynamic,
-            providerMetadata: toolCall.providerMetadata
-        ))
-    case let .streamStart(warnings):
-        return .streamStart(warnings: warnings.map(convertOpenAICompatibleWarningToV3))
-    case let .responseMetadata(id, modelId, timestamp):
-        return .responseMetadata(id: id, modelId: modelId, timestamp: timestamp)
-    case let .finish(finishReason, usage, providerMetadata):
-        return .finish(
-            finishReason: convertOpenAICompatibleFinishReasonToV3(finishReason),
-            usage: convertOpenAICompatibleUsageToV3(usage),
-            providerMetadata: providerMetadata
-        )
-    case let .raw(rawValue):
-        return .raw(rawValue: rawValue)
-    case let .error(error):
-        return .error(error: error.jsonValue)
-    default:
-        throw UnsupportedFunctionalityError(functionality: "OpenAI-compatible V4 stream part \(value) on V3 facade")
-    }
-}
-
-private func convertOpenAICompatibleFinishReasonToV3(
-    _ value: LanguageModelV4FinishReason
-) -> LanguageModelV3FinishReason {
-    LanguageModelV3FinishReason(
-        unified: LanguageModelV3FinishReason.Unified(rawValue: value.unified.rawValue) ?? .other,
-        raw: value.raw
-    )
-}
-
-private func convertOpenAICompatibleUsageToV3(
-    _ value: LanguageModelV4Usage
-) -> LanguageModelV3Usage {
-    LanguageModelV3Usage(
-        inputTokens: .init(
-            total: value.inputTokens.total,
-            noCache: value.inputTokens.noCache,
-            cacheRead: value.inputTokens.cacheRead,
-            cacheWrite: value.inputTokens.cacheWrite
-        ),
-        outputTokens: .init(
-            total: value.outputTokens.total,
-            text: value.outputTokens.text,
-            reasoning: value.outputTokens.reasoning
-        ),
-        raw: value.raw
-    )
-}
-
-private func convertOpenAICompatibleUsageToV4(
-    _ value: LanguageModelV3Usage
-) -> LanguageModelV4Usage {
-    LanguageModelV4Usage(
-        inputTokens: .init(
-            total: value.inputTokens.total,
-            noCache: value.inputTokens.noCache,
-            cacheRead: value.inputTokens.cacheRead,
-            cacheWrite: value.inputTokens.cacheWrite
-        ),
-        outputTokens: .init(
-            total: value.outputTokens.total,
-            text: value.outputTokens.text,
-            reasoning: value.outputTokens.reasoning
-        ),
-        raw: value.raw
-    )
-}
-
-private func convertOpenAICompatibleWarningToV4(_ value: SharedV3Warning) -> SharedV4Warning {
-    switch value {
-    case let .unsupported(feature, details):
-        return .unsupported(feature: feature, details: details)
-    case let .compatibility(feature, details):
-        return .compatibility(feature: feature, details: details)
-    case let .other(message):
-        return .other(message: message)
-    }
-}
-
-private func convertOpenAICompatibleWarningToV3(_ value: SharedV4Warning) -> SharedV3Warning {
-    switch value {
-    case let .unsupported(feature, details):
-        return .unsupported(feature: feature, details: details)
-    case let .compatibility(feature, details):
-        return .compatibility(feature: feature, details: details)
-    case let .deprecated(setting, message):
-        if setting == "providerOptions key 'openai-compatible'" {
-            return .other(message: "The 'openai-compatible' key in providerOptions is deprecated. Use 'openaiCompatible' instead.")
-        }
-        return .other(message: "\(setting): \(message)")
-    case let .other(message):
-        return .other(message: message)
     }
 }
 
@@ -1317,6 +887,50 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
     }
 }
 
+private enum OpenAICompatibleChatContent: Codable, Sendable {
+    case text(String)
+    case array([JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) { self = .text(text); return }
+        let values = try container.decode([JSONValue].self)
+        for value in values {
+            guard case .object(let object) = value, case .string = object["type"] else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expected content part with a string type")
+            }
+        }
+        self = .array(values)
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let text): try container.encode(text)
+        case .array(let values): try container.encode(values)
+        }
+    }
+    var parts: [LanguageModelV4Content] {
+        switch self {
+        case .text(let text): return text.isEmpty ? [] : [.text(.init(text: text))]
+        case .array(let values):
+            return values.compactMap { value in
+                guard case .object(let object) = value else { return nil }
+                if object["type"] == "text", case .string(let text) = object["text"], !text.isEmpty {
+                    return .text(.init(text: text))
+                }
+                if object["type"] == "thinking", case .array(let chunks) = object["thinking"] {
+                    let text = chunks.compactMap { chunk -> String? in
+                        guard case .object(let item) = chunk, item["type"] == "text", case .string(let text) = item["text"] else { return nil }
+                        return text
+                    }.joined()
+                    if !text.isEmpty { return .reasoning(.init(text: text)) }
+                }
+                return nil
+            }
+        }
+    }
+}
+
 private struct OpenAICompatibleChatResponse: Codable {
     struct Choice: Codable {
         struct Message: Codable {
@@ -1347,7 +961,7 @@ private struct OpenAICompatibleChatResponse: Codable {
             }
 
             let role: Role?
-            let content: String?
+            let content: OpenAICompatibleChatContent?
             let reasoningContent: String?
             let reasoning: String?
             let toolCalls: [ToolCall]?
@@ -1401,7 +1015,7 @@ private struct OpenAICompatibleChatStreamData: Codable, Sendable {
             }
 
             let role: Role?
-            let content: String?
+            let content: OpenAICompatibleChatContent?
             let reasoningContent: String?
             let reasoning: String?
             let toolCalls: [OpenAICompatibleChatChunkToolCallDelta]?

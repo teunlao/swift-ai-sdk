@@ -27,9 +27,9 @@ public struct CerebrasProviderSettings: Sendable {
 /// Cerebras provider implementation backed by the OpenAI-compatible chat client.
 /// Mirrors `packages/cerebras/src/cerebras-provider.ts`.
 public final class CerebrasProvider: ProviderV4 {
-    private let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4
+    private let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel
 
-    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4) {
+    init(chatFactory: @escaping @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel) {
         self.chatFactory = chatFactory
     }
 
@@ -53,11 +53,11 @@ public final class CerebrasProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func languageModel(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func languageModel(_ modelId: CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel {
         chatFactory(modelId)
     }
 }
@@ -109,8 +109,8 @@ public func createCerebras(settings: CerebrasProviderSettings = .init()) -> Cere
         customFetch: settings.fetch
     )
 
-    let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
-        OpenAICompatibleChatLanguageModelV4(
+    let chatFactory: @Sendable (CerebrasChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
+        OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: OpenAICompatibleChatConfig(
                 provider: "cerebras.chat",

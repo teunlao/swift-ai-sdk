@@ -7,13 +7,13 @@ import Testing
 /**
  Tests for OpenAICompatibleCompletionLanguageModel.
 
- Port of `@ai-sdk/openai-compatible/src/completion/openai-compatible-completion-language-model.test.ts`.
+ Port of `@ai-sdk-openai-compatible/src/completion/openai-compatible-completion-language-model.test.ts`.
  */
 
 @Suite("OpenAICompatibleCompletionLanguageModel")
 struct OpenAICompatibleCompletionLanguageModelTests {
-    private let testPrompt: LanguageModelV3Prompt = [
-        .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+    private let testPrompt: LanguageModelV4Prompt = [
+        .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
     ]
 
     // MARK: - Config Tests
@@ -47,7 +47,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
                 )
             )
 
-            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     testCase.key: ["namespaceMarker": .string(testCase.provider)]
@@ -111,7 +111,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -119,7 +119,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.content.count == 1)
         if case .text(let textPart) = result.content.first {
@@ -142,7 +142,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -150,7 +150,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 5)
@@ -170,7 +170,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -178,7 +178,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.request != nil)
         guard let requestBody = result.request?.body as? [String: JSONValue] else {
@@ -209,7 +209,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -217,7 +217,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.response?.id == "test-id")
         #expect(result.response?.modelId == "test-model")
@@ -235,7 +235,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -243,7 +243,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason.unified == .stop)
         #expect(result.finishReason.raw == "stop")
@@ -260,7 +260,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -268,7 +268,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason.unified == .other)
         #expect(result.finishReason.raw == "eos")
@@ -285,7 +285,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -293,7 +293,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.response?.headers?["test-header"] == "test-value")
     }
@@ -311,7 +311,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -319,7 +319,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         guard let request = await capture.current(),
               let body = request.httpBody,
@@ -349,7 +349,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: [
@@ -361,7 +361,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 headers: ["Custom-Request-Header": "request-header-value"]
             )
@@ -395,7 +395,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -404,7 +404,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": ["someCustomOption": .string("test-value")]
@@ -435,7 +435,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -444,7 +444,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "notThisProviderName": ["someCustomOption": .string("test-value")]
@@ -492,7 +492,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -500,9 +500,9 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -537,7 +537,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -545,9 +545,9 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -573,7 +573,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -581,7 +581,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(streamResult.request != nil)
         guard let requestBody = streamResult.request?.body as? [String: JSONValue] else {
@@ -615,7 +615,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -623,7 +623,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(streamResult.response?.headers?["test-header"] == "test-value")
         #expect(streamResult.response?.headers?["content-type"] == "text/event-stream")
@@ -645,7 +645,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -653,7 +653,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         guard let request = await capture.current(),
               let body = request.httpBody,
@@ -683,7 +683,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: [
@@ -695,7 +695,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 headers: ["Custom-Request-Header": "request-header-value"]
             )
@@ -727,7 +727,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -736,7 +736,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": ["someCustomOption": .string("test-value")]
@@ -770,7 +770,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
             return FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -779,7 +779,7 @@ struct OpenAICompatibleCompletionLanguageModelTests {
 
         let model = try provider.completionModel(modelId: "gpt-3.5-turbo-instruct")
         _ = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "notThisProviderName": ["someCustomOption": .string("test-value")]

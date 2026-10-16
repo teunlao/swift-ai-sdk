@@ -89,14 +89,14 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(embeddingModel.specificationVersion == "v4")
         #expect(embeddingModel.provider == "example.embedding")
 
-        let textEmbeddingModel = try provider.textEmbeddingModel(modelId: "text-embedding-3-small")
+        let textEmbeddingModel = try provider.embeddingModel(modelId: "text-embedding-3-small")
         #expect(textEmbeddingModel.specificationVersion == "v4")
         #expect(textEmbeddingModel.provider == "example.embedding")
 
         let imageModel = try provider.imageModel(modelId: "dall-e-3")
         #expect(imageModel.specificationVersion == "v4")
         #expect(imageModel.provider == "example.image")
-        #expect(imageModel is OpenAICompatibleImageModelV4)
+        #expect(imageModel is OpenAICompatibleImageModel)
     }
 
     @Test("language model forwards supportedUrls")
@@ -579,7 +579,7 @@ struct OpenAICompatibleProviderV4Tests {
         ))
         let model = try provider.languageModel(modelId: "reasoning-model")
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
 
         let result = try await model.doGenerate(options: .init(
             prompt: v4ChatPrompt,
@@ -1004,7 +1004,7 @@ struct OpenAICompatibleProviderV4Tests {
             fetch: fetch
         ))
         let model = try provider.imageModel(modelId: "dall-e-3")
-        #expect(model is OpenAICompatibleImageModelV4)
+        #expect(model is OpenAICompatibleImageModel)
 
         let result = try await model.doGenerate(options: ImageModelV4CallOptions(
             prompt: "A geometric city",
@@ -1037,6 +1037,6 @@ struct OpenAICompatibleProviderV4Tests {
         #expect(json["n"] as? Double == 2)
         #expect(json["size"] as? String == "1024x1024")
         #expect(json["quality"] as? String == "hd")
-        #expect(json["response_format"] as? String == "b64_json")
+        #expect(json["response_format"] == nil)
     }
 }

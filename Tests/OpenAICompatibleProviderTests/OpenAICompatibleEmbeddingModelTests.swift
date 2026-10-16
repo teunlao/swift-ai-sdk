@@ -7,7 +7,7 @@ import Testing
 /**
  Tests for OpenAICompatibleEmbeddingModel.
 
- Port of `@ai-sdk/openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts`.
+ Port of `@ai-sdk-openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts`.
  */
 
 @Suite("OpenAICompatibleEmbeddingModel")
@@ -60,15 +60,15 @@ struct OpenAICompatibleEmbeddingModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
-        let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
+        let result = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: testValues))
 
         #expect(result.embeddings == dummyEmbeddings)
     }
@@ -104,15 +104,15 @@ struct OpenAICompatibleEmbeddingModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
-        let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
+        let result = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: testValues))
 
         #expect(result.response?.headers?["test-header"] == "test-value")
     }
@@ -148,15 +148,15 @@ struct OpenAICompatibleEmbeddingModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
-        let result = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
+        let result = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: testValues))
 
         #expect(result.usage?.tokens == 20)
     }
@@ -194,15 +194,15 @@ struct OpenAICompatibleEmbeddingModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
-        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: testValues))
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
+        _ = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: testValues))
 
         guard let request = await capture.current(),
               let body = request.httpBody,
@@ -253,16 +253,16 @@ struct OpenAICompatibleEmbeddingModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
         _ = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(
+            options: EmbeddingModelV4CallOptions(
                 values: testValues,
                 providerOptions: [
                     "openai-compatible": ["dimensions": .number(64)]
@@ -320,7 +320,7 @@ struct OpenAICompatibleEmbeddingModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: [
@@ -330,9 +330,9 @@ struct OpenAICompatibleEmbeddingModelTests {
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-large")
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-large")
         _ = try await model.doEmbed(
-            options: EmbeddingModelV3DoEmbedOptions(
+            options: EmbeddingModelV4CallOptions(
                 values: testValues,
                 headers: ["Custom-Request-Header": "request-header-value"]
             )

@@ -57,15 +57,15 @@ public struct FireworksProviderSettings: Sendable {
 }
 
 public final class FireworksProvider: ProviderV4 {
-    private let chatFactory: @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModelV4
-    private let completionFactory: @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4
-    private let embeddingFactory: @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
+    private let chatFactory: @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModel
+    private let completionFactory: @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModel
+    private let embeddingFactory: @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
     private let imageFactory: @Sendable (FireworksImageModelId) -> FireworksImageModel
 
     init(
-        chatFactory: @escaping @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModelV4,
-        completionFactory: @escaping @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4,
-        embeddingFactory: @escaping @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4,
+        chatFactory: @escaping @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModel,
+        completionFactory: @escaping @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModel,
+        embeddingFactory: @escaping @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModel,
         imageFactory: @escaping @Sendable (FireworksImageModelId) -> FireworksImageModel
     ) {
         self.chatFactory = chatFactory
@@ -100,19 +100,19 @@ public final class FireworksProvider: ProviderV4 {
 
     // MARK: - Convenience Accessors
 
-    public func chat(modelId: FireworksChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(modelId: FireworksChatModelId) -> OpenAICompatibleChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func completion(modelId: FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 {
+    public func completion(modelId: FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
         completionFactory(modelId)
     }
 
-    public func embedding(modelId: FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
+    public func embedding(modelId: FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embeddingFactory(modelId)
     }
 
-    public func textEmbedding(_ modelId: FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
+    public func textEmbedding(_ modelId: FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embeddingFactory(modelId)
     }
 
@@ -145,7 +145,7 @@ public func createFireworks(settings: FireworksProviderSettings = .init()) -> Fi
         "\(baseURL)\(options.path)"
     }
 
-    let chatFactory: @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
+    let chatFactory: @Sendable (FireworksChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
         let config = OpenAICompatibleChatConfig(
             provider: "fireworks.chat",
             headers: headersClosure,
@@ -153,13 +153,13 @@ public func createFireworks(settings: FireworksProviderSettings = .init()) -> Fi
             fetch: fetch,
             errorConfiguration: fireworksErrorConfiguration
         )
-        return OpenAICompatibleChatLanguageModelV4(
+        return OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: config
         )
     }
 
-    let completionFactory: @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 = { modelId in
+    let completionFactory: @Sendable (FireworksCompletionModelId) -> OpenAICompatibleCompletionLanguageModel = { modelId in
         let config = OpenAICompatibleCompletionConfig(
             provider: "fireworks.completion",
             headers: headersClosure,
@@ -167,13 +167,13 @@ public func createFireworks(settings: FireworksProviderSettings = .init()) -> Fi
             fetch: fetch,
             errorConfiguration: fireworksErrorConfiguration
         )
-        return OpenAICompatibleCompletionLanguageModelV4(
+        return OpenAICompatibleCompletionLanguageModel(
             modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue),
             config: config
         )
     }
 
-    let embeddingFactory: @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 = { modelId in
+    let embeddingFactory: @Sendable (FireworksEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
         let config = OpenAICompatibleEmbeddingConfig(
             provider: "fireworks.embedding",
             url: urlBuilder,
@@ -181,7 +181,7 @@ public func createFireworks(settings: FireworksProviderSettings = .init()) -> Fi
             fetch: fetch,
             errorConfiguration: fireworksErrorConfiguration
         )
-        return OpenAICompatibleEmbeddingModelV4(
+        return OpenAICompatibleEmbeddingModel(
             modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue),
             config: config
         )

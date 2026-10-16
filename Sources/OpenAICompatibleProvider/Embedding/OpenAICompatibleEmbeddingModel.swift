@@ -5,319 +5,74 @@ import AISDKProviderUtils
 public struct OpenAICompatibleEmbeddingConfig: Sendable {
     public let provider: String
     public let url: @Sendable (OpenAICompatibleURLOptions) throws -> String
-    public let headers: @Sendable () -> [String: String]
+    public let headers: @Sendable () throws -> [String: String]
     public let fetch: FetchFunction?
     public let errorConfiguration: OpenAICompatibleErrorConfiguration
     public let maxEmbeddingsPerCallOverride: Int?
     public let supportsParallelCallsOverride: Bool?
 
-    public init(
-        provider: String,
-        url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
-        headers: @escaping @Sendable () -> [String: String],
-        fetch: FetchFunction? = nil,
-        errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
-        maxEmbeddingsPerCall: Int? = nil,
-        supportsParallelCalls: Bool? = nil
-    ) {
-        self.provider = provider
-        self.url = url
-        self.headers = headers
-        self.fetch = fetch
+    public init(provider: String, url: @escaping @Sendable (OpenAICompatibleURLOptions) throws -> String,
+                headers: @escaping @Sendable () throws -> [String: String] = { [:] }, fetch: FetchFunction? = nil,
+                errorConfiguration: OpenAICompatibleErrorConfiguration = defaultOpenAICompatibleErrorConfiguration,
+                maxEmbeddingsPerCall: Int? = nil, supportsParallelCalls: Bool? = nil) {
+        self.provider = provider; self.url = url; self.headers = headers; self.fetch = fetch
         self.errorConfiguration = errorConfiguration
         self.maxEmbeddingsPerCallOverride = maxEmbeddingsPerCall
         self.supportsParallelCallsOverride = supportsParallelCalls
     }
 }
 
-private enum OpenAICompatibleEmbeddingContract: Sendable {
-    case v3
-    case v4
-}
-
-private struct OpenAICompatibleEmbeddingCoreResult: @unchecked Sendable {
-    let embeddings: [[Double]]
-    let tokens: Int?
-    let providerMetadata: SharedV4ProviderMetadata?
-    let responseHeaders: SharedV4Headers?
-    let responseBody: Any?
-    let warnings: [SharedV4Warning]
-}
-
-private struct OpenAICompatibleEmbeddingModelCore: Sendable {
-    private let modelIdentifier: OpenAICompatibleEmbeddingModelId
+public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV4 {
+    public let specificationVersion = "v4"
+    public let modelId: String
+    public var provider: String { config.provider }
+    public var maxEmbeddingsPerCall: Int? { get async throws { config.maxEmbeddingsPerCallOverride ?? 2048 } }
+    public var supportsParallelCalls: Bool { get async throws { config.supportsParallelCallsOverride ?? true } }
     private let config: OpenAICompatibleEmbeddingConfig
-    private let legacyProviderOptionsName: String
-    private let v4ProviderOptionsName: String
-
-    init(modelId: OpenAICompatibleEmbeddingModelId, config: OpenAICompatibleEmbeddingConfig) {
-        modelIdentifier = modelId
-        self.config = config
-        legacyProviderOptionsName = config.provider.split(separator: ".").first.map(String.init)
-            ?? "openai-compatible"
-        v4ProviderOptionsName = config.provider
-            .split(separator: ".", omittingEmptySubsequences: false)
-            .first
-            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-    }
-
-    var provider: String { config.provider }
-    var modelId: String { modelIdentifier.rawValue }
-    var maxEmbeddingsPerCall: Int { config.maxEmbeddingsPerCallOverride ?? 2048 }
-    var supportsParallelCalls: Bool { config.supportsParallelCallsOverride ?? true }
-
-    func doEmbed(
-        values: [String],
-        abortSignal: (@Sendable () -> Bool)?,
-        providerOptions: SharedV4ProviderOptions?,
-        headers: SharedV4Headers?,
-        contract: OpenAICompatibleEmbeddingContract
-    ) async throws -> OpenAICompatibleEmbeddingCoreResult {
-        if contract == .v3 {
-            try validateValueCount(values)
-        }
-
-        let prepared = try await prepareProviderOptions(
-            contract: contract,
-            providerOptions: providerOptions
-        )
-
-        if contract == .v4 {
-            try validateValueCount(values)
-        }
-
-        let defaultHeaders = config.headers().mapValues { Optional($0) }
-        let requestHeaders = headers?.mapValues { Optional($0) }
-        let combinedHeaders = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
-
-        let response = try await postJsonToAPI(
-            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
-            headers: combinedHeaders,
-            body: JSONValue.object([
-                "model": .string(modelIdentifier.rawValue),
-                "input": .array(values.map(JSONValue.string)),
-                "encoding_format": .string("float"),
-                "dimensions": prepared.options.dimensions.map { .number(Double($0)) } ?? .null,
-                "user": prepared.options.user.map(JSONValue.string) ?? .null
-            ].compactMapValues { value in
-                if case .null = value { return nil }
-                return value
-            }),
-            failedResponseHandler: config.errorConfiguration.failedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(
-                responseSchema: openAICompatibleEmbeddingResponseSchema
-            ),
-            isAborted: abortSignal,
-            fetch: config.fetch
-        )
-
-        let providerMetadata = response.value.providerMetadata?.isEmpty == false
-            ? response.value.providerMetadata
-            : nil
-
-        return OpenAICompatibleEmbeddingCoreResult(
-            embeddings: response.value.data.map(\.embedding),
-            tokens: response.value.usage?.promptTokens,
-            providerMetadata: providerMetadata,
-            responseHeaders: response.responseHeaders,
-            responseBody: response.rawValue,
-            warnings: prepared.warnings
-        )
-    }
-
-    private struct PreparedProviderOptions {
-        let options: OpenAICompatibleEmbeddingProviderOptions
-        let warnings: [SharedV4Warning]
-    }
-
-    private func prepareProviderOptions(
-        contract: OpenAICompatibleEmbeddingContract,
-        providerOptions: SharedV4ProviderOptions?
-    ) async throws -> PreparedProviderOptions {
-        switch contract {
-        case .v3:
-            let baseOptions = try await parseProviderOptions(
-                provider: "openai-compatible",
-                providerOptions: providerOptions,
-                schema: openAICompatibleEmbeddingProviderOptionsSchema
-            ) ?? OpenAICompatibleEmbeddingProviderOptions()
-            let providerSpecificOptions = try await parseProviderOptions(
-                provider: legacyProviderOptionsName,
-                providerOptions: providerOptions,
-                schema: openAICompatibleEmbeddingProviderOptionsSchema
-            ) ?? OpenAICompatibleEmbeddingProviderOptions()
-
-            var mergedOptions = baseOptions
-            merge(providerSpecificOptions, into: &mergedOptions)
-            return PreparedProviderOptions(options: mergedOptions, warnings: [])
-
-        case .v4:
-            var warnings: [SharedV4Warning] = []
-            let deprecatedOptions = try await parseProviderOptions(
-                provider: "openai-compatible",
-                providerOptions: providerOptions,
-                schema: openAICompatibleEmbeddingProviderOptionsSchema
-            )
-            if deprecatedOptions != nil {
-                warnings.append(.deprecated(
-                    setting: "providerOptions key 'openai-compatible'",
-                    message: "Use 'openaiCompatible' instead."
-                ))
-            }
-            if let warning = openAICompatibleDeprecatedProviderOptionsWarning(
-                rawName: v4ProviderOptionsName,
-                providerOptions: providerOptions
-            ) {
-                warnings.append(warning)
-            }
-
-            let compatibleOptions = try await parseProviderOptions(
-                provider: "openaiCompatible",
-                providerOptions: providerOptions,
-                schema: openAICompatibleEmbeddingProviderOptionsSchema
-            ) ?? OpenAICompatibleEmbeddingProviderOptions()
-            let providerSpecificOptions = try await parseProviderOptions(
-                provider: v4ProviderOptionsName,
-                providerOptions: providerOptions,
-                schema: openAICompatibleEmbeddingProviderOptionsSchema
-            ) ?? OpenAICompatibleEmbeddingProviderOptions()
-
-            var mergedOptions = deprecatedOptions ?? OpenAICompatibleEmbeddingProviderOptions()
-            merge(compatibleOptions, into: &mergedOptions)
-            merge(providerSpecificOptions, into: &mergedOptions)
-            return PreparedProviderOptions(options: mergedOptions, warnings: warnings)
-        }
-    }
-
-    private func merge(
-        _ source: OpenAICompatibleEmbeddingProviderOptions,
-        into destination: inout OpenAICompatibleEmbeddingProviderOptions
-    ) {
-        if let dimensions = source.dimensions { destination.dimensions = dimensions }
-        if let user = source.user { destination.user = user }
-    }
-
-    private func validateValueCount(_ values: [String]) throws {
-        guard values.count <= maxEmbeddingsPerCall else {
-            throw TooManyEmbeddingValuesForCallError(
-                provider: provider,
-                modelId: modelId,
-                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
-                values: values.map { $0 as Any }
-            )
-        }
-    }
-}
-
-public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV3 {
-    public typealias VALUE = String
-
-    public let specificationVersion: String = "v3"
-    public let modelIdentifier: OpenAICompatibleEmbeddingModelId
-    private let core: OpenAICompatibleEmbeddingModelCore
+    private var providerOptionsName: String { provider.split(separator: ".").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? "" }
 
     public init(modelId: OpenAICompatibleEmbeddingModelId, config: OpenAICompatibleEmbeddingConfig) {
-        modelIdentifier = modelId
-        core = OpenAICompatibleEmbeddingModelCore(modelId: modelId, config: config)
-    }
-
-    public var provider: String { core.provider }
-    public var modelId: String { core.modelId }
-
-    public var maxEmbeddingsPerCall: Int? {
-        get async throws { core.maxEmbeddingsPerCall }
-    }
-
-    public var supportsParallelCalls: Bool {
-        get async throws { core.supportsParallelCalls }
-    }
-
-    public func doEmbed(
-        options: EmbeddingModelV3DoEmbedOptions<String>
-    ) async throws -> EmbeddingModelV3DoEmbedResult {
-        let result = try await core.doEmbed(
-            values: options.values,
-            abortSignal: options.abortSignal,
-            providerOptions: options.providerOptions,
-            headers: options.headers,
-            contract: .v3
-        )
-
-        return EmbeddingModelV3DoEmbedResult(
-            embeddings: result.embeddings,
-            usage: result.tokens.map(EmbeddingModelV3Usage.init(tokens:)),
-            providerMetadata: result.providerMetadata,
-            response: EmbeddingModelV3ResponseInfo(
-                headers: result.responseHeaders,
-                body: result.responseBody
-            )
-        )
-    }
-}
-
-public final class OpenAICompatibleEmbeddingModelV4: EmbeddingModelV4 {
-    private let core: OpenAICompatibleEmbeddingModelCore
-
-    public init(modelId: OpenAICompatibleEmbeddingModelId, config: OpenAICompatibleEmbeddingConfig) {
-        core = OpenAICompatibleEmbeddingModelCore(modelId: modelId, config: config)
-    }
-
-    public var provider: String { core.provider }
-    public var modelId: String { core.modelId }
-
-    public var maxEmbeddingsPerCall: Int? {
-        get async throws { core.maxEmbeddingsPerCall }
-    }
-
-    public var supportsParallelCalls: Bool {
-        get async throws { core.supportsParallelCalls }
+        self.modelId = modelId.rawValue; self.config = config
     }
 
     public func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
-        let result = try await core.doEmbed(
-            values: options.values,
-            abortSignal: options.abortSignal,
-            providerOptions: options.providerOptions,
-            headers: options.headers,
-            contract: .v4
-        )
-
-        return EmbeddingModelV4Result(
-            embeddings: result.embeddings,
-            usage: result.tokens.map(EmbeddingModelV4Usage.init(tokens:)),
-            providerMetadata: result.providerMetadata,
-            response: EmbeddingModelV4ResponseInfo(
-                headers: result.responseHeaders,
-                body: result.responseBody
-            ),
-            warnings: result.warnings
-        )
-    }
-}
-
-private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
-
-private struct OpenAICompatibleEmbeddingResponse: Codable {
-    struct DataItem: Codable {
-        let embedding: [Double]
-    }
-
-    struct Usage: Codable {
-        let promptTokens: Int
-
-        private enum CodingKeys: String, CodingKey {
-            case promptTokens = "prompt_tokens"
+        var warnings: [SharedV4Warning] = []
+        let deprecated = try await parseProviderOptions(provider: "openai-compatible", providerOptions: options.providerOptions,
+                                                       schema: openAICompatibleEmbeddingProviderOptionsSchema)
+        if deprecated != nil { warnings.append(.deprecated(setting: "providerOptions key 'openai-compatible'", message: "Use 'openaiCompatible' instead.")) }
+        if let warning = openAICompatibleDeprecatedProviderOptionsWarning(rawName: providerOptionsName, providerOptions: options.providerOptions) { warnings.append(warning) }
+        let compatible = try await parseProviderOptions(provider: "openaiCompatible", providerOptions: options.providerOptions,
+                                                        schema: openAICompatibleEmbeddingProviderOptionsSchema)
+        let specific = try await parseProviderOptions(provider: providerOptionsName, providerOptions: options.providerOptions,
+                                                      schema: openAICompatibleEmbeddingProviderOptionsSchema)
+        let dimensions = specific?.dimensions ?? compatible?.dimensions ?? deprecated?.dimensions ?? options.dimensions
+        let user = specific?.user ?? compatible?.user ?? deprecated?.user
+        let maximum = config.maxEmbeddingsPerCallOverride ?? 2048
+        guard options.values.count <= maximum else {
+            throw TooManyEmbeddingValuesForCallError(provider: provider, modelId: modelId, maxEmbeddingsPerCall: maximum, values: options.values.map { $0 as Any })
         }
+        var body: [String: JSONValue] = ["model": .string(modelId), "input": .array(options.values.map(JSONValue.string)), "encoding_format": "float"]
+        if let dimensions { body["dimensions"] = .number(Double(dimensions)) }
+        if let user { body["user"] = .string(user) }
+        let headers = combineHeaders(try config.headers().mapValues(Optional.some), options.headers?.mapValues(Optional.some)).compactMapValues { $0 }
+        let response = try await postJsonToAPI(url: try config.url(.init(modelId: modelId, path: "/embeddings")), headers: headers,
+                                               body: JSONValue.object(body), failedResponseHandler: config.errorConfiguration.failedResponseHandler,
+                                               successfulResponseHandler: createJsonResponseHandler(responseSchema: embeddingResponseSchema),
+                                               isAborted: options.abortSignal, fetch: config.fetch)
+        return .init(embeddings: response.value.data.map(\.embedding), usage: response.value.usage.map { .init(tokens: $0.promptTokens) },
+                     providerMetadata: response.value.providerMetadata,
+                     response: .init(headers: response.responseHeaders, body: response.rawValue), warnings: warnings)
     }
-
-    let data: [DataItem]
-    let usage: Usage?
-    let providerMetadata: SharedV3ProviderMetadata?
 }
 
-private let openAICompatibleEmbeddingResponseSchema = FlexibleSchema(
-    Schema<OpenAICompatibleEmbeddingResponse>.codable(
-        OpenAICompatibleEmbeddingResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
+private struct EmbeddingResponse: Decodable, Sendable {
+    struct Item: Decodable, Sendable { let embedding: [Double] }
+    struct Usage: Decodable, Sendable {
+        let promptTokens: Int
+        enum CodingKeys: String, CodingKey { case promptTokens = "prompt_tokens" }
+    }
+    let data: [Item]
+    let usage: Usage?
+    let providerMetadata: SharedV4ProviderMetadata?
+}
+private let embeddingResponseSchema = FlexibleSchema(Schema<EmbeddingResponse>.codable(EmbeddingResponse.self, jsonSchema: ["type": "object"]))

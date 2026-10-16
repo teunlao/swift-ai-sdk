@@ -7,9 +7,9 @@ import Testing
 struct OpenAICompatibleChatMessagesConverterTests {
     @Test("collapses user single text to string content")
     func userTextCollapsesToString() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
-                content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                 providerOptions: nil
             )
         ]
@@ -27,16 +27,16 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("converts user mixed text and image content with metadata")
     func userTextAndImage() throws {
         let imageData = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Hello",
                         providerOptions: [
                             "openaiCompatible": ["sentiment": .string("positive")]
                         ]
                     )),
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .data(imageData),
                         mediaType: "image/png",
                         providerOptions: [
@@ -73,10 +73,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("converts assistant tool calls and tool results")
     func toolCallsAndResults() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "quux",
                         toolName: "thwomp",
                         input: .object(["foo": .string("bar123")])
@@ -86,7 +86,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
             ),
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "quux",
                         toolName: "thwomp",
                         output: .json(value: .object(["oof": .string("321rab")]))
@@ -100,7 +100,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
         let expected: [JSONValue] = [
             .object([
                 "role": .string("assistant"),
-                "content": .string(""),
+                "content": .null,
                 "tool_calls": .array([
                     .object([
                         "type": .string("function"),
@@ -123,10 +123,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("prefers content metadata over message metadata")
     func metadataPriority() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Hello",
                         providerOptions: [
                             "openaiCompatible": ["contentLevel": .bool(true)]
@@ -153,11 +153,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("converts messages with image parts")
     func convertsImageParts() throws {
         let imageData = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Hello")),
-                    .file(LanguageModelV3FilePart(
+                    .text(LanguageModelV4TextPart(text: "Hello")),
+                    .file(LanguageModelV4FilePart(
                         data: .data(imageData),
                         mediaType: "image/png",
                         providerOptions: nil
@@ -191,11 +191,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("converts messages with image parts from Uint8Array")
     func convertsImagePartsFromUint8Array() throws {
         let imageData = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Hi")),
-                    .file(LanguageModelV3FilePart(
+                    .text(LanguageModelV4TextPart(text: "Hi")),
+                    .file(LanguageModelV4FilePart(
                         data: .data(imageData),
                         mediaType: "image/png",
                         providerOptions: nil
@@ -229,10 +229,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("handles URL-based images")
     func handlesURLImages() throws {
         let imageURL = URL(string: "https://example.com/image.jpg")!
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .url(imageURL),
                         mediaType: "image/*",
                         providerOptions: nil
@@ -261,10 +261,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles text output type in tool results")
     func handlesTextToolResults() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call-1",
                         toolName: "getWeather",
                         input: .object(["query": .string("weather")])
@@ -274,7 +274,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
             ),
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call-1",
                         toolName: "getWeather",
                         output: .text(value: "It is sunny today")
@@ -288,7 +288,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
         let expected: [JSONValue] = [
             .object([
                 "role": .string("assistant"),
-                "content": .string(""),
+                "content": .null,
                 "tool_calls": .array([
                     .object([
                         "type": .string("function"),
@@ -311,7 +311,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("merges system message metadata")
     func mergesSystemMetadata() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(
                 content: "You are a helpful assistant.",
                 providerOptions: [
@@ -333,10 +333,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("merges user message content metadata")
     func mergesUserContentMetadata() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Hello",
                         providerOptions: [
                             "openaiCompatible": ["cacheControl": .object(["type": .string("ephemeral")])]
@@ -360,10 +360,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles tool calls with metadata")
     func handlesToolCallsWithMetadata() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call1",
                         toolName: "calculator",
                         input: .object(["x": .number(1), "y": .number(2)]),
@@ -386,7 +386,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
         }
 
         #expect(msg["role"] == .string("assistant"))
-        #expect(msg["content"] == .string(""))
+        #expect(msg["content"] == .null)
 
         guard case .array(let toolCalls) = msg["tool_calls"] else {
             Issue.record("Expected tool_calls array")
@@ -421,10 +421,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("handles image content with metadata")
     func handlesImageWithMetadata() throws {
         let imageURL = URL(string: "https://example.com/image.jpg")!
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .url(imageURL),
                         mediaType: "image/*",
                         providerOptions: [
@@ -456,7 +456,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("omits non-openaiCompatible metadata")
     func omitsNonOpenAICompatibleMetadata() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(
                 content: "Hello",
                 providerOptions: [
@@ -477,11 +477,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles user message with multiple text parts")
     func handlesMultipleTextParts() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Part 1")),
-                    .text(LanguageModelV3TextPart(text: "Part 2"))
+                    .text(LanguageModelV4TextPart(text: "Part 1")),
+                    .text(LanguageModelV4TextPart(text: "Part 2"))
                 ],
                 providerOptions: nil
             )
@@ -508,11 +508,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles assistant message with text plus multiple tool calls")
     func handlesTextPlusMultipleToolCalls() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Checking that now...")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .text(LanguageModelV4TextPart(text: "Checking that now...")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call1",
                         toolName: "searchTool",
                         input: .object(["query": .string("Weather")]),
@@ -520,8 +520,8 @@ struct OpenAICompatibleChatMessagesConverterTests {
                             "openaiCompatible": ["function_call_reason": .string("user request")]
                         ]
                     )),
-                    .text(LanguageModelV3TextPart(text: "Almost there...")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .text(LanguageModelV4TextPart(text: "Almost there...")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call2",
                         toolName: "mapsTool",
                         input: .object(["location": .string("Paris")])
@@ -562,15 +562,15 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles single tool role message with multiple tool-result parts")
     func handlesMultipleToolResults() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call123",
                         toolName: "calculator",
                         output: .json(value: .object(["stepOne": .string("data chunk 1")]))
                     )),
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call123",
                         toolName: "calculator",
                         output: .json(value: .object(["stepTwo": .string("data chunk 2")])),
@@ -614,17 +614,17 @@ struct OpenAICompatibleChatMessagesConverterTests {
     @Test("handles multiple content parts with multiple metadata layers")
     func handlesMultipleMetadataLayers() throws {
         let imageData = Data([9, 8, 7, 6])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Part A",
                         providerOptions: [
                             "openaiCompatible": ["textPartLevel": .string("localized")],
                             "leftoverForText": ["info": .string("text leftover")]
                         ]
                     )),
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .data(imageData),
                         mediaType: "image/png",
                         providerOptions: [
@@ -665,11 +665,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles different tool metadata vs message-level metadata")
     func handlesToolVsMessageMetadata() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Initiating tool calls...")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .text(LanguageModelV4TextPart(text: "Initiating tool calls...")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "callXYZ",
                         toolName: "awesomeTool",
                         input: .object(["param": .string("someValue")]),
@@ -708,12 +708,12 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("accumulates assistant reasoning into reasoning_content")
     func accumulatesReasoningIntoReasoningContent() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(text: "Let me think. ")),
-                    .reasoning(LanguageModelV3ReasoningPart(text: "First step.")),
-                    .text(LanguageModelV3TextPart(text: "Hello there"))
+                    .reasoning(LanguageModelV4ReasoningPart(text: "Let me think. ")),
+                    .reasoning(LanguageModelV4ReasoningPart(text: "First step.")),
+                    .text(LanguageModelV4TextPart(text: "Hello there"))
                 ],
                 providerOptions: nil
             )
@@ -732,12 +732,12 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("preserves reasoning_content when assistant message contains tool calls")
     func reasoningRoundTripsWithToolCalls() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(text: "I need to read the README first.")),
-                    .text(LanguageModelV3TextPart(text: "I'll explore the repo.")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .reasoning(LanguageModelV4ReasoningPart(text: "I need to read the README first.")),
+                    .text(LanguageModelV4TextPart(text: "I'll explore the repo.")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_1",
                         toolName: "ReadFile",
                         input: .object(["file": .string("README.md")])
@@ -770,10 +770,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("omits reasoning_content when no reasoning parts are present")
     func omitsReasoningContentWhenAbsent() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Just text"))
+                    .text(LanguageModelV4TextPart(text: "Just text"))
                 ],
                 providerOptions: nil
             )
@@ -795,11 +795,11 @@ struct OpenAICompatibleChatMessagesConverterTests {
         // reasoning parts and inject `reasoning_content` directly via
         // providerOptions. When both paths are used, the metadata
         // value wins because it's merged after the accumulator.
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(text: "raw thought")),
-                    .text(LanguageModelV3TextPart(text: "Answer"))
+                    .reasoning(LanguageModelV4ReasoningPart(text: "raw thought")),
+                    .text(LanguageModelV4TextPart(text: "Answer"))
                 ],
                 providerOptions: [
                     "openaiCompatible": [
@@ -822,10 +822,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("handles metadata collisions and overwrites in tool calls")
     func handlesMetadataCollisionsInToolCalls() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "collisionToolCall",
                         toolName: "collider",
                         input: .object(["num": .number(42)]),
@@ -852,7 +852,7 @@ struct OpenAICompatibleChatMessagesConverterTests {
                 "role": .string("assistant"),
                 "cacheControl": .object(["type": .string("default")]),
                 "sharedKey": .string("assistantLevel"),
-                "content": .string(""),
+                "content": .null,
                 "tool_calls": .array([
                     .object([
                         "id": .string("collisionToolCall"),
@@ -882,10 +882,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
     func toolResultJSONOutputIsSorted() throws {
         // Seven top-level keys make an accidentally-sorted hash order
         // improbable (1/5040), so an unsorted encoder reliably fails.
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call1",
                         toolName: "mcp_tool",
                         output: .json(value: .object([
@@ -929,10 +929,10 @@ struct OpenAICompatibleChatMessagesConverterTests {
 
     @Test("tool call arguments serialize with sorted keys")
     func toolCallArgumentsAreSorted() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call1",
                         toolName: "grep",
                         input: .object([

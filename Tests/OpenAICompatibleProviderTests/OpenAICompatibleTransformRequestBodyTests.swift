@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let transformTestPrompt: LanguageModelV3Prompt = [
+private let transformTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -54,7 +54,7 @@ struct OpenAICompatibleTransformRequestBodyTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url, contentType: "application/json"))
         }
 
-        let provider = createOpenAICompatibleProvider(settings: .init(
+        let provider = createOpenAICompatible(settings: .init(
             baseURL: "https://api.example.com/v1",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -93,7 +93,7 @@ struct OpenAICompatibleTransformRequestBodyTests {
             return FetchResponse(body: .data(data), urlResponse: makeHTTPResponse(url: url, contentType: "text/event-stream"))
         }
 
-        let provider = createOpenAICompatibleProvider(settings: .init(
+        let provider = createOpenAICompatible(settings: .init(
             baseURL: "https://api.example.com/v1",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],

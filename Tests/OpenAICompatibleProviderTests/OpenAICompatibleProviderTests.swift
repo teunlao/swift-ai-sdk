@@ -4,16 +4,16 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAICompatibleProvider
 
-private let chatPrompt: LanguageModelV3Prompt = [
+private let chatPrompt: LanguageModelV4Prompt = [
     .user(
-        content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+        content: [.text(LanguageModelV4TextPart(text: "Hello"))],
         providerOptions: nil
     )
 ]
 
-private let completionPrompt: LanguageModelV3Prompt = [
+private let completionPrompt: LanguageModelV4Prompt = [
     .user(
-        content: [.text(LanguageModelV3TextPart(text: "Hi there"))],
+        content: [.text(LanguageModelV4TextPart(text: "Hi there"))],
         providerOptions: nil
     )
 ]
@@ -79,7 +79,7 @@ struct OpenAICompatibleProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             apiKey: "secret",
@@ -91,7 +91,7 @@ struct OpenAICompatibleProviderTests {
         ))
 
         let model = try provider.languageModel(modelId: "gpt-oss")
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: chatPrompt,
             temperature: 0.2,
             headers: ["Per-Request": "header"],
@@ -168,7 +168,7 @@ struct OpenAICompatibleProviderTests {
             FetchResponse(body: makeStreamBody(from: events), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             fetch: fetch,
@@ -176,9 +176,9 @@ struct OpenAICompatibleProviderTests {
         ))
 
         let model = try provider.languageModel(modelId: "gpt-oss")
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: chatPrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: chatPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -237,14 +237,14 @@ struct OpenAICompatibleProviderTests {
             return FetchResponse(body: .data(data), urlResponse: response)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             fetch: fetch
         ))
 
         let model = try provider.completionModel(modelId: "gpt-3.5-instruct")
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: completionPrompt,
             maxOutputTokens: 20,
             frequencyPenalty: 0.1,
@@ -296,14 +296,14 @@ struct OpenAICompatibleProviderTests {
             return FetchResponse(body: .data(data), urlResponse: response)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "text-embedding-3-small")
-        let options = EmbeddingModelV3DoEmbedOptions(
+        let model = try provider.embeddingModel(modelId: "text-embedding-3-small")
+        let options = EmbeddingModelV4CallOptions(
             values: ["hello"],
             providerOptions: [
                 "openai-compatible": ["dimensions": .number(128), "user": .string("base-user")],
@@ -318,7 +318,7 @@ struct OpenAICompatibleProviderTests {
             Issue.record("Missing embedding result")
         }
         #expect(result.usage?.tokens == 3)
-        #expect(result.warnings.isEmpty)
+        #expect(result.warnings == [.deprecated(setting: "providerOptions key 'openai-compatible'", message: "Use 'openaiCompatible' instead.")])
 
         guard let request = await capture.current(),
               let body = request.httpBody,
@@ -346,7 +346,7 @@ struct OpenAICompatibleProviderTests {
             FetchResponse(body: .data(data), urlResponse: response)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             fetch: fetch
@@ -354,7 +354,7 @@ struct OpenAICompatibleProviderTests {
 
         let model = try provider.imageModel(modelId: "gpt-image")
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "Draw",
                 n: 1,
                 size: "512x512",
@@ -386,15 +386,15 @@ struct OpenAICompatibleProviderTests {
         }
 
         // No apiKey provided
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             headers: ["Custom-Header": "value"],
             fetch: fetch
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "test")
-        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
+        let model = try provider.embeddingModel(modelId: "test")
+        _ = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: ["test"]))
 
         guard let request = await capture.current() else {
             Issue.record("Missing request")
@@ -425,7 +425,7 @@ struct OpenAICompatibleProviderTests {
             return FetchResponse(body: .data(data), urlResponse: response)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             apiKey: "test",
@@ -433,8 +433,8 @@ struct OpenAICompatibleProviderTests {
             // No queryParams
         ))
 
-        let model = try provider.textEmbeddingModel(modelId: "test")
-        _ = try await model.doEmbed(options: EmbeddingModelV3DoEmbedOptions(values: ["test"]))
+        let model = try provider.embeddingModel(modelId: "test")
+        _ = try await model.doEmbed(options: EmbeddingModelV4CallOptions(values: ["test"]))
 
         guard let request = await capture.current() else {
             Issue.record("Missing request")
@@ -467,7 +467,7 @@ struct OpenAICompatibleProviderTests {
             return FetchResponse(body: .data(data), urlResponse: response)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             fetch: fetch
@@ -475,7 +475,7 @@ struct OpenAICompatibleProviderTests {
 
         // Default languageModel should create chat model
         let model = try provider.languageModel(modelId: "model-id")
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: chatPrompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: chatPrompt))
 
         guard let request = await capture.current() else {
             Issue.record("Missing request")
@@ -489,7 +489,7 @@ struct OpenAICompatibleProviderTests {
 
     @Test("passes includeUsage true to all model types")
     func passesIncludeUsageTrue() throws {
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             includeUsage: true
@@ -507,7 +507,7 @@ struct OpenAICompatibleProviderTests {
 
     @Test("passes includeUsage false to all model types")
     func passesIncludeUsageFalse() throws {
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             includeUsage: false
@@ -522,7 +522,7 @@ struct OpenAICompatibleProviderTests {
 
     @Test("passes supportsStructuredOutputs to chat and language models only")
     func passesStructuredOutputsToCorrectModels() throws {
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://api.example.com/v1",
             name: "example",
             supportsStructuredOutputs: true
@@ -535,7 +535,7 @@ struct OpenAICompatibleProviderTests {
 
         // These models don't use supportsStructuredOutputs
         _ = try provider.completionModel(modelId: "completion")
-        _ = try provider.textEmbeddingModel(modelId: "embedding")
+        _ = try provider.embeddingModel(modelId: "embedding")
         _ = try provider.imageModel(modelId: "image")
 
         // Setting is accepted without errors

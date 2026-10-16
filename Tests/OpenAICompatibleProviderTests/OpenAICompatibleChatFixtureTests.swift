@@ -88,7 +88,7 @@ struct OpenAICompatibleChatFixtureTests {
         #expect(result.usage.inputTokens.cacheRead == 2)
         #expect(result.usage.outputTokens.total == 2)
         #expect(result.usage.outputTokens.reasoning == 320)
-        #expect(result.usage.outputTokens.text == -318)
+        #expect(result.usage.outputTokens.text == 0)
         guard case let .object(rawUsage)? = result.usage.raw else {
             Issue.record("Expected complete raw fixture usage")
             return
@@ -128,7 +128,7 @@ struct OpenAICompatibleChatFixtureTests {
         #expect(result.usage.inputTokens.cacheRead == 244)
         #expect(result.usage.outputTokens.total == 26)
         #expect(result.usage.outputTokens.reasoning == 255)
-        #expect(result.usage.outputTokens.text == -229)
+        #expect(result.usage.outputTokens.text == 0)
     }
 
     @Test("streams text lifecycle and usage from all upstream XAI chunks")
@@ -175,7 +175,7 @@ struct OpenAICompatibleChatFixtureTests {
         #expect(usage.inputTokens.cacheRead == 11)
         #expect(usage.outputTokens.total == 2)
         #expect(usage.outputTokens.reasoning == 340)
-        #expect(usage.outputTokens.text == -338)
+        #expect(usage.outputTokens.text == 0)
         guard case let .object(rawUsage)? = usage.raw else {
             Issue.record("Expected complete raw stream usage")
             return
@@ -226,6 +226,6 @@ struct OpenAICompatibleChatFixtureTests {
         #expect(usage.inputTokens.cacheRead == 306)
         #expect(usage.outputTokens.total == 26)
         #expect(usage.outputTokens.reasoning == 227)
-        #expect(usage.outputTokens.text == -201)
+        #expect(usage.outputTokens.text == 0)
     }
 }

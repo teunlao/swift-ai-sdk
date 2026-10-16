@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let parityTestPrompt: LanguageModelV3Prompt = [
+private let parityTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -116,9 +116,9 @@ struct OpenAICompatibleChatProviderOptionsParityTests {
             ]
         ))
 
-        #expect(result.warnings.contains(.other(
-            message: "The 'openai-compatible' key in providerOptions is deprecated. Use 'openaiCompatible' instead."
-        )) == true)
+        #expect(result.warnings.contains(.deprecated(
+            setting: "providerOptions key 'openai-compatible'", message: "Use 'openaiCompatible' instead."
+        )))
 
         let captured = await capture.current()
         let bodyData = try #require(captured?.httpBody)
@@ -203,7 +203,7 @@ struct OpenAICompatibleChatProviderOptionsParityTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
         }
 
-        let provider = createOpenAICompatibleProvider(settings: .init(
+        let provider = createOpenAICompatible(settings: .init(
             baseURL: "https://api.example.com/v1",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -241,7 +241,7 @@ struct OpenAICompatibleChatProviderOptionsParityTests {
             return FetchResponse(body: .data(data), urlResponse: makeHTTPResponse(url: url, contentType: "text/event-stream"))
         }
 
-        let provider = createOpenAICompatibleProvider(settings: .init(
+        let provider = createOpenAICompatible(settings: .init(
             baseURL: "https://api.example.com/v1",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -252,7 +252,7 @@ struct OpenAICompatibleChatProviderOptionsParityTests {
         let model = try provider.chatModel(modelId: "grok-beta")
         let streamResult = try await model.doStream(options: .init(prompt: parityTestPrompt))
 
-        var finish: (LanguageModelV3FinishReason, LanguageModelV3Usage)?
+        var finish: (LanguageModelV4FinishReason, LanguageModelV4Usage)?
         for try await part in streamResult.stream {
             if case let .finish(finishReason: finishReason, usage: usage, providerMetadata: _) = part {
                 finish = (finishReason, usage)

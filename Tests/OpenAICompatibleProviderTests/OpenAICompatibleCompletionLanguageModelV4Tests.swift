@@ -4,7 +4,7 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAICompatibleProvider
 
-@Suite("OpenAICompatibleCompletionLanguageModelV4")
+@Suite("OpenAICompatibleCompletionLanguageModel")
 struct OpenAICompatibleCompletionLanguageModelV4Tests {
     private let prompt: LanguageModelV4Prompt = [
         .user(
@@ -466,7 +466,7 @@ struct OpenAICompatibleCompletionLanguageModelV4Tests {
     @Test("direct V4 completion model exposes configured supported URLs")
     func directV4CompletionModelExposesSupportedUrls() async throws {
         let pattern = try NSRegularExpression(pattern: #"^https://files\.example/"#)
-        let model = OpenAICompatibleCompletionLanguageModelV4(
+        let model = OpenAICompatibleCompletionLanguageModel(
             modelId: .init(rawValue: "gpt-3.5-turbo-instruct"),
             config: .init(
                 provider: "test-provider.completion",

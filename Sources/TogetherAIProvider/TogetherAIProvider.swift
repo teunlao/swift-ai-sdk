@@ -66,16 +66,16 @@ private func createTogetherAIAuthFetch(
 }
 
 public final class TogetherAIProvider: ProviderV4 {
-    private let chatFactory: @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModelV4
-    private let completionFactory: @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4
-    private let embeddingFactory: @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
+    private let chatFactory: @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel
+    private let completionFactory: @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel
+    private let embeddingFactory: @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
     private let imageFactory: @Sendable (TogetherAIImageModelId) -> TogetherAIImageModel
     private let rerankingFactory: @Sendable (TogetherAIRerankingModelId) -> TogetherAIRerankingModel
 
     init(
-        chatFactory: @escaping @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModelV4,
-        completionFactory: @escaping @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4,
-        embeddingFactory: @escaping @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4,
+        chatFactory: @escaping @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel,
+        completionFactory: @escaping @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel,
+        embeddingFactory: @escaping @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel,
         imageFactory: @escaping @Sendable (TogetherAIImageModelId) -> TogetherAIImageModel,
         rerankingFactory: @escaping @Sendable (TogetherAIRerankingModelId) -> TogetherAIRerankingModel
     ) {
@@ -114,27 +114,27 @@ public final class TogetherAIProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(modelId: TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(modelId: TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func chat(_ modelId: TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(_ modelId: TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel {
         chat(modelId: modelId)
     }
 
-    public func completion(modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 {
+    public func completion(modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
         completionFactory(modelId)
     }
 
-    public func completion(_ modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 {
+    public func completion(_ modelId: TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
         completion(modelId: modelId)
     }
 
-    public func embedding(modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
+    public func embedding(modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embeddingFactory(modelId)
     }
 
-    public func embedding(_ modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
+    public func embedding(_ modelId: TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embedding(modelId: modelId)
     }
 
@@ -186,7 +186,7 @@ public func createTogetherAI(settings: TogetherAIProviderSettings = .init()) -> 
         "\(baseURL)\(options.path)"
     }
 
-    let chatFactory: @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
+    let chatFactory: @Sendable (TogetherAIChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
         let config = OpenAICompatibleChatConfig(
             provider: "togetherai.chat",
             headers: headersClosure,
@@ -195,13 +195,13 @@ public func createTogetherAI(settings: TogetherAIProviderSettings = .init()) -> 
             includeUsage: true,
             supportsStructuredOutputs: modelId.rawValue == "deepseek-ai/DeepSeek-V4-Flash-0731"
         )
-        return OpenAICompatibleChatLanguageModelV4(
+        return OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: config
         )
     }
 
-    let completionFactory: @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 = { modelId in
+    let completionFactory: @Sendable (TogetherAICompletionModelId) -> OpenAICompatibleCompletionLanguageModel = { modelId in
         let config = OpenAICompatibleCompletionConfig(
             provider: "togetherai.completion",
             headers: headersClosure,
@@ -209,20 +209,20 @@ public func createTogetherAI(settings: TogetherAIProviderSettings = .init()) -> 
             fetch: fetch,
             includeUsage: true
         )
-        return OpenAICompatibleCompletionLanguageModelV4(
+        return OpenAICompatibleCompletionLanguageModel(
             modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue),
             config: config
         )
     }
 
-    let embeddingFactory: @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 = { modelId in
+    let embeddingFactory: @Sendable (TogetherAIEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
         let config = OpenAICompatibleEmbeddingConfig(
             provider: "togetherai.embedding",
             url: urlBuilder,
             headers: headersClosure,
             fetch: fetch
         )
-        return OpenAICompatibleEmbeddingModelV4(
+        return OpenAICompatibleEmbeddingModel(
             modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue),
             config: config
         )

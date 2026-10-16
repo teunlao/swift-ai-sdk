@@ -9,9 +9,9 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
     private let config: VertexPartnerConfig
     init(settings: GoogleVertexMaasProviderSettings) { config = .init(settings) }
 
-    public func callAsFunction(_ modelId: String) -> OpenAICompatibleChatLanguageModelV4 { chatModel(modelId: modelId) }
+    public func callAsFunction(_ modelId: String) -> OpenAICompatibleChatLanguageModel { chatModel(modelId: modelId) }
     public func languageModel(modelId: String) throws -> any LanguageModelV4 { chatModel(modelId: modelId) }
-    public func chatModel(modelId: String) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chatModel(modelId: String) -> OpenAICompatibleChatLanguageModel {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.chat", headers: vertexCompatibleHeaders,
@@ -27,7 +27,7 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
             }
         ))
     }
-    public func completionModel(modelId: String) -> OpenAICompatibleCompletionLanguageModelV4 {
+    public func completionModel(modelId: String) -> OpenAICompatibleCompletionLanguageModel {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.completion", headers: vertexCompatibleHeaders,
@@ -36,14 +36,14 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         let config = self.config
-        return OpenAICompatibleEmbeddingModelV4(modelId: .init(rawValue: modelId), config: .init(
+        return OpenAICompatibleEmbeddingModel(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.embedding", url: { "\(try config.baseURL(.maas))\($0.path)" },
             headers: vertexCompatibleHeaders, fetch: config.fetch()
         ))
     }
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
         let config = self.config
-        return OpenAICompatibleImageModelV4(modelId: .init(rawValue: modelId), config: .init(
+        return OpenAICompatibleImageModel(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.image", headers: vertexCompatibleHeaders,
             url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch()
         ))

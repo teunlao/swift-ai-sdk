@@ -29,7 +29,7 @@ struct BasetenProviderTests {
         ))
         let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -42,7 +42,7 @@ struct BasetenProviderTests {
         ))
         let model = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -54,11 +54,11 @@ struct BasetenProviderTests {
 
         // Should work without modelId
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model1 is OpenAICompatibleChatLanguageModel)
 
         // Should work with modelId
         let model2 = try provider("deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     // MARK: - chatModel Tests
@@ -72,7 +72,7 @@ struct BasetenProviderTests {
 
         let model = try provider.chatModel(modelId: modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -84,11 +84,11 @@ struct BasetenProviderTests {
 
         // Should work without modelId
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model1 is OpenAICompatibleChatLanguageModel)
 
         // Should work with modelId
         let model2 = try provider.chatModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     @Test("should handle /sync/v1 endpoints correctly")
@@ -100,7 +100,7 @@ struct BasetenProviderTests {
 
         let model = try provider.chat()
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "baseten.chat")
     }
 
@@ -128,8 +128,8 @@ struct BasetenProviderTests {
         let chatModel = try provider.chatModel(modelId: modelId)
         let languageModel = try provider.languageModel(modelId: modelId)
 
-        #expect(chatModel is OpenAICompatibleChatLanguageModelV4)
-        #expect(languageModel is OpenAICompatibleChatLanguageModelV4)
+        #expect(chatModel is OpenAICompatibleChatLanguageModel)
+        #expect(languageModel is OpenAICompatibleChatLanguageModel)
     }
 
     @Test("should support optional modelId parameter")
@@ -139,10 +139,10 @@ struct BasetenProviderTests {
         ))
 
         let model1 = try provider.languageModel()
-        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model1 is OpenAICompatibleChatLanguageModel)
 
         let model2 = try provider.languageModel(modelId: "deepseek-ai/DeepSeek-V4-0324")
-        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     // MARK: - embeddingModel Tests
@@ -669,10 +669,10 @@ struct BasetenProviderTests {
         ))
 
         let model1 = try provider.chat()
-        #expect(model1 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model1 is OpenAICompatibleChatLanguageModel)
 
         let model2 = try provider("test-model")
-        #expect(model2 is OpenAICompatibleChatLanguageModelV4)
+        #expect(model2 is OpenAICompatibleChatLanguageModel)
     }
 
     @Suite("auth behavior", .serialized)

@@ -4,7 +4,7 @@ import AISDKProviderUtils
 import OpenAICompatibleProvider
 
 final class BasetenEmbeddingModel: EmbeddingModelV4 {
-    private let delegate: OpenAICompatibleEmbeddingModelV4
+    private let delegate: OpenAICompatibleEmbeddingModel
     private let headersClosure: @Sendable () -> [String: String]
     private let urlBuilder: @Sendable (OpenAICompatibleURLOptions) -> String
     private let fetch: FetchFunction?
@@ -12,7 +12,7 @@ final class BasetenEmbeddingModel: EmbeddingModelV4 {
     private let performanceClient: BasetenPerformanceClient?
 
     init(
-        delegate: OpenAICompatibleEmbeddingModelV4,
+        delegate: OpenAICompatibleEmbeddingModel,
         headers: @escaping @Sendable () -> [String: String],
         urlBuilder: @escaping @Sendable (OpenAICompatibleURLOptions) -> String,
         fetch: FetchFunction?,

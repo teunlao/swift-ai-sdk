@@ -9,10 +9,10 @@ import OpenAICompatibleProvider
 public final class MoonshotAIChatLanguageModel: LanguageModelV4 {
     public let specificationVersion: String = "v4"
 
-    private let base: OpenAICompatibleChatLanguageModelV4
+    private let base: OpenAICompatibleChatLanguageModel
 
     public init(modelId: MoonshotAIChatModelId, config: OpenAICompatibleChatConfig) {
-        self.base = OpenAICompatibleChatLanguageModelV4(
+        self.base = OpenAICompatibleChatLanguageModel(
             modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue),
             config: config
         )

@@ -7,7 +7,7 @@ import Testing
 /**
  Tests for OpenAICompatibleImageModel.
 
- Port of `@ai-sdk/openai-compatible/src/image/openai-compatible-image-model.test.ts`.
+ Port of `@ai-sdk-openai-compatible/src/image/openai-compatible-image-model.test.ts`.
  */
 
 @Suite("OpenAICompatibleImageModel")
@@ -37,7 +37,7 @@ struct OpenAICompatibleImageModelTests {
 
         #expect(model.provider == "openai-compatible")
         #expect(model.modelId == "dall-e-3")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
         if case .value(let max) = model.maxImagesPerCall {
             #expect(max == 10)
         } else {
@@ -75,11 +75,11 @@ struct OpenAICompatibleImageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 2,
                 size: "1024x1024",
-                providerOptions: ["openai": ["quality": .string("hd")]]
+                providerOptions: ["openaiCompatible": ["quality": .string("hd")]]
             )
         )
 
@@ -95,7 +95,7 @@ struct OpenAICompatibleImageModelTests {
         #expect(json["n"] as? Double == 2)
         #expect(json["size"] as? String == "1024x1024")
         #expect(json["quality"] as? String == "hd")
-        #expect(json["response_format"] as? String == "b64_json")
+        #expect(json["response_format"] == nil)
     }
 
     @Test("should add warnings for unsupported settings")
@@ -123,7 +123,7 @@ struct OpenAICompatibleImageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 1,
                 aspectRatio: "16:9",
@@ -178,7 +178,7 @@ struct OpenAICompatibleImageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 1,
                 headers: ["Custom-Request-Header": "request-header-value"]
@@ -242,7 +242,7 @@ struct OpenAICompatibleImageModelTests {
 
         do {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(prompt: prompt, n: 1)
+                options: ImageModelV4CallOptions(prompt: prompt, n: 1)
             )
             Issue.record("Expected error to be thrown")
         } catch let error as APICallError {
@@ -283,7 +283,7 @@ struct OpenAICompatibleImageModelTests {
 
         do {
             _ = try await model.doGenerate(
-                options: ImageModelV3CallOptions(prompt: prompt, n: 1)
+                options: ImageModelV4CallOptions(prompt: prompt, n: 1)
             )
             Issue.record("Expected error to be thrown")
         } catch let error as APICallError {
@@ -321,7 +321,7 @@ struct OpenAICompatibleImageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(prompt: prompt, n: 2)
+            options: ImageModelV4CallOptions(prompt: prompt, n: 2)
         )
 
         if case .base64(let images) = result.images {
@@ -360,7 +360,7 @@ struct OpenAICompatibleImageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(prompt: prompt, n: 1)
+            options: ImageModelV4CallOptions(prompt: prompt, n: 1)
         )
 
         #expect(result.response.timestamp == testDate)
@@ -395,7 +395,7 @@ struct OpenAICompatibleImageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: ImageModelV3CallOptions(prompt: prompt, n: 1)
+            options: ImageModelV4CallOptions(prompt: prompt, n: 1)
         )
 
         let afterDate = Date()
@@ -432,11 +432,11 @@ struct OpenAICompatibleImageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 1,
                 size: "1024x1024",
-                providerOptions: ["openai": ["user": .string("test-user-id")]]
+                providerOptions: ["openaiCompatible": ["user": .string("test-user-id")]]
             )
         )
 
@@ -452,7 +452,7 @@ struct OpenAICompatibleImageModelTests {
         #expect(json["n"] as? Double == 1)
         #expect(json["size"] as? String == "1024x1024")
         #expect(json["user"] as? String == "test-user-id")
-        #expect(json["response_format"] as? String == "b64_json")
+        #expect(json["response_format"] == nil)
     }
 
     @Test("should not include user field in request when not set via provider options")
@@ -482,11 +482,11 @@ struct OpenAICompatibleImageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 1,
                 size: "1024x1024",
-                providerOptions: ["openai": [:]]
+                providerOptions: ["openaiCompatible": [:]]
             )
         )
 
@@ -501,7 +501,7 @@ struct OpenAICompatibleImageModelTests {
         #expect(json["prompt"] as? String == prompt)
         #expect(json["n"] as? Double == 1)
         #expect(json["size"] as? String == "1024x1024")
-        #expect(json["response_format"] as? String == "b64_json")
+        #expect(json["response_format"] == nil)
         #expect(json["user"] == nil)
     }
 }

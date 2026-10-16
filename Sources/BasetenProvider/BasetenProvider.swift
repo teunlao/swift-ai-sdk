@@ -35,11 +35,11 @@ struct BasetenProviderError: LocalizedError, Sendable {
 }
 
 public final class BasetenProvider: ProviderV4 {
-    private let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4
+    private let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel
     private let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4
 
     init(
-        chatFactory: @escaping @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4,
+        chatFactory: @escaping @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel,
         embeddingFactory: @escaping @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4
     ) {
         self.chatFactory = chatFactory
@@ -66,11 +66,11 @@ public final class BasetenProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModel {
         try chatFactory(modelId)
     }
 
-    public func languageModel(_ modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModelV4 {
+    public func languageModel(_ modelId: BasetenChatModelId? = nil) throws -> OpenAICompatibleChatLanguageModel {
         try chatFactory(modelId)
     }
 
@@ -139,7 +139,7 @@ public func createBaseten(settings: BasetenProviderSettings = .init()) -> Basete
         customFetch: settings.fetch
     )
 
-    let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModelV4 = { modelId in
+    let chatFactory: @Sendable (BasetenChatModelId?) throws -> OpenAICompatibleChatLanguageModel = { modelId in
         let customURL = settings.modelURL
         if let customURL, customURL.contains("/predict") {
             throw BasetenProviderError(message: "Not supported. You must use a /sync/v1 endpoint for chat models.")
@@ -159,7 +159,7 @@ public func createBaseten(settings: BasetenProviderSettings = .init()) -> Basete
             errorConfiguration: basetenErrorConfiguration
         )
 
-        return OpenAICompatibleChatLanguageModelV4(modelId: resolvedModelId, config: config)
+        return OpenAICompatibleChatLanguageModel(modelId: resolvedModelId, config: config)
     }
 
     let embeddingFactory: @Sendable (BasetenEmbeddingModelId?) throws -> any EmbeddingModelV4 = { modelId in
@@ -184,7 +184,7 @@ public func createBaseten(settings: BasetenProviderSettings = .init()) -> Basete
             supportsParallelCalls: nil
         )
 
-        let baseEmbeddingModel = OpenAICompatibleEmbeddingModelV4(
+        let baseEmbeddingModel = OpenAICompatibleEmbeddingModel(
             modelId: resolvedModelId,
             config: embeddingConfig
         )

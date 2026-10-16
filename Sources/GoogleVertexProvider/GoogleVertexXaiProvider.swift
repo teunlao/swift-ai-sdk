@@ -9,9 +9,9 @@ public final class GoogleVertexXaiProvider: ProviderV4 {
     private let config: VertexPartnerConfig
     init(settings: GoogleVertexXaiProviderSettings) { config = .init(settings) }
 
-    public func callAsFunction(_ modelId: String) -> OpenAICompatibleChatLanguageModelV4 { chatModel(modelId: modelId) }
+    public func callAsFunction(_ modelId: String) -> OpenAICompatibleChatLanguageModel { chatModel(modelId: modelId) }
     public func languageModel(modelId: String) throws -> any LanguageModelV4 { chatModel(modelId: modelId) }
-    public func chatModel(modelId: String) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chatModel(modelId: String) -> OpenAICompatibleChatLanguageModel {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "googleVertex.xai.chat", headers: vertexCompatibleHeaders,

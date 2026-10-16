@@ -30,15 +30,15 @@ public struct DeepInfraProviderSettings: Sendable {
 }
 
 public final class DeepInfraProvider: ProviderV4 {
-    private let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4
-    private let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4
-    private let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4
+    private let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel
+    private let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel
+    private let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel
     private let imageFactory: @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel
 
     init(
-        chatFactory: @escaping @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4,
-        completionFactory: @escaping @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4,
-        embeddingFactory: @escaping @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4,
+        chatFactory: @escaping @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel,
+        completionFactory: @escaping @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel,
+        embeddingFactory: @escaping @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel,
         imageFactory: @escaping @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel
     ) {
         self.chatFactory = chatFactory
@@ -71,15 +71,15 @@ public final class DeepInfraProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func chat(modelId: DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4 {
+    public func chat(modelId: DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel {
         chatFactory(modelId)
     }
 
-    public func completion(modelId: DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 {
+    public func completion(modelId: DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel {
         completionFactory(modelId)
     }
 
-    public func embedding(modelId: DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 {
+    public func embedding(modelId: DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel {
         embeddingFactory(modelId)
     }
 
@@ -138,35 +138,45 @@ public func createDeepInfra(settings: DeepInfraProviderSettings = .init()) -> De
         "\(baseURL)/openai\(options.path)"
     }
 
-    let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModelV4 = { modelId in
+    let chatFactory: @Sendable (DeepInfraChatModelId) -> OpenAICompatibleChatLanguageModel = { modelId in
         let config = OpenAICompatibleChatConfig(
             provider: "deepinfra.chat",
             headers: headersClosure,
             url: urlBuilder,
             fetch: fetch,
-            usagePostprocessor: fixDeepInfraUsageForGeminiModels
+            convertUsage: { usage in
+                guard let usage else { return .init() }
+                let prompt = usage.promptTokens ?? 0
+                let completion = usage.completionTokens ?? 0
+                let cached = usage.promptTokensDetails?.cachedTokens ?? 0
+                let reasoning = usage.completionTokensDetails?.reasoningTokens ?? 0
+                return fixDeepInfraUsageForGeminiModels(.init(
+                    inputTokens: .init(total: prompt, noCache: prompt - cached, cacheRead: cached),
+                    outputTokens: .init(total: completion, text: max(0, completion - reasoning), reasoning: reasoning), raw: usage.raw
+                ))
+            }
         )
-        return OpenAICompatibleChatLanguageModelV4(modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleChatLanguageModel(modelId: OpenAICompatibleChatModelId(rawValue: modelId.rawValue), config: config)
     }
 
-    let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModelV4 = { modelId in
+    let completionFactory: @Sendable (DeepInfraCompletionModelId) -> OpenAICompatibleCompletionLanguageModel = { modelId in
         let config = OpenAICompatibleCompletionConfig(
             provider: "deepinfra.completion",
             headers: headersClosure,
             url: urlBuilder,
             fetch: fetch
         )
-        return OpenAICompatibleCompletionLanguageModelV4(modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleCompletionLanguageModel(modelId: OpenAICompatibleCompletionModelId(rawValue: modelId.rawValue), config: config)
     }
 
-    let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModelV4 = { modelId in
+    let embeddingFactory: @Sendable (DeepInfraEmbeddingModelId) -> OpenAICompatibleEmbeddingModel = { modelId in
         let config = OpenAICompatibleEmbeddingConfig(
             provider: "deepinfra.embedding",
             url: urlBuilder,
             headers: headersClosure,
             fetch: fetch
         )
-        return OpenAICompatibleEmbeddingModelV4(modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue), config: config)
+        return OpenAICompatibleEmbeddingModel(modelId: OpenAICompatibleEmbeddingModelId(rawValue: modelId.rawValue), config: config)
     }
 
     let imageFactory: @Sendable (DeepInfraImageModelId) -> DeepInfraImageModel = { modelId in
@@ -200,7 +210,7 @@ public let deepinfra = createDeepInfra()
 /// `completion_tokens_details.reasoning_tokens` separately. In OpenAI-compatible semantics,
 /// `completion_tokens` must include reasoning tokens.
 @Sendable
-private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV3Usage) -> LanguageModelV3Usage {
+private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV4Usage) -> LanguageModelV4Usage {
     guard let raw = usage.raw, case .object(var dict) = raw else {
         return usage
     }
@@ -247,7 +257,7 @@ private func fixDeepInfraUsageForGeminiModels(_ usage: LanguageModelV3Usage) -> 
         cacheReadTokens = usage.inputTokens.cacheRead ?? 0
     }
 
-    return LanguageModelV3Usage(
+    return LanguageModelV4Usage(
         inputTokens: .init(
             total: promptTokens,
             noCache: promptTokens - cacheReadTokens,

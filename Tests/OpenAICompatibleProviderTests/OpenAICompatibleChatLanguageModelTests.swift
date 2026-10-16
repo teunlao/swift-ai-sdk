@@ -7,13 +7,13 @@ import Testing
 /**
  Tests for OpenAICompatibleChatLanguageModel.
 
- Port of `@ai-sdk/openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts`.
+ Port of `@ai-sdk-openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts`.
  */
 
 @Suite("OpenAICompatibleChatLanguageModel")
 struct OpenAICompatibleChatLanguageModelTests {
-    private let testPrompt: LanguageModelV3Prompt = [
-        .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+    private let testPrompt: LanguageModelV4Prompt = [
+        .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
     ]
 
     // MARK: - Config Tests
@@ -141,7 +141,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         // Provider name is "test-provider", but providerOptions uses "xai"
         // So user setting should NOT be included in request (name mismatch)
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -150,7 +150,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "xai": ["user": .string("test-user-id")]
@@ -190,7 +190,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -198,7 +198,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.content.count == 1)
         if case .text(let textPart) = result.content.first {
@@ -222,7 +222,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -230,7 +230,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.content.count == 2)
 
@@ -261,7 +261,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -269,15 +269,12 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        // Note: reasoning field is NOT extracted in doGenerate, only reasoning_content
-        #expect(result.content.count == 1)
-        if case .text(let textPart) = result.content.first {
-            #expect(textPart.text == "Hello, World!")
-        } else {
-            Issue.record("Expected text content")
-        }
+        #expect(result.content == [
+            .text(.init(text: "Hello, World!")),
+            .reasoning(.init(text: "This is the reasoning from the reasoning field"))
+        ])
     }
 
     @Test("should prefer reasoning_content over reasoning field when both are provided")
@@ -295,7 +292,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -303,7 +300,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.content.count == 2)
 
@@ -333,7 +330,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -341,7 +338,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 5)
@@ -359,7 +356,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -367,7 +364,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason.unified == .stop)
         #expect(result.finishReason.raw == "stop")
@@ -384,7 +381,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -392,7 +389,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.finishReason.unified == .other)
         #expect(result.finishReason.raw == "eos")
@@ -412,7 +409,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -420,7 +417,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.response?.headers?["test-header"] == "test-value")
     }
@@ -438,7 +435,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -446,7 +443,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         guard let request = await capture.current(),
               let body = request.httpBody,
@@ -478,7 +475,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: [
@@ -490,7 +487,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 headers: ["Custom-Request-Header": "request-header-value"]
             )
@@ -519,7 +516,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -528,7 +525,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": ["someCustomOption": .string("test-value")]
@@ -559,7 +556,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -568,7 +565,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "notThisProviderName": ["someCustomOption": .string("test-value")]
@@ -597,7 +594,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -605,7 +602,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.request != nil)
         guard let requestBody = result.request?.body as? [String: JSONValue] else {
@@ -637,7 +634,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -645,7 +642,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.response?.id == "test-id")
         #expect(result.response?.modelId == "test-model")
@@ -665,7 +662,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -673,7 +670,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 0)
@@ -693,7 +690,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "openai-compatible",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -702,7 +699,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "openai-compatible": ["user": .string("test-user-id")]
@@ -733,7 +730,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -750,10 +747,10 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 tools: [
-                    .function(LanguageModelV3FunctionTool(
+                    .function(LanguageModelV4FunctionTool(
                         name: "test-tool",
                         inputSchema: .object(schema)
                     ))
@@ -802,7 +799,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -819,10 +816,10 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 tools: [
-                    .function(LanguageModelV3FunctionTool(
+                    .function(LanguageModelV4FunctionTool(
                         name: "test-tool",
                         inputSchema: .object(schema)
                     ))
@@ -869,7 +866,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .text
             )
@@ -898,7 +895,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -907,7 +904,7 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "gpt-4o-2024-08-06")
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(schema: nil, name: nil, description: nil)
             )
@@ -960,7 +957,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ]
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(schema: .object(schema), name: nil, description: nil)
             )
@@ -1023,7 +1020,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ]
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(schema: .object(schema), name: nil, description: nil)
             )
@@ -1070,7 +1067,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": ["reasoningEffort": .string("high")]
@@ -1112,7 +1109,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": [
@@ -1159,7 +1156,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": ["textVerbosity": .string("low")]
@@ -1201,7 +1198,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 providerOptions: [
                     "test-provider": [
@@ -1257,7 +1254,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ]
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(schema: .object(schema), name: nil, description: nil)
             )
@@ -1316,7 +1313,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ]
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(
                     schema: .object(schema),
@@ -1371,7 +1368,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 responseFormat: .json(
                     schema: nil,
@@ -1423,7 +1420,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1431,7 +1428,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 30)
@@ -1466,7 +1463,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1474,7 +1471,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         // Provider metadata should be empty object when no details
         guard let providerMetadata = result.providerMetadata,
@@ -1509,7 +1506,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1517,7 +1514,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 30)
@@ -1589,7 +1586,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1598,7 +1595,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         let capturedRequest = await requestCapture.current()
         let bodyData = try #require(capturedRequest?.httpBody)
@@ -1625,7 +1622,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1633,9 +1630,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var chunks: [LanguageModelV3StreamPart] = []
+        var chunks: [LanguageModelV4StreamPart] = []
         for try await chunk in result.stream {
             chunks.append(chunk)
         }
@@ -1703,7 +1700,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1711,9 +1708,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var chunks: [LanguageModelV3StreamPart] = []
+        var chunks: [LanguageModelV4StreamPart] = []
         for try await chunk in result.stream {
             chunks.append(chunk)
         }
@@ -1781,7 +1778,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1789,9 +1786,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var chunks: [LanguageModelV3StreamPart] = []
+        var chunks: [LanguageModelV4StreamPart] = []
         for try await chunk in result.stream {
             chunks.append(chunk)
         }
@@ -1828,7 +1825,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1836,9 +1833,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var chunks: [LanguageModelV3StreamPart] = []
+        var chunks: [LanguageModelV4StreamPart] = []
         for try await chunk in result.stream {
             chunks.append(chunk)
         }
@@ -1869,7 +1866,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1877,7 +1874,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         let capturedRequest = await requestCapture.current()
         let bodyData = try #require(capturedRequest?.httpBody)
@@ -1913,7 +1910,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: [
@@ -1924,7 +1921,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: testPrompt,
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -1954,7 +1951,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -1962,7 +1959,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: testPrompt,
             providerOptions: [
                 "test-provider": [
@@ -1994,7 +1991,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             return FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2002,7 +1999,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: testPrompt,
             providerOptions: [
                 "notThisProviderName": [
@@ -2031,7 +2028,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2039,7 +2036,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         // Verify request metadata is present
         #expect(result.request != nil)
@@ -2067,7 +2064,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2075,7 +2072,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
         #expect(result.response != nil)
         if let response = result.response, let headers = response.headers {
@@ -2098,7 +2095,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2106,9 +2103,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2124,8 +2121,10 @@ struct OpenAICompatibleChatLanguageModelTests {
         for part in parts {
             if case let .error(error) = part {
                 foundError = true
-                if case let .string(message) = error {
-                    #expect(message == "Incorrect API key provided: as***T7. You can obtain an API key from https://console.api.com.")
+                if case let .value(.object(payload)) = error {
+                    #expect(payload["message"] == "Incorrect API key provided: as***T7. You can obtain an API key from https://console.api.com.")
+                } else {
+                    Issue.record("Expected provider error payload")
                 }
             }
         }
@@ -2158,7 +2157,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2166,15 +2165,15 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
 
         // Find the finish part
-        var finishPart: LanguageModelV3StreamPart?
+        var finishPart: LanguageModelV4StreamPart?
         for part in parts {
             if case .finish = part {
                 finishPart = part
@@ -2219,7 +2218,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2227,9 +2226,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2263,7 +2262,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2271,9 +2270,9 @@ struct OpenAICompatibleChatLanguageModelTests {
         ))
 
         let model = try provider.chatModel(modelId: "grok-beta")
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2336,7 +2335,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2345,16 +2344,16 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
-                tools: [.function(LanguageModelV3FunctionTool(
+                tools: [.function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object(["type": "object", "properties": ["value": ["type": "string"]]])
                 ))]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2362,7 +2361,7 @@ struct OpenAICompatibleChatLanguageModelTests {
         // Verify tool-input-start
         var toolInputStarts: [(String, String)] = []
         for part in parts {
-            if case let .toolInputStart(id, toolName, _, _, _, _) = part {
+            if case let .toolInputStart(id, toolName, _, _, _, _, _) = part {
                 toolInputStarts.append((id, toolName))
             }
         }
@@ -2377,7 +2376,6 @@ struct OpenAICompatibleChatLanguageModelTests {
             }
             return nil
         }
-        #expect(toolInputDeltas.count == 7)
         #expect(toolInputDeltas.joined() == "{\"value\":\"Sparkle Day\"}")
 
         // Verify tool-call
@@ -2426,7 +2424,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2435,16 +2433,16 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
-                tools: [.function(LanguageModelV3FunctionTool(
+                tools: [.function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object(["type": "object", "properties": ["value": ["type": "string"]]])
                 ))]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2479,7 +2477,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2488,16 +2486,16 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
-                tools: [.function(LanguageModelV3FunctionTool(
+                tools: [.function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object(["type": "object", "properties": ["value": ["type": "string"]]])
                 ))]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2541,7 +2539,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2550,16 +2548,16 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
-                tools: [.function(LanguageModelV3FunctionTool(
+                tools: [.function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object(["type": "object"])
                 ))]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2636,7 +2634,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2645,16 +2643,16 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
-                tools: [.function(LanguageModelV3FunctionTool(
+                tools: [.function(LanguageModelV4FunctionTool(
                     name: "searchGoogle",
                     inputSchema: .object(["type": "object", "properties": ["query": ["type": "string"]]])
                 ))]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2689,7 +2687,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2698,13 +2696,13 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "gpt-4")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 includeRawChunks: true
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2736,7 +2734,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2745,13 +2743,13 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "gpt-4")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt
                 // includeRawChunks not set (defaults to nil/false)
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2779,7 +2777,7 @@ struct OpenAICompatibleChatLanguageModelTests {
             FetchResponse(body: .data(data), urlResponse: httpResponse)
         }
 
-        let provider = createOpenAICompatibleProvider(settings: OpenAICompatibleProviderSettings(
+        let provider = createOpenAICompatible(settings: OpenAICompatibleProviderSettings(
             baseURL: "https://my.api.com/v1/",
             name: "test-provider",
             headers: ["Authorization": "Bearer test-api-key"],
@@ -2788,13 +2786,13 @@ struct OpenAICompatibleChatLanguageModelTests {
 
         let model = try provider.chatModel(modelId: "grok-beta")
         let result = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: testPrompt,
                 includeRawChunks: false
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }

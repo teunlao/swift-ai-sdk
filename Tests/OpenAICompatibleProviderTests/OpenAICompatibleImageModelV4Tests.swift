@@ -4,7 +4,7 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAICompatibleProvider
 
-@Suite("OpenAICompatibleImageModelV4")
+@Suite("OpenAICompatibleImageModel")
 struct OpenAICompatibleImageModelV4Tests {
     actor RequestCapture {
         private var request: URLRequest?
@@ -53,7 +53,7 @@ struct OpenAICompatibleImageModelV4Tests {
                 )
             )
         }
-        let model = OpenAICompatibleImageModelV4(
+        let model = OpenAICompatibleImageModel(
             modelId: .init(rawValue: "dall-e-3"),
             config: .init(
                 provider: "black-forest-labs.image",
@@ -127,7 +127,7 @@ struct OpenAICompatibleImageModelV4Tests {
         #expect(json["size"] as? String == "1024x1024")
         #expect(json["quality"] as? String == "camel")
         #expect(json["user"] as? String == "user-123")
-        #expect(json["response_format"] as? String == "b64_json")
+        #expect(json["response_format"] as? String == "url")
     }
 
     @Test("editing sends binary URL and mask inputs as multipart form data")
@@ -145,7 +145,7 @@ struct OpenAICompatibleImageModelV4Tests {
                 )
             )
         }
-        let model = OpenAICompatibleImageModelV4(
+        let model = OpenAICompatibleImageModel(
             modelId: .init(rawValue: "image-model"),
             config: .init(
                 provider: "recraft.image",

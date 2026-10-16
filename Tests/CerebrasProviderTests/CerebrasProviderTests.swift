@@ -28,7 +28,7 @@ struct CerebrasProviderTests {
 
         let model = try provider("model-id")
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "cerebras.chat")
     }
 
@@ -42,7 +42,7 @@ struct CerebrasProviderTests {
 
         let model = try provider("model-id")
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
         #expect(model.provider == "cerebras.chat")
     }
 
@@ -119,7 +119,7 @@ struct CerebrasProviderTests {
 
         let model = try provider(modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
     }
 
     // MARK: - languageModel Tests
@@ -133,7 +133,7 @@ struct CerebrasProviderTests {
 
         let model = try provider.languageModel(modelId: modelId)
 
-        #expect(model is OpenAICompatibleChatLanguageModelV4)
+        #expect(model is OpenAICompatibleChatLanguageModel)
     }
 
     // MARK: - embeddingModel Tests
