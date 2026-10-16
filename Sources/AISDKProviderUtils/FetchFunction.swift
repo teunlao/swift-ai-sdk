@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Default timeout interval for API calls.
 ///
@@ -18,24 +21,50 @@ public struct FetchResponse: Sendable {
 }
 
 /// Function type that executes an HTTP request and returns the response.
+///
+/// A fetch function honors `URLRequest.fetchRedirectMode`: with `.manual` or `.error`
+/// it must return a redirect response instead of following it.
 public typealias FetchFunction = @Sendable (URLRequest) async throws -> FetchResponse
+
+/// How a fetch treats a redirect response. Port of `RequestInit.redirect`.
+public enum FetchRedirectMode: String, Sendable {
+    /// Redirects are followed by the fetch function.
+    case follow
+    /// The redirect response is returned; the caller validates `Location` before following it.
+    case manual
+    /// The redirect response is returned and the caller fails the request.
+    case error
+}
+
+private let fetchRedirectModeKey = "ai-sdk.fetchRedirectMode"
+
+extension URLRequest {
+    /// Redirect policy the fetch function applies, carried with the request like
+    /// `RequestInit.redirect`. Defaults to `.follow`.
+    public var fetchRedirectMode: FetchRedirectMode {
+        get {
+            (URLProtocol.property(forKey: fetchRedirectModeKey, in: self) as? String)
+                .flatMap(FetchRedirectMode.init(rawValue:)) ?? .follow
+        }
+        set {
+            guard let mutable = (self as NSURLRequest).mutableCopy() as? NSMutableURLRequest else {
+                return
+            }
+            URLProtocol.setProperty(newValue.rawValue, forKey: fetchRedirectModeKey, in: mutable)
+            self = mutable as URLRequest
+        }
+    }
+}
 
 /// Creates the default fetch implementation backed by `URLSession`.
 ///
-/// The response body is a stream read by a task that is cancelled when the consumer terminates the
-/// stream, so an abandoned stream stops reading. Providers fall back to this when no custom fetch is given.
+/// Like server-side `fetch`, it keeps no ambient state: no cookie jar, credential
+/// store or response cache. It honors `URLRequest.fetchRedirectMode`, streams the
+/// response body as it arrives, pauses the transfer while the consumer lags, and
+/// cancels it when the consumer cancels or drops the body.
 public func defaultFetchFunction() -> FetchFunction {
     { request in
-        let session = URLSession.shared
-
-        if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
-            let (bytes, response) = try await session.bytes(for: request)
-            let stream = makeDataStream(from: bytes)
-            return FetchResponse(body: .stream(stream), urlResponse: response)
-        } else {
-            let (data, response) = try await session.data(for: request)
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
+        try await URLSessionFetch.perform(request)
     }
 }
 
@@ -82,35 +111,237 @@ func fetchWithAbortCheck(
     }
 }
 
-@available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *)
-private func makeDataStream(from bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<Data, Error> {
-    AsyncThrowingStream { continuation in
-        let task = Task {
-            var buffer = Data()
-            buffer.reserveCapacity(16_384)
+// MARK: - URLSession transport
 
-            do {
-                for try await byte in bytes {
-                    buffer.append(byte)
+private enum URLSessionFetch {
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
 
-                    if buffer.count >= 16_384 {
-                        continuation.yield(buffer)
-                        buffer.removeAll(keepingCapacity: true)
-                    }
-                }
+    static func perform(_ request: URLRequest) async throws -> FetchResponse {
+        let task = session.dataTask(with: request)
+        let delegate = FetchTaskDelegate(redirectMode: request.fetchRedirectMode, task: task)
+        task.delegate = delegate
 
-                if !buffer.isEmpty {
-                    continuation.yield(buffer)
-                }
-
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
+        let response = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.awaitResponse(continuation)
+                task.resume()
             }
-        }
-
-        continuation.onTermination = { @Sendable _ in
+        } onCancel: {
             task.cancel()
         }
+
+        return FetchResponse(body: .stream(delegate.body.makeStream()), urlResponse: response)
+    }
+}
+
+/// Receives one data task's events. The task retains it until the task completes.
+private final class FetchTaskDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    let body: ResponseBodyBuffer
+    private let redirectMode: FetchRedirectMode
+    private let lock = NSLock()
+    private var responseContinuation: CheckedContinuation<URLResponse, Error>?
+    private var pendingResult: Result<URLResponse, Error>?
+
+    init(redirectMode: FetchRedirectMode, task: URLSessionDataTask) {
+        self.redirectMode = redirectMode
+        self.body = ResponseBodyBuffer(task: task)
+    }
+
+    func awaitResponse(_ continuation: CheckedContinuation<URLResponse, Error>) {
+        lock.lock()
+        if let pendingResult {
+            lock.unlock()
+            continuation.resume(with: pendingResult)
+            return
+        }
+        responseContinuation = continuation
+        lock.unlock()
+    }
+
+    private func deliverResponse(_ result: Result<URLResponse, Error>) {
+        lock.lock()
+        guard pendingResult == nil else {
+            lock.unlock()
+            return
+        }
+        pendingResult = result
+        let continuation = responseContinuation
+        responseContinuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        // Without a followed redirect, the redirect response itself is delivered.
+        completionHandler(redirectMode == .follow ? request : nil)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        deliverResponse(.success(response))
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        body.append(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            deliverResponse(.failure(error))
+        } else if let response = task.response {
+            deliverResponse(.success(response))
+        } else {
+            deliverResponse(.failure(URLError(.badServerResponse)))
+        }
+        body.finish(error)
+    }
+}
+
+/**
+ Body chunks received for one data task, read on demand by the consumer.
+
+ The transfer is suspended while more than `highWaterMark` bytes wait unread and
+ resumed once the backlog drops below `lowWaterMark`. A cancelled consumer, or a
+ body stream released unread, cancels the data task.
+ */
+private final class ResponseBodyBuffer: @unchecked Sendable {
+    private static let highWaterMark = 1 << 20
+    private static let lowWaterMark = 256 << 10
+
+    private let lock = NSLock()
+    private let task: URLSessionDataTask
+    private var chunks: [Data] = []
+    private var head = 0
+    private var bufferedBytes = 0
+    private var isSuspended = false
+    private var completion: Result<Void, Error>?
+    private var waiter: CheckedContinuation<Data?, Error>?
+
+    init(task: URLSessionDataTask) {
+        self.task = task
+    }
+
+    func makeStream() -> AsyncThrowingStream<Data, Error> {
+        let release = CancelOnRelease(task: task)
+        return AsyncThrowingStream {
+            defer { withExtendedLifetime(release) {} }
+            return try await self.next()
+        }
+    }
+
+    func append(_ data: Data) {
+        lock.lock()
+        if let waiter {
+            self.waiter = nil
+            lock.unlock()
+            waiter.resume(returning: data)
+            return
+        }
+        chunks.append(data)
+        bufferedBytes += data.count
+        let shouldSuspend = !isSuspended && bufferedBytes >= Self.highWaterMark
+        if shouldSuspend {
+            isSuspended = true
+        }
+        lock.unlock()
+
+        if shouldSuspend {
+            task.suspend()
+        }
+    }
+
+    func finish(_ error: Error?) {
+        lock.lock()
+        guard completion == nil else {
+            lock.unlock()
+            return
+        }
+        completion = error.map { .failure($0) } ?? .success(())
+        let waiter = self.waiter
+        self.waiter = nil
+        lock.unlock()
+
+        if let error {
+            waiter?.resume(throwing: error)
+        } else {
+            waiter?.resume(returning: nil)
+        }
+    }
+
+    private func next() async throws -> Data? {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
+                lock.lock()
+
+                if head < chunks.count {
+                    let chunk = chunks[head]
+                    head += 1
+                    bufferedBytes -= chunk.count
+                    if head == chunks.count {
+                        chunks.removeAll(keepingCapacity: true)
+                        head = 0
+                    }
+                    let shouldResume = isSuspended && bufferedBytes <= Self.lowWaterMark
+                    if shouldResume {
+                        isSuspended = false
+                    }
+                    lock.unlock()
+
+                    if shouldResume {
+                        task.resume()
+                    }
+                    continuation.resume(returning: chunk)
+                    return
+                }
+
+                switch completion {
+                case .success:
+                    lock.unlock()
+                    continuation.resume(returning: nil)
+                case .failure(let error):
+                    lock.unlock()
+                    continuation.resume(throwing: error)
+                case nil:
+                    waiter = continuation
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            // Completion delivers URLError(.cancelled) to the waiting consumer.
+            task.cancel()
+        }
+    }
+}
+
+/// Cancels the data task when the last reference to the body stream goes away.
+private final class CancelOnRelease: @unchecked Sendable {
+    private let task: URLSessionDataTask
+
+    init(task: URLSessionDataTask) {
+        self.task = task
+    }
+
+    deinit {
+        task.cancel()
     }
 }

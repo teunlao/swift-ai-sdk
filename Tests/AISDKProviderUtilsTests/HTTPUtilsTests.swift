@@ -22,10 +22,19 @@ struct HTTPUtilsTests {
         #expect(isAbortError(error))
     }
 
-    @Test("isAbortError detects URLError.timedOut")
-    func testURLErrorTimedOut() throws {
-        let error = URLError(.timedOut)
-        #expect(isAbortError(error))
+    @Test("a transport timeout is a retryable network failure, not an abort")
+    func testURLErrorTimedOutIsRetryable() async throws {
+        #expect(!isAbortError(URLError(.timedOut)))
+
+        let error = await #expect(throws: APICallError.self) {
+            _ = try await getFromAPI(
+                url: "https://api.example.com/models",
+                failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                successfulResponseHandler: createBinaryResponseHandler(),
+                fetch: { _ in throw URLError(.timedOut) }
+            )
+        }
+        #expect(error?.isRetryable == true)
     }
 
     @Test("isAbortError returns false for other errors")

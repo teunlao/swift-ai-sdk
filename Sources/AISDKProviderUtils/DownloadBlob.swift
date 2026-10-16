@@ -11,7 +11,11 @@ public struct DownloadedBlob: Sendable, Equatable {
     }
 }
 
-/// Downloads a file from a URL and returns its bytes.
+/// Downloads a file from an untrusted URL and returns its bytes.
+///
+/// Every hop goes through `fetchUntrustedUrl`. Hostname checks are not pinned to
+/// the connection, so there is no guarantee against DNS rebinding; constrain egress
+/// at the network layer for untrusted URLs.
 public func downloadBlob(
     url: String,
     headers: [String: String]? = nil,

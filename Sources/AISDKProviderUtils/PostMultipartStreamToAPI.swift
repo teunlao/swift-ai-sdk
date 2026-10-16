@@ -31,10 +31,13 @@ public enum MultipartStreamFileContent: Sendable {
  POSTs a `multipart/form-data` body as a request stream, so file parts backed by
  a stream are sent without buffering the whole file in memory.
 
- The body reaches the fetch function as `URLRequest.httpBodyStream`. When the
- request fails or is abandoned, the body producer is cancelled and stops
- consuming the part streams. Callers with fully buffered payloads can keep using
- `postFormDataToAPI`.
+ The body reaches the fetch function as `URLRequest.httpBodyStream` and is
+ produced on demand: a source chunk is read only after the previous one was
+ handed to the reader. A failing source fails the request with its error, even
+ when the server already answered. When the request ends, the body is released
+ before this function returns: the producer stops, and every part stream that
+ was not read to its end is cancelled. Callers with fully buffered payloads can
+ keep using `postFormDataToAPI`.
 
  Port of `@ai-sdk/provider-utils/src/post-multipart-stream-to-api.ts`.
  */
@@ -42,8 +45,8 @@ public func postMultipartStreamToAPI<T>(
     url: String,
     headers: [String: String?]? = nil,
     parts: [MultipartStreamPart],
-    failedResponseHandler: ResponseHandler<APICallError>,
-    successfulResponseHandler: ResponseHandler<T>,
+    failedResponseHandler: @escaping ResponseHandler<APICallError>,
+    successfulResponseHandler: @escaping ResponseHandler<T>,
     isAborted: (@Sendable () -> Bool)? = nil,
     fetch: FetchFunction? = nil
 ) async throws -> ResponseHandlerResult<T> {
@@ -71,21 +74,37 @@ public func postMultipartStreamToAPI<T>(
         requestBodyValues: requestBodyValues
     )
 
-    let body = MultipartRequestBodyStream(
-        source: makeMultipartBodyStream(parts: parts, boundary: boundary)
-    )
+    let body = StreamingRequestBody(source: MultipartBodySource(parts: parts, boundary: boundary))
     request.httpBodyStream = body.inputStream
-    defer { body.dispose() }
 
-    return try await sendAPIRequest(
-        request,
-        url: url,
-        requestBodyValues: requestBodyValues,
-        failedResponseHandler: failedResponseHandler,
-        successfulResponseHandler: successfulResponseHandler,
-        isAborted: isAborted,
-        fetch: fetch
-    )
+    let requestTask = Task { [request, requestBodyValues] in
+        try await sendAPIRequest(
+            request,
+            url: url,
+            requestBodyValues: requestBodyValues,
+            failedResponseHandler: failedResponseHandler,
+            successfulResponseHandler: successfulResponseHandler,
+            isAborted: isAborted,
+            fetch: fetch
+        )
+    }
+    // A failing source cancels the in-flight request.
+    body.start(onSourceError: { requestTask.cancel() })
+
+    let result = await withTaskCancellationHandler {
+        await requestTask.result
+    } onCancel: {
+        requestTask.cancel()
+    }
+
+    // Release every source deterministically: fetch implementations do not
+    // reliably cancel streaming request bodies on rejection or abort.
+    let sourceError = await body.dispose()
+
+    if let sourceError {
+        throw handleFetchError(error: sourceError, url: url, requestBodyValues: requestBodyValues)
+    }
+    return try result.get()
 }
 
 // Header parameter values must not smuggle CR/LF or break the quoted string.
@@ -97,121 +116,275 @@ private func escapeMultipartHeaderValue(_ value: String) -> String {
         .replacingOccurrences(of: "\"", with: "\\\"")
 }
 
-private func makeMultipartBodyStream(
-    parts: [MultipartStreamPart],
-    boundary: String
-) -> AsyncThrowingStream<Data, Error> {
-    AsyncThrowingStream { continuation in
-        let task = Task {
-            do {
-                for part in parts {
-                    try Task.checkCancellation()
+/**
+ Produces the multipart body one chunk per `next()`. Only the body pump calls
+ `next()`; `cancelUnfinishedStreams` runs after the pump stopped.
+ */
+private final class MultipartBodySource: @unchecked Sendable {
+    private enum State {
+        case partStart(Int)
+        case streamContent(Int, AsyncIteratorBox<AsyncThrowingStream<Data, Error>.AsyncIterator>)
+        case partEnd(Int)
+        case closingBoundary
+        case done
+    }
 
-                    let disposition = "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(escapeMultipartHeaderValue(part.name))\""
+    private let parts: [MultipartStreamPart]
+    private let boundary: String
+    private var state: State = .partStart(0)
+    private var finishedStreams: Set<Int> = []
 
-                    switch part {
-                    case let .field(_, value):
-                        continuation.yield(Data("\(disposition)\r\n\r\n\(value)\r\n".utf8))
+    init(parts: [MultipartStreamPart], boundary: String) {
+        self.parts = parts
+        self.boundary = boundary
+    }
 
-                    case let .file(_, filename, mediaType, content):
-                        // A filename is always emitted: without it, multipart parsers
-                        // treat the part as a scalar field.
-                        let filenameParameter = "; filename=\"\(escapeMultipartHeaderValue(filename ?? "blob"))\""
-                        let contentType = (mediaType ?? "application/octet-stream")
-                            .replacingOccurrences(of: "\r", with: "")
-                            .replacingOccurrences(of: "\n", with: "")
-                        continuation.yield(Data("\(disposition)\(filenameParameter)\r\nContent-Type: \(contentType)\r\n\r\n".utf8))
+    func next() async throws -> Data? {
+        while true {
+            try Task.checkCancellation()
 
-                        switch content {
-                        case .data(let data):
-                            continuation.yield(data)
-                        case .stream(let stream):
-                            for try await chunk in stream {
-                                try Task.checkCancellation()
-                                continuation.yield(chunk)
-                            }
-                        }
-
-                        continuation.yield(Data("\r\n".utf8))
-                    }
+            switch state {
+            case .partStart(let index):
+                guard index < parts.count else {
+                    state = .closingBoundary
+                    continue
                 }
 
-                continuation.yield(Data("--\(boundary)--\r\n".utf8))
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
+                let part = parts[index]
+                let disposition = "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(escapeMultipartHeaderValue(part.name))\""
+
+                switch part {
+                case let .field(_, value):
+                    state = .partStart(index + 1)
+                    return Data("\(disposition)\r\n\r\n\(value)\r\n".utf8)
+
+                case let .file(_, filename, mediaType, content):
+                    // A filename is always emitted: without it, multipart parsers
+                    // treat the part as a scalar field.
+                    let filenameParameter = "; filename=\"\(escapeMultipartHeaderValue(filename ?? "blob"))\""
+                    let contentType = (mediaType ?? "application/octet-stream")
+                        .replacingOccurrences(of: "\r", with: "")
+                        .replacingOccurrences(of: "\n", with: "")
+                    var header = Data("\(disposition)\(filenameParameter)\r\nContent-Type: \(contentType)\r\n\r\n".utf8)
+
+                    switch content {
+                    case .data(let data):
+                        header.append(data)
+                        state = .partEnd(index)
+                    case .stream(let stream):
+                        state = .streamContent(index, AsyncIteratorBox(stream.makeAsyncIterator()))
+                    }
+                    return header
+                }
+
+            case let .streamContent(index, source):
+                if let chunk = try await source.next() {
+                    // A cancelled pump must not report a source truncated by its own cancellation as finished.
+                    try Task.checkCancellation()
+                    return chunk
+                }
+                try Task.checkCancellation()
+                finishedStreams.insert(index)
+                state = .partEnd(index)
+
+            case .partEnd(let index):
+                state = .partStart(index + 1)
+                return Data("\r\n".utf8)
+
+            case .closingBoundary:
+                state = .done
+                return Data("--\(boundary)--\r\n".utf8)
+
+            case .done:
+                return nil
             }
         }
+    }
 
-        continuation.onTermination = { @Sendable _ in
-            task.cancel()
+    /// Cancels the active part stream and every part stream not yet read.
+    func cancelUnfinishedStreams() async {
+        for (index, part) in parts.enumerated() {
+            if case .file(_, _, _, .stream(let stream)) = part, !finishedStreams.contains(index) {
+                await cancelStream(stream)
+            }
         }
     }
 }
 
 /**
- Bridges an async byte stream to the `InputStream` a `URLRequest` body needs.
- A writer task copies chunks into a bound stream pair; `dispose` cancels it,
- which stops it from consuming the source.
- */
-private final class MultipartRequestBodyStream: @unchecked Sendable {
-    let inputStream: InputStream
-    private let writer: Task<Void, Never>
+ Bridges the multipart source to the `InputStream` a `URLRequest` body needs.
 
-    init(source: AsyncThrowingStream<Data, Error>, bufferSize: Int = 64 * 1024) {
+ A pump task pulls one chunk at a time and hands it to a writer thread, which
+ blocks on the bound stream pair until the reader takes the bytes; the next
+ chunk is pulled only after that. Disposal stops the pump, unblocks and joins
+ the writer, and cancels unfinished part streams.
+ */
+private final class StreamingRequestBody: @unchecked Sendable {
+    let inputStream: InputStream
+
+    private let source: MultipartBodySource
+    private let outputStream: OutputStream
+    private let condition = NSCondition()
+    private var pendingChunk: Data?
+    private var chunkHandled: CheckedContinuation<Bool, Never>?
+    private var isClosing = false
+    private var writerStopped = false
+    private var writerExited = false
+    private var writerExit: CheckedContinuation<Void, Never>?
+    private var sourceError: Error?
+    private var pump: Task<Void, Never>?
+
+    init(source: MultipartBodySource, bufferSize: Int = 64 * 1024) {
+        self.source = source
+
         var input: InputStream?
         var output: OutputStream?
         Stream.getBoundStreams(withBufferSize: bufferSize, inputStream: &input, outputStream: &output)
-
         // `getBoundStreams` always provides both streams.
-        let inputStream = input!
-        let outputStream = output!
-        self.inputStream = inputStream
+        inputStream = input!
+        outputStream = output!
+    }
 
-        writer = Task {
-            outputStream.open()
-            defer { outputStream.close() }
+    func start(onSourceError: @escaping @Sendable () -> Void) {
+        let writer = Thread { [self] in runWriter() }
+        writer.name = "ai-sdk.multipart-body-writer"
+        writer.start()
 
+        pump = Task { [self] in
             do {
-                for try await chunk in source {
-                    guard try await Self.write(chunk, to: outputStream) else {
-                        return
+                while let chunk = try await source.next() {
+                    guard await hand(chunk) else {
+                        break
                     }
                 }
             } catch {
-                // The reader sees end-of-stream; the request fails on its side.
-            }
-        }
-    }
-
-    func dispose() {
-        writer.cancel()
-    }
-
-    /// Returns `false` when the reader closed the pipe or the writer was cancelled.
-    private static func write(_ chunk: Data, to stream: OutputStream) async throws -> Bool {
-        var offset = 0
-        while offset < chunk.count {
-            try Task.checkCancellation()
-
-            // Bound streams expose no async readiness signal, so wait briefly for buffer space.
-            guard stream.hasSpaceAvailable else {
-                try await Task.sleep(nanoseconds: 1_000_000)
-                continue
-            }
-
-            let written = chunk.withUnsafeBytes { buffer -> Int in
-                guard let base = buffer.bindMemory(to: UInt8.self).baseAddress else {
-                    return 0
+                if !Task.isCancelled {
+                    recordSourceError(error)
+                    onSourceError()
                 }
-                return stream.write(base.advanced(by: offset), maxLength: chunk.count - offset)
             }
-
-            if written <= 0 {
-                return false
-            }
-            offset += written
+            closeWriter()
         }
-        return true
+    }
+
+    /// Stops producing, releases every source, and returns the source failure, if any.
+    func dispose() async -> Error? {
+        pump?.cancel()
+        closeWriter()
+        // Closing the read end fails a write blocked on a reader that stopped reading.
+        inputStream.close()
+        await pump?.value
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            condition.lock()
+            if writerExited {
+                condition.unlock()
+                continuation.resume()
+                return
+            }
+            writerExit = continuation
+            condition.unlock()
+        }
+
+        await source.cancelUnfinishedStreams()
+        return recordedSourceError()
+    }
+
+    private func recordSourceError(_ error: Error) {
+        condition.lock()
+        sourceError = error
+        condition.unlock()
+    }
+
+    private func recordedSourceError() -> Error? {
+        condition.lock()
+        defer { condition.unlock() }
+        return sourceError
+    }
+
+    /// Hands a chunk to the writer and waits until it is written; `false` once the reader is gone.
+    private func hand(_ chunk: Data) async -> Bool {
+        await withCheckedContinuation { continuation in
+            condition.lock()
+            guard !writerStopped, !isClosing else {
+                condition.unlock()
+                continuation.resume(returning: false)
+                return
+            }
+            pendingChunk = chunk
+            chunkHandled = continuation
+            condition.signal()
+            condition.unlock()
+        }
+    }
+
+    private func closeWriter() {
+        condition.lock()
+        isClosing = true
+        condition.signal()
+        condition.unlock()
+    }
+
+    private func runWriter() {
+        outputStream.open()
+
+        while true {
+            condition.lock()
+            while pendingChunk == nil && !isClosing {
+                condition.wait()
+            }
+            guard let chunk = pendingChunk else {
+                condition.unlock()
+                break
+            }
+            condition.unlock()
+
+            let written = write(chunk)
+
+            condition.lock()
+            pendingChunk = nil
+            if !written {
+                writerStopped = true
+            }
+            let handled = chunkHandled
+            chunkHandled = nil
+            condition.unlock()
+            handled?.resume(returning: written)
+
+            if !written {
+                break
+            }
+        }
+
+        outputStream.close()
+
+        condition.lock()
+        writerExited = true
+        // A chunk handed after the writer stopped is never written.
+        let handled = chunkHandled
+        chunkHandled = nil
+        let exit = writerExit
+        writerExit = nil
+        condition.unlock()
+        handled?.resume(returning: false)
+        exit?.resume()
+    }
+
+    /// Blocks until the reader takes every byte; `false` when the pair was closed.
+    private func write(_ chunk: Data) -> Bool {
+        chunk.withUnsafeBytes { buffer -> Bool in
+            guard let base = buffer.bindMemory(to: UInt8.self).baseAddress else {
+                return true
+            }
+            var offset = 0
+            while offset < buffer.count {
+                let written = outputStream.write(base.advanced(by: offset), maxLength: buffer.count - offset)
+                if written <= 0 {
+                    return false
+                }
+                offset += written
+            }
+            return true
+        }
     }
 }

@@ -1,6 +1,18 @@
 import Foundation
 
-/// Validates that a URL is safe to download from.
+/**
+ Validates that a URL is safe to download from, blocking private and internal
+ targets.
+
+ This performs string and literal-IP checks only; a hostname is not resolved here.
+ The default download transport additionally resolves hostnames and rejects any
+ private address before connecting (`validateResolvedDownloadHost`), but that check
+ is not pinned to the connection: it gives no guarantee against DNS rebinding.
+ As upstream states for runtimes without connect-time DNS validation, constrain
+ egress at the network layer when handling untrusted URLs.
+
+ Port of `@ai-sdk/provider-utils/src/validate-download-url.ts`.
+ */
 public func validateDownloadUrl(_ url: String) throws {
     guard let parsed = URL(string: url), let scheme = parsed.scheme else {
         throw DownloadError(url: url, message: "Invalid URL: \(url)")
@@ -52,6 +64,102 @@ public func validateDownloadUrl(_ url: String) throws {
             )
         }
         return
+    }
+}
+
+/**
+ Validates an address returned by DNS for `hostname`.
+
+ Port of `validateDownloadAddress` from `@ai-sdk/provider-utils/src/validate-download-url.ts`.
+ */
+func validateDownloadAddress(address: String, family: Int32, hostname: String) throws {
+    let isUnsafe: Bool
+    switch family {
+    case AF_INET:
+        let parts = address.split(separator: ".", omittingEmptySubsequences: false)
+        let octets = parts.compactMap { Int($0) }.filter { (0...255).contains($0) }
+        isUnsafe = parts.count != 4 || octets.count != 4 || isPrivateIPv4(octets)
+    case AF_INET6:
+        isUnsafe = isPrivateIPv6(address)
+    default:
+        isUnsafe = true
+    }
+
+    if isUnsafe {
+        throw DownloadError(
+            url: hostname,
+            message: "Hostname \(hostname) resolved to disallowed IP address \(address)"
+        )
+    }
+}
+
+/**
+ Resolves the hostname of `url` and rejects it when any resolved address is private.
+
+ Closes a hostname that statically resolves to an internal address. The socket is
+ not pinned to the checked addresses, so this is no guarantee against DNS rebinding.
+ Literal IPs and `data:` URLs are left to `validateDownloadUrl`.
+ */
+func validateResolvedDownloadHost(_ url: String) async throws {
+    guard let parsed = URL(string: url),
+          let scheme = parsed.scheme?.lowercased(),
+          scheme == "http" || scheme == "https",
+          let host = parsed.host?.lowercased().trimmingTrailingDots(),
+          !host.isEmpty,
+          parseIPv4Literal(host) == nil,
+          !host.contains(":")
+    else {
+        return
+    }
+
+    let addresses = try await resolveHostAddresses(host, url: url)
+    guard !addresses.isEmpty else {
+        throw DownloadError(url: url, message: "Hostname \(host) did not resolve to an address")
+    }
+    for (address, family) in addresses {
+        try validateDownloadAddress(address: address, family: family, hostname: host)
+    }
+}
+
+private func resolveHostAddresses(_ host: String, url: String) async throws -> [(String, Int32)] {
+    // getaddrinfo blocks; keep it off the cooperative thread pool.
+    try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+            var hints = addrinfo()
+            hints.ai_family = AF_UNSPEC
+            hints.ai_socktype = SOCK_STREAM
+
+            var result: UnsafeMutablePointer<addrinfo>?
+            let status = getaddrinfo(host, nil, &hints, &result)
+            guard status == 0 else {
+                let message = String(cString: gai_strerror(status))
+                continuation.resume(throwing: DownloadError(
+                    url: url,
+                    message: "Failed to resolve hostname \(host): \(message)"
+                ))
+                return
+            }
+            defer { freeaddrinfo(result) }
+
+            var addresses: [(String, Int32)] = []
+            var cursor = result
+            while let info = cursor {
+                var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                if getnameinfo(
+                    info.pointee.ai_addr,
+                    info.pointee.ai_addrlen,
+                    &buffer,
+                    socklen_t(buffer.count),
+                    nil,
+                    0,
+                    NI_NUMERICHOST
+                ) == 0 {
+                    addresses.append((String(cString: buffer), info.pointee.ai_family))
+                }
+                cursor = info.pointee.ai_next
+            }
+            continuation.resume(returning: addresses)
+        }
     }
 }
 

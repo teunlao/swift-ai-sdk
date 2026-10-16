@@ -22,7 +22,8 @@ public func convertInlineFileDataToData(_ data: SharedV4DataContent) throws -> D
  Converts file upload data into raw bytes.
 
  Stream data is rejected with `UnsupportedFunctionalityError`: providers without
- streaming upload support funnel here. The stream is never consumed on this path.
+ streaming upload support funnel here. The caller's stream is never consumed on
+ this path, so it is cancelled to release its producer.
  */
 public func convertInlineFileDataToData(_ data: FilesV4UploadFileData) throws -> Data {
     switch data {
@@ -32,7 +33,8 @@ public func convertInlineFileDataToData(_ data: FilesV4UploadFileData) throws ->
         return data
     case .base64(let base64):
         return try convertBase64ToData(base64)
-    case .stream:
+    case .stream(let stream):
+        Task { await cancelStream(stream) }
         throw UnsupportedFunctionalityError(functionality: "streaming file upload")
     }
 }

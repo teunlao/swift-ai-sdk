@@ -10,6 +10,8 @@ private let retryableURLErrorCodes: Set<URLError.Code> = [
     .networkConnectionLost,
     .notConnectedToInternet,
     .secureConnectionFailed,
+    // Transport timeouts: the counterpart of undici's headers/body/connect timeouts.
+    .timedOut,
 ]
 
 private let retryablePOSIXErrorCodes: Set<POSIXErrorCode> = [

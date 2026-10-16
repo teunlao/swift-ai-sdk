@@ -49,40 +49,29 @@ public typealias ResponseHandler<Value> = @Sendable (ResponseHandlerInput) async
  network failure caused it. Abort errors pass through unchanged.
  */
 private func wrapResponseBodyStream(_ input: ResponseHandlerInput) -> AsyncThrowingStream<Data, Error> {
-    let source = input.response.body.makeStream()
+    // Pull-based like upstream (one source read per consumer pull).
+    let source = AsyncIteratorBox(input.response.body.makeStream().makeAsyncIterator())
 
-    return AsyncThrowingStream { continuation in
-        let task = Task {
-            do {
-                for try await chunk in source {
-                    continuation.yield(chunk)
-                }
-                continuation.finish()
-            } catch {
-                if isAbortError(error) {
-                    continuation.finish(throwing: error)
-                    return
-                }
-
-                continuation.finish(
-                    throwing: handleFetchError(
-                        error: APICallError(
-                            message: "Failed to process successful response",
-                            url: input.url,
-                            requestBodyValues: input.requestBodyValues,
-                            statusCode: input.response.statusCode,
-                            responseHeaders: extractResponseHeaders(from: input.response.httpResponse),
-                            cause: error
-                        ),
-                        url: input.url,
-                        requestBodyValues: input.requestBodyValues
-                    )
-                )
+    return AsyncThrowingStream {
+        do {
+            return try await source.next()
+        } catch {
+            if isAbortError(error) {
+                throw error
             }
-        }
 
-        continuation.onTermination = { @Sendable _ in
-            task.cancel()
+            throw handleFetchError(
+                error: APICallError(
+                    message: "Failed to process successful response",
+                    url: input.url,
+                    requestBodyValues: input.requestBodyValues,
+                    statusCode: input.response.statusCode,
+                    responseHeaders: extractResponseHeaders(from: input.response.httpResponse),
+                    cause: error
+                ),
+                url: input.url,
+                requestBodyValues: input.requestBodyValues
+            )
         }
     }
 }
@@ -190,40 +179,14 @@ public func createJsonStreamResponseHandler<T>(
         }
 
         let headers = extractResponseHeaders(from: response.httpResponse)
-        let sourceStream = wrapResponseBodyStream(input)
+        let lines = JSONLineReader(source: AsyncIteratorBox(wrapResponseBodyStream(input).makeAsyncIterator()))
         let schema = chunkSchema
 
-        let outputStream = AsyncThrowingStream<ParseJSONResult<T>, Error> { continuation in
-            Task {
-                var buffer = ""
-
-                do {
-                    for try await chunk in sourceStream {
-                        let chunkText = String(decoding: chunk, as: UTF8.self)
-                        buffer.append(contentsOf: chunkText)
-
-                        while let newlineRange = buffer.range(of: "\n") {
-                            let line = String(buffer[..<newlineRange.lowerBound])
-                            buffer.removeSubrange(..<newlineRange.upperBound)
-                            let result = await safeParseJSON(
-                                ParseJSONWithSchemaOptions(text: line, schema: schema)
-                            )
-                            continuation.yield(result)
-                        }
-                    }
-
-                    if !buffer.isEmpty {
-                        let result = await safeParseJSON(
-                            ParseJSONWithSchemaOptions(text: buffer, schema: schema)
-                        )
-                        continuation.yield(result)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let outputStream = AsyncThrowingStream<ParseJSONResult<T>, Error> {
+            guard let line = try await lines.nextLine() else {
+                return nil
             }
+            return await safeParseJSON(ParseJSONWithSchemaOptions(text: line, schema: schema))
         }
 
         return ResponseHandlerResult(
@@ -348,6 +311,44 @@ public func createStatusCodeErrorResponseHandler() -> ResponseHandler<APICallErr
 }
 
 // MARK: - Helpers
+
+/// Splits a byte stream into newline-delimited lines, pulling a chunk only when no
+/// complete line is buffered. Bytes are decoded per line, so multi-byte UTF-8
+/// sequences split across chunks stay intact.
+private final class JSONLineReader: @unchecked Sendable {
+    private let source: AsyncIteratorBox<AsyncThrowingStream<Data, Error>.AsyncIterator>
+    private var buffer = Data()
+    private var isFinished = false
+
+    init(source: AsyncIteratorBox<AsyncThrowingStream<Data, Error>.AsyncIterator>) {
+        self.source = source
+    }
+
+    func nextLine() async throws -> String? {
+        while true {
+            if let newline = buffer.firstIndex(of: 0x0A) {
+                let line = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
+                buffer.removeSubrange(buffer.startIndex...newline)
+                return line
+            }
+
+            if isFinished {
+                guard !buffer.isEmpty else {
+                    return nil
+                }
+                let line = String(decoding: buffer, as: UTF8.self)
+                buffer.removeAll()
+                return line
+            }
+
+            if let chunk = try await source.next() {
+                buffer.append(chunk)
+            } else {
+                isFinished = true
+            }
+        }
+    }
+}
 
 private extension Data {
     func utf8String() -> String {

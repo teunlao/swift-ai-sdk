@@ -31,13 +31,20 @@ struct ConvertInlineFileDataToDataTests {
         }
     }
 
-    @Test("rejects stream upload data as unsupported")
-    func rejectsStreamUploadData() {
-        let stream = AsyncThrowingStream<Data, Error> { $0.finish() }
+    @Test("rejects stream upload data as unsupported and cancels the stream")
+    func rejectsStreamUploadData() async {
+        let terminated = AsyncStream<Void>.makeStream()
+        let stream = AsyncThrowingStream<Data, Error> { continuation in
+            continuation.yield(Data("unread".utf8))
+            continuation.onTermination = { _ in terminated.continuation.yield() }
+        }
 
         let error = #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try convertInlineFileDataToData(FilesV4UploadFileData.stream(stream))
         }
         #expect(error?.functionality == "streaming file upload")
+
+        var terminations = terminated.stream.makeAsyncIterator()
+        _ = await terminations.next()
     }
 }

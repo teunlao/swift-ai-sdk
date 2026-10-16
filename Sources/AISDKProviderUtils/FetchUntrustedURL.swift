@@ -34,6 +34,9 @@ private let safeUntrustedFirstHopHeaders: Set<String> = [
 
  Both origin options come from developer configuration, never from response data.
 
+ Hostname checks are not pinned to the connection, so there is no guarantee
+ against DNS rebinding; constrain egress at the network layer for untrusted URLs.
+
  Swift port of `@ai-sdk/provider-utils/src/fetch-untrusted-url.ts`.
 
  - Parameters:
