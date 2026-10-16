@@ -287,7 +287,7 @@ struct EmbedTests {
                     }
                 ),
                 value: testValue,
-                telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
+                telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, embedding: true, runtimeContext: true)])
             ) as DefaultEmbedResult<String>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -311,30 +311,27 @@ struct EmbedTests {
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
                     includeRuntimeContext: ["tenant": true],
-                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                    integrations: [OpenTelemetry(tracer: tracer, embedding: true, runtimeContext: true)]
                 ),
                 runtimeContext: ["tenant": .string("acme"), "secret": .string("hidden")]
             ) as DefaultEmbedResult<String>
 
         let spans = tracer.spanRecords
-        #expect(spans.map(\.name) == ["ai.embed", "ai.embed.doEmbed"])
-
-        if spans.count >= 2 {
-            let outer = spans[0]
-            #expect(outer.attributes["ai.model.id"] == .string("test-model"))
-            #expect(outer.attributes["ai.model.provider"] == .string("test-provider"))
-            #expect(outer.attributes["ai.value"] == .string("\"sunny day at the beach\""))
-            #expect(outer.attributes["ai.embedding"] == .string("[0.1,0.2,0.3]"))
-            #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.settings.context.tenant"] == .string("acme"))
-            #expect(outer.attributes["ai.settings.context.secret"] == nil)
-            #expect(outer.attributes["ai.usage.tokens"] == .int(10))
-
-            let inner = spans[1]
-            #expect(inner.attributes["ai.values"] == .stringArray(["\"sunny day at the beach\""]))
-            #expect(inner.attributes["ai.embeddings"] == .stringArray(["[0.1,0.2,0.3]"]))
-            #expect(inner.attributes["ai.usage.tokens"] == .int(10))
-        }
+        #expect(spans.map(\.name) == ["embeddings test-model", "embeddings test-model"])
+        let outer = try #require(spans.first)
+        let inner = try #require(spans.last)
+        #expect(inner.parentId == outer.spanId)
+        #expect(spans.allSatisfy { $0.ended && $0.kind == .client })
+        #expect(outer.attributes["gen_ai.request.model"] == .string("test-model"))
+        #expect(outer.attributes["gen_ai.provider.name"] == .string("test-provider"))
+        #expect(outer.attributes["gen_ai.operation.name"] == .string("embeddings"))
+        #expect(outer.attributes["ai.value"] == .string("\"sunny day at the beach\""))
+        #expect(outer.attributes["ai.embedding"] == .string("[0.1,0.2,0.3]"))
+        #expect(outer.attributes["ai.settings.context.tenant"] == .string("acme"))
+        #expect(outer.attributes["ai.settings.context.secret"] == nil)
+        #expect(inner.attributes["ai.values"] == .stringArray(["\"sunny day at the beach\""]))
+        #expect(inner.attributes["ai.embeddings"] == .stringArray(["[0.1,0.2,0.3]"]))
+        #expect(inner.attributes["gen_ai.usage.input_tokens"] == .int(10))
     }
 
     @Test("telemetry respects recordInputs and recordOutputs flags")
@@ -355,7 +352,7 @@ struct EmbedTests {
                 telemetry: TelemetryOptions(
                     recordInputs: false,
                     recordOutputs: false,
-                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                    integrations: [OpenTelemetry(tracer: tracer, embedding: true, runtimeContext: true)]
                 )
             ) as DefaultEmbedResult<String>
 

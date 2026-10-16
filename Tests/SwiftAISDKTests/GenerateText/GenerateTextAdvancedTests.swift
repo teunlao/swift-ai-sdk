@@ -54,7 +54,7 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
-            telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)]),
+            telemetry: TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer)]),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -62,16 +62,18 @@ struct GenerateTextAdvancedTests {
         )
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 3)
+        #expect(spans.count == 4)
 
-        if spans.count >= 3 {
-            let toolSpan = spans[2]
-            #expect(toolSpan.name == "ai.toolCall")
+        if spans.count >= 4 {
+            let toolSpan = spans[3]
+            #expect(toolSpan.name == "execute_tool tool1")
+            #expect(toolSpan.parentId == spans[1].spanId)
+            #expect(toolSpan.ended)
             #expect(toolSpan.status == nil)
-            #expect(toolSpan.attributes["ai.toolCall.id"] == .string("call-1"))
-            #expect(toolSpan.attributes["ai.toolCall.name"] == .string("tool1"))
-            #expect(toolSpan.attributes["ai.toolCall.args"] == .string(#"{"value":"value"}"#))
-            #expect(toolSpan.attributes["ai.toolCall.result"] == .string(#""result1""#))
+            #expect(toolSpan.attributes["gen_ai.tool.call.id"] == .string("call-1"))
+            #expect(toolSpan.attributes["gen_ai.tool.name"] == .string("tool1"))
+            #expect(toolSpan.attributes["gen_ai.tool.call.arguments"] == .string(#"{"value":"value"}"#))
+            #expect(toolSpan.attributes["gen_ai.tool.call.result"] == .string(#""result1""#))
         }
     }
 
@@ -109,7 +111,7 @@ struct GenerateTextAdvancedTests {
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
-            telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)]),
+            telemetry: TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer)]),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -117,11 +119,13 @@ struct GenerateTextAdvancedTests {
         )
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 3)
+        #expect(spans.count == 4)
 
-        if spans.count >= 3 {
-            let toolSpan = spans[2]
-            #expect(toolSpan.name == "ai.toolCall")
+        if spans.count >= 4 {
+            let toolSpan = spans[3]
+            #expect(toolSpan.name == "execute_tool tool1")
+            #expect(toolSpan.parentId == spans[1].spanId)
+            #expect(toolSpan.ended)
             if let status = toolSpan.status {
                 #expect(status.code == .error)
                 #expect(status.message == "Tool execution failed")

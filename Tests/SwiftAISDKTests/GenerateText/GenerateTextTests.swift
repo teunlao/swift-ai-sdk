@@ -940,7 +940,7 @@ struct GenerateTextTests {
                 )
             ),
             prompt: "prompt",
-            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, runtimeContext: true, headers: true)])
         )
 
         #expect(tracer.spanRecords.isEmpty)
@@ -978,7 +978,7 @@ struct GenerateTextTests {
             telemetry: TelemetryOptions(
                 functionId: "test-function-id",
                 includeRuntimeContext: ["test1": true, "test2": true],
-                integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, runtimeContext: true, headers: true)]
             ),
             runtimeContext: [
                 "test1": .string("value1"),
@@ -1004,33 +1004,33 @@ struct GenerateTextTests {
         )
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 2)
-
-        if spans.count >= 1 {
-            let outer = spans[0]
-            #expect(outer.name == "ai.generateText")
-            #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.settings.context.test1"] == .string("value1"))
-            #expect(outer.attributes["ai.settings.context.test2"] == .bool(false))
-            #expect(outer.attributes["ai.settings.context.secret"] == nil)
-            #expect(outer.attributes["ai.response.text"] == .string("Hello, world!"))
-            #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
-            #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
-            #expect(outer.attributes["ai.request.headers.header2"] == .string("value2"))
-            #expect(outer.attributes["ai.settings.topP"] == .double(0.2))
-            #expect(outer.attributes["ai.settings.topK"] == .int(1))
-            #expect(outer.attributes["ai.settings.presencePenalty"] == .double(0.4))
-            #expect(outer.attributes["ai.settings.frequencyPenalty"] == .double(0.3))
-            #expect(outer.attributes["ai.settings.stopSequences"] == .stringArray(["stop"]))
-        }
-
-        if spans.count >= 2 {
-            let inner = spans[1]
-            #expect(inner.name == "ai.generateText.doGenerate")
-            #expect(inner.attributes["ai.prompt.messages"] != nil)
-            #expect(inner.attributes["ai.response.id"] == .string("test-id-from-model"))
-            #expect(inner.attributes["ai.response.timestamp"] == .string("1970-01-01T00:00:10.000Z"))
-        }
+        #expect(spans.map(\.name) == ["invoke_agent mock-model-id", "step 1", "chat mock-model-id"])
+        let outer = try #require(spans.first)
+        let step = try #require(spans.first { $0.name == "step 1" })
+        let inner = try #require(spans.last)
+        #expect(step.parentId == outer.spanId)
+        #expect(inner.parentId == step.spanId)
+        #expect(outer.kind == .internal && step.kind == .internal && inner.kind == .client)
+        let ended = spans.allSatisfy { $0.ended }
+        #expect(ended)
+        #expect(outer.attributes["gen_ai.operation.name"] == .string("invoke_agent"))
+        #expect(outer.attributes["gen_ai.agent.name"] == .string("test-function-id"))
+        #expect(outer.attributes["ai.settings.context.test1"] == .string("value1"))
+        #expect(outer.attributes["ai.settings.context.test2"] == .bool(false))
+        #expect(outer.attributes["ai.settings.context.secret"] == nil)
+        #expect(outer.attributes["gen_ai.output.messages"] == .string(#"[{"finish_reason":"stop","parts":[{"content":"Hello, world!","type":"text"}],"role":"assistant"}]"#))
+        #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
+        #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
+        #expect(outer.attributes["ai.request.headers.header2"] == .string("value2"))
+        #expect(outer.attributes["gen_ai.request.top_p"] == .double(0.2))
+        #expect(outer.attributes["gen_ai.request.top_k"] == .int(1))
+        #expect(outer.attributes["gen_ai.request.presence_penalty"] == .double(0.4))
+        #expect(outer.attributes["gen_ai.request.frequency_penalty"] == .double(0.3))
+        #expect(outer.attributes["gen_ai.request.stop_sequences"] == .stringArray(["stop"]))
+        #expect(inner.attributes["gen_ai.operation.name"] == .string("chat"))
+        #expect(inner.attributes["gen_ai.input.messages"] == .string(#"[{"parts":[{"content":"prompt","type":"text"}],"role":"user"}]"#))
+        #expect(inner.attributes["gen_ai.response.id"] == .string("test-id-from-model"))
+        #expect(inner.attributes["gen_ai.response.model"] == .string("test-response-model-id"))
     }
 
     @Test("telemetry respects record inputs and outputs flags")
@@ -1069,7 +1069,7 @@ struct GenerateTextTests {
             telemetry: TelemetryOptions(
                 recordInputs: false,
                 recordOutputs: false,
-                integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, runtimeContext: true, headers: true)]
             ),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
@@ -1078,19 +1078,16 @@ struct GenerateTextTests {
         )
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 3)
-
-        if spans.count >= 1 {
-            let outer = spans[0]
-            #expect(outer.attributes["ai.prompt"] == nil)
-            #expect(outer.attributes["ai.response.text"] == nil)
-            #expect(outer.attributes["ai.response.toolCalls"] == nil)
+        #expect(spans.count == 4)
+        for span in spans {
+            #expect(span.attributes["gen_ai.input.messages"] == nil)
+            #expect(span.attributes["gen_ai.output.messages"] == nil)
+            #expect(span.attributes["gen_ai.tool.definitions"] == nil)
+            #expect(span.attributes["gen_ai.tool.call.arguments"] == nil)
+            #expect(span.attributes["gen_ai.tool.call.result"] == nil)
         }
-
-        if spans.count >= 2 {
-            let inner = spans[1]
-            #expect(inner.attributes["ai.prompt.messages"] == nil)
-        }
+        let tool = try #require(spans.last)
+        #expect(tool.attributes["gen_ai.tool.call.id"] == .string("call-1"))
     }
 
     // MARK: - result.response.messages

@@ -222,7 +222,7 @@ struct StreamTextBasicTests {
         let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)]),
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)]),
             internalOptions: StreamTextInternalOptions(
                 now: { 0 },
                 generateId: { "disabled-span" },
@@ -259,7 +259,7 @@ struct StreamTextBasicTests {
         )
 
         let tracer = MockTracer()
-        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
+        let telemetry = TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)])
         let nowValues: [Double] = [0.0, 123.0, 200.0]
         let nowValuesShared = LockedValue(initial: 0)
         let result = try streamText(
@@ -285,13 +285,11 @@ struct StreamTextBasicTests {
         let msToFirstChunk = try #require(performance.timeToFirstOutputMs)
         #expect(msToFirstChunk > 0)
 
-        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
-        let firstEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.firstChunk" })
-        #expect(firstEvent.attributes?["ai.response.msToFirstChunk"] == .double(msToFirstChunk))
-        #expect(doStreamSpan.attributes["ai.response.msToFirstChunk"] == .double(msToFirstChunk))
+        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "chat mock-model-id" })
+        #expect(doStreamSpan.attributes["gen_ai.client.operation.time_to_first_chunk"] == .double(msToFirstChunk / 1000))
     }
 
-    @Test("telemetry records finish timing and speed")
+    @Test("telemetry records operation duration in seconds")
     func telemetryRecordsFinishTiming() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -314,7 +312,7 @@ struct StreamTextBasicTests {
         )
 
         let tracer = MockTracer()
-        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
+        let telemetry = TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)])
         let nowValues: [Double] = [0.0, 10.0, 210.0]
         let nowValuesShared = LockedValue(initial: 0)
         let result = try streamText(
@@ -339,12 +337,9 @@ struct StreamTextBasicTests {
         let performance = try await result.steps[0].performance
         #expect(performance.responseTimeMs > 0)
 
-        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
-        let finishEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.finish" })
-        #expect(finishEvent.attributes?["ai.response.msToFinish"] == .double(performance.responseTimeMs))
-        #expect(doStreamSpan.attributes["ai.response.msToFinish"] == .double(performance.responseTimeMs))
-        #expect(doStreamSpan.attributes["ai.response.avgOutputTokensPerSecond"]
-            == .double(performance.effectiveOutputTokensPerSecond))
+        let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "chat mock-model-id" })
+        #expect(doStreamSpan.attributes["gen_ai.client.operation.duration"] == .double(performance.responseTimeMs / 1000))
+        #expect(doStreamSpan.attributes["gen_ai.usage.output_tokens"] == .int(4))
     }
 
     @Test("telemetry records spans when enabled")
@@ -376,7 +371,7 @@ struct StreamTextBasicTests {
         let fallbackDate = Date(timeIntervalSince1970: 456)
         let telemetry = TelemetryOptions(
             includeRuntimeContext: ["test-key": true],
-            integrations: [LegacyOpenTelemetry(tracer: tracer)]
+            integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)]
         )
 
         let result = try streamText(
@@ -394,18 +389,21 @@ struct StreamTextBasicTests {
         _ = try await result.readAllText()
         let finish = try await result.waitForFinish()
 
-        #expect(tracer.spanRecords.count >= 2)
-        let outerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText" })
-        #expect(outerSpan.attributes["ai.response.finishReason"] == .string("stop"))
-        #expect(outerSpan.attributes["ai.response.text"] == .string("Hello!"))
-        let totalTokens = try #require(asLanguageModelUsage(defaultUsage).totalTokens)
-        #expect(outerSpan.attributes["ai.usage.totalTokens"] == .int(totalTokens))
+        let spans = tracer.spanRecords
+        #expect(spans.map(\.name) == ["invoke_agent mock-model-id", "step 1", "chat mock-model-id"])
+        let outerSpan = try #require(spans.first)
+        let step = try #require(spans.first { $0.name == "step 1" })
+        let innerSpan = try #require(spans.last)
+        #expect(step.parentId == outerSpan.spanId)
+        #expect(innerSpan.parentId == step.spanId)
+        let ended = spans.allSatisfy { $0.ended }
+        #expect(ended)
+        #expect(outerSpan.attributes["gen_ai.response.finish_reasons"] == .stringArray(["stop"]))
+        #expect(outerSpan.attributes["gen_ai.output.messages"] == .string(#"[{"finish_reason":"stop","parts":[{"content":"Hello!","type":"text"}],"role":"assistant"}]"#))
+        #expect(outerSpan.attributes["gen_ai.usage.input_tokens"] == asLanguageModelUsage(defaultUsage).inputTokens.map(AttributeValue.int))
         #expect(outerSpan.attributes["ai.settings.context.test-key"] == .string("value"))
-        #expect(outerSpan.attributes["ai.operationId"] == .string("ai.streamText"))
-
-        let innerSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
-        #expect(innerSpan.attributes["ai.model.provider"] == .string("mock-provider"))
-        #expect(innerSpan.attributes["ai.model.id"] == .string("mock-model-id"))
+        #expect(innerSpan.attributes["gen_ai.provider.name"] == .string("mock-provider"))
+        #expect(innerSpan.attributes["gen_ai.request.model"] == .string("mock-model-id"))
 
         #expect(finish.totalUsage.totalTokens == asLanguageModelUsage(defaultUsage).totalTokens)
     }
@@ -908,7 +906,7 @@ struct StreamTextBasicTests {
         ]
 
         let tracer = MockTracer()
-        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
+        let telemetry = TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)])
 
         let result = try streamText(
             model: .v3(model),

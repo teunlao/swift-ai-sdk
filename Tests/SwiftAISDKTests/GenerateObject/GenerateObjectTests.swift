@@ -761,7 +761,7 @@ struct GenerateObjectTests {
             )),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
-            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, headers: true, schema: true)])
         ) as GenerateObjectResult<JSONValue>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -792,7 +792,7 @@ struct GenerateObjectTests {
             prompt: "prompt",
             telemetry: TelemetryOptions(
                 functionId: "test-function-id",
-                integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, headers: true, schema: true)]
             ),
             settings: CallSettings(
                 temperature: 0.5,
@@ -807,44 +807,35 @@ struct GenerateObjectTests {
         let spans = tracer.spanRecords
         #expect(spans.count == 2)
 
-        if spans.count == 2 {
-            let outer = spans[0]
-            #expect(outer.name == "ai.generateObject")
-            #expect(outer.attributes["ai.model.id"] == .string("mock-model-id"))
-            #expect(outer.attributes["ai.model.provider"] == .string("mock-provider"))
-            #expect(outer.attributes["ai.operationId"] == .string("ai.generateObject"))
-            #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
-            #expect(outer.attributes["ai.request.headers.header2"] == .string("value2"))
-            #expect(outer.attributes["ai.request.headers.user-agent"] == .string("ai/\(VERSION)"))
-            #expect(outer.attributes["ai.response.finishReason"] == .string("stop"))
-            #expect(outer.attributes["ai.response.object"] == .string("{\"content\":\"Hello, world!\"}"))
-            #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
-            #expect(outer.attributes["ai.schema"] != nil)
-            #expect(outer.attributes["ai.schema.name"] == .string("test-name"))
-            #expect(outer.attributes["ai.schema.description"] == .string("test description"))
-            #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.settings.topK"] == .int(1))
-            #expect(outer.attributes["ai.settings.topP"] == .double(0.2))
-            #expect(outer.attributes["ai.settings.frequencyPenalty"] == .double(0.3))
-            #expect(outer.attributes["ai.settings.presencePenalty"] == .double(0.4))
-            #expect(outer.attributes["ai.usage.inputTokens"] == .int(10))
-            #expect(outer.attributes["ai.usage.outputTokens"] == .int(20))
-
-            let inner = spans[1]
-            #expect(inner.name == "ai.generateObject.doGenerate")
-            #expect(inner.attributes["gen_ai.request.model"] == .string("mock-model-id"))
-            #expect(inner.attributes["gen_ai.system"] == .string("mock-provider"))
-            #expect(inner.attributes["gen_ai.request.temperature"] == .double(0.5))
-            #expect(inner.attributes["gen_ai.request.top_k"] == .int(1))
-            #expect(inner.attributes["gen_ai.request.top_p"] == .double(0.2))
-            #expect(inner.attributes["gen_ai.request.frequency_penalty"] == .double(0.3))
-            #expect(inner.attributes["gen_ai.request.presence_penalty"] == .double(0.4))
-            #expect(inner.attributes["ai.response.id"] == .string("test-id-from-model"))
-            #expect(inner.attributes["ai.response.model"] == .string("test-response-model-id"))
-            #expect(inner.attributes["ai.response.timestamp"] == .string("1970-01-01T00:00:10.000Z"))
-            #expect(inner.attributes["ai.response.object"] == .string("{\"content\":\"Hello, world!\"}"))
-            #expect(inner.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
-        }
+        let outer = try #require(spans.first)
+        let inner = try #require(spans.last)
+        #expect(outer.name == "invoke_agent mock-model-id")
+        #expect(inner.name == "chat mock-model-id")
+        #expect(inner.parentId == outer.spanId)
+        #expect(outer.ended && inner.ended)
+        #expect(outer.attributes["gen_ai.output.type"] == .string("json"))
+        #expect(outer.attributes["gen_ai.request.model"] == .string("mock-model-id"))
+        #expect(outer.attributes["gen_ai.provider.name"] == .string("mock-provider"))
+        #expect(outer.attributes["gen_ai.response.finish_reasons"] == .stringArray(["stop"]))
+        #expect(outer.attributes["gen_ai.usage.input_tokens"] == .int(10))
+        #expect(outer.attributes["gen_ai.usage.output_tokens"] == .int(20))
+        #expect(outer.attributes["gen_ai.agent.name"] == .string("test-function-id"))
+        #expect(outer.attributes["ai.schema.name"] == .string("test-name"))
+        #expect(outer.attributes["ai.schema.description"] == .string("test description"))
+        #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
+        #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
+        #expect(inner.attributes["gen_ai.request.temperature"] == .double(0.5))
+        #expect(inner.attributes["gen_ai.request.top_k"] == .int(1))
+        #expect(inner.attributes["gen_ai.request.top_p"] == .double(0.2))
+        #expect(inner.attributes["gen_ai.request.frequency_penalty"] == .double(0.3))
+        #expect(inner.attributes["gen_ai.request.presence_penalty"] == .double(0.4))
+        #expect(inner.attributes["gen_ai.response.id"] == .string("test-id-from-model"))
+        #expect(inner.attributes["gen_ai.response.model"] == .string("test-response-model-id"))
+        let output = try #require(outer.attributes["gen_ai.output.messages"])
+        guard case .string(let json) = output else { Issue.record("Expected JSON messages"); return }
+        let messages = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+        #expect(messages == .array([.object(["role": .string("assistant"), "finish_reason": .string("stop"),
+            "parts": .array([.object(["type": .string("text"), "content": .string("{\"content\":\"Hello, world!\"}")])])])]))
     }
 
     @Test("telemetry with inputs/outputs disabled omits prompt and object")
@@ -867,7 +858,7 @@ struct GenerateObjectTests {
             telemetry: TelemetryOptions(
                 recordInputs: false,
                 recordOutputs: false,
-                integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, headers: true, schema: true)]
             )
         ) as GenerateObjectResult<JSONValue>
 
@@ -876,12 +867,12 @@ struct GenerateObjectTests {
 
         if spans.count == 2 {
             let outer = spans[0]
-            #expect(outer.attributes["ai.prompt"] == nil)
-            #expect(outer.attributes["ai.response.object"] == nil)
+            #expect(outer.attributes["gen_ai.input.messages"] == nil)
+            #expect(outer.attributes["gen_ai.output.messages"] == nil)
 
             let inner = spans[1]
-            #expect(inner.attributes["ai.prompt.messages"] == nil)
-            #expect(inner.attributes["ai.response.object"] == nil)
+            #expect(inner.attributes["gen_ai.input.messages"] == nil)
+            #expect(inner.attributes["gen_ai.output.messages"] == nil)
         }
     }
 

@@ -438,7 +438,7 @@ struct EmbedManyTests {
                     }
                 ),
                 values: testValues,
-                telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
+                telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, embedding: true)])
             ) as DefaultEmbedManyResult<String>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -467,24 +467,25 @@ struct EmbedManyTests {
                 values: testValues,
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
-                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                    integrations: [OpenTelemetry(tracer: tracer, embedding: true)]
                 )
             ) as DefaultEmbedManyResult<String>
 
         let spans = tracer.spanRecords
-        #expect(spans.map(\.name) == ["ai.embedMany", "ai.embedMany.doEmbed", "ai.embedMany.doEmbed"])
+        #expect(spans.map(\.name) == Array(repeating: "embeddings test-model", count: 3))
+        #expect(spans.dropFirst().allSatisfy { $0.parentId == spans[0].spanId && $0.ended })
 
         if spans.count >= 3 {
             let outer = spans[0]
-            #expect(outer.attributes["ai.usage.tokens"] == .int(30))
+            #expect(outer.attributes["gen_ai.operation.name"] == .string("embeddings"))
             #expect(outer.attributes["ai.values"] == .stringArray(testValues.map { "\"\($0)\"" }))
 
             let firstInner = spans[1]
-            #expect(firstInner.attributes["ai.usage.tokens"] == .int(10))
+            #expect(firstInner.attributes["gen_ai.usage.input_tokens"] == .int(10))
             #expect(firstInner.attributes["ai.values"] == .stringArray(testValues.prefix(2).map { "\"\($0)\"" }))
 
             let secondInner = spans[2]
-            #expect(secondInner.attributes["ai.usage.tokens"] == .int(20))
+            #expect(secondInner.attributes["gen_ai.usage.input_tokens"] == .int(20))
             #expect(secondInner.attributes["ai.values"] == .stringArray(["\"\(testValues[2])\""]))
         }
     }
@@ -508,7 +509,7 @@ struct EmbedManyTests {
                 values: testValues,
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
-                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                    integrations: [OpenTelemetry(tracer: tracer, embedding: true)]
                 )
             ) as DefaultEmbedManyResult<String>
 
@@ -517,14 +518,14 @@ struct EmbedManyTests {
 
         if spans.count >= 2 {
             let outer = spans[0]
-            #expect(outer.attributes["ai.usage.tokens"] == .int(10))
+            #expect(outer.attributes["gen_ai.request.model"] == .string("test-model"))
             #expect(outer.attributes["ai.values"] == .stringArray(testValues.map { "\"\($0)\"" }))
 
             let inner = spans[1]
             #expect(inner.attributes["ai.embeddings"] == .stringArray([
                 "[0.1,0.2,0.3]", "[0.4,0.5,0.6]", "[0.7,0.8,0.9]",
             ]))
-            #expect(inner.attributes["ai.usage.tokens"] == .int(10))
+            #expect(inner.attributes["gen_ai.usage.input_tokens"] == .int(10))
         }
     }
 
@@ -548,7 +549,7 @@ struct EmbedManyTests {
                 telemetry: TelemetryOptions(
                     recordInputs: false,
                     recordOutputs: false,
-                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                    integrations: [OpenTelemetry(tracer: tracer, embedding: true)]
                 )
             ) as DefaultEmbedManyResult<String>
 

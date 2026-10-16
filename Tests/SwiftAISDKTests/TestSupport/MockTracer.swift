@@ -13,6 +13,10 @@ final class MockTracer: Tracer, @unchecked Sendable {
         let attributes: Attributes
         let events: [SpanEvent]
         let status: SpanStatusRecord?
+        let spanId: String
+        let parentId: String?
+        let kind: SpanKind
+        let ended: Bool
     }
 
     struct SpanEvent: Equatable, Sendable {
@@ -33,11 +37,19 @@ final class MockTracer: Tracer, @unchecked Sendable {
         private let lock = NSLock()
         private let context: SpanContext
 
-        init(name: String, attributes: Attributes?) {
+        let parentId: String?
+        let kind: SpanKind
+        private var endedStorage = false
+
+        init(name: String, options: SpanOptions?) {
             self.name = name
-            self.attributesStorage = attributes ?? [:]
-            self.context = SpanContext(traceId: "test-trace-id", spanId: "test-span-id", traceFlags: 0)
+            self.attributesStorage = options?.attributes ?? [:]
+            self.context = SpanContext(traceId: "test-trace-id", spanId: UUID().uuidString, traceFlags: 0)
+            self.parentId = options?.parent?.spanContext().spanId
+            self.kind = options?.kind ?? .internal
         }
+
+        var ended: Bool { withLock { endedStorage } }
 
         var attributes: Attributes {
             withLock { attributesStorage }
@@ -96,7 +108,7 @@ final class MockTracer: Tracer, @unchecked Sendable {
         }
 
         func end() {
-            // No-op for tests.
+            withLock { endedStorage = true }
         }
 
         func isRecording() -> Bool {
@@ -133,14 +145,18 @@ final class MockTracer: Tracer, @unchecked Sendable {
                     name: span.name,
                     attributes: span.attributes,
                     events: span.events.map { event in SpanEvent(name: event.name, attributes: event.attributes) },
-                    status: span.status.map { SpanStatusRecord(code: $0.code, message: $0.message) }
+                    status: span.status.map { SpanStatusRecord(code: $0.code, message: $0.message) },
+                    spanId: span.spanContext().spanId,
+                    parentId: span.parentId,
+                    kind: span.kind,
+                    ended: span.ended
                 )
             }
         }
     }
 
     func startSpan(name: String, options: SpanOptions?) -> any Span {
-        let span = MockSpan(name: name, attributes: options?.attributes)
+        let span = MockSpan(name: name, options: options)
         withLock {
             spans.append(span)
         }
@@ -152,7 +168,7 @@ final class MockTracer: Tracer, @unchecked Sendable {
         options: SpanOptions?,
         _ fn: @Sendable (any Span) async throws -> T
     ) async rethrows -> T {
-        let span = MockSpan(name: name, attributes: options?.attributes)
+        let span = MockSpan(name: name, options: options)
         withLock {
             spans.append(span)
         }
