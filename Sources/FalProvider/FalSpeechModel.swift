@@ -28,7 +28,7 @@ public final class FalSpeechModel: SpeechModelV3 {
 
         let response = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "https://fal.run/\(modelIdentifier.rawValue)")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: falFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: falSpeechResponseSchema),
@@ -107,6 +107,7 @@ public final class FalSpeechModel: SpeechModelV3 {
     }
 
     private func downloadAudio(url: String, abortSignal: (@Sendable () -> Bool)?) async throws -> Data {
+        // The audio URL comes from the response body and may point at a foreign host: send no credentials.
         let result = try await getFromAPI(
             url: url,
             headers: nil,

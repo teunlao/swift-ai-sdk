@@ -109,7 +109,7 @@ public final class FalVideoModel: VideoModelV3 {
             body[key] = value
         }
 
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
 
         let queueResponse = try await postJsonToAPI(
             url: config.url(.init(

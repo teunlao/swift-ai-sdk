@@ -7,14 +7,14 @@ import AISDKProviderUtils
 struct ReplicateVideoModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -381,7 +381,7 @@ public final class ReplicateVideoModel: VideoModelV3 {
             requestBody["version"] = .string(version)
         }
 
-        let resolvedHeaders = await resolve(config.headers)
+        let resolvedHeaders = try await resolve(config.headers)
         let requestHeaders = combineHeaders(
             resolvedHeaders,
             options.headers?.mapValues { Optional($0) },
@@ -424,7 +424,7 @@ public final class ReplicateVideoModel: VideoModelV3 {
                     )
                 }
 
-                let pollHeaders = await resolve(config.headers)
+                let pollHeaders = try await resolve(config.headers)
                 do {
                     let pollResult = try await getFromAPI(
                         url: finalPrediction.urls.get,

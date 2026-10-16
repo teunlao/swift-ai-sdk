@@ -12,14 +12,14 @@ import AISDKProviderUtils
 struct FalImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -49,7 +49,7 @@ public final class FalImageModel: ImageModelV3 {
         let prepared = try await prepareRequest(options: options)
 
         let headers = combineHeaders(
-            config.headers(),
+            try config.headers(),
             options.headers?.mapValues { Optional($0) }
         ).compactMapValues { $0 }
 
@@ -71,6 +71,7 @@ public final class FalImageModel: ImageModelV3 {
         imagesData.reserveCapacity(parsed.images.count)
 
         for image in parsed.images {
+            // Image URLs come from the response body and may point at a foreign host: send no credentials.
             let result = try await getFromAPI(
                 url: image.url,
                 headers: nil,

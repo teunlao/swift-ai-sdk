@@ -15,14 +15,14 @@ private let defaultMaxPollAttempts = 60000 / defaultPollIntervalMillis
 struct LumaImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -128,7 +128,7 @@ public final class LumaImageModel: ImageModelV3 {
         }
 
         let combinedHeaders = combineHeaders(
-            config.headers(),
+            try config.headers(),
             options.headers?.mapValues { Optional($0) }
         )
         let requestHeaders = combinedHeaders.compactMapValues { $0 }
@@ -219,6 +219,7 @@ public final class LumaImageModel: ImageModelV3 {
         url: String,
         abortSignal: (@Sendable () -> Bool)?
     ) async throws -> Data {
+        // Asset URLs come from the response body and may point at a foreign host: send no credentials.
         try await getFromAPI(
             url: url,
             failedResponseHandler: createStatusCodeErrorResponseHandler(),

@@ -15,7 +15,7 @@ private let defaultPollTimeoutMillis = 60_000
 struct BlackForestLabsImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: (@Sendable () -> [String: String?])?
+    let headers: (@Sendable () throws -> [String: String?])?
     let fetch: FetchFunction?
     let pollIntervalMillis: Int?
     let pollTimeoutMillis: Int?
@@ -24,7 +24,7 @@ struct BlackForestLabsImageModelConfig: Sendable {
     init(
         provider: String,
         baseURL: String,
-        headers: (@Sendable () -> [String: String?])? = nil,
+        headers: (@Sendable () throws -> [String: String?])? = nil,
         fetch: FetchFunction? = nil,
         pollIntervalMillis: Int? = nil,
         pollTimeoutMillis: Int? = nil,
@@ -402,7 +402,7 @@ public final class BlackForestLabsImageModel: ImageModelV3 {
 
         let currentDate = config.currentDate()
         let combinedHeaders = combineHeaders(
-            config.headers?() ?? [:],
+            try config.headers?() ?? [:],
             options.headers?.mapValues { Optional($0) }
         ).compactMapValues { $0 }
 
@@ -432,7 +432,7 @@ public final class BlackForestLabsImageModel: ImageModelV3 {
 
         let imageResponse = try await getFromAPI(
             url: poll.imageUrl,
-            headers: combinedHeaders,
+            headers: isTrustedURL(poll.imageUrl, baseURL: config.baseURL) ? combinedHeaders : nil,
             failedResponseHandler: createStatusCodeErrorResponseHandler(),
             successfulResponseHandler: createBinaryResponseHandler(),
             isAborted: options.abortSignal,
@@ -662,7 +662,7 @@ public final class BlackForestLabsImageModel: ImageModelV3 {
 
             let response = try await getFromAPI(
                 url: urlString,
-                headers: headers,
+                headers: isTrustedURL(urlString, baseURL: config.baseURL) ? headers : nil,
                 failedResponseHandler: bflFailedResponseHandler,
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: bflPollSchema),
                 isAborted: abortSignal,
@@ -698,6 +698,24 @@ public final class BlackForestLabsImageModel: ImageModelV3 {
 
         throw InvalidResponseDataError(data: pollUrl, message: "Black Forest Labs generation timed out.")
     }
+}
+
+/// Black Forest Labs returns polling and delivery URLs on sibling cluster hosts of the API origin
+/// (for example `api.us1.bfl.ai` for a base URL on `api.bfl.ai`), so credentials may go to the
+/// configured origin or to any https host under `bfl.ai`; every other host gets no credentials.
+private func isTrustedURL(_ url: String, baseURL: String) -> Bool {
+    if isSameOrigin(url, baseURL) {
+        return true
+    }
+
+    guard let components = URLComponents(string: url),
+          components.scheme?.lowercased() == "https",
+          let host = components.host?.lowercased()
+    else {
+        return false
+    }
+
+    return host == "bfl.ai" || host.hasSuffix(".bfl.ai")
 }
 
 private func convertSizeToAspectRatio(_ size: String) -> String? {

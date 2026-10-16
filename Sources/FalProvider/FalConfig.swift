@@ -21,14 +21,14 @@ public struct FalConfig: Sendable {
 
     public let provider: String
     public let url: @Sendable (RequestOptions) -> String
-    public let headers: @Sendable () -> [String: String?]
+    public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
     public let currentDate: @Sendable () -> Date
 
     public init(
         provider: String,
         url: @escaping @Sendable (RequestOptions) -> String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {

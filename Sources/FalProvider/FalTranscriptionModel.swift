@@ -37,7 +37,7 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
 
         let queueResponse = try await postJsonToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "https://queue.fal.run/fal-ai/\(modelIdentifier.rawValue)")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body.merging(["audio_url": .string(audioURL)]) { $1 }),
             failedResponseHandler: falFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: falTranscriptionJobSchema),
@@ -142,7 +142,7 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
             do {
                 let status = try await getFromAPI(
                     url: config.url(.init(modelId: modelIdentifier.rawValue, path: "https://queue.fal.run/fal-ai/\(modelIdentifier.rawValue)/requests/\(requestId)")),
-                    headers: combineHeaders(config.headers(), headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+                    headers: combineHeaders(try config.headers(), headers?.mapValues { Optional($0) }).compactMapValues { $0 },
                     failedResponseHandler: falQueueStatusErrorHandler,
                     successfulResponseHandler: createJsonResponseHandler(responseSchema: falTranscriptionResponseSchema),
                     isAborted: abortSignal,

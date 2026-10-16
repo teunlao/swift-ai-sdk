@@ -7,14 +7,14 @@ import AISDKProviderUtils
 struct ReplicateImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -92,7 +92,7 @@ public final class ReplicateImageModel: ImageModelV3 {
         let warnings: [SharedV3Warning] = []
 
         // Build headers: provider + request + prefer: wait
-        var defaultHeaders = config.headers()
+        var defaultHeaders = try config.headers()
         defaultHeaders["prefer"] = "wait"
         let merged = combineHeaders(defaultHeaders, options.headers?.mapValues { Optional($0) })
         let headers = merged.compactMapValues { $0 }
@@ -148,7 +148,8 @@ public final class ReplicateImageModel: ImageModelV3 {
             }
         }()
 
-        // Download each image URL as binary
+        // Download each image URL as binary. Output URLs come from the response body and may point at a
+        // foreign host, so the request carries no credentials.
         var imagesData: [Data] = []
         imagesData.reserveCapacity(outputURLs.count)
 
