@@ -3,50 +3,12 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /**
- Creates a tool result output in the LanguageModel V3 format.
+ Creates the tool result output sent to the model.
 
- Port of `@ai-sdk/ai/src/prompt/create-tool-model-output.ts`.
-
- Handles different output modes:
- - `errorMode: .text` → converts output to error-text with string message
- - `errorMode: .json` → converts output to error-json with JSON value
- - `errorMode: .none` → normal result handling:
-   - Uses tool.toModelOutput() if available
-   - String output → text result
-   - Other types → json result
-
- - Parameters:
-   - output: The tool execution output (can be any type)
-   - tool: Optional Tool instance with custom toModelOutput transformer
-   - errorMode: How to handle the output (`.none`, `.text`, `.json`)
- - Returns: A LanguageModelV3ToolResultOutput ready for the model
-
- ## Example
- ```swift
- // Error text mode
- createToolModelOutput(
-     output: "Connection failed",
-     tool: nil,
-     errorMode: .text
- )
- // → .errorText(value: "Connection failed")
-
- // Normal string output
- createToolModelOutput(
-     output: "Success",
-     tool: nil,
-     errorMode: .none
- )
- // → .text(value: "Success")
-
- // Normal JSON output
- createToolModelOutput(
-     output: ["result": "success", "code": 200],
-     tool: nil,
-     errorMode: .none
- )
- // → .json(value: JSONValue object)
- ```
+ Port of `@ai-sdk/ai/src/prompt/create-tool-model-output.ts`: `.text` and
+ `.json` error modes produce error outputs; otherwise the tool's
+ `toModelOutput` decides, and without it a string becomes text and any other
+ value JSON.
  */
 public func createToolModelOutput(
     toolCallId: String,
@@ -75,30 +37,6 @@ public func createToolModelOutput(
         return .text(value: stringOutput)
     }
     if case .string(let stringOutput)? = output as? JSONValue {
-        return .text(value: stringOutput)
-    }
-
-    return .json(value: toJSONValue(output))
-}
-
-/// Synchronous variant kept for callers that are not async yet; it cannot run the
-/// async `Tool.toModelOutput` and therefore ignores it.
-@available(*, deprecated, message: "Use the async createToolModelOutput(toolCallId:input:output:tool:errorMode:)")
-public func createToolModelOutput(
-    output: Any?,
-    tool: Tool?,
-    errorMode: ToolOutputErrorMode
-) -> ToolResultOutput {
-    switch errorMode {
-    case .text:
-        return .errorText(value: AISDKProvider.getErrorMessage(output))
-    case .json:
-        return .errorJson(value: toJSONValue(output))
-    case .none:
-        break
-    }
-
-    if let stringOutput = output as? String {
         return .text(value: stringOutput)
     }
 

@@ -13,9 +13,7 @@ struct StreamObjectTests {
     private let defaultUsage = LanguageModelUsage(
         inputTokens: 3,
         outputTokens: 10,
-        totalTokens: 13,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
+        totalTokens: 13
     )
     private let defaultUsageV3 = LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
 

@@ -25,14 +25,14 @@ struct ExecuteToolTests {
 
     @Test("executeTool with .value yields only final output")
     func valueYieldsOnlyFinal() async throws {
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { input, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { input, _ in
             return .value("result: \(input)")
         }
 
         let stream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var outputs: [ToolExecutionOutput<String>] = []
@@ -47,7 +47,7 @@ struct ExecuteToolTests {
 
     @Test("executeTool with .future yields only final output")
     func futureYieldsOnlyFinal() async throws {
-        let execute: @Sendable (Int, ToolCallOptions) async throws -> ToolExecutionResult<Int> = { input, _ in
+        let execute: @Sendable (Int, ToolExecutionOptions) async throws -> ToolExecutionResult<Int> = { input, _ in
             return .future {
                 try await Task.sleep(nanoseconds: 10_000_000) // 10ms
                 return input * 2
@@ -57,7 +57,7 @@ struct ExecuteToolTests {
         let stream = executeTool(
             execute: execute,
             input: 42,
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var outputs: [ToolExecutionOutput<Int>] = []
@@ -74,7 +74,7 @@ struct ExecuteToolTests {
 
     @Test("executeTool with .stream yields preliminary + final outputs")
     func streamYieldsPreliminaryAndFinal() async throws {
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { input, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { input, _ in
             let stream = AsyncThrowingStream<String, Error> { continuation in
                 continuation.yield("\(input)-1")
                 continuation.yield("\(input)-2")
@@ -87,7 +87,7 @@ struct ExecuteToolTests {
         let resultStream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var outputs: [ToolExecutionOutput<String>] = []
@@ -115,7 +115,7 @@ struct ExecuteToolTests {
 
     @Test("executeTool with single-value stream yields preliminary + final")
     func singleValueStreamYieldsBoth() async throws {
-        let execute: @Sendable (Int, ToolCallOptions) async throws -> ToolExecutionResult<Int> = { input, _ in
+        let execute: @Sendable (Int, ToolExecutionOptions) async throws -> ToolExecutionResult<Int> = { input, _ in
             let stream = AsyncThrowingStream<Int, Error> { continuation in
                 continuation.yield(input)
                 continuation.finish()
@@ -126,7 +126,7 @@ struct ExecuteToolTests {
         let resultStream = executeTool(
             execute: execute,
             input: 100,
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var outputs: [ToolExecutionOutput<Int>] = []
@@ -144,7 +144,7 @@ struct ExecuteToolTests {
 
     @Test("executeTool with empty stream still yields final output")
     func emptyStreamYieldsFinal() async throws {
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { _, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { _, _ in
             let stream = AsyncThrowingStream<String, Error> { continuation in
                 continuation.finish()
             }
@@ -154,7 +154,7 @@ struct ExecuteToolTests {
         let resultStream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var outputs: [ToolExecutionOutput<String>] = []
@@ -176,14 +176,14 @@ struct ExecuteToolTests {
             case testFailure
         }
 
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { _, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { _, _ in
             throw TestError.testFailure
         }
 
         let stream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         do {
@@ -202,7 +202,7 @@ struct ExecuteToolTests {
             case asyncFailure
         }
 
-        let execute: @Sendable (Int, ToolCallOptions) async throws -> ToolExecutionResult<Int> = { _, _ in
+        let execute: @Sendable (Int, ToolExecutionOptions) async throws -> ToolExecutionResult<Int> = { _, _ in
             return .future {
                 throw TestError.asyncFailure
             }
@@ -211,7 +211,7 @@ struct ExecuteToolTests {
         let stream = executeTool(
             execute: execute,
             input: 42,
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         do {
@@ -230,7 +230,7 @@ struct ExecuteToolTests {
             case streamFailure
         }
 
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { _, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { _, _ in
             let stream = AsyncThrowingStream<String, Error> { continuation in
                 continuation.yield("value1")
                 continuation.finish(throwing: TestError.streamFailure)
@@ -241,7 +241,7 @@ struct ExecuteToolTests {
         let resultStream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var preliminaryCount = 0
@@ -260,26 +260,26 @@ struct ExecuteToolTests {
 
     // MARK: - Integration Tests
 
-    @Test("executeTool with ToolCallOptions passes correctly")
+    @Test("executeTool with ToolExecutionOptions passes correctly")
     func toolCallOptionsPassedCorrectly() async throws {
         actor OptionsCapture {
-            var options: ToolCallOptions?
-            func capture(_ opts: ToolCallOptions) {
+            var options: ToolExecutionOptions?
+            func capture(_ opts: ToolExecutionOptions) {
                 options = opts
             }
-            func getCaptured() -> ToolCallOptions? {
+            func getCaptured() -> ToolExecutionOptions? {
                 options
             }
         }
 
         let capture = OptionsCapture()
 
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { input, options in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { input, options in
             await capture.capture(options)
             return .value("result")
         }
 
-        let options = ToolCallOptions(
+        let options = ToolExecutionOptions(
             toolCallId: "call-123",
             messages: [], // Empty messages array for simplicity
             abortSignal: { false },
@@ -303,7 +303,7 @@ struct ExecuteToolTests {
 
     @Test("executeTool supports cancellation")
     func executionSupportsCancellation() async throws {
-        let execute: @Sendable (String, ToolCallOptions) async throws -> ToolExecutionResult<String> = { _, _ in
+        let execute: @Sendable (String, ToolExecutionOptions) async throws -> ToolExecutionResult<String> = { _, _ in
             return .future {
                 try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
                 return "should not complete"
@@ -313,7 +313,7 @@ struct ExecuteToolTests {
         let stream = executeTool(
             execute: execute,
             input: "test",
-            options: ToolCallOptions(toolCallId: "1", messages: [])
+            options: ToolExecutionOptions(toolCallId: "1", messages: [])
         )
 
         var iterator = stream.makeAsyncIterator()

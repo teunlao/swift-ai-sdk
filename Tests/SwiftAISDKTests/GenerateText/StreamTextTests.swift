@@ -526,7 +526,7 @@ struct StreamTextBasicTests {
         let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            stopWhen: [stepCountIs(3)]
+            stopWhen: [isStepCount(3)]
         )
 
         let chunks = try await convertReadableStreamToArray(
@@ -586,7 +586,7 @@ struct StreamTextBasicTests {
         #expect(chunks.contains("Hello World"))
     }
 
-    @Test("stopWhen stepCountIs(1) yields one step")
+    @Test("stopWhen isStepCount(1) yields one step")
     func stopWhenSingleStep() async throws {
         let parts: [LanguageModelV3StreamPart] = [
             .streamStart(warnings: []),
@@ -613,7 +613,7 @@ struct StreamTextBasicTests {
         let result = try streamText(
             model: .v3(model),
             prompt: "hello",
-            stopWhen: [stepCountIs(1)]
+            stopWhen: [isStepCount(1)]
         )
 
         _ = try await convertReadableStreamToArray(result.fullStream)
@@ -1222,7 +1222,7 @@ struct StreamTextBasicTests {
 	            model: .v3(model),
 	            tools: tools,
 	            prompt: "hello",
-	            stopWhen: [stepCountIs(3)]
+	            stopWhen: [isStepCount(3)]
 	        )
 
         let deltas = try await convertReadableStreamToArray(result.textStream)
@@ -2030,7 +2030,7 @@ struct StreamTextInvalidToolCallStepLoopTests {
             model: .v3(model),
             tools: tools,
             prompt: "hello",
-            stopWhen: [stepCountIs(3)]
+            stopWhen: [isStepCount(3)]
         )
 
         let text = try await result.readAllText()

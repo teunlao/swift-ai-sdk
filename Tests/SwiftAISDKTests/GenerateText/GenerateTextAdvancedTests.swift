@@ -1004,7 +1004,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             prompt: "prompt",
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             output: textOutputSpecification()
         )
 
@@ -1135,7 +1135,7 @@ struct GenerateTextAdvancedTests {
                 model: .v3(model),
                 tools: tools,
                 prompt: "Hello",
-                stopWhen: [stepCountIs(3)]
+                stopWhen: [isStepCount(3)]
             )
 
             #expect(result.steps.count == 2)
@@ -1936,7 +1936,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: ["web_search": providerTool],
             prompt: "test-input",
-            stopWhen: [stepCountIs(4)]
+            stopWhen: [isStepCount(4)]
         )
 
         return ProviderExecutedToolsScenario(result: result)
@@ -2003,7 +2003,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(prefix: "id"),
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -2065,7 +2065,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(prefix: "id"),
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -2137,7 +2137,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             messages: messages,
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(prefix: "id"),
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -2214,7 +2214,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             messages: messages,
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(prefix: "id"),
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -2306,7 +2306,7 @@ struct GenerateTextAdvancedTests {
             model: .v3(model),
             tools: tools,
             messages: messages,
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(prefix: "id"),
                 currentDate: { Date(timeIntervalSince1970: 0) }

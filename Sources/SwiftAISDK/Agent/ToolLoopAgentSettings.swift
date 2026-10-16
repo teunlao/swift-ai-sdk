@@ -103,6 +103,8 @@ public struct ToolLoopAgentSettings<CallOptions: Sendable, OutputValue: Sendable
     public var toolsContext: ToolsContext
     /// Takes precedence over the tools' own approval settings.
     public var toolApproval: ToolApprovalConfiguration?
+    /// Signs approval requests at issuance and verifies them before approved calls execute.
+    public var toolApprovalSecret: ToolApprovalSecret?
     public var prepareStep: PrepareStepFunction?
     public var repairToolCall: ToolCallRepairFunction?
     public var refineToolInput: ToolInputRefinement?
@@ -141,6 +143,7 @@ public struct ToolLoopAgentSettings<CallOptions: Sendable, OutputValue: Sendable
         runtimeContext: Context? = nil,
         toolsContext: ToolsContext = [:],
         toolApproval: ToolApprovalConfiguration? = nil,
+        toolApprovalSecret: ToolApprovalSecret? = nil,
         prepareStep: PrepareStepFunction? = nil,
         repairToolCall: ToolCallRepairFunction? = nil,
         refineToolInput: ToolInputRefinement? = nil,
@@ -175,6 +178,7 @@ public struct ToolLoopAgentSettings<CallOptions: Sendable, OutputValue: Sendable
         self.runtimeContext = runtimeContext
         self.toolsContext = toolsContext
         self.toolApproval = toolApproval
+        self.toolApprovalSecret = toolApprovalSecret
         self.prepareStep = prepareStep
         self.repairToolCall = repairToolCall
         self.refineToolInput = refineToolInput
@@ -213,6 +217,7 @@ public extension ToolLoopAgentSettings where OutputValue == String, PartialOutpu
         runtimeContext: Context? = nil,
         toolsContext: ToolsContext = [:],
         toolApproval: ToolApprovalConfiguration? = nil,
+        toolApprovalSecret: ToolApprovalSecret? = nil,
         prepareStep: PrepareStepFunction? = nil,
         repairToolCall: ToolCallRepairFunction? = nil,
         refineToolInput: ToolInputRefinement? = nil,
@@ -248,6 +253,7 @@ public extension ToolLoopAgentSettings where OutputValue == String, PartialOutpu
             runtimeContext: runtimeContext,
             toolsContext: toolsContext,
             toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
             prepareStep: prepareStep,
             repairToolCall: repairToolCall,
             refineToolInput: refineToolInput,
@@ -270,8 +276,3 @@ public extension ToolLoopAgentSettings where OutputValue == String, PartialOutpu
     }
 }
 
-@available(*, deprecated, renamed: "ToolLoopAgentSettings")
-public typealias AgentSettings<OutputValue: Sendable, PartialOutput: Sendable> = ToolLoopAgentSettings<Never, OutputValue, PartialOutput>
-
-@available(*, deprecated, renamed: "ToolLoopAgentSettings")
-public typealias Experimental_AgentSettings<OutputValue: Sendable, PartialOutput: Sendable> = ToolLoopAgentSettings<Never, OutputValue, PartialOutput>

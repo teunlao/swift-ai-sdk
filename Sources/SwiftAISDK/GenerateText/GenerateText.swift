@@ -125,6 +125,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
     stopWhen: [StopCondition] = [isStepCount(1)],
     output: Output.Specification<OutputValue, PartialOutput>,
     toolApproval: ToolApprovalConfiguration? = nil,
+    toolApprovalSecret: ToolApprovalSecret? = nil,
     telemetry: TelemetryOptions? = nil,
     providerOptions: ProviderOptions? = nil,
     activeTools: [String]? = nil,
@@ -237,6 +238,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             messages: initialMessages,
             toolsContext: toolsContext,
             runtimeContext: runtimeContext,
+            toolApprovalSecret: toolApprovalSecret,
             refineToolInput: refineToolInput
         )
 
@@ -568,6 +570,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
                 if status == .notApplicable { continue }
 
                 let approvalId = _internal.generateId()
+                let signature = try maybeSignApproval(secret: toolApprovalSecret, approvalId: approvalId, toolCall: toolCall)
                 approvalOrder.append(toolCall.toolCallId)
 
                 switch status {
@@ -575,7 +578,8 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
                     toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
                         approvalId: approvalId,
                         toolCall: toolCall,
-                        reason: reason
+                        reason: reason,
+                        signature: signature
                     )
                     blockedToolCallIds.insert(toolCall.toolCallId)
 
@@ -583,7 +587,8 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
                     toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
                         approvalId: approvalId,
                         toolCall: toolCall,
-                        isAutomatic: true
+                        isAutomatic: true,
+                        signature: signature
                     )
                     stepToolApprovalResponses[toolCall.toolCallId] = ToolApprovalResponseOutput(
                         approvalId: approvalId,
@@ -597,7 +602,8 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
                     toolApprovalRequests[toolCall.toolCallId] = ToolApprovalRequestOutput(
                         approvalId: approvalId,
                         toolCall: toolCall,
-                        isAutomatic: true
+                        isAutomatic: true,
+                        signature: signature
                     )
                     stepToolApprovalResponses[toolCall.toolCallId] = ToolApprovalResponseOutput(
                         approvalId: approvalId,
@@ -796,6 +802,7 @@ public func generateText(
     allowSystemInMessages: Bool? = nil,
     stopWhen: [StopCondition] = [isStepCount(1)],
     toolApproval: ToolApprovalConfiguration? = nil,
+    toolApprovalSecret: ToolApprovalSecret? = nil,
     telemetry: TelemetryOptions? = nil,
     providerOptions: ProviderOptions? = nil,
     activeTools: [String]? = nil,
@@ -831,6 +838,7 @@ public func generateText(
         stopWhen: stopWhen,
         output: Output.text(),
         toolApproval: toolApproval,
+        toolApprovalSecret: toolApprovalSecret,
         telemetry: telemetry,
         providerOptions: providerOptions,
         activeTools: activeTools,

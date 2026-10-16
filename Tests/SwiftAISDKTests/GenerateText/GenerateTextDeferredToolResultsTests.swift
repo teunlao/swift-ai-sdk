@@ -88,7 +88,7 @@ struct GenerateTextDeferredToolResultsTests {
             model: .v3(model),
             tools: tools,
             prompt: "test",
-            stopWhen: [stepCountIs(3)]
+            stopWhen: [isStepCount(3)]
         )
 
         #expect(result.steps.count == 2)

@@ -377,9 +377,6 @@ public struct ToolExecutionOptions: Sendable {
     }
 }
 
-@available(*, deprecated, renamed: "ToolExecutionOptions")
-public typealias ToolCallOptions = ToolExecutionOptions
-
 /// Options for tool call delta (streaming).
 public struct ToolCallDeltaOptions: Sendable {
     /// The input text delta.

@@ -138,6 +138,7 @@ struct StreamTextConfiguration<OutputValue: Sendable, PartialOutput: Sendable>: 
     var output: Output.Specification<OutputValue, PartialOutput>
     var outputIsDefault: Bool
     var toolApproval: ToolApprovalConfiguration?
+    var toolApprovalSecret: ToolApprovalSecret?
     var telemetry: TelemetryOptions?
     var providerOptions: ProviderOptions?
     var activeTools: [String]?
@@ -189,6 +190,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
     stopWhen: [StopCondition] = [isStepCount(1)],
     output: Output.Specification<OutputValue, PartialOutput>,
     toolApproval: ToolApprovalConfiguration? = nil,
+    toolApprovalSecret: ToolApprovalSecret? = nil,
     telemetry: TelemetryOptions? = nil,
     providerOptions: ProviderOptions? = nil,
     activeTools: [String]? = nil,
@@ -202,7 +204,6 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
     runtimeContext: Context = [:],
     toolsContext: ToolsContext = [:],
     include: StreamTextInclude? = nil,
-    includeRawChunks: Bool? = nil,
     streamRetries: Int? = nil,
     internalOptions: StreamTextInternalOptions = StreamTextInternalOptions(),
     onChunk: StreamTextOnChunkCallback? = nil,
@@ -232,6 +233,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
         output: output,
         outputIsDefault: false,
         toolApproval: toolApproval,
+        toolApprovalSecret: toolApprovalSecret,
         telemetry: telemetry,
         providerOptions: providerOptions,
         activeTools: activeTools,
@@ -247,7 +249,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
         include: StreamTextInclude(
             requestBody: include?.requestBody ?? false,
             requestMessages: include?.requestMessages ?? false,
-            rawChunks: include?.rawChunks ?? includeRawChunks ?? false
+            rawChunks: include?.rawChunks ?? false
         ),
         internalOptions: internalOptions,
         streamRetries: streamRetries,
@@ -282,6 +284,7 @@ public func streamText(
     allowSystemInMessages: Bool? = nil,
     stopWhen: [StopCondition] = [isStepCount(1)],
     toolApproval: ToolApprovalConfiguration? = nil,
+    toolApprovalSecret: ToolApprovalSecret? = nil,
     telemetry: TelemetryOptions? = nil,
     providerOptions: ProviderOptions? = nil,
     activeTools: [String]? = nil,
@@ -295,7 +298,6 @@ public func streamText(
     runtimeContext: Context = [:],
     toolsContext: ToolsContext = [:],
     include: StreamTextInclude? = nil,
-    includeRawChunks: Bool? = nil,
     streamRetries: Int? = nil,
     internalOptions: StreamTextInternalOptions = StreamTextInternalOptions(),
     onChunk: StreamTextOnChunkCallback? = nil,
@@ -325,6 +327,7 @@ public func streamText(
         output: Output.text(),
         outputIsDefault: true,
         toolApproval: toolApproval,
+        toolApprovalSecret: toolApprovalSecret,
         telemetry: telemetry,
         providerOptions: providerOptions,
         activeTools: activeTools,
@@ -340,7 +343,7 @@ public func streamText(
         include: StreamTextInclude(
             requestBody: include?.requestBody ?? false,
             requestMessages: include?.requestMessages ?? false,
-            rawChunks: include?.rawChunks ?? includeRawChunks ?? false
+            rawChunks: include?.rawChunks ?? false
         ),
         internalOptions: internalOptions,
         streamRetries: streamRetries,

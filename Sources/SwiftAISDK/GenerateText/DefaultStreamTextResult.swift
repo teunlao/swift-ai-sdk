@@ -60,11 +60,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutput:
         mapStream(engine.replay.stream()) { $0.partialOutput }
     }
 
-    @available(*, deprecated, renamed: "partialOutputStream")
-    public var experimentalPartialOutputStream: AsyncThrowingStream<PartialOutput, Error> {
-        partialOutputStream
-    }
-
     /**
      Completed array elements as they are streamed.
 
@@ -217,11 +212,6 @@ public final class DefaultStreamTextResult<OutputValue: Sendable, PartialOutput:
     /// The parsed output of the final step.
     public var output: OutputValue {
         get async throws { try await outputPromise().value }
-    }
-
-    @available(*, deprecated, renamed: "output")
-    public var experimentalOutput: OutputValue {
-        get async throws { try await output }
     }
 
     func outputPromise() -> Task<OutputValue, Error> {
@@ -534,6 +524,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
             messages: initialMessages,
             toolsContext: toolsContext,
             runtimeContext: runtimeContext,
+            toolApprovalSecret: configuration.toolApprovalSecret,
             refineToolInput: configuration.refineToolInput
         )
 
@@ -1117,17 +1108,22 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
                 }
 
                 let approvalId = configuration.internalOptions.generateId()
+                let signature = try maybeSignApproval(
+                    secret: configuration.toolApprovalSecret,
+                    approvalId: approvalId,
+                    toolCall: toolCall
+                )
 
                 switch status {
                 case .userApproval(let reason):
                     emit(.part(.toolApprovalRequest(ToolApprovalRequestOutput(
-                        approvalId: approvalId, toolCall: toolCall, reason: reason
+                        approvalId: approvalId, toolCall: toolCall, reason: reason, signature: signature
                     ))))
                     return
 
                 case .denied(let reason):
                     emit(.part(.toolApprovalRequest(ToolApprovalRequestOutput(
-                        approvalId: approvalId, toolCall: toolCall, isAutomatic: true
+                        approvalId: approvalId, toolCall: toolCall, isAutomatic: true, signature: signature
                     ))))
                     emit(.part(.toolApprovalResponse(ToolApprovalResponseOutput(
                         approvalId: approvalId, toolCall: toolCall, approved: false,
@@ -1140,7 +1136,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
 
                 case .approved(let reason):
                     emit(.part(.toolApprovalRequest(ToolApprovalRequestOutput(
-                        approvalId: approvalId, toolCall: toolCall, isAutomatic: true
+                        approvalId: approvalId, toolCall: toolCall, isAutomatic: true, signature: signature
                     ))))
                     emit(.part(.toolApprovalResponse(ToolApprovalResponseOutput(
                         approvalId: approvalId, toolCall: toolCall, approved: true,

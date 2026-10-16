@@ -247,8 +247,8 @@ private extension LanguageModelUsage {
         if let inputTokens { parts.append("input=\(inputTokens)") }
         if let outputTokens { parts.append("output=\(outputTokens)") }
         if let totalTokens { parts.append("total=\(totalTokens)") }
-        if let reasoningTokens { parts.append("reasoning=\(reasoningTokens)") }
-        if let cachedInputTokens { parts.append("cached=\(cachedInputTokens)") }
+        if let reasoningTokens = outputTokenDetails.reasoningTokens { parts.append("reasoning=\(reasoningTokens)") }
+        if let cachedInputTokens = inputTokenDetails.cacheReadTokens { parts.append("cached=\(cachedInputTokens)") }
         return parts.isEmpty ? "" : parts.joined(separator: " ")
     }
 }

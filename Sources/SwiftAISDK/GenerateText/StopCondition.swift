@@ -14,11 +14,6 @@ public func isStepCount(_ stepCount: Int) -> StopCondition {
     { steps in steps.count == stepCount }
 }
 
-@available(*, deprecated, renamed: "isStepCount")
-public func stepCountIs(_ stepCount: Int) -> StopCondition {
-    isStepCount(stepCount)
-}
-
 /// Never stops the loop; the loop ends when the model stops calling tools.
 public func isLoopFinished() -> StopCondition {
     { _ in false }

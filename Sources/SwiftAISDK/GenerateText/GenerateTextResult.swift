@@ -146,9 +146,4 @@ public final class DefaultGenerateTextResult<OutputValue: Sendable>: GenerateTex
             return resolvedOutput
         }
     }
-
-    @available(*, deprecated, renamed: "output")
-    public var experimentalOutput: OutputValue {
-        get throws { try output }
-    }
 }

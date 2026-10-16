@@ -325,12 +325,3 @@ public typealias GenerateTextOnStepStartCallback = @Sendable (GenerateTextStepSt
 public typealias GenerateTextOnStepEndCallback = @Sendable (StepResult) async throws -> Void
 public typealias GenerateTextOnEndCallback = @Sendable (GenerateTextEndEvent) async throws -> Void
 public typealias GenerateTextOnAbortCallback = @Sendable (GenerateTextAbortEvent) async throws -> Void
-
-@available(*, deprecated, renamed: "GenerateTextOnStepEndCallback")
-public typealias GenerateTextOnStepFinishCallback = GenerateTextOnStepEndCallback
-
-@available(*, deprecated, renamed: "GenerateTextOnEndCallback")
-public typealias GenerateTextOnFinishCallback = GenerateTextOnEndCallback
-
-@available(*, deprecated, renamed: "GenerateTextEndEvent")
-public typealias GenerateTextFinishEvent = GenerateTextEndEvent

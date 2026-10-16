@@ -11,9 +11,7 @@ struct GenerateObjectTests {
     private let expectedUsage = LanguageModelUsage(
         inputTokens: 10,
         outputTokens: 20,
-        totalTokens: 30,
-        reasoningTokens: nil,
-        cachedInputTokens: nil
+        totalTokens: 30
     )
 
     private let dummyResponseInfo = LanguageModelV3ResponseInfo(

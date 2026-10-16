@@ -64,7 +64,7 @@ struct StreamTranscribeTests {
             ])
         })
 
-        let result = try experimental_streamTranscribe(
+        let result = try streamTranscribe(
             model: model,
             audio: makeTranscriptionAudioStream(),
             inputAudioFormat: streamInputAudioFormat,

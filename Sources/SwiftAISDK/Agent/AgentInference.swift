@@ -7,6 +7,3 @@ public typealias InferAgentTools<AgentType> = ToolSet
 
 /// Port of `InferAgentUIMessage`.
 public typealias InferAgentUIMessage<AgentType> = UIMessage
-
-@available(*, deprecated, renamed: "InferAgentUIMessage")
-public typealias Experimental_InferAgentUIMessage<AgentType> = InferAgentUIMessage<AgentType>

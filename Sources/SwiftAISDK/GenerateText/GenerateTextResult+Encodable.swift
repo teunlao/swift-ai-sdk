@@ -54,11 +54,11 @@ private enum GenerateTextResultJSONEncoder {
         object["providerMetadata"] = encodedProviderMetadata(result.providerMetadata) ?? .null
         object["steps"] = .array(result.steps.enumerated().map { index, step in stepJSON(step, index: index + 1) })
 
-        if let experimental = try? result.experimentalOutput,
-           let experimentalJSON = JSONValueEncoding.jsonValue(from: experimental) {
-            object["experimentalOutput"] = experimentalJSON
+        if let output = try? result.output,
+           let outputJSON = JSONValueEncoding.jsonValue(from: output) {
+            object["output"] = outputJSON
         } else {
-            object["experimentalOutput"] = .null
+            object["output"] = .null
         }
 
         return .object(object)
@@ -514,8 +514,15 @@ private enum GenerateTextResultJSONEncoder {
             "inputTokens": optionalInt(usage.inputTokens),
             "outputTokens": optionalInt(usage.outputTokens),
             "totalTokens": optionalInt(usage.totalTokens),
-            "reasoningTokens": optionalInt(usage.reasoningTokens),
-            "cachedInputTokens": optionalInt(usage.cachedInputTokens)
+            "inputTokenDetails": object([
+                "noCacheTokens": optionalInt(usage.inputTokenDetails.noCacheTokens),
+                "cacheReadTokens": optionalInt(usage.inputTokenDetails.cacheReadTokens),
+                "cacheWriteTokens": optionalInt(usage.inputTokenDetails.cacheWriteTokens)
+            ]),
+            "outputTokenDetails": object([
+                "textTokens": optionalInt(usage.outputTokenDetails.textTokens),
+                "reasoningTokens": optionalInt(usage.outputTokenDetails.reasoningTokens)
+            ])
         ])
     }
 

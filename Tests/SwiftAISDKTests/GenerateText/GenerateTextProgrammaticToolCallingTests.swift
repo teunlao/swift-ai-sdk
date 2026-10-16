@@ -110,7 +110,7 @@ struct GenerateTextProgrammaticToolCallingTests {
         let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let onStepProviderMetadata = LockedValue(initial: [ProviderMetadata?]())
         let onStepFinishReasons = LockedValue(initial: [FinishReason]())
-        let onFinishEvent = LockedValue(initial: Optional<GenerateTextFinishEvent>.none)
+        let onFinishEvent = LockedValue(initial: Optional<GenerateTextEndEvent>.none)
 
         let step1 = LanguageModelV3GenerateResult(
             content: [
@@ -230,7 +230,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             model: .v3(model),
             tools: tools,
             prompt: "Play a dice game between two players.",
-            stopWhen: [stepCountIs(10)],
+            stopWhen: [isStepCount(10)],
             prepareStep: { options in
                 prepareStepCalls.withValue { $0.append(options.stepNumber) }
 

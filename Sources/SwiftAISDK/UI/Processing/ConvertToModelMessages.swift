@@ -315,15 +315,6 @@ public func convertToModelMessages<Message: UIMessageConvertible>(
     return modelMessages
 }
 
-/// Deprecated alias kept for backwards compatibility.
-@available(*, deprecated, renamed: "convertToModelMessages")
-public func convertToCoreMessages<Message: UIMessageConvertible>(
-    messages: [Message],
-    options: ConvertToModelMessagesOptions = ConvertToModelMessagesOptions()
-) async throws -> [ModelMessage] {
-    try await convertToModelMessages(messages: messages, options: options)
-}
-
 // MARK: - Helpers
 
 private func fileData(_ part: FileUIPart) throws -> DataContentOrURL {
@@ -344,7 +335,13 @@ private func modelOutput(
     if errorMode == .none, tool == nil, unavailable {
         return .text(value: "Tool output omitted because the tool is no longer available.")
     }
-    return createToolModelOutput(output: output, tool: tool, errorMode: errorMode)
+    return try await createToolModelOutput(
+        toolCallId: toolCallId,
+        input: input ?? .null,
+        output: output,
+        tool: tool,
+        errorMode: errorMode
+    )
 }
 
 private func mergeProviderOptions(from metadata: [ProviderMetadata?]) -> ProviderOptions? {

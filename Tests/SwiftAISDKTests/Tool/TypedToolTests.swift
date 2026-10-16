@@ -24,7 +24,7 @@ struct TypedToolTests {
             return
         }
 
-        let options = ToolCallOptions(toolCallId: "weather", messages: [])
+        let options = ToolExecutionOptions(toolCallId: "weather", messages: [])
         let report = try await execute(WeatherQuery(location: "Paris"), options).resolve()
 
         #expect(report == WeatherReport(location: "Paris", condition: "Sunny"))
@@ -66,7 +66,7 @@ struct TypedToolTests {
             return
         }
 
-        let options = ToolCallOptions(toolCallId: "stream", messages: [])
+        let options = ToolExecutionOptions(toolCallId: "stream", messages: [])
         let result = try await execute(WeatherQuery(location: "Anywhere"), options)
         var decodedReports: [WeatherReport] = []
 
@@ -106,7 +106,7 @@ struct TypedToolTests {
             return
         }
 
-        let options = ToolCallOptions(toolCallId: "cmd", messages: [])
+        let options = ToolExecutionOptions(toolCallId: "cmd", messages: [])
         let result = try await execute(["action": .string("jump")], options).resolve()
 
         guard case let .object(payload) = result,

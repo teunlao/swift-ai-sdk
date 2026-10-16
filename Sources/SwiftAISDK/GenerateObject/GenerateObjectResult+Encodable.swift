@@ -53,8 +53,15 @@ private enum GenerateObjectResultJSONEncoder {
             "inputTokens": usage.inputTokens.map { .number(Double($0)) } ?? .null,
             "outputTokens": usage.outputTokens.map { .number(Double($0)) } ?? .null,
             "totalTokens": usage.totalTokens.map { .number(Double($0)) } ?? .null,
-            "reasoningTokens": usage.reasoningTokens.map { .number(Double($0)) } ?? .null,
-            "cachedInputTokens": usage.cachedInputTokens.map { .number(Double($0)) } ?? .null
+            "inputTokenDetails": .object([
+                "noCacheTokens": usage.inputTokenDetails.noCacheTokens.map { .number(Double($0)) } ?? .null,
+                "cacheReadTokens": usage.inputTokenDetails.cacheReadTokens.map { .number(Double($0)) } ?? .null,
+                "cacheWriteTokens": usage.inputTokenDetails.cacheWriteTokens.map { .number(Double($0)) } ?? .null
+            ]),
+            "outputTokenDetails": .object([
+                "textTokens": usage.outputTokenDetails.textTokens.map { .number(Double($0)) } ?? .null,
+                "reasoningTokens": usage.outputTokenDetails.reasoningTokens.map { .number(Double($0)) } ?? .null
+            ])
         ])
     }
 

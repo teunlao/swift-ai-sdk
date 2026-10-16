@@ -70,23 +70,13 @@ public struct LanguageModelUsage: Sendable, Equatable, Codable {
     /// Raw usage information from the provider.
     public let raw: JSONObject?
 
-    /// @deprecated Use `outputTokenDetails.reasoningTokens` instead.
-    @available(*, deprecated, message: "Use outputTokenDetails.reasoningTokens instead.")
-    public let reasoningTokens: Int?
-
-    /// @deprecated Use `inputTokenDetails.cacheReadTokens` instead.
-    @available(*, deprecated, message: "Use inputTokenDetails.cacheReadTokens instead.")
-    public let cachedInputTokens: Int?
-
     public init(
         inputTokens: Int? = nil,
         inputTokenDetails: InputTokenDetails = .init(),
         outputTokens: Int? = nil,
         outputTokenDetails: OutputTokenDetails = .init(),
         totalTokens: Int? = nil,
-        raw: JSONObject? = nil,
-        reasoningTokens: Int? = nil,
-        cachedInputTokens: Int? = nil
+        raw: JSONObject? = nil
     ) {
         self.inputTokens = inputTokens
         self.inputTokenDetails = inputTokenDetails
@@ -94,8 +84,6 @@ public struct LanguageModelUsage: Sendable, Equatable, Codable {
         self.outputTokenDetails = outputTokenDetails
         self.totalTokens = totalTokens
         self.raw = raw
-        self.reasoningTokens = reasoningTokens
-        self.cachedInputTokens = cachedInputTokens
     }
 }
 
@@ -165,9 +153,7 @@ public func asLanguageModelUsage(_ usage: LanguageModelV3Usage) -> LanguageModel
             reasoningTokens: usage.outputTokens.reasoning
         ),
         totalTokens: addTokenCounts(usage.inputTokens.total, usage.outputTokens.total),
-        raw: rawObject,
-        reasoningTokens: usage.outputTokens.reasoning,
-        cachedInputTokens: usage.inputTokens.cacheRead
+        raw: rawObject
     )
 }
 
@@ -195,9 +181,7 @@ public func asLanguageModelUsage(_ usage: LanguageModelV4Usage) -> LanguageModel
             reasoningTokens: usage.outputTokens.reasoning
         ),
         totalTokens: addTokenCounts(usage.inputTokens.total, usage.outputTokens.total),
-        raw: rawObject,
-        reasoningTokens: usage.outputTokens.reasoning,
-        cachedInputTokens: usage.inputTokens.cacheRead
+        raw: rawObject
     )
 }
 
@@ -231,9 +215,7 @@ public func addLanguageModelUsage(
             reasoningTokens: addTokenCounts(usage1.outputTokenDetails.reasoningTokens, usage2.outputTokenDetails.reasoningTokens)
         ),
         totalTokens: addTokenCounts(usage1.totalTokens, usage2.totalTokens),
-        raw: nil,
-        reasoningTokens: addTokenCounts(usage1.reasoningTokens, usage2.reasoningTokens),
-        cachedInputTokens: addTokenCounts(usage1.cachedInputTokens, usage2.cachedInputTokens)
+        raw: nil
     )
 }
 

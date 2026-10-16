@@ -103,18 +103,7 @@ public func createMCPClient(config: MCPClientConfig) async throws -> MCPClient {
     return client
 }
 
-@available(*, deprecated, renamed: "createMCPClient")
-public func experimental_createMCPClient(config: MCPClientConfig) async throws -> MCPClient {
-    try await createMCPClient(config: config)
-}
-
 public typealias MCPClientCapabilities = ClientCapabilities
-@available(*, deprecated, renamed: "MCPClientConfig")
-public typealias experimental_MCPClientConfig = MCPClientConfig
-@available(*, deprecated, renamed: "MCPClient")
-public typealias experimental_MCPClient = MCPClient
-@available(*, deprecated, renamed: "MCPClientCapabilities")
-public typealias experimental_MCPClientCapabilities = ClientCapabilities
 
 /// MCP Client protocol
 public protocol MCPClient: Sendable {
@@ -230,9 +219,9 @@ public extension MCPClient {
 }
 
 public extension Tool {
-    func execute(input: JSONValue, options: ToolCallOptions? = nil) async throws -> ToolExecutionResult<JSONValue> {
+    func execute(input: JSONValue, options: ToolExecutionOptions? = nil) async throws -> ToolExecutionResult<JSONValue> {
         guard let execute else { throw MCPClientError(message: "Tool has no execute function") }
-        return try await execute(input, options ?? ToolCallOptions(toolCallId: "", messages: []))
+        return try await execute(input, options ?? ToolExecutionOptions(toolCallId: "", messages: []))
     }
 }
 
@@ -408,7 +397,7 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
                 metadata["app"] = .object(app)
             }
 
-            let execute: @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue> = { [self] args, options in
+            let execute: @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue> = { [self] args, options in
                 if let abortSignal = options.abortSignal, abortSignal() {
                     throw AbortError(message: "The operation was aborted")
                 }

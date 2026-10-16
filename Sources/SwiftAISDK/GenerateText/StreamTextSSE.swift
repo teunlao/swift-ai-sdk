@@ -313,8 +313,15 @@ private final class StreamTextSSEEncoder {
         if let input = usage.inputTokens { dict["inputTokens"] = input }
         if let output = usage.outputTokens { dict["outputTokens"] = output }
         if let total = usage.totalTokens { dict["totalTokens"] = total }
-        if let reasoning = usage.reasoningTokens { dict["reasoningTokens"] = reasoning }
-        if let cached = usage.cachedInputTokens { dict["cachedInputTokens"] = cached }
+        var inputDetails: [String: Any] = [:]
+        if let value = usage.inputTokenDetails.noCacheTokens { inputDetails["noCacheTokens"] = value }
+        if let value = usage.inputTokenDetails.cacheReadTokens { inputDetails["cacheReadTokens"] = value }
+        if let value = usage.inputTokenDetails.cacheWriteTokens { inputDetails["cacheWriteTokens"] = value }
+        dict["inputTokenDetails"] = inputDetails
+        var outputDetails: [String: Any] = [:]
+        if let value = usage.outputTokenDetails.textTokens { outputDetails["textTokens"] = value }
+        if let value = usage.outputTokenDetails.reasoningTokens { outputDetails["reasoningTokens"] = value }
+        dict["outputTokenDetails"] = outputDetails
         return dict
     }
 

@@ -19,8 +19,9 @@ struct InvalidToolApproval: Sendable {
 /**
  Revalidates approved tool approvals before their tools execute.
 
- Port of `@ai-sdk/ai/src/generate-text/validate-tool-approvals.ts`: the approved
- input must still satisfy the tool's input schema and survive input refinement
+ Port of `@ai-sdk/ai/src/generate-text/validate-tool-approvals.ts`: with a
+ secret, the approval request must carry a valid signature; the approved input
+ must still satisfy the tool's input schema and survive input refinement
  unchanged; the current tool approval configuration may still deny the call.
  */
 func validateApprovedToolApprovals(
@@ -30,6 +31,7 @@ func validateApprovedToolApprovals(
     messages: [ModelMessage],
     toolsContext: ToolsContext,
     runtimeContext: Context,
+    toolApprovalSecret: ToolApprovalSecret? = nil,
     refineToolInput: ToolInputRefinement?
 ) async throws -> (
     approved: [CollectedToolApproval],
@@ -43,6 +45,32 @@ func validateApprovedToolApprovals(
     for approval in approvedToolApprovals {
         let toolCall = approval.toolCall
         let tool = tools?[toolCall.toolName]
+
+        if let toolApprovalSecret {
+            let request = approval.approvalRequest
+            guard let signature = request.signature else {
+                throw InvalidToolApprovalSignatureError(
+                    approvalId: request.approvalId,
+                    toolCallId: toolCall.toolCallId,
+                    reason: "missing signature"
+                )
+            }
+            let valid = try verifyToolApprovalSignature(
+                secret: toolApprovalSecret,
+                signature: signature,
+                approvalId: request.approvalId,
+                toolCallId: toolCall.toolCallId,
+                toolName: toolCall.toolName,
+                input: toolCall.input
+            )
+            guard valid else {
+                throw InvalidToolApprovalSignatureError(
+                    approvalId: request.approvalId,
+                    toolCallId: toolCall.toolCallId,
+                    reason: "invalid signature"
+                )
+            }
+        }
 
         if let tool, tool.execute != nil {
             let schemaInput = approval.approvalRequest.inputSchemaInput ?? toolCall.input

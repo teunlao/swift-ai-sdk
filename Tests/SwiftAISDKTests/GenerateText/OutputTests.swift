@@ -64,9 +64,7 @@ struct OutputTests {
         usage: LanguageModelUsage(
             inputTokens: 1,
             outputTokens: 2,
-            totalTokens: 3,
-            reasoningTokens: nil,
-            cachedInputTokens: nil
+            totalTokens: 3
         ),
         finishReason: .length
     )

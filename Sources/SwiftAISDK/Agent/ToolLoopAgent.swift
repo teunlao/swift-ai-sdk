@@ -21,11 +21,6 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
         self.settings = settings
     }
 
-    @available(*, deprecated, renamed: "init(_:)")
-    public convenience init(settings: ToolLoopAgentSettings<CallOptions, OutputValue, PartialOutput>) {
-        self.init(settings)
-    }
-
     public var id: String? { settings.id }
 
     public var tools: ToolSet? { settings.tools }
@@ -106,6 +101,7 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
             stopWhen: preparedCall.stopWhen,
             output: settings.output,
             toolApproval: preparedCall.toolApproval,
+            toolApprovalSecret: settings.toolApprovalSecret,
             telemetry: preparedCall.telemetry,
             providerOptions: preparedCall.providerOptions,
             activeTools: preparedCall.activeTools,
@@ -151,6 +147,7 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
             stopWhen: preparedCall.stopWhen,
             output: settings.output,
             toolApproval: preparedCall.toolApproval,
+            toolApprovalSecret: settings.toolApprovalSecret,
             telemetry: preparedCall.telemetry,
             providerOptions: preparedCall.providerOptions,
             activeTools: preparedCall.activeTools,
@@ -238,9 +235,6 @@ func createDefaultStopCondition(stepCount: Int) -> StopCondition {
         return true
     }
 }
-
-@available(*, deprecated, renamed: "ToolLoopAgent")
-public typealias Experimental_Agent<OutputValue: Sendable, PartialOutput: Sendable> = ToolLoopAgent<Never, OutputValue, PartialOutput>
 
 /// An agent with text output and no call options.
 public typealias BasicAgent = ToolLoopAgent<Never, String, String>

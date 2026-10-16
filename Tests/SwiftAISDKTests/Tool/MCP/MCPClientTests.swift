@@ -53,7 +53,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object(["foo": .string("bar")]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         #expect(
@@ -90,7 +90,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         #expect(
@@ -141,7 +141,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         let modelOutput = try await tool.toModelOutput?(
@@ -184,7 +184,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         let modelOutput = try await tool.toModelOutput?(
@@ -228,7 +228,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         let modelOutput = try await tool.toModelOutput?(
@@ -279,7 +279,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         let modelOutput = try await tool.toModelOutput?(
@@ -328,7 +328,7 @@ struct MCPClientTests {
 
         let output = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         let modelOutput = try await tool.toModelOutput?(
@@ -522,7 +522,7 @@ struct MCPClientTests {
         await #expect(throws: MCPClientError.self) {
             _ = try await tool.execute!(
                 .object(["bar": .string("bar")]),
-                ToolCallOptions(toolCallId: "1", messages: [])
+                ToolExecutionOptions(toolCallId: "1", messages: [])
             )
         }
     }
@@ -555,7 +555,7 @@ struct MCPClientTests {
         do {
             _ = try await tool.execute!(
                 .object(["bar": .string("bar")]),
-                ToolCallOptions(toolCallId: "1", messages: [])
+                ToolExecutionOptions(toolCallId: "1", messages: [])
             )
             Issue.record("Expected error to be thrown")
         } catch let error as MCPClientError {
@@ -582,7 +582,7 @@ struct MCPClientTests {
         await #expect(throws: AbortError.self) {
             _ = try await tool.execute!(
                 .object(["foo": .string("bar")]),
-                ToolCallOptions(toolCallId: "1", messages: [], abortSignal: { true })
+                ToolExecutionOptions(toolCallId: "1", messages: [], abortSignal: { true })
             )
         }
     }
@@ -751,7 +751,7 @@ struct MCPClientTests {
 
         let result = try await tool.execute!(
             .object(["location": .string("New York")]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         #expect(result == .object([
@@ -820,7 +820,7 @@ struct MCPClientTests {
 
         let result = try await tool.execute!(
             .object([:]),
-            ToolCallOptions(toolCallId: "1", messages: [])
+            ToolExecutionOptions(toolCallId: "1", messages: [])
         ).resolve()
 
         #expect(result == .object([

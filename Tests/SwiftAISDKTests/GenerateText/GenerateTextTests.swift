@@ -56,7 +56,7 @@ struct GenerateTextTests {
     }
 
     private func makeTool(
-        execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>
+        execute: @escaping @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>
     ) -> Tool {
         tool(
             inputSchema: toolInputSchema(),
@@ -808,7 +808,7 @@ struct GenerateTextTests {
     @Test("options.abortSignal forwarded to tool execution")
     func optionsAbortSignalForwardedToToolExecution() async throws {
         let abortFlag = AbortFlag()
-        let capturedOptions = ValueRecorder<ToolCallOptions>()
+        let capturedOptions = ValueRecorder<ToolExecutionOptions>()
 
         let model = MockLanguageModelV3(
             doGenerate: .function { _ in
@@ -1422,7 +1422,7 @@ struct GenerateTextTests {
 
     @Test("options.onFinish receives correct finish event payload")
     func optionsOnFinishReceivesCorrectPayload() async throws {
-        let finishRecorder = ValueRecorder<GenerateTextFinishEvent>()
+        let finishRecorder = ValueRecorder<GenerateTextEndEvent>()
 
         let model = MockLanguageModelV3(
             doGenerate: .function { _ in
@@ -1684,13 +1684,13 @@ private struct StepSnapshot: Sendable {
 
 private struct StopWhenScenario: Sendable {
     let result: DefaultGenerateTextResult<String>
-    let finishEvent: GenerateTextFinishEvent?
+    let finishEvent: GenerateTextEndEvent?
     let stepSnapshots: [StepSnapshot]
 }
 
 private extension GenerateTextTests {
     func runTwoStepStopWhenScenario() async throws -> StopWhenScenario {
-        let finishRecorder = ValueRecorder<GenerateTextFinishEvent>()
+        let finishRecorder = ValueRecorder<GenerateTextEndEvent>()
         let stepRecorder = ValueRecorder<StepSnapshot>()
         let counter = IntCounter()
 
@@ -1777,7 +1777,7 @@ private extension GenerateTextTests {
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             onStepEnd: { step in
                 let snapshot = StepSnapshot(
                     finishReason: step.finishReason,
@@ -1806,7 +1806,7 @@ private extension GenerateTextTests {
     }
 
     func runPrepareStepScenario() async throws -> PrepareStepScenario {
-        let finishRecorder = ValueRecorder<GenerateTextFinishEvent>()
+        let finishRecorder = ValueRecorder<GenerateTextEndEvent>()
         let stepRecorder = ValueRecorder<StepSnapshot>()
         let prepareRecorder = ValueRecorder<PrepareStepCallSnapshot>()
         let doGenerateRecorder = ValueRecorder<LanguageModelV3CallOptions>()
@@ -1883,7 +1883,7 @@ private extension GenerateTextTests {
             model: .v3(baseModel),
             tools: tools,
             prompt: "test-input",
-            stopWhen: [stepCountIs(3)],
+            stopWhen: [isStepCount(3)],
             prepareStep: { options in
                 let snapshot = PrepareStepCallSnapshot(
                     stepNumber: options.stepNumber,
@@ -2049,7 +2049,7 @@ private struct PrepareStepCallSnapshot: Sendable {
 
 private struct PrepareStepScenario: Sendable {
     let result: DefaultGenerateTextResult<String>
-    let finishEvent: GenerateTextFinishEvent?
+    let finishEvent: GenerateTextEndEvent?
     let onStepFinishSnapshots: [StepSnapshot]
     let doGenerateCalls: [LanguageModelV3CallOptions]
     let prepareSnapshots: [PrepareStepCallSnapshot]

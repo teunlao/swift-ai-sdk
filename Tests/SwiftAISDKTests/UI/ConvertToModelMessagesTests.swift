@@ -94,11 +94,8 @@ struct ConvertToModelMessagesTests {
             return
         }
         #expect(toolResult.providerOptions?["openai"]?["mode"] == .string("strict"))
-        if case let .json(value: value, providerOptions: _) = toolResult.output {
-            #expect(value == .string("4"))
-        } else {
-            Issue.record("Expected JSON output result")
-        }
+        // A string tool output becomes text output, as upstream `createToolModelOutput` does.
+        #expect(toolResult.output == .text(value: "4"))
 
         guard case let .toolApprovalResponse(approvalResponse) = messageToolContent.content.first(where: { part in
             if case .toolApprovalResponse = part { return true } else { return false }

@@ -107,7 +107,7 @@ struct StreamTextDeferredToolResultsTests {
             model: .v3(model),
             tools: tools,
             prompt: "test",
-            stopWhen: [stepCountIs(3)]
+            stopWhen: [isStepCount(3)]
         )
 
         let fullStream = try await convertReadableStreamToArray(result.fullStream)
@@ -193,7 +193,7 @@ struct StreamTextDeferredToolResultsTests {
             model: .v3(model),
             tools: tools,
             prompt: "test",
-            stopWhen: [stepCountIs(2)]
+            stopWhen: [isStepCount(2)]
         )
 
         let fullStream = try await convertReadableStreamToArray(result.fullStream)
