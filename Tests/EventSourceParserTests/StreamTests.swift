@@ -2,6 +2,32 @@ import Testing
 @testable import EventSourceParser
 import Foundation
 
+@Test(.timeLimit(.minutes(1)))
+func eventSourceParserStream_cancellationReleasesInput() async throws {
+    let input = AsyncThrowingStream<Data, Error>.makeStream()
+    let ready = AsyncStream<Void>.makeStream()
+    let stopped = AsyncStream<Bool>.makeStream()
+    input.continuation.onTermination = { reason in
+        if case .cancelled = reason { stopped.continuation.yield(true) }
+        else { stopped.continuation.yield(false) }
+        stopped.continuation.finish()
+    }
+    defer { input.continuation.finish() }
+    let output = EventSourceParserStream.makeStream(from: input.stream)
+    let consumer = Task {
+        for try await event in output {
+            if event.data == "ready" { ready.continuation.yield(()); ready.continuation.finish() }
+        }
+    }
+    input.continuation.yield(Data("data: ready\n\n".utf8))
+    var readiness = ready.stream.makeAsyncIterator()
+    _ = await readiness.next()
+    consumer.cancel()
+    _ = try? await consumer.value
+    var termination = stopped.stream.makeAsyncIterator()
+    #expect(await termination.next() == true)
+}
+
 @Test func eventSourceParserStream_basic() async throws {
     var fixture = ""
     for i in 0..<10 {
