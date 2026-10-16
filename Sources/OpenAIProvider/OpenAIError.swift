@@ -96,3 +96,83 @@ public let openAIFailedResponseHandler = createJsonErrorResponseHandler(
     errorSchema: openAIErrorDataSchema,
     errorToMessage: { $0.error.message }
 )
+
+func createOpenAIProviderStreamError(_ frame: JSONValue) -> ProviderStreamError? {
+    guard let error = parseOpenAIStreamError(frame) else { return nil }
+    let statusCode = openAIStreamErrorStatus(error.code, type: error.type)
+    let isQuotaError = error.code == .string("insufficient_quota") || error.type == "insufficient_quota"
+    return ProviderStreamError(
+        message: error.message,
+        type: error.type,
+        code: error.code,
+        statusCode: statusCode,
+        isRetryable: !isQuotaError && (statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500),
+        data: frame
+    )
+}
+
+private func parseOpenAIStreamError(_ frame: JSONValue) -> (message: String, type: String?, code: ProviderStreamError.Code?)? {
+    guard case .object(let value) = frame else { return nil }
+    if value["type"] == .string("response.failed") {
+        guard case .object(let response)? = value["response"],
+              case .object(let error)? = response["error"],
+              case .string(let message)? = error["message"] else { return nil }
+        return (message, "response.failed", openAIStreamErrorCode(error["code"]))
+    }
+
+    let error: [String: JSONValue]
+    let isNested: Bool
+    switch value["error"] {
+    case .object(let nested):
+        error = nested
+        isNested = true
+    case .array:
+        return nil
+    default:
+        error = value
+        isNested = false
+    }
+    let type: String?
+    if case .string(let value)? = error["type"] { type = value } else { type = nil }
+    guard case .string(let message)? = error["message"],
+          isNested || type != nil || error["code"] != nil || error["param"] != nil else {
+        return nil
+    }
+    return (message, type, openAIStreamErrorCode(error["code"]))
+}
+
+private func openAIStreamErrorCode(_ code: JSONValue?) -> ProviderStreamError.Code? {
+    switch code {
+    case .string(let value): return .string(value)
+    case .number(let value): return .number(value)
+    default: return nil
+    }
+}
+
+private func openAIStreamErrorStatus(_ code: ProviderStreamError.Code?, type: String?) -> Int {
+    let numericCode: Double?
+    let codeString: String?
+    switch code {
+    case .number(let value):
+        numericCode = value
+        codeString = String(value)
+    case .string(let value):
+        numericCode = value.utf8.count == 3 && value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) ? Double(value) : nil
+        codeString = value
+    case nil:
+        numericCode = nil
+        codeString = nil
+    }
+    if let numericCode, numericCode.isFinite, numericCode.rounded() == numericCode, (400...599).contains(numericCode) {
+        return Int(numericCode)
+    }
+    let discriminator = [codeString, type].compactMap { $0 }.joined(separator: " ").lowercased()
+    if discriminator.contains("insufficient_quota") || discriminator.contains("rate_limit") { return 429 }
+    if discriminator.contains("authentication") { return 401 }
+    if discriminator.contains("permission") { return 403 }
+    if discriminator.contains("not_found") { return 404 }
+    if ["invalid", "bad_request", "context_length"].contains(where: discriminator.contains) { return 400 }
+    if discriminator.contains("overload") { return 503 }
+    if discriminator.contains("timeout") { return 504 }
+    return 500
+}
