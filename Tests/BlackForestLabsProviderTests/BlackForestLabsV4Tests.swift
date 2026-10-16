@@ -36,6 +36,29 @@ struct BlackForestLabsV4Tests {
         if id == "flux-3-image" { #expect(result.warnings == [.unsupported(feature: "seed", details: nil)]) }
     }
 
+    @Test("poll response fields distinguish optional values from nullable values", arguments: ["image-status", "image-state", "image-state-enum", "image-seed", "video-status"])
+    func rejectsMalformedPoll(_ scenario: String) async throws {
+        let fetch: FetchFunction = { request in
+            if request.httpMethod == "POST" { return bflResponse(request, #"{"id":"generation","polling_url":"https://api.bfl.ai/v1/poll"}"#) }
+            let json: String
+            switch scenario {
+            case "image-seed": json = #"{"status":"Ready","result":{"sample":"https://example.com/image.png","seed":null}}"#
+            case "image-state": json = #"{"status":"Ready","state":0,"result":{"sample":"https://example.com/image.png"}}"#
+            case "image-state-enum": json = #"{"status":"Ready","state":"Unknown","result":{"sample":"https://example.com/image.png"}}"#
+            default: json = #"{"status":null,"state":"Ready","result":{"sample":"https://example.com/image.png"}}"#
+            }
+            return bflResponse(request, json)
+        }
+        let provider = createBlackForestLabs(settings: .init(apiKey: "secret", fetch: fetch))
+        await #expect(throws: APICallError.self) {
+            if scenario == "video-status" {
+                _ = try await provider.video(.flux3Video).doStatus(options: .init(operation: .object(["requestId": .string("generation"), "pollingUrl": .string("https://api.bfl.ai/v1/poll")])))
+            } else {
+                _ = try await provider.image(.flux3Image).doGenerate(options: .init(n: 1))
+            }
+        }
+    }
+
     @Test("latest image dimensions and masks are validated at the public boundary")
     func rejectsDimensionsAndMasks() async throws {
         let model = createBlackForestLabs(settings: .init(apiKey: "token")).image(.flux3ImageKlein)

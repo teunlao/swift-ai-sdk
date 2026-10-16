@@ -32,7 +32,12 @@ struct BFLPollResponse: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey { case status, state, details, result, cost }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        status = try container.decodeIfPresent(String.self, forKey: .status) ?? container.decode(String.self, forKey: .state)
+        let status = container.contains(.status) ? try container.decode(String.self, forKey: .status) : nil
+        let state = container.contains(.state) ? try container.decode(String.self, forKey: .state) : nil
+        guard let value = status ?? state else {
+            throw DecodingError.dataCorruptedError(forKey: .status, in: container, debugDescription: "Missing status in Black Forest Labs poll response")
+        }
+        self.status = value
         details = try container.decodeIfPresent(JSONValue.self, forKey: .details)
         result = try container.decodeIfPresent(JSONValue.self, forKey: .result)
         cost = try container.decodeIfPresent(Double.self, forKey: .cost)
@@ -46,6 +51,14 @@ struct BFLErrorPayload: Decodable, Sendable {
     let detail: JSONValue?
     let status: String?
     let state: String?
+    private enum CodingKeys: String, CodingKey { case message, detail, status, state }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        message = values.contains(.message) ? try values.decode(String.self, forKey: .message) : nil
+        detail = try values.decodeIfPresent(JSONValue.self, forKey: .detail)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        state = try values.decodeIfPresent(String.self, forKey: .state)
+    }
 }
 
 let bflFailedResponseHandler = createJsonErrorResponseHandler(

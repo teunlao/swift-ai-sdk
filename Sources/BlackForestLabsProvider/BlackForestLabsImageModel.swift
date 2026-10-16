@@ -18,6 +18,15 @@ private struct BFLImageResult: Decodable, Sendable {
     let start_time: Double?
     let end_time: Double?
     let duration: Double?
+    private enum CodingKeys: String, CodingKey { case sample, seed, start_time, end_time, duration }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sample = try values.decode(String.self, forKey: .sample)
+        seed = values.contains(.seed) ? try values.decode(Double.self, forKey: .seed) : nil
+        start_time = values.contains(.start_time) ? try values.decode(Double.self, forKey: .start_time) : nil
+        end_time = values.contains(.end_time) ? try values.decode(Double.self, forKey: .end_time) : nil
+        duration = values.contains(.duration) ? try values.decode(Double.self, forKey: .duration) : nil
+    }
 }
 
 private struct BFLImagePoll: Decodable, Sendable {
@@ -26,8 +35,13 @@ private struct BFLImagePoll: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey { case status, state, result }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        status = try values.decodeIfPresent(String.self, forKey: .status) ?? values.decode(String.self, forKey: .state)
-        guard ["Content Moderated", "Generating", "Pending", "Reasoning", "Ready", "Error", "Failed", "Request Moderated", "Task not found"].contains(status) else {
+        let status = values.contains(.status) ? try values.decode(String.self, forKey: .status) : nil
+        let state = values.contains(.state) ? try values.decode(String.self, forKey: .state) : nil
+        self.status = status ?? state ?? ""
+        let statuses = ["Content Moderated", "Generating", "Pending", "Reasoning", "Ready", "Error", "Failed", "Request Moderated", "Task not found"]
+        guard status != nil || state != nil,
+              status.map({ statuses.contains($0) }) ?? true,
+              state.map({ statuses.contains($0) }) ?? true else {
             throw DecodingError.dataCorruptedError(forKey: .status, in: values, debugDescription: "Invalid Black Forest Labs status")
         }
         result = try values.decodeIfPresent(BFLImageResult.self, forKey: .result)
@@ -82,7 +96,7 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
         if api == .flux12 {
             if let seed = options.seed { body["seed"] = .number(Double(seed)) }
             if let aspect { body["aspect_ratio"] = .string(aspect) }
-            if let size = options.size {
+            if let size = options.size, !size.isEmpty {
                 let parts = size.components(separatedBy: "x")
                 if let width = parts.first.flatMap(Double.init), width.isFinite { body["width"] = .number(width) } else { body["width"] = .null }
                 if parts.count > 1, let height = Double(parts[1]), height.isFinite { body["height"] = .number(height) } else { body["height"] = .null }
