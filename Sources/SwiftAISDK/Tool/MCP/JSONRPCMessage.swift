@@ -83,7 +83,7 @@ public struct JSONRPCResponse: Codable, Sendable {
 // MARK: - JSON-RPC Error
 
 /// JSON-RPC 2.0 error object
-public struct JSONRPCErrorObject: Codable, Sendable {
+public struct JSONRPCErrorObject: Error, Codable, Sendable {
     public let code: Int
     public let message: String
     public let data: JSONValue?
@@ -98,10 +98,10 @@ public struct JSONRPCErrorObject: Codable, Sendable {
 /// JSON-RPC 2.0 error response
 public struct JSONRPCError: Codable, Sendable {
     public let jsonrpc: String
-    public let id: JSONRPCID
+    public let id: JSONRPCID?
     public let error: JSONRPCErrorObject
 
-    public init(id: JSONRPCID, error: JSONRPCErrorObject) {
+    public init(id: JSONRPCID? = nil, error: JSONRPCErrorObject) {
         self.jsonrpc = jsonrpcVersion
         self.id = id
         self.error = error
@@ -121,6 +121,10 @@ public struct JSONRPCNotification: Codable, Sendable {
         self.method = method
         self.params = params
     }
+}
+
+public func validateJSONRPCMessage(_ message: JSONValue) throws -> JSONRPCMessage {
+    try JSONDecoder().decode(JSONRPCMessage.self, from: JSONEncoder().encode(message))
 }
 
 // MARK: - JSON-RPC Message Union
@@ -154,34 +158,37 @@ public enum JSONRPCMessage: Codable, Sendable {
             )
         }
 
-        // Check if message has an ID (request, response, or error)
-        if let id = try? container.decode(JSONRPCID.self, forKey: .id) {
-            // Has ID - could be request, response, or error
-            if container.contains(.result) {
-                // Response
-                let result = try container.decode(JSONValue.self, forKey: .result)
-                self = .response(JSONRPCResponse(id: id, result: result))
-            } else if container.contains(.error) {
-                // Error
-                let error = try container.decode(JSONRPCErrorObject.self, forKey: .error)
-                self = .error(JSONRPCError(id: id, error: error))
-            } else if container.contains(.method) {
-                // Request
-                let method = try container.decode(String.self, forKey: .method)
-                let params = try container.decodeIfPresent(JSONValue.self, forKey: .params)
-                self = .request(JSONRPCRequest(id: id, method: method, params: params))
-            } else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .method,
-                    in: container,
-                    debugDescription: "Message with ID must have either 'method', 'result', or 'error'"
-                )
+        let raw = try JSONValue(from: decoder)
+        guard case .object(let object) = raw else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "JSON-RPC message must be an object"))
+        }
+        let id = container.contains(.id) ? try container.decode(JSONRPCID.self, forKey: .id) : nil
+        let allowed: Set<String>
+        if container.contains(.error) {
+            allowed = ["jsonrpc", "id", "error"]
+            self = .error(JSONRPCError(id: id, error: try container.decode(JSONRPCErrorObject.self, forKey: .error)))
+        } else if container.contains(.result), let id {
+            allowed = ["jsonrpc", "id", "result"]
+            let result = try container.decode(JSONValue.self, forKey: .result)
+            guard case .object = result else {
+                throw DecodingError.dataCorruptedError(forKey: .result, in: container, debugDescription: "JSON-RPC result must be an object")
             }
+            self = .response(JSONRPCResponse(id: id, result: result))
         } else {
-            // No ID - must be notification
+            allowed = id == nil ? ["jsonrpc", "method", "params"] : ["jsonrpc", "id", "method", "params"]
             let method = try container.decode(String.self, forKey: .method)
-            let params = try container.decodeIfPresent(JSONValue.self, forKey: .params)
-            self = .notification(JSONRPCNotification(method: method, params: params))
+            let params: JSONValue? = container.contains(.params) ? try container.decode(JSONValue.self, forKey: .params) : Optional<JSONValue>.none
+            if let params, case .object = params {} else if params != nil {
+                throw DecodingError.dataCorruptedError(forKey: .params, in: container, debugDescription: "JSON-RPC params must be an object")
+            }
+            self = if let id {
+                .request(JSONRPCRequest(id: id, method: method, params: params))
+            } else {
+                .notification(JSONRPCNotification(method: method, params: params))
+            }
+        }
+        guard Set(object.keys).isSubset(of: allowed) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unexpected JSON-RPC message fields"))
         }
     }
 
