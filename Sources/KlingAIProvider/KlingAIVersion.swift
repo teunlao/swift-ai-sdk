@@ -9,6 +9,5 @@ import AISDKProviderUtils
 
 /// Version string for the KlingAI provider package.
 /// Mirrors `packages/klingai/src/version.ts`.
-public let KLINGAI_VERSION = SDKReleaseVersion.value
-public let VERSION = KLINGAI_VERSION
+public let VERSION = SDKReleaseVersion.value
 

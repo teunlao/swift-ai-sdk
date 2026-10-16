@@ -6,10 +6,11 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/klingai/src/klingai-provider.ts
-// Upstream commit: 73d5c59
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct KlingAIProviderSettings: Sendable {
+    public var apiKey: String?
     /// KlingAI Access key. Defaults to `KLINGAI_ACCESS_KEY`.
     public var accessKey: String?
 
@@ -26,12 +27,14 @@ public struct KlingAIProviderSettings: Sendable {
     public var fetch: FetchFunction?
 
     public init(
+        apiKey: String? = nil,
         accessKey: String? = nil,
         secretKey: String? = nil,
         baseURL: String? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil
     ) {
+        self.apiKey = apiKey
         self.accessKey = accessKey
         self.secretKey = secretKey
         self.baseURL = baseURL
@@ -40,26 +43,26 @@ public struct KlingAIProviderSettings: Sendable {
     }
 }
 
-public final class KlingAIProvider: ProviderV3 {
+public final class KlingAIProvider: ProviderV4 {
     private let videoFactory: @Sendable (KlingAIVideoModelId) -> KlingAIVideoModel
 
     init(videoFactory: @escaping @Sendable (KlingAIVideoModelId) -> KlingAIVideoModel) {
         self.videoFactory = videoFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
         videoFactory(KlingAIVideoModelId(rawValue: modelId))
     }
 
@@ -70,18 +73,21 @@ public final class KlingAIProvider: ProviderV3 {
     public func video(_ modelId: KlingAIVideoModelId) -> KlingAIVideoModel {
         videoFactory(modelId)
     }
+
+    public func videoModel(_ modelId: KlingAIVideoModelId) -> KlingAIVideoModel { videoFactory(modelId) }
 }
 
 private let defaultKlingAIBaseURL = "https://api-singapore.klingai.com"
 
 /// Create a KlingAI provider instance.
-public func createKlingAIProvider(
+public func createKlingAI(
     settings: KlingAIProviderSettings = .init()
 ) -> KlingAIProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL ?? defaultKlingAIBaseURL) ?? defaultKlingAIBaseURL
 
     let headersClosure: @Sendable () async throws -> [String: String?] = {
-        let token = try await generateKlingAIAuthToken(
+        let token = try await resolveKlingAIAuthToken(
+            apiKey: settings.apiKey,
             accessKey: settings.accessKey,
             secretKey: settings.secretKey
         )
@@ -96,7 +102,7 @@ public func createKlingAIProvider(
             }
         }
 
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/klingai/\(VERSION)")
+        let withUA = withUserAgentSuffix(headers, "ai-sdk-klingai/\(VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
@@ -115,13 +121,5 @@ public func createKlingAIProvider(
     return KlingAIProvider(videoFactory: videoFactory)
 }
 
-/// Alias matching upstream naming (`createKlingAI`).
-public func createKlingAI(
-    settings: KlingAIProviderSettings = .init()
-) -> KlingAIProvider {
-    createKlingAIProvider(settings: settings)
-}
-
-/// Default KlingAI provider instance.
-public let klingai: KlingAIProvider = createKlingAIProvider()
+public let klingai: KlingAIProvider = createKlingAI()
 

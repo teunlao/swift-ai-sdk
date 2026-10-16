@@ -42,5 +42,6 @@ public extension KlingAIVideoModelId {
 
     // Motion Control
     static let klingV26MotionControl: KlingAIVideoModelId = "kling-v2.6-motion-control"
+    static let klingV30MotionControl: KlingAIVideoModelId = "kling-v3.0-motion-control"
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import AISDKProvider
+import AISDKProviderUtils
 @testable import KlingAIProvider
 
 @Suite("generateKlingAIAuthToken", .serialized)
@@ -32,10 +33,12 @@ struct KlingAIAuthTests {
     }
 
     private func withCleanEnv(_ body: () async throws -> Void) async throws {
+        let originalAPIKey = ProcessInfo.processInfo.environment["KLINGAI_API_KEY"]
         let originalAK = ProcessInfo.processInfo.environment["KLINGAI_ACCESS_KEY"]
         let originalSK = ProcessInfo.processInfo.environment["KLINGAI_SECRET_KEY"]
 
         defer {
+            if let originalAPIKey { setenv("KLINGAI_API_KEY", originalAPIKey, 1) } else { unsetenv("KLINGAI_API_KEY") }
             if let originalAK {
                 setenv("KLINGAI_ACCESS_KEY", originalAK, 1)
             } else {
@@ -49,6 +52,7 @@ struct KlingAIAuthTests {
             }
         }
 
+        unsetenv("KLINGAI_API_KEY")
         unsetenv("KLINGAI_ACCESS_KEY")
         unsetenv("KLINGAI_SECRET_KEY")
 
@@ -173,6 +177,37 @@ struct KlingAIAuthTests {
                 Issue.record("Expected error")
             } catch let error as LoadSettingError {
                 #expect(error.message.contains("KlingAI secret key"))
+            }
+        }
+    }
+
+    @Test("provider auth prefers explicit credentials before environment defaults", arguments: ["api", "pair", "environment", "environment-pair", "missing"])
+    func providerAuth(_ source: String) async throws {
+        try await withCleanEnv {
+            if source != "missing" { setenv("KLINGAI_API_KEY", source == "environment-pair" ? "  " : " environment-key ", 1) }
+            if source == "environment-pair" {
+                setenv("KLINGAI_ACCESS_KEY", "environment-access", 1)
+                setenv("KLINGAI_SECRET_KEY", "environment-secret", 1)
+            }
+            let fetch: FetchFunction = { request in
+                let authorization = try #require(request.value(forHTTPHeaderField: "Authorization"))
+                if source == "api" { #expect(authorization == "Bearer explicit-key") }
+                else if source == "environment" { #expect(authorization == "Bearer environment-key") }
+                else {
+                    let token = String(authorization.dropFirst("Bearer ".count))
+                    let pieces = token.split(separator: ".")
+                    let payload = try decodeJSONObject(decodeBase64URL(String(pieces[1])))
+                    #expect(payload["iss"] as? String == (source == "pair" ? "explicit-access" : "environment-access"))
+                }
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+                return FetchResponse(body: .data(Data(#"{"code":0,"message":"success","data":{"task_id":"task"}}"#.utf8)), urlResponse: response)
+            }
+            let provider = createKlingAI(settings: .init(apiKey: source == "api" ? " explicit-key " : nil, accessKey: source == "pair" || source == "api" ? "explicit-access" : nil, secretKey: source == "pair" || source == "api" ? "explicit-secret" : nil, fetch: fetch))
+            if source == "missing" {
+                await #expect(throws: LoadAPIKeyError.self) { try await provider.video(.klingV30T2v).doStart(options: .init(n: 1)) }
+            } else {
+                let result = try await provider.video(.klingV30T2v).doStart(options: .init(n: 1))
+                #expect(result.operation == .object(["taskId": .string("task"), "endpointPath": .string("/v1/videos/text2video")]))
             }
         }
     }
