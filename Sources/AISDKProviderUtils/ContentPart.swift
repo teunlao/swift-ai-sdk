@@ -468,7 +468,9 @@ public struct ToolApprovalRequest: Sendable, Equatable, Codable {
         reason = try container.decodeIfPresent(String.self, forKey: .reason)
         isAutomatic = try container.decodeIfPresent(Bool.self, forKey: .isAutomatic)
         signature = try container.decodeIfPresent(String.self, forKey: .signature)
-        inputSchemaInput = try container.decodeIfPresent(JSONValue.self, forKey: .inputSchemaInput)
+        inputSchemaInput = container.contains(.inputSchemaInput)
+            ? try container.decode(JSONValue.self, forKey: .inputSchemaInput)
+            : nil
     }
 
     public func encode(to encoder: Encoder) throws {

@@ -23,20 +23,11 @@ public func delay(
         return
     }
 
-    // Treat negative or zero delay as immediate (matches TypeScript behavior)
-    guard delayInMs > 0 else {
-        return
-    }
-
-    // Check if already cancelled
     try Task.checkCancellation()
+    if abortSignal?() == true { throw CancellationError() }
+    guard delayInMs > 0 else { return }
 
-    // Mirror upstream semantics: abortSignal cancels the delay.
     if let abortSignal {
-        if abortSignal() {
-            throw CancellationError()
-        }
-
         return try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 let maxMs = Int(UInt64.max / 1_000_000)

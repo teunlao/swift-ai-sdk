@@ -12,6 +12,13 @@ import Foundation
  but with very short delays for speed.
  */
 struct DelayTests {
+    @Test("pre-aborted signals reject zero and negative delays", arguments: [0, -1])
+    func preAbortedShortDelays(milliseconds: Int) async {
+        await #expect(throws: CancellationError.self) {
+            try await delay(milliseconds, abortSignal: { true })
+        }
+    }
+
     @Test("delay resolves after specified time (basic smoke test)")
     func testBasicDelay() async throws {
         let start = Date()

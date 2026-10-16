@@ -7,11 +7,20 @@ import Foundation
 
  Port of `ReadableStream.cancel()` for `AsyncThrowingStream`.
  */
-func cancelStream<Element: Sendable>(_ stream: AsyncThrowingStream<Element, Error>) async {
+public func cancelStream<Element: Sendable>(_ stream: AsyncThrowingStream<Element, Error>) async {
     let task = Task {
         var iterator = stream.makeAsyncIterator()
         // In a cancelled task, `next()` terminates the stream instead of waiting.
         while (try? await iterator.next()) != nil {}
+    }
+    task.cancel()
+    await task.value
+}
+
+public func cancelStream<Element: Sendable>(_ stream: AsyncStream<Element>) async {
+    let task = Task {
+        var iterator = stream.makeAsyncIterator()
+        while await iterator.next() != nil {}
     }
     task.cancel()
     await task.value
