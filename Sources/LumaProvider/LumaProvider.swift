@@ -28,33 +28,37 @@ public struct LumaProviderSettings: Sendable {
     }
 }
 
-public final class LumaProvider: ProviderV3 {
+public final class LumaProvider: ProviderV4 {
     private let imageFactory: @Sendable (LumaImageModelId) -> LumaImageModel
 
     init(imageFactory: @escaping @Sendable (LumaImageModelId) -> LumaImageModel) {
         self.imageFactory = imageFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         image(modelId: LumaImageModelId(rawValue: modelId))
     }
 
     public func image(modelId: LumaImageModelId) -> LumaImageModel {
         imageFactory(modelId)
     }
+
+    public func imageModel(_ modelId: LumaImageModelId) -> LumaImageModel {
+        imageFactory(modelId)
+    }
 }
 
 private let defaultLumaBaseURL = "https://api.lumalabs.ai"
 
-public func createLumaProvider(settings: LumaProviderSettings = .init()) -> LumaProvider {
+public func createLuma(settings: LumaProviderSettings = .init()) -> LumaProvider {
     let normalizedBaseURL = withoutTrailingSlash(settings.baseURL ?? defaultLumaBaseURL) ?? defaultLumaBaseURL
     let fetch = settings.fetch
 
@@ -72,7 +76,7 @@ public func createLumaProvider(settings: LumaProviderSettings = .init()) -> Luma
             }
         }
 
-        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk/luma/\(LUMA_VERSION)")
+        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk-luma/\(LUMA_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
@@ -91,9 +95,4 @@ public func createLumaProvider(settings: LumaProviderSettings = .init()) -> Luma
     return LumaProvider(imageFactory: imageFactory)
 }
 
-/// Alias matching upstream naming (`createLuma`).
-public func createLuma(settings: LumaProviderSettings = .init()) -> LumaProvider {
-    createLumaProvider(settings: settings)
-}
-
-public let luma = createLumaProvider()
+public let luma = createLuma()

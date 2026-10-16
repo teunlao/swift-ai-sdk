@@ -2,88 +2,35 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/luma/src/luma-image-model.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-private let defaultPollIntervalMillis = 500
-private let defaultMaxPollAttempts = 60000 / defaultPollIntervalMillis
-
 struct LumaImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
     let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
-    let currentDate: @Sendable () -> Date
-
-    init(
-        provider: String,
-        baseURL: String,
-        headers: @escaping @Sendable () throws -> [String: String?],
-        fetch: FetchFunction?,
-        currentDate: @escaping @Sendable () -> Date = { Date() }
-    ) {
-        self.provider = provider
-        self.baseURL = baseURL
-        self.headers = headers
-        self.fetch = fetch
-        self.currentDate = currentDate
-    }
+    var currentDate: @Sendable () -> Date = { Date() }
 }
 
-private struct LumaGenerationResponse: Codable, Sendable {
-    enum State: String, Codable {
-        case queued
-        case dreaming
-        case completed
-        case failed
-    }
-
-    struct Assets: Codable, Sendable {
-        let image: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case image
-        }
-    }
-
+private struct LumaGenerationResponse: Decodable, Sendable {
+    enum State: String, Decodable { case queued, dreaming, completed, failed }
+    struct Assets: Decodable, Sendable { let image: String }
     let id: String
     let state: State
-    let failureReason: String?
+    let failure_reason: String?
     let assets: Assets?
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case state
-        case failureReason = "failure_reason"
-        case assets
-    }
 }
 
-private let lumaGenerationResponseSchema = FlexibleSchema(
-    Schema<LumaGenerationResponse>.codable(
-        LumaGenerationResponse.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
+private let lumaGenerationResponseSchema = FlexibleSchema(Schema<LumaGenerationResponse>.codable(
+    LumaGenerationResponse.self, jsonSchema: .object(["type": .string("object")])
+))
 
-private struct ParsedLumaProviderOptions {
-    let requestOverrides: [String: JSONValue]
-    let imageSettings: LumaImageSettings?
-}
-
-/// Luma image generation model.
-/// Mirrors `LumaImageModel` from upstream TypeScript implementation.
-public final class LumaImageModel: ImageModelV3 {
+public final class LumaImageModel: ImageModelV4 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
-    public let pollIntervalMillis: Int = defaultPollIntervalMillis
-    public let maxPollAttempts: Int = defaultMaxPollAttempts
-
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
+    public var supportsFileInputs: Bool? { ["photon-1", "photon-flash-1"].contains(modelId) ? true : nil }
+    public var supportsMaskInputs: Bool? { supportsFileInputs == true ? false : nil }
+    public let pollIntervalMillis = 500
+    public let maxPollAttempts = 120
     private let modelIdentifier: LumaImageModelId
     private let config: LumaImageModelConfig
 
@@ -92,198 +39,116 @@ public final class LumaImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
-
-        if options.seed != nil {
-            warnings.append(.unsupported(
-                feature: "seed",
-                details: "This model does not support the `seed` option."
-            ))
-        }
-
-        if options.size != nil {
-            warnings.append(.unsupported(
-                feature: "size",
-                details: "This model does not support the `size` option. Use `aspectRatio` instead."
-            ))
-        }
-
-        let parsedProviderOptions = parseProviderOptions(options.providerOptions)
-
-        var body: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue)
-        ]
-
-        if let prompt = options.prompt {
-            body["prompt"] = .string(prompt)
-        }
-
-        if let aspectRatio = options.aspectRatio {
-            body["aspect_ratio"] = .string(aspectRatio)
-        }
-
-        for (key, value) in parsedProviderOptions.requestOverrides {
-            body[key] = value
-        }
-
-        let combinedHeaders = combineHeaders(
-            try config.headers(),
-            options.headers?.mapValues { Optional($0) }
-        )
-        let requestHeaders = combinedHeaders.compactMapValues { $0 }
-
-        let generationResponse = try await postJsonToAPI(
-            url: makeGenerationsURL(),
-            headers: requestHeaders,
-            body: JSONValue.object(body),
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        var warnings: [SharedV4Warning] = []
+        if options.seed != nil { warnings.append(.unsupported(feature: "seed", details: "This model does not support the `seed` option.")) }
+        if options.size != nil { warnings.append(.unsupported(feature: "size", details: "This model does not support the `size` option. Use `aspectRatio` instead.")) }
+        let parsed = try await parseProviderOptions(provider: "luma", providerOptions: options.providerOptions, schema: lumaImageModelOptionsSchema)
+        var providerOptions: [String: JSONValue] = [:]
+        if case .object(let values) = parsed { providerOptions = values }
+        let interval = number(providerOptions.removeValue(forKey: "pollIntervalMillis")) ?? Double(pollIntervalMillis)
+        let attempts = number(providerOptions.removeValue(forKey: "maxPollAttempts")) ?? Double(maxPollAttempts)
+        let referenceType: LumaReferenceType
+        if case .string(let value) = providerOptions.removeValue(forKey: "referenceType") { referenceType = LumaReferenceType(rawValue: value)! }
+        else { referenceType = .image }
+        let imageConfigs: [LumaImageConfig]
+        if let value = providerOptions.removeValue(forKey: "images"), value != .null {
+            imageConfigs = try JSONDecoder().decode([LumaImageConfig].self, from: JSONEncoder().encode(value))
+        } else { imageConfigs = [] }
+        var body = try editingOptions(files: options.files ?? [], mask: options.mask, referenceType: referenceType, imageConfigs: imageConfigs)
+        body["model"] = .string(modelId)
+        if let prompt = options.prompt { body["prompt"] = .string(prompt) }
+        if let aspectRatio = options.aspectRatio, !aspectRatio.isEmpty { body["aspect_ratio"] = .string(aspectRatio) }
+        body.merge(providerOptions) { _, value in value }
+        let timestamp = config.currentDate()
+        let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
+        let response = try await postJsonToAPI(
+            url: generationsURL(), headers: headers, body: JSONValue.object(body),
             failedResponseHandler: lumaFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: lumaGenerationResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
+            isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        let imageURL = try await pollForImageURL(
-            generationId: generationResponse.value.id,
-            headers: requestHeaders,
-            abortSignal: options.abortSignal,
-            imageSettings: parsedProviderOptions.imageSettings
-        )
-
-        let imageData = try await downloadImage(
+        let imageURL = try await pollForImageURL(id: response.value.id, headers: headers, abortSignal: options.abortSignal, interval: interval, attempts: attempts)
+        let image = try await getFromAPI(
             url: imageURL,
-            abortSignal: options.abortSignal
-        )
-
-        return ImageModelV3GenerateResult(
-            images: .binary([imageData]),
-            warnings: warnings,
-            providerMetadata: nil,
-            response: ImageModelV3ResponseInfo(
-                timestamp: config.currentDate(),
-                modelId: modelIdentifier.rawValue,
-                headers: generationResponse.responseHeaders
-            )
-        )
-    }
-
-    private func pollForImageURL(
-        generationId: String,
-        headers: [String: String],
-        abortSignal: (@Sendable () -> Bool)?,
-        imageSettings: LumaImageSettings?
-    ) async throws -> String {
-        let maxAttempts = imageSettings?.maxPollAttempts ?? maxPollAttempts
-        let pollDelay = imageSettings?.pollIntervalMillis ?? pollIntervalMillis
-        let url = makeGenerationsURL(generationId)
-
-        for _ in 0..<maxAttempts {
-            try checkAbort(abortSignal)
-
-            let statusResponse = try await getFromAPI(
-                url: url,
-                headers: headers,
-                failedResponseHandler: lumaFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: lumaGenerationResponseSchema),
-                isAborted: abortSignal,
-                fetch: config.fetch
-            ).value
-
-            switch statusResponse.state {
-            case .completed:
-                if let image = statusResponse.assets?.image {
-                    return image
-                }
-                throw InvalidResponseDataError(
-                    data: statusResponse,
-                    message: "Image generation completed but no image was found."
-                )
-            case .failed:
-                throw InvalidResponseDataError(
-                    data: statusResponse,
-                    message: "Image generation failed."
-                )
-            case .queued, .dreaming:
-                try await delay(pollDelay)
-            }
-        }
-
-        throw APICallError(
-            message: "Image generation timed out after \(maxPollAttempts) attempts.",
-            url: url,
-            requestBodyValues: nil
-        )
-    }
-
-    private func downloadImage(
-        url: String,
-        abortSignal: (@Sendable () -> Bool)?
-    ) async throws -> Data {
-        // Asset URLs come from the response body and may point at a foreign host: send no credentials.
-        try await getFromAPI(
-            url: url,
             failedResponseHandler: createStatusCodeErrorResponseHandler(),
             successfulResponseHandler: createBinaryResponseHandler(),
-            isAborted: abortSignal,
-            fetch: config.fetch
+            isAborted: options.abortSignal, fetch: config.fetch,
+            validateUrl: true, trustedOrigin: config.baseURL
         ).value
+        return .init(images: .binary([image]), warnings: warnings, response: .init(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders))
     }
 
-    private func makeGenerationsURL(_ generationId: String? = nil) -> String {
-        "\(config.baseURL)/dream-machine/v1/generations/\(generationId ?? "image")"
-    }
-
-    private func parseProviderOptions(_ providerOptions: SharedV3ProviderOptions?) -> ParsedLumaProviderOptions {
-        guard let options = providerOptions?["luma"] else {
-            return ParsedLumaProviderOptions(requestOverrides: [:], imageSettings: nil)
-        }
-
-        var overrides: [String: JSONValue] = [:]
-        var pollInterval: Int?
-        var maxAttempts: Int?
-
-        for (key, value) in options {
-            switch key {
-            case "pollIntervalMillis":
-                pollInterval = intValue(from: value) ?? pollInterval
-            case "maxPollAttempts":
-                maxAttempts = intValue(from: value) ?? maxAttempts
-            default:
-                overrides[key] = value
+    private func pollForImageURL(id: String, headers: [String: String], abortSignal: (@Sendable () -> Bool)?, interval: Double, attempts: Double) async throws -> String {
+        var index = 0
+        while Double(index) < attempts {
+            let result = try await getFromAPI(
+                url: generationsURL(id), headers: headers,
+                failedResponseHandler: lumaFailedResponseHandler,
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: lumaGenerationResponseSchema),
+                isAborted: abortSignal, fetch: config.fetch
+            ).value
+            switch result.state {
+            case .completed:
+                guard let image = result.assets?.image, !image.isEmpty else {
+                    throw InvalidResponseDataError(data: result, message: "Image generation completed but no image was found.")
+                }
+                return image
+            case .failed: throw InvalidResponseDataError(data: result, message: "Image generation failed.")
+            case .queued, .dreaming: try await delay(Int(interval), abortSignal: abortSignal)
             }
+            index += 1
         }
-
-        let settings: LumaImageSettings?
-        if pollInterval != nil || maxAttempts != nil {
-            settings = LumaImageSettings(
-                pollIntervalMillis: pollInterval,
-                maxPollAttempts: maxAttempts
-            )
-        } else {
-            settings = nil
-        }
-
-        return ParsedLumaProviderOptions(
-            requestOverrides: overrides,
-            imageSettings: settings
-        )
+        throw LumaImageModelError(message: "Image generation timed out after \(maxPollAttempts) attempts.")
     }
 
-    private func intValue(from value: JSONValue) -> Int? {
-        switch value {
-        case .number(let number):
-            return Int(number)
-        case .string(let string):
-            return Int(string)
-        default:
-            return nil
+    private func editingOptions(files: [ImageModelV4File], mask: ImageModelV4File?, referenceType: LumaReferenceType, imageConfigs: [LumaImageConfig]) throws -> [String: JSONValue] {
+        if mask != nil {
+            throw LumaImageModelError(message: "Luma AI does not support mask-based image editing. Use the prompt to describe the changes you want to make, along with `prompt.images` containing the source image URL.")
+        }
+        if files.isEmpty { return [:] }
+        let urls = try files.map { file -> String in
+            guard case .url(let url, _) = file else {
+                throw LumaImageModelError(message: "Luma AI only supports URL-based images. Please provide image URLs using `prompt.images` with publicly accessible URLs. Base64 and Uint8Array data are not supported.")
+            }
+            return url
+        }
+        func image(_ index: Int, weight: Double) -> JSONValue {
+            .object(["url": .string(urls[index]), "weight": .number(imageConfigs.indices.contains(index) ? imageConfigs[index].weight ?? weight : weight)])
+        }
+        switch referenceType {
+        case .image:
+            if urls.count > 4 { throw LumaImageModelError(message: "Luma AI image supports up to 4 reference images. You provided \(urls.count) images.") }
+            return ["image": .array(urls.indices.map { image($0, weight: 0.85) })]
+        case .style:
+            return ["style": .array(urls.indices.map { image($0, weight: 0.8) })]
+        case .modifyImage:
+            if urls.count > 1 { throw LumaImageModelError(message: "Luma AI modify_image only supports a single input image. You provided \(urls.count) images.") }
+            return ["modify_image": image(0, weight: 1)]
+        case .character:
+            var identities: [String: [JSONValue]] = [:]
+            for index in urls.indices {
+                let id = imageConfigs.indices.contains(index) ? imageConfigs[index].id ?? "identity0" : "identity0"
+                identities[id, default: []].append(.string(urls[index]))
+            }
+            for (id, images) in identities where images.count > 4 {
+                throw LumaImageModelError(message: "Luma AI character supports up to 4 images per identity. Identity '\(id)' has \(images.count) images.")
+            }
+            return ["character": .object(identities.mapValues { .object(["images": .array($0)]) })]
         }
     }
 
-    private func checkAbort(_ abortSignal: (@Sendable () -> Bool)?) throws {
-        if abortSignal?() == true {
-            throw CancellationError()
-        }
-        try Task.checkCancellation()
+    private func generationsURL(_ id: String? = nil) -> String {
+        "\(config.baseURL)/dream-machine/v1/generations/\(id ?? "image")"
     }
+
+    private func number(_ value: JSONValue?) -> Double? {
+        if case .number(let value) = value { return value }
+        return nil
+    }
+}
+
+private struct LumaImageModelError: Error, LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
