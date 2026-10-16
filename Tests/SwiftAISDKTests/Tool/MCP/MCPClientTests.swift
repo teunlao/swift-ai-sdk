@@ -120,7 +120,7 @@ struct MCPClientTests {
                 "get-image": .content(
                     content: [
                         .image(.init(
-                            data: "base64data",
+                            data: "aW1hZ2U=",
                             mimeType: "image/png"
                         )),
                     ],
@@ -146,7 +146,7 @@ struct MCPClientTests {
 
         let modelOutput = tool.toModelOutput?(output)
         #expect(modelOutput == .content(value: [
-            .media(data: "base64data", mediaType: "image/png"),
+            .media(data: "aW1hZ2U=", mediaType: "image/png"),
         ]))
     }
 
@@ -205,7 +205,7 @@ struct MCPClientTests {
                 "get-mixed": .content(
                     content: [
                         .text(.init(text: "Here is an image:")),
-                        .image(.init(data: "base64data", mimeType: "image/png")),
+                        .image(.init(data: "aW1hZ2U=", mimeType: "image/png")),
                     ],
                     structuredContent: nil,
                     isError: false,
@@ -230,7 +230,7 @@ struct MCPClientTests {
         let modelOutput = tool.toModelOutput?(output)
         #expect(modelOutput == .content(value: [
             .text(text: "Here is an image:"),
-            .media(data: "base64data", mediaType: "image/png"),
+            .media(data: "aW1hZ2U=", mediaType: "image/png"),
         ]))
     }
 
@@ -306,12 +306,7 @@ struct MCPClientTests {
                 ),
             ],
             toolCallResults: [
-                "get-raw": .raw(
-                    .object([
-                        "value": .number(42),
-                        "isError": .bool(false),
-                    ])
-                ),
+                "get-raw": .toolResult(result: .object(["value": .number(42)]), meta: nil),
             ]
         )
 
@@ -389,7 +384,7 @@ struct MCPClientTests {
             args: MCPReadResourceArgs(uri: "file:///mock/resource.txt")
         )
         #expect(result.contents.count == 1)
-        if case .text(let uri, _, _, let mimeType, let text) = result.contents[0] {
+        if case .text(let uri, _, _, let mimeType, let text, _, _) = result.contents[0] {
             #expect(uri == "file:///mock/resource.txt")
             #expect(mimeType == "text/plain")
             #expect(text == "Mock resource content")
@@ -755,8 +750,8 @@ struct MCPClientTests {
         ]))
     }
 
-    @Test("outputSchema support: should fallback to parsing text content when structuredContent is not present")
-    func outputSchemaFallbackParse() async throws {
+    @Test("outputSchema falls back to text when structuredContent is missing or null", arguments: [false, true])
+    func outputSchemaFallbackParse(nullStructuredContent: Bool) async throws {
         let transport = MockMCPTransport(
             overrideTools: [
                 MCPTool(
@@ -773,7 +768,7 @@ struct MCPClientTests {
                     content: [
                         .text(.init(text: "{\"value\": 42, \"name\": \"test\"}")),
                     ],
-                    structuredContent: nil,
+                    structuredContent: nullStructuredContent ? .some(.null) : .none,
                     isError: false,
                     meta: nil
                 ),

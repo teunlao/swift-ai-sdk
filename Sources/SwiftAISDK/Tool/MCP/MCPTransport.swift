@@ -2,7 +2,7 @@
  Transport interface for MCP (Model Context Protocol) communication.
 
  Port of `packages/mcp/src/tool/mcp-transport.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 
  This module defines the base transport protocol for MCP communication and provides
  factory functions for creating transport instances.
@@ -29,11 +29,15 @@ public protocol MCPTransport: Sendable {
      - Parameter message: The JSON-RPC message to send
      */
     func send(message: JSONRPCMessage) async throws
+    func send(message: JSONRPCMessage, options: MCPTransportSendOptions?) async throws
 
     /**
      Clean up and close the transport
      */
     func close() async throws
+    func close(options: MCPTransportCloseOptions?) async throws
+
+    func setProtocolVersion(_ version: String)
 
     /**
      Event handler for transport closure
@@ -51,6 +55,45 @@ public protocol MCPTransport: Sendable {
     var onmessage: (@Sendable (JSONRPCMessage) -> Void)? { get set }
 }
 
+public struct MCPTransportCloseOptions: Sendable {
+    public let signal: (@Sendable () -> Bool)?
+    public init(signal: (@Sendable () -> Bool)? = nil) { self.signal = signal }
+}
+
+public struct MCPTransportSendOptions: Sendable {
+    public let signal: (@Sendable () -> Bool)?
+    public let relatedRequestId: JSONRPCID?
+    public let resumptionToken: String?
+    public let onresumptiontoken: (@Sendable (String) -> Void)?
+
+    public init(
+        signal: (@Sendable () -> Bool)? = nil,
+        relatedRequestId: JSONRPCID? = nil,
+        resumptionToken: String? = nil,
+        onresumptiontoken: (@Sendable (String) -> Void)? = nil
+    ) {
+        self.signal = signal
+        self.relatedRequestId = relatedRequestId
+        self.resumptionToken = resumptionToken
+        self.onresumptiontoken = onresumptiontoken
+    }
+}
+
+public extension MCPTransport {
+    func setProtocolVersion(_ version: String) {}
+    func close(options: MCPTransportCloseOptions?) async throws { try await close() }
+    func send(message: JSONRPCMessage, options: MCPTransportSendOptions?) async throws {
+        try await runMCPOperation(options: .init(signal: options?.signal)) {
+            try await self.send(message: message)
+        }
+    }
+}
+
+public enum MCPRedirectMode: String, Sendable {
+    case follow
+    case error
+}
+
 // MARK: - MCPTransportConfig
 
 /// Configuration for creating MCP transports
@@ -66,17 +109,38 @@ public struct MCPTransportConfig: Sendable {
 
     /// Optional OAuth client provider for authentication.
     public let authProvider: OAuthClientProvider?
+    public let redirect: MCPRedirectMode
+    public let fetch: FetchFunction?
+    public let initialSessionId: String?
+    public let initialProtocolVersion: String?
+    public let onSessionIdChange: (@Sendable (String?) -> Void)?
+    public let onSessionExpired: (@Sendable (String) -> Void)?
+    public let terminateSessionOnClose: Bool
 
     public init(
         type: String = "sse",
         url: String,
         headers: [String: String]? = nil,
-        authProvider: OAuthClientProvider? = nil
+        authProvider: OAuthClientProvider? = nil,
+        redirect: MCPRedirectMode = .error,
+        initialSessionId: String? = nil,
+        initialProtocolVersion: String? = nil,
+        onSessionIdChange: (@Sendable (String?) -> Void)? = nil,
+        onSessionExpired: (@Sendable (String) -> Void)? = nil,
+        terminateSessionOnClose: Bool = true,
+        fetch: FetchFunction? = nil
     ) {
         self.type = type
         self.url = url
         self.headers = headers
         self.authProvider = authProvider
+        self.redirect = redirect
+        self.fetch = fetch
+        self.initialSessionId = initialSessionId
+        self.initialProtocolVersion = initialProtocolVersion
+        self.onSessionIdChange = onSessionIdChange
+        self.onSessionExpired = onSessionExpired
+        self.terminateSessionOnClose = terminateSessionOnClose
     }
 }
 

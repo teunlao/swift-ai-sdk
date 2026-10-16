@@ -146,7 +146,7 @@ struct HttpMCPTransportTests {
             try await transport.send(message: message)
 
             controller.write(
-                "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"ok\":true}}\n\n"
+                "data: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"ok\":true}}\n\n"
             )
             controller.finish()
 

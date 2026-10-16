@@ -135,6 +135,7 @@ public struct Tool: Sendable {
 
     /// Optional metadata for the tool (used by some adapters like MCP).
     public let _meta: [String: JSONValue]?
+    public let metadata: [String: JSONValue]?
 
     /// The schema of the input that the tool expects.
     public let inputSchema: FlexibleSchema<JSONValue>
@@ -209,6 +210,7 @@ public struct Tool: Sendable {
         title: String? = nil,
         providerOptions: [String: JSONValue]? = nil,
         _meta: [String: JSONValue]? = nil,
+        metadata: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
         inputExamples: [LanguageModelV3ToolInputExample]? = nil,
         strict: Bool? = nil,
@@ -230,6 +232,7 @@ public struct Tool: Sendable {
         self.title = title
         self.providerOptions = providerOptions
         self._meta = _meta
+        self.metadata = metadata
         self.inputSchema = inputSchema
         self.inputExamples = inputExamples
         self.strict = strict
@@ -509,6 +512,7 @@ public func tool(
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     _meta: [String: JSONValue]? = nil,
+    metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     inputExamples: [LanguageModelV3ToolInputExample]? = nil,
     strict: Bool? = nil,
@@ -525,6 +529,7 @@ public func tool(
         title: title,
         providerOptions: providerOptions,
         _meta: _meta,
+        metadata: metadata,
         inputSchema: inputSchema,
         inputExamples: inputExamples,
         strict: strict,
@@ -549,6 +554,7 @@ public func dynamicTool(
     title: String? = nil,
     providerOptions: [String: JSONValue]? = nil,
     _meta: [String: JSONValue]? = nil,
+    metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     strict: Bool? = nil,
     execute: @escaping @Sendable (JSONValue, ToolCallOptions) async throws -> ToolExecutionResult<JSONValue>,
@@ -559,6 +565,7 @@ public func dynamicTool(
         title: title,
         providerOptions: providerOptions,
         _meta: _meta,
+        metadata: metadata,
         inputSchema: inputSchema,
         strict: strict,
         execute: execute,
