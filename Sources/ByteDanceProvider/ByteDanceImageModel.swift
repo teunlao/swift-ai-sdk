@@ -59,7 +59,10 @@ public final class ByteDanceImageModel: ImageModelV4 {
         return .init(
             images: .base64(response.value.data.map(\.b64_json)), warnings: warnings,
             response: .init(timestamp: now, modelId: modelId, headers: response.responseHeaders),
-            usage: response.value.usage.map { .init(outputTokens: $0.outputTokens, totalTokens: $0.totalTokens) }
+            usage: response.value.usage.map {
+                .init(outputTokens: $0.outputTokens.flatMap(Int.init(exactly:)),
+                      totalTokens: $0.totalTokens.flatMap(Int.init(exactly:)))
+            }
         )
     }
 }
@@ -80,8 +83,8 @@ private func dataURI(_ file: ImageModelV4File) -> String {
 private struct ByteDanceImageResponse: Decodable, Sendable {
     struct Image: Decodable, Sendable { let b64_json: String }
     struct Usage: Decodable, Sendable {
-        let outputTokens: Int?
-        let totalTokens: Int?
+        let outputTokens: Double?
+        let totalTokens: Double?
         enum CodingKeys: String, CodingKey { case outputTokens = "output_tokens", totalTokens = "total_tokens" }
     }
     let data: [Image]

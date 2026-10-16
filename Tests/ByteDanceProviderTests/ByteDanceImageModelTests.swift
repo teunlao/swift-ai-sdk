@@ -91,14 +91,14 @@ struct ByteDanceImageModelTests {
         ]))
     }
 
-    @Test("image responses preserve output order, usage and HTTP metadata")
-    func imageResponse() async throws {
+    @Test("image responses preserve output order and metadata without truncating fractional usage", arguments: [false, true])
+    func imageResponse(fractional: Bool) async throws {
         let model = model { request in
-            response(request, body: #"{"data":[{"b64_json":"AQID"},{"b64_json":"BAUG"}],"usage":{"output_tokens":10,"total_tokens":15,"input_tokens":5}}"#)
+            response(request, body: #"{"data":[{"b64_json":"AQID"},{"b64_json":"BAUG"}],"usage":{"output_tokens":\#(fractional ? "10.5" : "10"),"total_tokens":15,"input_tokens":5}}"#)
         }
         let result = try await model.doGenerate(options: .init(prompt: "storyboard", n: 1))
         #expect(result.images == .base64(["AQID", "BAUG"]))
-        #expect(result.usage == .init(outputTokens: 10, totalTokens: 15))
+        #expect(result.usage == .init(outputTokens: fractional ? nil : 10, totalTokens: 15))
         #expect(result.response.timestamp == date)
         #expect(result.response.modelId == "seedream-4-5-251128")
         #expect(result.response.headers?["x-request-id"] == "image-id")
