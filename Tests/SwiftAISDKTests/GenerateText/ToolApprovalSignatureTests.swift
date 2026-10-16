@@ -134,6 +134,31 @@ struct ToolFingerprintTests {
         )
     }
 
+    @Test("fingerprints equal the upstream digests of the same definitions")
+    func matchesUpstreamDigests() async throws {
+        // Digests computed with upstream `fingerprintTools` (`canonicalJSON` + SHA-256, base64url).
+        let fingerprints = try await fingerprintTools([
+            "weather": weatherTool(description: "Get the weather"),
+            "titled": tool(
+                description: "Get the weather",
+                title: "Weather",
+                inputSchema: FlexibleSchema(jsonSchema(.object([
+                    "type": .string("object"),
+                    "properties": .object(["city": .object(["type": .string("string")])]),
+                ])))
+            ),
+            "resolved": weatherTool(description: .resolve { _ in "x" }),
+            "bare": weatherTool(description: nil),
+        ])
+
+        #expect(fingerprints == [
+            "weather": "wIdQ9jv5_OH1t7r3NVISjvQ8gxqqRXwGzvhJtrSxbZ0",
+            "titled": "FJx8FnP5MuwYlmEEW-ZXSUaOHfhTENPEFAnWZzfX9d0",
+            "resolved": "jpl8wk8TQIuNEpJCBuAeiPXc6n4Grn5gx-IM29ZhMv8",
+            "bare": "JDBOnGSh_IdEFgeZ_qnvIySrhifay7WO8NJCW6YDoxs",
+        ])
+    }
+
     @Test("drift reports added, removed and changed definitions; resolved descriptions are not pinned")
     func detectsDrift() async throws {
         let baseline = try await fingerprintTools([

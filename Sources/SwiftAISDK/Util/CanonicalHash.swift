@@ -21,7 +21,12 @@ internal func canonicalJSON(_ value: JSONValue) throws -> String {
 }
 
 internal func hashCanonical(_ value: JSONValue) throws -> String {
-    let digest = SHA256.hash(data: Data(try canonicalJSON(value).utf8))
+    sha256Base64URL(try canonicalJSON(value))
+}
+
+/// SHA-256 of the UTF-8 text, base64url-encoded without padding.
+internal func sha256Base64URL(_ text: String) -> String {
+    let digest = SHA256.hash(data: Data(text.utf8))
     return Data(digest).base64EncodedString().replacingOccurrences(of: "+", with: "-")
         .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
 }

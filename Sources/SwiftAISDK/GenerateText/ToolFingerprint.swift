@@ -14,14 +14,14 @@ import AISDKProviderUtils
 public func fingerprintTools(_ tools: ToolSet) async throws -> [String: String] {
     var fingerprints: [String: String] = [:]
     for (name, tool) in tools {
-        var definition: [String: JSONValue] = [
-            "description": taggedDescription(tool.description),
-            "inputSchema": try await tool.inputSchema.resolve().jsonSchema(),
-        ]
-        if let title = tool.title {
-            definition["title"] = .string(title)
-        }
-        fingerprints[name] = try hashCanonical(.object(definition))
+        // Upstream hashes `{description, inputSchema, title}` with keys sorted; an absent
+        // title serializes as the bare token `undefined`, which keeps digests identical.
+        let description = try canonicalJSON(taggedDescription(tool.description))
+        let inputSchema = try canonicalJSON(try await tool.inputSchema.resolve().jsonSchema())
+        let title = try tool.title.map { try canonicalJSON(.string($0)) } ?? "undefined"
+        fingerprints[name] = sha256Base64URL(
+            #"{"description":"# + description + #","inputSchema":"# + inputSchema + #","title":"# + title + "}"
+        )
     }
     return fingerprints
 }
