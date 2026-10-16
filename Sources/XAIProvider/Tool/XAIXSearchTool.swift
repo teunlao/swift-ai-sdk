@@ -47,7 +47,7 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
                 }
 
                 func parseStringArray(_ key: String, max: Int) -> Result<[String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .array(let values) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be an array of strings")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))
@@ -84,7 +84,7 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
                 }
 
                 func parseOptionalString(_ key: String) -> Result<String?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .string(let value) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be a string")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))
@@ -109,7 +109,7 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
                 }
 
                 func parseOptionalBool(_ key: String) -> Result<Bool?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .bool(let value) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be a boolean")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))

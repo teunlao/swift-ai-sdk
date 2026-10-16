@@ -53,7 +53,7 @@ public let xaiFileSearchArgsSchema = FlexibleSchema(
                 }
 
                 var maxNumResults: Double? = nil
-                if let rawMax = dict["maxNumResults"], rawMax != .null {
+                if let rawMax = dict["maxNumResults"] {
                     guard case .number(let value) = rawMax else {
                         let error = SchemaValidationIssuesError(
                             vendor: "xai",

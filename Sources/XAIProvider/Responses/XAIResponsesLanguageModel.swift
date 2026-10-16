@@ -279,6 +279,7 @@ public final class XAIResponsesLanguageModel: LanguageModelV4 {
             let producer = Task {
                 var hasFunctionCall = false
                 var providerMetadata: SharedV4ProviderMetadata?
+                var costInUsdTicks: Double?
                 var finishReason = LanguageModelV4FinishReason(unified: .other, raw: nil)
                 var usage: LanguageModelV4Usage? = nil
                 var isFirstChunk = true
@@ -378,18 +379,22 @@ public final class XAIResponsesLanguageModel: LanguageModelV4 {
                             case .responseDone(let response), .responseCompleted(let response):
                                 if let usageInfo = response.usage {
                                     usage = convertXaiResponsesUsage(usageInfo)
+                                    costInUsdTicks = usageInfo.costInUsdTicks
                                 }
                                 finishReason = .init(unified: hasFunctionCall ? .toolCalls : mapXaiResponsesFinishReason(response.status), raw: response.status)
-                                providerMetadata = responseProviderMetadata(cost: response.usage?.costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
+                                providerMetadata = responseProviderMetadata(cost: costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
 
                             case .responseIncomplete(let response):
-                                usage = response.usage.map(convertXaiResponsesUsage)
+                                if let usageInfo = response.usage {
+                                    usage = convertXaiResponsesUsage(usageInfo)
+                                    costInUsdTicks = usageInfo.costInUsdTicks
+                                }
                                 let reason = response.incompleteDetails?.reason
                                 finishReason = .init(unified: reason.map(mapXaiResponsesFinishReason) ?? .other, raw: reason ?? "incomplete")
-                                providerMetadata = responseProviderMetadata(cost: response.usage?.costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
+                                providerMetadata = responseProviderMetadata(cost: costInUsdTicks, tier: response.serviceTier, cacheKey: response.promptCacheKey, safety: response.safetyIdentifier)
 
                             case .responseFailed(let response):
-                                usage = response.usage.map(convertXaiResponsesUsage)
+                                if let usageInfo = response.usage { usage = convertXaiResponsesUsage(usageInfo) }
                                 let reason = response.incompleteDetails?.reason
                                 finishReason = .init(unified: reason.map(mapXaiResponsesFinishReason) ?? .error, raw: reason ?? "error")
                                 if let error = response.error {
@@ -912,7 +917,7 @@ private func mapWebSearchAction(_ action: JSONValue?) -> JSONValue {
     for key in stringKeys {
         if let value = data[key], value != .null, case .string = value {} else if data[key] != nil && data[key] != .null { return .object([:]) }
     }
-    if let queries = data["queries"], queries != .null {
+    if type == "search", let queries = data["queries"], queries != .null {
         guard case .array(let values) = queries, values.allSatisfy({ if case .string = $0 { true } else { false } }) else { return .object([:]) }
     }
     if let sources = data["sources"], sources != .null, case .array = sources {} else if data["sources"] != nil && data["sources"] != .null { return .object([:]) }

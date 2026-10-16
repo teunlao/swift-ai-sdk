@@ -151,6 +151,7 @@ struct XAIVideoModelTests {
 
     @Test("missing operation identifiers reject generation")
     func missingRequestID() async throws {
-        await #expect(throws: (any Error).self) { _ = try await model("{}").doStart(options: .init(n: 1)) }
+        do { _ = try await model("{}").doStart(options: .init(n: 1)); Issue.record("Expected generation failure") }
+        catch let error as any AISDKError { #expect(error.name == "XAI_VIDEO_GENERATION_ERROR") }
     }
 }

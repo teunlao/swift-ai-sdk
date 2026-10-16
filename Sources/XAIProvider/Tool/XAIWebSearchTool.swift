@@ -41,7 +41,7 @@ public let xaiWebSearchArgsSchema = FlexibleSchema(
                 }
 
                 func parseStringArray(_ key: String, max: Int) -> Result<[String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .array(let values) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be an array of strings")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))
@@ -78,7 +78,7 @@ public let xaiWebSearchArgsSchema = FlexibleSchema(
                 }
 
                 var enableImageUnderstanding: Bool? = nil
-                if let rawEnable = dict["enableImageUnderstanding"], rawEnable != .null {
+                if let rawEnable = dict["enableImageUnderstanding"] {
                     guard case .bool(let bool) = rawEnable else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "enableImageUnderstanding must be a boolean")
                         return .failure(error: TypeValidationError.wrap(value: rawEnable, cause: error))

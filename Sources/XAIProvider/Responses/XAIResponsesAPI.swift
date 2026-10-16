@@ -932,19 +932,29 @@ private let genericJSONObjectSchema: JSONValue = .object([
     "type": .string("object")
 ])
 
-public let xaiResponsesResponseSchema = FlexibleSchema(
-    Schema<XAIResponsesResponse>.codable(
-        XAIResponsesResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
+public let xaiResponsesResponseSchema = FlexibleSchema(Schema<XAIResponsesResponse>(jsonSchemaResolver: { genericJSONObjectSchema }, validator: { value in
+    do {
+        let json = try jsonValue(from: value)
+        try validateResponseObject(json)
+        return .success(value: try JSONDecoder().decode(XAIResponsesResponse.self, from: JSONEncoder().encode(json)))
+    } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+}))
 
-public let xaiResponsesChunkSchema = FlexibleSchema(
-    Schema<XAIResponsesChunk>.codable(
-        XAIResponsesChunk.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
+public let xaiResponsesChunkSchema = FlexibleSchema(Schema<XAIResponsesChunk>(jsonSchemaResolver: { genericJSONObjectSchema }, validator: { value in
+    do {
+        let json = try jsonValue(from: value)
+        if case .object(let object) = json, case .string(let type) = object["type"], ["response.created", "response.in_progress", "response.done", "response.completed"].contains(type) {
+            try validateResponseObject(object["response"] ?? .null)
+        }
+        return .success(value: try JSONDecoder().decode(XAIResponsesChunk.self, from: JSONEncoder().encode(json)))
+    } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+}))
+
+private func validateResponseObject(_ value: JSONValue) throws {
+    guard case .object(let object) = value, object["object"] == .string("response") else {
+        throw SchemaValidationIssuesError(vendor: "xai", issues: "Expected a response object")
+    }
+}
 
 extension ParseJSONResult where Output == XAIResponsesChunk {
     var rawJSONValue: JSONValue? {

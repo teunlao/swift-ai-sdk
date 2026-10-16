@@ -171,7 +171,7 @@ public final class XAIImageModel: ImageModelV4 {
 
         let metadataImages = response.value.data.map { item -> JSONValue in
             var object: [String: JSONValue] = [:]
-            if let revised = item.revisedPrompt {
+            if let revised = item.revisedPrompt, !revised.isEmpty {
                 object["revisedPrompt"] = .string(revised)
             }
             return .object(object)

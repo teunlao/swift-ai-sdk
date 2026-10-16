@@ -33,7 +33,7 @@ struct XAIResponsesContractsTests {
             guard case .array(let input) = body["input"], case .object(let message) = input[0], case .array(let content) = message["content"], case .object(let replay) = input[1] else { Issue.record("Missing input"); return }
             #expect(content[0] == .object(["type": .string("input_file"), "file_id": .string("file-1")]))
             #expect(content[1] == .object(["type": .string("input_file"), "file_url": .string("https://example.com/report.pdf")]))
-            #expect(content[2] == .object(["type": .string("input_image"), "image_url": .string("data:image/jpeg;base64,AQID"), "detail": .string("low")]))
+            #expect(content[2] == .object(["type": .string("input_image"), "image_url": .string("data:image/png;base64,iVBORw0KGgo="), "detail": .string("low")]))
             #expect(replay["encrypted_content"] == .string("cipher"))
             #expect(replay["id"] == .string("reason-1"))
             #expect(body["include"] == .array([.string("web_search_call.action.sources"), .string("reasoning.encrypted_content")]))
@@ -42,7 +42,7 @@ struct XAIResponsesContractsTests {
             .user(content: [
                 .file(.init(data: .reference(["xai": "file-1"]), mediaType: "application/pdf")),
                 .file(.init(data: .url(URL(string: "https://example.com/report.pdf")!), mediaType: "application/pdf")),
-                .file(.init(data: .data(Data([1, 2, 3])), mediaType: "image/*", providerOptions: ["xai": ["imageDetail": .string("low")]]))
+                .file(.init(data: .data(Data([137, 80, 78, 71, 13, 10, 26, 10])), mediaType: "image/*", providerOptions: ["xai": ["imageDetail": .string("low")]]))
             ], providerOptions: nil),
             .assistant(content: [.reasoning(.init(text: "", providerOptions: ["xai": ["itemId": .string("reason-1"), "reasoningEncryptedContent": .string("cipher")]]))], providerOptions: nil)
         ]
@@ -71,6 +71,47 @@ struct XAIResponsesContractsTests {
         let result = try await provider(payload)("grok-4.6").doGenerate(options: .init(prompt: [], tools: [.provider(.init(id: "xai.web_search", name: "searchWeb", args: [:])), .provider(.init(id: "xai.image_generation", name: "paint", args: [:]))]))
         #expect(result.content[1] == .toolResult(.init(toolCallId: "search", toolName: "searchWeb", result: .object(["action": .object(["type": .string("openPage"), "url": .string("https://example.com")]), "sources": .array([.object(["type": .string("url"), "url": .string("https://example.com")])])]))))
         #expect(result.content[3] == .toolResult(.init(toolCallId: "image", toolName: "paint", result: .object(["result": .string("AQID"), "prompt": .string("otter")]))))
+    }
+
+    @Test("provider tool parameters preserve search limits and image generation actions")
+    func toolParameters() async throws {
+        let provider = provider(#"{"object":"response","status":"completed","output":[]}"#) { request in
+            guard case .object(let body) = try JSONDecoder().decode(JSONValue.self, from: request.httpBody!), case .array(let tools) = body["tools"] else { throw CancellationError() }
+            #expect(tools[0] == .object(["type": .string("web_search"), "enable_image_search": .bool(true)]))
+            #expect(tools[1] == .object(["type": .string("x_search"), "allowed_x_handles": .array((0..<20).map { .string("user\($0)") })]))
+            #expect(tools[2] == .object(["type": .string("file_search"), "vector_store_ids": .array([.string("store")]), "max_num_results": .number(2.5)]))
+            #expect(tools[3] == .object(["type": .string("image_generation"), "action": .string("edit")]))
+        }
+        let tools: [LanguageModelV4Tool] = [
+            .provider(.init(id: "xai.web_search", name: "web", args: ["enableImageSearch": .bool(true)])),
+            .provider(.init(id: "xai.x_search", name: "x", args: ["allowedXHandles": .array((0..<20).map { .string("user\($0)") })])),
+            .provider(.init(id: "xai.file_search", name: "files", args: ["vectorStoreIds": .array([.string("store")]), "maxNumResults": .number(2.5)])),
+            .provider(.init(id: "xai.image_generation", name: "image", args: ["action": .string("edit")]))
+        ]
+        _ = try await provider.responses("grok-4.6").doGenerate(options: .init(prompt: [], tools: tools))
+    }
+
+    @Test("invalid image detail is rejected as provider options before HTTP")
+    func invalidImageDetail() async throws {
+        let model = provider("") { _ in Issue.record("Invalid image detail cannot send HTTP") }.responses("grok-4.6")
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: [.user(content: [.file(.init(data: .url(URL(string: "https://example.com/image.png")!), mediaType: "image/png", providerOptions: ["xai": ["imageDetail": .null]]))], providerOptions: nil)]))
+        }
+    }
+
+    @Test("ambiguous inline image media types require detectable bytes")
+    func ambiguousImageType() async throws {
+        let model = provider("") { _ in Issue.record("Undetectable image data cannot send HTTP") }.responses("grok-4.6")
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: [.user(content: [.file(.init(data: .data(Data([1, 2, 3])), mediaType: "image/*"))], providerOptions: nil)]))
+        }
+    }
+
+    @Test("malformed response objects fail at the HTTP parsing boundary")
+    func malformedResponse() async throws {
+        await #expect(throws: APICallError.self) {
+            _ = try await provider(#"{"object":"chat.completion","status":"completed","output":[]}"#).responses("grok-4.6").doGenerate(options: .init(prompt: []))
+        }
     }
 
     @Test("stream errors expose provider retry metadata and incomplete finish")

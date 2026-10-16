@@ -11,7 +11,22 @@ struct XAITranscriptionModelConfig: Sendable {
 }
 
 private struct TranscriptionResponse: Codable, Sendable {
-    struct Word: Codable, Sendable { let text: String; let start: Double; let end: Double; let speaker: Int? }
+    struct Word: Codable, Sendable {
+        let text: String
+        let start: Double
+        let end: Double
+        let speaker: Double?
+        let speakerIsNull: Bool
+        enum CodingKeys: String, CodingKey { case text, start, end, speaker }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            text = try container.decode(String.self, forKey: .text)
+            start = try container.decode(Double.self, forKey: .start)
+            end = try container.decode(Double.self, forKey: .end)
+            speaker = try container.decodeIfPresent(Double.self, forKey: .speaker)
+            speakerIsNull = try container.contains(.speaker) && container.decodeNil(forKey: .speaker)
+        }
+    }
     let text: String
     let language: String?
     let duration: Double?
@@ -55,7 +70,8 @@ public final class XAITranscriptionModel: TranscriptionModelV4 {
         if let words = response.value.words, words.contains(where: { $0.speaker != nil }) {
             metadata = ["xai": ["words": .array(words.map { word in
                 var data: [String: JSONValue] = ["text": .string(word.text), "start": .number(word.start), "end": .number(word.end)]
-                if let speaker = word.speaker { data["speaker"] = .number(Double(speaker)) }
+                if let speaker = word.speaker { data["speaker"] = .number(speaker) }
+                else if word.speakerIsNull { data["speaker"] = .null }
                 return .object(data)
             })]]
         }

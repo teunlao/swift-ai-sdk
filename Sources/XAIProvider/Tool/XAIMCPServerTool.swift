@@ -56,7 +56,7 @@ public let xaiMcpServerArgsSchema = FlexibleSchema(
                 }
 
                 func parseOptionalString(_ key: String) -> Result<String?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .string(let value) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be a string")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))
@@ -65,7 +65,7 @@ public let xaiMcpServerArgsSchema = FlexibleSchema(
                 }
 
                 func parseOptionalStringArray(_ key: String) -> Result<[String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .array(let values) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be an array of strings")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))
@@ -82,7 +82,7 @@ public let xaiMcpServerArgsSchema = FlexibleSchema(
                 }
 
                 func parseOptionalStringRecord(_ key: String) -> Result<[String: String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
+                    guard let raw = dict[key] else { return .success(nil) }
                     guard case .object(let value) = raw else {
                         let error = SchemaValidationIssuesError(vendor: "xai", issues: "\(key) must be an object")
                         return .failure(TypeValidationError.wrap(value: raw, cause: error))

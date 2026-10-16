@@ -29,16 +29,16 @@ func convertToXAIResponsesInput(
                     case .text:
                         throw UnsupportedFunctionalityError(functionality: "text file parts")
                     case .url(let url, let original):
-                        if file.mediaType.hasPrefix("image/") {
-                            content.append(try imageInput(url: original ?? url.absoluteString, providerOptions: file.providerOptions))
+                        if getTopLevelMediaType(file.mediaType) == "image" {
+                            content.append(try await imageInput(url: original ?? url.absoluteString, providerOptions: file.providerOptions))
                         } else {
                             content.append(.object(["type": .string("input_file"), "file_url": .string(original ?? url.absoluteString)]))
                         }
                     case .data, .base64:
-                        guard file.mediaType.hasPrefix("image/") else {
+                        guard getTopLevelMediaType(file.mediaType) == "image" else {
                             throw UnsupportedFunctionalityError(functionality: "file part media type \(file.mediaType) as inline data (xAI Responses requires a URL or a Files API reference for non-image files)")
                         }
-                        content.append(try imageInput(url: imageDataURL(file.data, mediaType: file.mediaType)!, providerOptions: file.providerOptions))
+                        content.append(try await imageInput(url: try imageDataURL(file.data, mediaType: file.mediaType)!, providerOptions: file.providerOptions))
                     }
                 }
             }
@@ -91,11 +91,11 @@ func convertToXAIResponsesInput(
                 case .executionDenied(let reason, _): output = .string(reason ?? "tool execution denied")
                 case .json(let value, _), .errorJson(let value, _): output = .string(try stringifyJSONValue(value))
                 case .content(let parts):
-                    output = .array(parts.compactMap { item in
+                    output = .array(try parts.compactMap { item in
                         switch item {
                         case .text(let text, _): return .object(["type": .string("input_text"), "text": .string(text)])
                         case .file(let data, let mediaType, _, _):
-                            guard mediaType.hasPrefix("image/"), let url = imageDataURL(data, mediaType: mediaType) else { return nil }
+                            guard getTopLevelMediaType(mediaType) == "image", let url = try imageDataURL(data, mediaType: mediaType) else { return nil }
                             return .object(["type": .string("input_image"), "image_url": .string(url)])
                         case .custom: return nil
                         }
@@ -108,23 +108,22 @@ func convertToXAIResponsesInput(
     return (input, warnings)
 }
 
-private func imageInput(url: String, providerOptions: SharedV4ProviderOptions?) throws -> JSONValue {
+private func imageInput(url: String, providerOptions: SharedV4ProviderOptions?) async throws -> JSONValue {
     var payload: [String: JSONValue] = ["type": .string("input_image"), "image_url": .string(url)]
-    if let detail = providerOptions?["xai"]?["imageDetail"] {
-        guard case .string(let value) = detail, ["low", "high", "auto"].contains(value) else {
-            throw TypeValidationError.wrap(value: detail, cause: SchemaValidationIssuesError(vendor: "xai", issues: "imageDetail must be low, high, or auto"))
-        }
-        payload["detail"] = detail
-    }
+    let options = try await parseProviderOptions(provider: "xai", providerOptions: providerOptions, schema: xaiFilePartOptionsSchema)
+    if let detail = options?.imageDetail { payload["detail"] = .string(detail.rawValue) }
     return .object(payload)
 }
 
-private func imageDataURL(_ data: SharedV4FileData, mediaType: String) -> String? {
-    let type = mediaType == "image/*" ? "image/jpeg" : mediaType
+private func imageDataURL(_ data: SharedV4FileData, mediaType: String) throws -> String? {
     switch data {
     case .url(let url, let original): return original ?? url.absoluteString
-    case .data(let data): return "data:\(type);base64,\(data.base64EncodedString())"
-    case .base64(let data): return "data:\(type);base64,\(data)"
+    case .data(let bytes):
+        let type = try resolveFullMediaType(part: .init(data: data, mediaType: mediaType))
+        return "data:\(type);base64,\(bytes.base64EncodedString())"
+    case .base64(let bytes):
+        let type = try resolveFullMediaType(part: .init(data: data, mediaType: mediaType))
+        return "data:\(type);base64,\(bytes)"
     case .reference, .text: return nil
     }
 }
@@ -133,8 +132,16 @@ private func stringifyJSONValue(_ value: JSONValue) throws -> String {
     String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
 }
 
-public struct XAIFilePartProviderOptions: Sendable, Equatable {
-    public enum ImageDetail: String, Sendable { case low, high, auto }
+public struct XAIFilePartProviderOptions: Codable, Sendable, Equatable {
+    public enum ImageDetail: String, Codable, Sendable { case low, high, auto }
     public var imageDetail: ImageDetail?
     public init(imageDetail: ImageDetail? = nil) { self.imageDetail = imageDetail }
 }
+
+private let xaiFilePartOptionsSchema = FlexibleSchema(Schema<XAIFilePartProviderOptions>(jsonSchemaResolver: { .object(["type": .string("object")]) }, validator: { value in
+    do {
+        let json = try jsonValue(from: value)
+        guard case .object(let object) = json, object["imageDetail"] != .null else { throw InvalidArgumentError(argument: "imageDetail", message: "Expected low, high, or auto") }
+        return .success(value: try JSONDecoder().decode(XAIFilePartProviderOptions.self, from: JSONEncoder().encode(json)))
+    } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+}))

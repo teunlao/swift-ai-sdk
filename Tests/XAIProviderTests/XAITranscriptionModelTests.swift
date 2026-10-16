@@ -42,15 +42,18 @@ struct XAITranscriptionModelTests {
             #expect(body.contains("filename=\"audio.wav\""))
             #expect(body.contains("name=\"audio_format\""))
             #expect(body.contains("name=\"diarize\""))
-            let payload = #"{"text":"hello","language":"en","duration":1.5,"words":[{"text":"hello","start":0,"end":1.5,"speaker":1}]}"#
+            let payload = #"{"text":"hello there","language":"en","duration":1.5,"words":[{"text":"hello","start":0,"end":1,"speaker":1},{"text":"there","start":1,"end":1.5,"speaker":null}]}"#
             return FetchResponse(body: .data(Data(payload.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
         }))
         let result = try await provider.transcription(modelId: .grokVoiceTranscribe20).doGenerate(options: .init(audio: .base64("AQID"), mediaType: "audio/wav", providerOptions: ["xai": ["audioFormat": .string("pcm"), "sampleRate": .number(16000), "diarize": .bool(true), "keyterm": .array([.string("hello"), .string("world")])]]))
-        #expect(result.text == "hello")
+        #expect(result.text == "hello there")
         #expect(result.language == "en")
         #expect(result.durationInSeconds == 1.5)
-        #expect(result.segments == [.init(text: "hello", startSecond: 0, endSecond: 1.5)])
-        #expect(result.providerMetadata?["xai"]?["words"] == .array([.object(["text": .string("hello"), "start": .number(0), "end": .number(1.5), "speaker": .number(1)])]))
+        #expect(result.segments == [.init(text: "hello", startSecond: 0, endSecond: 1), .init(text: "there", startSecond: 1, endSecond: 1.5)])
+        #expect(result.providerMetadata?["xai"]?["words"] == .array([
+            .object(["text": .string("hello"), "start": .number(0), "end": .number(1), "speaker": .number(1)]),
+            .object(["text": .string("there"), "start": .number(1), "end": .number(1.5), "speaker": .null])
+        ]))
     }
 
     @Test("streaming preserves revisable text, utterance finals, multichannel order and audio encoding")

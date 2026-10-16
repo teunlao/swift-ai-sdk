@@ -76,8 +76,8 @@ public final class XAIVideoModel: VideoModelV4Operations {
         let parsed = try await parseProviderOptions(provider: "xai", providerOptions: options.providerOptions, schema: xaiVideoModelOptionsSchema)
         let xai = parsed?.options ?? .init()
         let references = options.inputReferences ?? []
-        let images = references.filter { mediaType($0) == nil || mediaType($0)?.hasPrefix("image/") == true }
-        let audios = references.filter { mediaType($0)?.hasPrefix("audio/") == true }
+        let images = references.filter { topLevelType($0) == nil || topLevelType($0) == "image" }
+        let audios = references.filter { topLevelType($0) == "audio" }
         let mode = xai.mode ?? (xai.videoUrl != nil ? .editVideo : !images.isEmpty || !audios.isEmpty || xai.referenceImageUrls?.isEmpty == false ? .referenceToVideo : nil)
         let edit = mode == .editVideo
         let extend = mode == .extendVideo
@@ -124,17 +124,17 @@ public final class XAIVideoModel: VideoModelV4Operations {
         if edit || extend { body["video"] = .object(xai.videoUrl.map { ["url": .string($0)] } ?? [:]) }
         let firstFrame = options.frameImages?.first { $0.frameType == .firstFrame }?.image
         if let image = firstFrame ?? options.image {
-            if mediaType(image)?.hasPrefix("video/") == true {
+            if topLevelType(image) == "video" {
                 warn(firstFrame == nil ? "image" : "frameImages", "xAI does not accept a video as a start/frame image. The video was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video instead.")
             } else { body["image"] = .object(["url": .string(fileURL(image))]) }
         }
         if let image = options.frameImages?.first(where: { $0.frameType == .lastFrame })?.image {
-            if modelId != "grok-imagine-video-1.5" || edit || extend || mediaType(image)?.hasPrefix("video/") == true {
+            if modelId != "grok-imagine-video-1.5" || edit || extend || topLevelType(image) == "video" {
                 warn("frameImages", modelId != "grok-imagine-video-1.5" ? "xAI only supports last_frame with \"grok-imagine-video-1.5\". The last frame was ignored." : "xAI only accepts an image last_frame for video generation. The last frame was ignored.")
             } else { body["last_frame"] = .object(["url": .string(fileURL(image))]) }
         }
         if reference {
-            for file in references where mediaType(file)?.hasPrefix("video/") == true { warn("inputReferences", "xAI reference-to-video does not accept video references. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video.") }
+            for file in references where topLevelType(file) != nil && topLevelType(file) != "image" && topLevelType(file) != "audio" { warn("inputReferences", "xAI reference-to-video does not accept video references. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video.") }
             let imageURLs = !references.isEmpty ? images.map(fileURL) : (xai.referenceImageUrls ?? [])
             if !imageURLs.isEmpty { body["reference_images"] = .array(imageURLs.map { .object(["url": .string($0)]) }) }
             else if audios.isEmpty { warn("referenceImages", "xAI reference-to-video requires at least one image reference. The video will be generated without reference images.") }
@@ -208,6 +208,8 @@ private struct XAIVideoModelError: AISDKError, Sendable {
 private func mediaType(_ file: VideoModelV4File) -> String? {
     switch file { case .url(_, let type, _): return type; case .file(let type, _, _): return type }
 }
+
+private func topLevelType(_ file: VideoModelV4File) -> String? { mediaType(file).map(getTopLevelMediaType) }
 
 private func fileURL(_ file: VideoModelV4File) -> String {
     switch file {
