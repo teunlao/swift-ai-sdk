@@ -26,93 +26,133 @@ private struct KeepAliveError: LocalizedError {
 }
 
 private actor SSEKeepAliveState {
-    private let stream: AsyncThrowingStream<String, Error>
+    private let source: AsyncIterableStream<String>
+    private let iterator: AsyncIterableStream<String>.AsyncIterator
     private let nanoseconds: UInt64
-    private var queue: [String] = [": stream-open\n\n"]
-    private var queueIndex = 0
-    private var waiter: CheckedContinuation<String?, Error>?
-    private var producer: Task<Void, Never>?
+    private var openingPending = true
+    private var lastActivity = DispatchTime.now().uptimeNanoseconds
+    private var waiters: [CheckedContinuation<String?, Error>] = []
+    private var pending: Result<String?, Error>?
+    private var readTask: Task<Void, Never>?
     private var timer: Task<Void, Never>?
+    private var timerID: UUID?
     private var ended = false
     private var failure: Error?
-    private var commentPending = false
 
     init(stream: AsyncThrowingStream<String, Error>, milliseconds: Double) {
-        self.stream = stream
+        let source = createAsyncIterableStream(source: stream)
+        self.source = source
+        iterator = source.makeAsyncIterator()
         nanoseconds = UInt64(milliseconds * 1_000_000)
     }
 
     func next() async throws -> String? {
-        if producer == nil && !ended {
-            scheduleTimer()
-            producer = Task {
-                do {
-                    for try await value in stream { receive(value) }
-                    finish(nil)
-                } catch { finish(error) }
-            }
-        }
-        if queueIndex < queue.count {
-            let value = queue[queueIndex]
-            queueIndex += 1
-            if queueIndex * 2 >= queue.count {
-                queue.removeFirst(queueIndex)
-                queueIndex = 0
-            }
-            if value == ": keep-alive\n\n" { commentPending = false }
-            return value
-        }
         if ended {
             if let failure { throw failure }
             return nil
         }
-        return try await withCheckedThrowingContinuation { waiter = $0 }
+        if openingPending {
+            openingPending = false
+            lastActivity = DispatchTime.now().uptimeNanoseconds
+            return ": stream-open\n\n"
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters.append(continuation)
+            if let pending {
+                self.pending = nil
+                deliver(pending)
+            }
+            serveDemand()
+        }
     }
 
-    func cancel() {
-        producer?.cancel()
-        finish(nil)
-        queue.removeAll()
-        queueIndex = 0
-    }
-
-    private func receive(_ value: String) {
+    func cancel() async {
         guard !ended else { return }
-        emit(value)
+        ended = true
+        timer?.cancel()
+        timer = nil
+        timerID = nil
+        readTask?.cancel()
+        pending = nil
+        finishWaiters(nil)
+        await source.cancel()
+    }
+
+    private func serveDemand() {
+        guard !ended, !waiters.isEmpty else { return }
+        if readTask == nil {
+            let iterator = iterator
+            readTask = Task { [weak self] in
+                let result: Result<String?, Error>
+                do { result = .success(try await iterator.next()) }
+                catch { result = .failure(error) }
+                await self?.receive(result)
+            }
+        }
         scheduleTimer()
     }
 
-    private func emit(_ value: String) {
-        if let waiter {
-            self.waiter = nil
-            waiter.resume(returning: value)
-        } else { queue.append(value) }
+    private func receive(_ result: Result<String?, Error>) {
+        readTask = nil
+        guard !ended else { return }
+        timer?.cancel()
+        timer = nil
+        timerID = nil
+        lastActivity = DispatchTime.now().uptimeNanoseconds
+        if waiters.isEmpty { pending = result }
+        else { deliver(result) }
+        serveDemand()
+    }
+
+    private func deliver(_ result: Result<String?, Error>) {
+        switch result {
+        case .success(let value?): waiters.removeFirst().resume(returning: value)
+        case .success(nil):
+            ended = true
+            finishWaiters(nil)
+        case .failure(let error):
+            ended = true
+            failure = error
+            finishWaiters(error)
+        }
     }
 
     private func scheduleTimer() {
-        timer?.cancel()
-        timer = Task {
-            do { try await Task.sleep(nanoseconds: nanoseconds) }
+        guard timer == nil else { return }
+        let elapsed = DispatchTime.now().uptimeNanoseconds - lastActivity
+        let delay = elapsed >= nanoseconds ? 0 : nanoseconds - elapsed
+        let id = UUID()
+        timerID = id
+        timer = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: delay) }
             catch { return }
-            guard !ended else { return }
-            if !commentPending && queueIndex == queue.count {
-                commentPending = waiter == nil
-                emit(": keep-alive\n\n")
-            }
-            scheduleTimer()
+            await self?.heartbeat(id: id)
         }
     }
 
-    private func finish(_ error: Error?) {
-        guard !ended else { return }
-        ended = true
-        failure = error
-        timer?.cancel()
+    private func heartbeat(id: UUID) {
+        guard timerID == id else { return }
         timer = nil
-        if let waiter {
-            self.waiter = nil
+        timerID = nil
+        guard !ended, !waiters.isEmpty else { return }
+        lastActivity = DispatchTime.now().uptimeNanoseconds
+        waiters.removeFirst().resume(returning: ": keep-alive\n\n")
+        if !waiters.isEmpty { scheduleTimer() }
+    }
+
+    private func finishWaiters(_ error: Error?) {
+        let waiters = waiters
+        self.waiters.removeAll()
+        for waiter in waiters {
             if let error { waiter.resume(throwing: error) }
             else { waiter.resume(returning: nil) }
         }
+    }
+
+    deinit {
+        timer?.cancel()
+        readTask?.cancel()
+        let source = source
+        Task { await source.cancel() }
     }
 }
