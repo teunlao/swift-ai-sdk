@@ -1,20 +1,51 @@
 import Foundation
 
+/**
+ A reference supporting generated text, separate from retrieved sources.
+
+ Port of `@ai-sdk/provider/src/language-model/v4/language-model-v4-citation.ts`.
+ */
+public struct LanguageModelV4Citation: Sendable, Equatable, Codable {
+    public let source: LanguageModelV4Source
+    public let startIndex: Int?
+    public let endIndex: Int?
+    public let citedText: String?
+
+    public init(
+        source: LanguageModelV4Source,
+        startIndex: Int? = nil,
+        endIndex: Int? = nil,
+        citedText: String? = nil
+    ) {
+        self.source = source
+        self.startIndex = startIndex
+        self.endIndex = endIndex
+        self.citedText = citedText
+    }
+}
+
 public struct LanguageModelV4Text: Sendable, Equatable, Codable {
     public let type: String = "text"
     public let text: String
+    public let citations: [LanguageModelV4Citation]?
     public let providerMetadata: SharedV4ProviderMetadata?
 
-    public init(text: String, providerMetadata: SharedV4ProviderMetadata? = nil) {
+    public init(
+        text: String,
+        citations: [LanguageModelV4Citation]? = nil,
+        providerMetadata: SharedV4ProviderMetadata? = nil
+    ) {
         self.text = text
+        self.citations = citations
         self.providerMetadata = providerMetadata
     }
 
-    private enum CodingKeys: String, CodingKey { case type, text, providerMetadata }
+    private enum CodingKeys: String, CodingKey { case type, text, citations, providerMetadata }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decode(String.self, forKey: .text)
+        citations = try container.decodeIfPresent([LanguageModelV4Citation].self, forKey: .citations)
         providerMetadata = try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata)
     }
 
@@ -22,6 +53,7 @@ public struct LanguageModelV4Text: Sendable, Equatable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
         try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(citations, forKey: .citations)
         try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
     }
 }
@@ -149,9 +181,10 @@ public struct LanguageModelV4ReasoningFile: Sendable, Equatable, Codable {
 public enum LanguageModelV4FileData: Sendable, Equatable, Codable {
     case data(Data)
     case base64(String)
-    case url(URL)
+    /// `originalUrl` keeps the source string when parsing it into a `URL` changed it.
+    case url(URL, originalUrl: String? = nil)
 
-    private enum CodingKeys: String, CodingKey { case type, data, url }
+    private enum CodingKeys: String, CodingKey { case type, data, url, originalUrl }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -161,7 +194,10 @@ public enum LanguageModelV4FileData: Sendable, Equatable, Codable {
         case "data":
             self = .base64(try container.decode(String.self, forKey: .data))
         case "url":
-            self = .url(try container.decode(URL.self, forKey: .url))
+            self = .url(
+                try container.decode(URL.self, forKey: .url),
+                originalUrl: try container.decodeIfPresent(String.self, forKey: .originalUrl)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -181,9 +217,10 @@ public enum LanguageModelV4FileData: Sendable, Equatable, Codable {
         case .base64(let base64):
             try container.encode("data", forKey: .type)
             try container.encode(base64, forKey: .data)
-        case .url(let url):
+        case let .url(url, originalUrl):
             try container.encode("url", forKey: .type)
             try container.encode(url, forKey: .url)
+            try container.encodeIfPresent(originalUrl, forKey: .originalUrl)
         }
     }
 }

@@ -47,7 +47,7 @@ struct ProviderErrorsTests {
     func testGetErrorMessageError() throws {
         let error = LoadAPIKeyError(message: "API key missing")
         let msg = getErrorMessage(error as Error)
-        #expect(msg == "API key missing")
+        #expect(msg == "AI_LoadAPIKeyError: API key missing")
     }
 
     // MARK: - APICallError
@@ -296,6 +296,23 @@ struct ProviderErrorsTests {
 
         // Should return the original error (identity check via message)
         #expect(wrapped.message == original.message)
+    }
+
+    @Test("TypeValidationError wrap keeps the cause only for the same value and context")
+    func testTypeValidationErrorWrapContext() throws {
+        struct DummyError: Error {}
+
+        let context = TypeValidationContext(field: "message.metadata", entityName: "weather", entityId: "call-1")
+        let original = TypeValidationError(value: 42, cause: DummyError(), context: context)
+
+        let sameContext = TypeValidationError.wrap(value: 42, cause: original, context: context)
+        #expect(sameContext.cause is DummyError)
+        #expect(sameContext.context == context)
+
+        let otherContext = TypeValidationContext(field: "tool.input")
+        let rewrapped = TypeValidationError.wrap(value: 42, cause: original, context: otherContext)
+        #expect(rewrapped.cause is TypeValidationError)
+        #expect(rewrapped.context == otherContext)
     }
 
     // MARK: - UnsupportedFunctionalityError

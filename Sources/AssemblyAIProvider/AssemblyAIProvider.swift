@@ -33,7 +33,7 @@ public final class AssemblyAIProvider: ProviderV3 {
     }
 
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV3 {

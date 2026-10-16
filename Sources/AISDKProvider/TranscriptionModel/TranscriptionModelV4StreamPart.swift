@@ -35,6 +35,7 @@ public enum TranscriptionModelV4StreamPart: Sendable, Equatable {
         segments: [TranscriptionModelV4Result.Segment],
         language: String?,
         durationInSeconds: Double?,
+        usage: JSONObject? = nil,
         providerMetadata: [String: JSONObject]?
     )
     case raw(rawValue: JSONValue)

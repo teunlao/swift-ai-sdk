@@ -404,7 +404,7 @@ struct OpenAIProviderTests {
         #expect(normalizedHeaders["x-custom-header"] == "custom-header-value")
         #expect(normalizedHeaders["user-agent"]?.contains("Client/1.0") == true)
         #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/openai/") == true)
-        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk/provider-utils/") == true)
+        #expect(normalizedHeaders["user-agent"]?.contains("ai-sdk-provider-utils/") == true)
     }
 
     @Test("OpenAI factories reject empty baseURL at creation")

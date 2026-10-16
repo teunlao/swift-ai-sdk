@@ -1,9 +1,16 @@
 import Foundation
 
+/// Encoding of `tool-input-delta` deltas. Defaults to JSON when omitted; text
+/// deltas concatenate to a raw string while the final tool-call input stays JSON-encoded.
+public enum LanguageModelV4ToolInputEncoding: String, Sendable, Equatable, Codable {
+    case json
+    case text
+}
+
 public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
     case textStart(id: String, providerMetadata: SharedV4ProviderMetadata?)
     case textDelta(id: String, delta: String, providerMetadata: SharedV4ProviderMetadata?)
-    case textEnd(id: String, providerMetadata: SharedV4ProviderMetadata?)
+    case textEnd(id: String, providerMetadata: SharedV4ProviderMetadata?, citations: [LanguageModelV4Citation]? = nil)
     case reasoningStart(id: String, providerMetadata: SharedV4ProviderMetadata?)
     case reasoningDelta(id: String, delta: String, providerMetadata: SharedV4ProviderMetadata?)
     case reasoningEnd(id: String, providerMetadata: SharedV4ProviderMetadata?)
@@ -13,7 +20,8 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
         providerMetadata: SharedV4ProviderMetadata?,
         providerExecuted: Bool?,
         dynamic: Bool?,
-        title: String?
+        title: String?,
+        inputEncoding: LanguageModelV4ToolInputEncoding? = nil
     )
     case toolInputDelta(id: String, delta: String, providerMetadata: SharedV4ProviderMetadata?)
     case toolInputEnd(id: String, providerMetadata: SharedV4ProviderMetadata?)
@@ -32,6 +40,7 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case type, id, providerMetadata, delta, toolName, providerExecuted, dynamic, title
+        case citations, inputEncoding
         case warnings, modelId, timestamp, finishReason, usage, rawValue, error
     }
 
@@ -54,7 +63,8 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
         case "text-end":
             self = .textEnd(
                 id: try container.decode(String.self, forKey: .id),
-                providerMetadata: try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata)
+                providerMetadata: try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata),
+                citations: try container.decodeIfPresent([LanguageModelV4Citation].self, forKey: .citations)
             )
         case "reasoning-start":
             self = .reasoningStart(
@@ -79,7 +89,8 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
                 providerMetadata: try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata),
                 providerExecuted: try container.decodeIfPresent(Bool.self, forKey: .providerExecuted),
                 dynamic: try container.decodeIfPresent(Bool.self, forKey: .dynamic),
-                title: try container.decodeIfPresent(String.self, forKey: .title)
+                title: try container.decodeIfPresent(String.self, forKey: .title),
+                inputEncoding: try container.decodeIfPresent(LanguageModelV4ToolInputEncoding.self, forKey: .inputEncoding)
             )
         case "tool-input-delta":
             self = .toolInputDelta(
@@ -146,9 +157,10 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
             try container.encode(id, forKey: .id)
             try container.encode(delta, forKey: .delta)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
-        case let .textEnd(id, providerMetadata):
+        case let .textEnd(id, providerMetadata, citations):
             try container.encode("text-end", forKey: .type)
             try container.encode(id, forKey: .id)
+            try container.encodeIfPresent(citations, forKey: .citations)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
         case let .reasoningStart(id, providerMetadata):
             try container.encode("reasoning-start", forKey: .type)
@@ -163,10 +175,11 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
             try container.encode("reasoning-end", forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
-        case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title):
+        case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title, inputEncoding):
             try container.encode("tool-input-start", forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encode(toolName, forKey: .toolName)
+            try container.encodeIfPresent(inputEncoding, forKey: .inputEncoding)
             try container.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
             try container.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
             try container.encodeIfPresent(dynamic, forKey: .dynamic)

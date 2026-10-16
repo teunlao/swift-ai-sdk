@@ -674,7 +674,7 @@ private func generatedFile(mediaType: String, data: LanguageModelV4FileData) -> 
         return DefaultGeneratedFileWithType(data: data, mediaType: mediaType)
     case .base64(let base64):
         return DefaultGeneratedFileWithType(base64: base64, mediaType: mediaType)
-    case .url(let url):
+    case .url(let url, _):
         return DefaultGeneratedFileWithType(base64: url.absoluteString, mediaType: mediaType)
     }
 }

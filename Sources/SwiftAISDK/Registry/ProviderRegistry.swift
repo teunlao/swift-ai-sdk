@@ -253,8 +253,8 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
     }
 
     public func embeddingModel(id: String) throws -> any EmbeddingModelV4 {
-        let (providerId, modelId) = try splitId(id: id, modelType: .textEmbeddingModel)
-        let provider = try getProvider(id: providerId, modelType: .textEmbeddingModel)
+        let (providerId, modelId) = try splitId(id: id, modelType: .embeddingModel)
+        let provider = try getProvider(id: providerId, modelType: .embeddingModel)
         return try provider.embeddingModel(modelId: modelId)
     }
 

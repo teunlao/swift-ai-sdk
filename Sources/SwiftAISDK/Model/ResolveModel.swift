@@ -762,7 +762,7 @@ public func resolveEmbeddingModel(_ model: EmbeddingModel) throws -> any Embeddi
             // TypeScript uses gateway as fallback, but we require explicit provider setup
             throw NoSuchProviderError(
                 modelId: id,
-                modelType: .textEmbeddingModel,
+                modelType: .embeddingModel,
                 providerId: "default",
                 availableProviders: [],
                 message: "No global default provider set. Set `globalDefaultProvider` before resolving string model IDs."

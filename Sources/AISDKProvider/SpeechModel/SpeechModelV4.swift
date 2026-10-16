@@ -20,6 +20,8 @@ extension SpeechModelV4 {
 public struct SpeechModelV4Result: Sendable {
     public let audio: SpeechModelV4Audio
     public let warnings: [SharedV4Warning]
+    /// Usage information reported by the provider, in its native JSON shape.
+    public let usage: JSONObject?
     public let request: RequestInfo?
     public let response: ResponseInfo
     public let providerMetadata: [String: JSONObject]?
@@ -27,12 +29,14 @@ public struct SpeechModelV4Result: Sendable {
     public init(
         audio: SpeechModelV4Audio,
         warnings: [SharedV4Warning] = [],
+        usage: JSONObject? = nil,
         request: RequestInfo? = nil,
         response: ResponseInfo,
         providerMetadata: [String: JSONObject]? = nil
     ) {
         self.audio = audio
         self.warnings = warnings
+        self.usage = usage
         self.request = request
         self.response = response
         self.providerMetadata = providerMetadata

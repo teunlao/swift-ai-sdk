@@ -8,12 +8,15 @@ public protocol RealtimeModelV4: Sendable {
     var provider: String { get }
     var modelId: String { get }
 
-    func doCreateClientSecret(
-        options: RealtimeModelV4ClientSecretOptions
-    ) async throws -> RealtimeModelV4ClientSecretResult
+    /// Conversation semantics and supported transports, when declared.
+    var capabilities: RealtimeModelV4Capabilities? { get }
 
-    func getWebSocketConfig(options: RealtimeModelV4WebSocketOptions) throws -> RealtimeModelV4WebSocketConfig
     func parseServerEvent(raw: JSONValue) throws -> [RealtimeModelV4ServerEvent]
+
+    /// Creates a raw-event parser for one connection, discarded on disconnect.
+    /// `nil` means `parseServerEvent` is used directly.
+    func createServerEventParser() -> (@Sendable (JSONValue) throws -> [RealtimeModelV4ServerEvent])?
+
     func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue
     func buildSessionConfig(_ config: RealtimeModelV4SessionConfig) throws -> JSONValue
     func getHealthCheckResponse(raw: JSONValue) throws -> JSONValue?
@@ -22,8 +25,141 @@ public protocol RealtimeModelV4: Sendable {
 extension RealtimeModelV4 {
     public var specificationVersion: String { "v4" }
 
+    public var capabilities: RealtimeModelV4Capabilities? { nil }
+
+    public func createServerEventParser() -> (@Sendable (JSONValue) throws -> [RealtimeModelV4ServerEvent])? {
+        nil
+    }
+
     public func getHealthCheckResponse(raw: JSONValue) throws -> JSONValue? {
         nil
+    }
+}
+
+/**
+ A realtime model reachable from the browser through an ephemeral client secret
+ and a WebSocket. Upstream marks both methods optional; the legacy connection is
+ assumed when a model declares no `connections`.
+ */
+public protocol RealtimeModelV4ClientSecretWebSocket: RealtimeModelV4 {
+    /// Server-side: creates a short-lived client secret for browser WebSocket connections.
+    func doCreateClientSecret(
+        options: RealtimeModelV4ClientSecretOptions
+    ) async throws -> RealtimeModelV4ClientSecretResult
+
+    /// Browser-side: the WebSocket URL and protocols for a client secret.
+    func getWebSocketConfig(options: RealtimeModelV4WebSocketOptions) throws -> RealtimeModelV4WebSocketConfig
+}
+
+/// A realtime model reachable from a server over a WebSocket.
+public protocol RealtimeModelV4ServerWebSocket: RealtimeModelV4 {
+    /// Server-only connection settings. Headers can contain long-lived credentials.
+    func getServerWebSocketConfig() async throws -> RealtimeModelV4ServerWebSocketConfig
+}
+
+/// A realtime model reachable over WebRTC.
+public protocol RealtimeModelV4WebRTC: RealtimeModelV4 {
+    /// Provider-specific setup for the WebRTC event channel.
+    func getWebRTCConfig() -> RealtimeModelV4WebRTCConfig
+
+    /// Server-side SDP exchange. Only the answer and session id go back to the client.
+    func doCreateWebRTCSession(
+        options: RealtimeModelV4WebRTCSessionOptions
+    ) async throws -> RealtimeModelV4WebRTCSession
+}
+
+public struct RealtimeModelV4Capabilities: Sendable, Equatable {
+    public enum Conversation: String, Sendable, Equatable {
+        case continuous
+        case turnBased = "turn-based"
+    }
+
+    public enum Transport: String, Sendable, Equatable {
+        case websocket
+        case webrtc
+    }
+
+    public enum Connection: String, Sendable, Equatable {
+        case clientSecretWebSocket = "client-secret-websocket"
+        case serverWebSocket = "server-websocket"
+        case webrtc
+    }
+
+    public enum Startup: String, Sendable, Equatable {
+        case sessionStart = "session-start"
+        case sessionUpdate = "session-update"
+    }
+
+    public enum Finalization: String, Sendable, Equatable {
+        case sessionClose = "session-close"
+        case transportClose = "transport-close"
+    }
+
+    public let conversation: Conversation
+    public let transports: [Transport]
+    /// `nil` preserves the legacy client-secret WebSocket connection.
+    public let connections: [Connection]?
+    /// `nil` preserves session-update startup. WebRTC setup may start the session.
+    public let startup: Startup?
+    /// `nil` preserves transport-close finalization.
+    public let finalization: Finalization?
+
+    public init(
+        conversation: Conversation,
+        transports: [Transport],
+        connections: [Connection]? = nil,
+        startup: Startup? = nil,
+        finalization: Finalization? = nil
+    ) {
+        self.conversation = conversation
+        self.transports = transports
+        self.connections = connections
+        self.startup = startup
+        self.finalization = finalization
+    }
+}
+
+public struct RealtimeModelV4ServerWebSocketConfig: Sendable, Equatable {
+    public let url: String
+    public let headers: [String: String]
+
+    public init(url: String, headers: [String: String]) {
+        self.url = url
+        self.headers = headers
+    }
+}
+
+public struct RealtimeModelV4WebRTCConfig: Sendable, Equatable {
+    public let dataChannelLabel: String
+
+    public init(dataChannelLabel: String) {
+        self.dataChannelLabel = dataChannelLabel
+    }
+}
+
+public struct RealtimeModelV4WebRTCSessionOptions: Sendable {
+    public let sdp: String
+    public let sessionConfig: RealtimeModelV4SessionConfig?
+    public let abortSignal: (@Sendable () -> Bool)?
+
+    public init(
+        sdp: String,
+        sessionConfig: RealtimeModelV4SessionConfig? = nil,
+        abortSignal: (@Sendable () -> Bool)? = nil
+    ) {
+        self.sdp = sdp
+        self.sessionConfig = sessionConfig
+        self.abortSignal = abortSignal
+    }
+}
+
+public struct RealtimeModelV4WebRTCSession: Sendable, Equatable {
+    public let sessionId: String
+    public let sdp: String
+
+    public init(sessionId: String, sdp: String) {
+        self.sessionId = sessionId
+        self.sdp = sdp
     }
 }
 
@@ -143,15 +279,7 @@ public struct RealtimeModelV4SessionConfig: Sendable, Equatable {
         case audio
     }
 
-    public struct AudioFormat: Sendable, Equatable, Codable {
-        public let type: String
-        public let rate: Int?
-
-        public init(type: String, rate: Int? = nil) {
-            self.type = type
-            self.rate = rate
-        }
-    }
+    public typealias AudioFormat = SharedV4AudioFormat
 
     public struct TranscriptionConfig: Sendable, Equatable, Codable {
         public let model: String?
@@ -198,8 +326,18 @@ public enum RealtimeModelV4ConversationItem: Sendable, Equatable {
 }
 
 public enum RealtimeModelV4ClientEvent: Sendable, Equatable {
-    case sessionUpdate(config: RealtimeModelV4SessionConfig)
-    case inputAudioAppend(audio: String)
+    case sessionUpdate(config: RealtimeModelV4SessionConfig, eventId: String? = nil)
+    case sessionStart(config: RealtimeModelV4SessionConfig, eventId: String? = nil)
+    case sessionClose(eventId: String? = nil)
+    case inputAudioMute(eventId: String? = nil)
+    case inputAudioUnmute(eventId: String? = nil)
+    case contextAppend(
+        content: String,
+        delegationId: String?,
+        eventId: String? = nil,
+        providerOptions: SharedV4ProviderOptions? = nil
+    )
+    case inputAudioAppend(audio: String, eventId: String? = nil)
     case inputAudioCommit
     case inputAudioClear
     case conversationItemCreate(item: RealtimeModelV4ConversationItem)
@@ -221,6 +359,25 @@ public enum RealtimeModelV4ClientEvent: Sendable, Equatable {
 }
 
 public enum RealtimeModelV4ServerEvent: Sendable, Equatable {
+    public enum Party: String, Sendable, Equatable {
+        case client
+        case provider
+    }
+
+    public enum Speaker: String, Sendable, Equatable {
+        case user
+        case assistant
+    }
+
+    case sessionStarted(sessionId: String, delegationMode: Party?, raw: JSONValue)
+    case sessionClosed(sessionId: String?, usageSeconds: Double, reason: String, raw: JSONValue)
+    /// `usageSeconds` is a cumulative duration snapshot, not an increment.
+    case sessionUsage(usageSeconds: Double, contextWindowUsageRatio: Double?, raw: JSONValue)
+    case audioChunk(delta: String, raw: JSONValue)
+    case transcriptFragment(speaker: Speaker, delta: String, startMs: Double, endMs: Double, raw: JSONValue)
+    case delegationCreated(delegationId: String, target: Party?, offsetMs: Double?, responseId: String?, raw: JSONValue)
+    /// `command` is the provider-native command name that was acknowledged.
+    case commandAcknowledged(command: String, clientEventId: String?, raw: JSONValue)
     case sessionCreated(sessionId: String?, raw: JSONValue)
     case sessionUpdated(raw: JSONValue)
     case speechStarted(itemId: String?, raw: JSONValue)
@@ -242,6 +399,6 @@ public enum RealtimeModelV4ServerEvent: Sendable, Equatable {
     case textDone(responseId: String, itemId: String, text: String?, raw: JSONValue)
     case functionCallArgumentsDelta(responseId: String, itemId: String, callId: String, delta: String, raw: JSONValue)
     case functionCallArgumentsDone(responseId: String, itemId: String, callId: String, name: String, arguments: String, raw: JSONValue)
-    case error(message: String, code: String?, raw: JSONValue)
+    case error(message: String, code: String?, clientEventId: String? = nil, raw: JSONValue)
     case custom(rawType: String, raw: JSONValue)
 }

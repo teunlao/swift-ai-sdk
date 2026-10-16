@@ -321,7 +321,8 @@ struct ResolveModelV4Tests {
         #expect(streamingTranscriptionBase.lastStreamOptions?.inputAudioFormat.type == "audio/pcm")
 
         let videoBase = RecordingVideoModelV3()
-        let video = try await asVideoModelV4(videoBase).doGenerate(
+        let videoModel = try #require(asVideoModelV4(videoBase) as? any VideoModelV4Generator)
+        let video = try await videoModel.doGenerate(
             options: VideoModelV4CallOptions(
                 prompt: "video",
                 n: 1,
@@ -338,7 +339,7 @@ struct ResolveModelV4Tests {
 
     @Test("video adapter rejects V4-only options on V3 models")
     func videoAdapterRejectsV4OnlyOptions() async throws {
-        let model = asVideoModelV4(RecordingVideoModelV3())
+        let model = try #require(asVideoModelV4(RecordingVideoModelV3()) as? any VideoModelV4Generator)
 
         await #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try await model.doGenerate(

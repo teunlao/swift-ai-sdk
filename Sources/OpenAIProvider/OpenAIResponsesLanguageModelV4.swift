@@ -322,7 +322,7 @@ func convertOpenAIResponsesV4FileDataToV3(
         return .data(data)
     case .base64(let base64):
         return .base64(base64)
-    case .url(let url):
+    case .url(let url, _):
         return .url(url)
     case .text:
         throw UnsupportedFunctionalityError(functionality: "text file parts")
@@ -342,7 +342,7 @@ private func convertOpenAIResponsesV4FileDataToBase64String(
         return base64
     case .text(let text):
         return Data(text.utf8).base64EncodedString()
-    case .url(let url):
+    case .url(let url, _):
         return url.absoluteString
     case .reference(let reference):
         return try resolveProviderReference(reference: reference, provider: providerOptionsName)

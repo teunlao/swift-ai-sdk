@@ -7,7 +7,9 @@ import Foundation
  */
 public enum VideoModelV4File: Sendable, Equatable, Codable {
     case file(mediaType: String, data: VideoModelV4FileData, providerOptions: SharedV4ProviderMetadata?)
-    case url(url: String, providerOptions: SharedV4ProviderMetadata?)
+    /// `mediaType` is the referenced file's media type when known, so providers
+    /// can route image and video references.
+    case url(url: String, mediaType: String? = nil, providerOptions: SharedV4ProviderMetadata?)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -31,6 +33,7 @@ public enum VideoModelV4File: Sendable, Equatable, Codable {
         case "url":
             self = .url(
                 url: try container.decode(String.self, forKey: .url),
+                mediaType: try container.decodeIfPresent(String.self, forKey: .mediaType),
                 providerOptions: try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerOptions)
             )
         default:
@@ -51,9 +54,10 @@ public enum VideoModelV4File: Sendable, Equatable, Codable {
             try container.encode(mediaType, forKey: .mediaType)
             try container.encode(data, forKey: .data)
             try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
-        case let .url(url, providerOptions):
+        case let .url(url, mediaType, providerOptions):
             try container.encode("url", forKey: .type)
             try container.encode(url, forKey: .url)
+            try container.encodeIfPresent(mediaType, forKey: .mediaType)
             try container.encodeIfPresent(providerOptions, forKey: .providerOptions)
         }
     }

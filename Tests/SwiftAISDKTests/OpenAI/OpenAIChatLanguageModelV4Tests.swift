@@ -277,7 +277,7 @@ struct OpenAIChatLanguageModelV4Tests {
         })
         #expect(parts.contains { if case .textStart(id: "0", providerMetadata: nil) = $0 { return true }; return false })
         #expect(parts.contains { if case .textDelta(id: "0", delta: "Hello", providerMetadata: nil) = $0 { return true }; return false })
-        #expect(parts.contains { if case .textEnd(id: "0", providerMetadata: nil) = $0 { return true }; return false })
+        #expect(parts.contains { if case .textEnd(id: "0", providerMetadata: nil, citations: nil) = $0 { return true }; return false })
         #expect(parts.contains {
             if case .source(.url(_, "https://example.com/source", "Source", nil)) = $0 { return true }
             return false

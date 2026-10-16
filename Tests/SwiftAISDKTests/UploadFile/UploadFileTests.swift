@@ -50,7 +50,7 @@ private final class MockFilesProvider: ProviderV3, FilesProvider {
     }
 
     func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV3 {
@@ -64,7 +64,7 @@ private final class UnsupportedUploadProvider: ProviderV3 {
     }
 
     func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV3 {
@@ -88,7 +88,7 @@ private final class MockFilesProviderV4: ProviderV4 {
     }
 
     func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV4 {
@@ -102,7 +102,7 @@ private final class UnsupportedUploadProviderV4: ProviderV4 {
     }
 
     func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV4 {
@@ -206,7 +206,12 @@ struct UploadFileTests {
         )
 
         #expect(result.providerReference["anthropic"] == "file-v4")
-        #expect(await capture.first()?.data == .text("hello"))
+        let uploadedData = await capture.first()?.data
+        guard case .text(let uploadedText)? = uploadedData else {
+            Issue.record("expected text upload data")
+            return
+        }
+        #expect(uploadedText == "hello")
         #expect(await capture.first()?.mediaType == "text/plain")
     }
 

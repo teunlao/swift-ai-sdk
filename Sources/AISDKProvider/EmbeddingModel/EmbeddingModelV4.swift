@@ -21,17 +21,22 @@ public typealias EmbeddingModelV4Embedding = [Double]
 
 public struct EmbeddingModelV4CallOptions: Sendable {
     public let values: [String]
+    /// Requested number of dimensions for the output embeddings. Support and
+    /// allowed values depend on the model and provider.
+    public let dimensions: Int?
     public let abortSignal: (@Sendable () -> Bool)?
     public let providerOptions: SharedV4ProviderOptions?
     public let headers: SharedV4Headers?
 
     public init(
         values: [String],
+        dimensions: Int? = nil,
         abortSignal: (@Sendable () -> Bool)? = nil,
         providerOptions: SharedV4ProviderOptions? = nil,
         headers: SharedV4Headers? = nil
     ) {
         self.values = values
+        self.dimensions = dimensions
         self.abortSignal = abortSignal
         self.providerOptions = providerOptions
         self.headers = headers

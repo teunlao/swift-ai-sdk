@@ -14,7 +14,7 @@ public struct NoSuchModelError: AISDKError, Sendable {
 
     public enum ModelType: String, Sendable {
         case languageModel
-        case textEmbeddingModel
+        case embeddingModel
         case imageModel
         case videoModel
         case rerankingModel

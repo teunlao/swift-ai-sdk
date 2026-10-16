@@ -560,7 +560,7 @@ private func convertLanguageModelV4StreamPartToV3(
         return .textStart(id: id, providerMetadata: providerMetadata)
     case let .textDelta(id, delta, providerMetadata):
         return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .textEnd(id, providerMetadata):
+    case let .textEnd(id, providerMetadata, _):
         return .textEnd(id: id, providerMetadata: providerMetadata)
     case let .streamStart(warnings):
         return .streamStart(warnings: warnings.map(convertSharedV4WarningToV3))

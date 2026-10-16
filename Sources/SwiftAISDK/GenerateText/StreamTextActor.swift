@@ -783,7 +783,7 @@ actor StreamTextActor {
                 )
                 await fullBroadcaster.send(
                     .textDelta(id: id, text: delta, providerMetadata: providerMetadata))
-            case let .textEnd(id, providerMetadata):
+            case let .textEnd(id, providerMetadata, _):
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true
@@ -924,7 +924,7 @@ actor StreamTextActor {
                     .reasoningEnd(id: id, providerMetadata: providerMetadata)
                 )
 
-case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamicFlag, title):
+case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamicFlag, title, _):
                 if !didEmitStartStep {
                     if !framingEmitted {
                         framingEmitted = true

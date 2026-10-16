@@ -867,7 +867,7 @@ struct OpenAICompatibleProviderV4Tests {
             return false
         }),
         let textEndIndex = parts.firstIndex(where: {
-            if case .textEnd(id: "txt-0", providerMetadata: nil) = $0 { return true }
+            if case .textEnd(id: "txt-0", providerMetadata: nil, citations: nil) = $0 { return true }
             return false
         }),
         let toolCallIndex = parts.firstIndex(where: {

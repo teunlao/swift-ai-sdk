@@ -672,7 +672,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
 
         let topLevelReasoning: String?
         switch options.reasoning {
-        case .some(.minimal), .some(.low), .some(.medium), .some(.high), .some(.xhigh):
+        case .some(.minimal), .some(.low), .some(.medium), .some(.high), .some(.xhigh), .some(.max):
             topLevelReasoning = options.reasoning?.rawValue
         case .some(.providerDefault), .some(.none), nil:
             topLevelReasoning = nil
@@ -1015,7 +1015,7 @@ private func convertOpenAICompatibleStreamPartToV3(
         return .textStart(id: id, providerMetadata: providerMetadata)
     case let .textDelta(id, delta, providerMetadata):
         return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .textEnd(id, providerMetadata):
+    case let .textEnd(id, providerMetadata, _):
         return .textEnd(id: id, providerMetadata: providerMetadata)
     case let .reasoningStart(id, providerMetadata):
         return .reasoningStart(id: id, providerMetadata: providerMetadata)
@@ -1023,7 +1023,7 @@ private func convertOpenAICompatibleStreamPartToV3(
         return .reasoningDelta(id: id, delta: delta, providerMetadata: providerMetadata)
     case let .reasoningEnd(id, providerMetadata):
         return .reasoningEnd(id: id, providerMetadata: providerMetadata)
-    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title):
+    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title, _):
         return .toolInputStart(
             id: id,
             toolName: toolName,

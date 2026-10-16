@@ -23,15 +23,7 @@ public struct InvalidResponseDataError: AISDKError, @unchecked Sendable {
         if let message = message {
             self.message = message
         } else {
-            // Try to serialize data for the error message
-            let dataString: String
-            if let jsonData = try? JSONSerialization.data(withJSONObject: data as Any, options: []),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-                dataString = jsonString
-            } else {
-                dataString = String(describing: data)
-            }
-            self.message = "Invalid response data: \(dataString)."
+            self.message = "Invalid response data: \(stringifyErrorValue(data))."
         }
     }
 

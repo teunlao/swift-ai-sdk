@@ -62,7 +62,7 @@ public final class AnthropicFiles: FilesV4 {
     }
 
     public func uploadFile(options: FilesV4UploadFileCallOptions) async throws -> FilesV4UploadFileResult {
-        let fileData = try toData(options.data)
+        let fileData = try convertInlineFileDataToData(options.data)
 
         var builder = MultipartFormDataBuilder()
         builder.appendFile(
@@ -113,16 +113,5 @@ public final class AnthropicFiles: FilesV4 {
             try config.headers(),
             extra
         ).compactMapValues { $0 }
-    }
-
-    private func toData(_ content: SharedV4DataContent) throws -> Data {
-        switch content {
-        case .data(let data):
-            return data
-        case .base64(let string):
-            return try convertBase64ToData(string)
-        case .text(let text):
-            return Data(text.utf8)
-        }
     }
 }

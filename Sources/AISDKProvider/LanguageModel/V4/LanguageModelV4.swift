@@ -75,6 +75,27 @@ public struct LanguageModelV4RequestInfo: @unchecked Sendable {
     }
 }
 
+/**
+ Response metadata of a language model call: the fields of the
+ `response-metadata` stream part and of `LanguageModelV4ResponseInfo`.
+
+ Port of `@ai-sdk/provider/src/language-model/v4/language-model-v4-response-metadata.ts`.
+ */
+public struct LanguageModelV4ResponseMetadata: Sendable, Equatable {
+    /// Response id, if the provider sends one.
+    public let id: String?
+    /// Start of the response generation, if the provider sends one.
+    public let timestamp: Date?
+    /// Model id the response was generated with, if the provider sends one.
+    public let modelId: String?
+
+    public init(id: String? = nil, timestamp: Date? = nil, modelId: String? = nil) {
+        self.id = id
+        self.timestamp = timestamp
+        self.modelId = modelId
+    }
+}
+
 public struct LanguageModelV4ResponseInfo: @unchecked Sendable {
     public let id: String?
     public let timestamp: Date?

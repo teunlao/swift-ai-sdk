@@ -8,7 +8,9 @@ import Foundation
 public enum SharedV4FileData: Sendable, Equatable, Codable {
     case data(Data)
     case base64(String)
-    case url(URL)
+    /// `originalUrl` keeps the source string when parsing it into a `URL`
+    /// changed it, so providers can forward opaque non-HTTP URIs exactly.
+    case url(URL, originalUrl: String? = nil)
     case reference(SharedV4ProviderReference)
     case text(String)
 
@@ -16,6 +18,7 @@ public enum SharedV4FileData: Sendable, Equatable, Codable {
         case type
         case data
         case url
+        case originalUrl
         case reference
         case text
     }
@@ -29,7 +32,10 @@ public enum SharedV4FileData: Sendable, Equatable, Codable {
             let value = try container.decode(String.self, forKey: .data)
             self = .base64(value)
         case "url":
-            self = .url(try container.decode(URL.self, forKey: .url))
+            self = .url(
+                try container.decode(URL.self, forKey: .url),
+                originalUrl: try container.decodeIfPresent(String.self, forKey: .originalUrl)
+            )
         case "reference":
             self = .reference(try container.decode(SharedV4ProviderReference.self, forKey: .reference))
         case "text":
@@ -53,9 +59,10 @@ public enum SharedV4FileData: Sendable, Equatable, Codable {
         case let .base64(base64):
             try container.encode("data", forKey: .type)
             try container.encode(base64, forKey: .data)
-        case let .url(url):
+        case let .url(url, originalUrl):
             try container.encode("url", forKey: .type)
             try container.encode(url, forKey: .url)
+            try container.encodeIfPresent(originalUrl, forKey: .originalUrl)
         case let .reference(reference):
             try container.encode("reference", forKey: .type)
             try container.encode(reference, forKey: .reference)

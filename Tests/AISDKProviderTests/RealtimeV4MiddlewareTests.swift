@@ -47,7 +47,7 @@ struct RealtimeV4MiddlewareTests {
         #expect(token.url == "wss://example.test/realtime")
         #expect(token.expiresAt == 60)
 
-        let model = factory.realtimeModel(modelId: "realtime-model")
+        let model = try #require(factory.realtimeModel(modelId: "realtime-model") as? any RealtimeModelV4ClientSecretWebSocket)
         #expect(model.specificationVersion == "v4")
         #expect(model.provider == "mock.realtime")
         #expect(model.modelId == "realtime-model")
@@ -280,7 +280,7 @@ private struct MockRealtimeFactoryV4: RealtimeFactoryV4 {
     }
 }
 
-private struct MockRealtimeModelV4: RealtimeModelV4 {
+private struct MockRealtimeModelV4: RealtimeModelV4ClientSecretWebSocket {
     let provider = "mock.realtime"
     let modelId: String
 
@@ -336,10 +336,12 @@ private struct MockRealtimeModelV4: RealtimeModelV4 {
             return ["type": "response.create", "response": .object(response)]
         case .responseCancel:
             return ["type": "response.cancel"]
-        case .sessionUpdate(let config):
+        case .sessionUpdate(let config, _):
             return ["type": "session.update", "session": try buildSessionConfig(config)]
-        case .inputAudioAppend(let audio):
+        case .inputAudioAppend(let audio, _):
             return ["type": "input_audio_buffer.append", "audio": .string(audio)]
+        case .sessionStart, .sessionClose, .inputAudioMute, .inputAudioUnmute, .contextAppend:
+            return .null
         case .inputAudioCommit:
             return ["type": "input_audio_buffer.commit"]
         case .inputAudioClear:

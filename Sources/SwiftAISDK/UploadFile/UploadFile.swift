@@ -129,7 +129,7 @@ public func uploadFile(
     )
 }
 
-private func normalizeUploadData(_ data: DataContentOrURL) throws -> SharedV4DataContent {
+private func normalizeUploadData(_ data: DataContentOrURL) throws -> FilesV4UploadFileData {
     switch data {
     case .text(let text):
         return .text(text)
@@ -157,7 +157,7 @@ private func normalizeUploadData(_ data: DataContentOrURL) throws -> SharedV4Dat
     }
 }
 
-private func detectUploadMediaType(_ data: SharedV4DataContent) -> String {
+private func detectUploadMediaType(_ data: FilesV4UploadFileData) -> String {
     let signatures = imageMediaTypeSignatures
         + documentMediaTypeSignatures
         + audioMediaTypeSignatures
@@ -172,6 +172,8 @@ private func detectUploadMediaType(_ data: SharedV4DataContent) -> String {
             ?? (isLikelyTextUploadData(base64) ? "text/plain" : "application/octet-stream")
     case .text:
         return "text/plain"
+    case .stream:
+        return "application/octet-stream"
     }
 }
 

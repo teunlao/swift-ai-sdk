@@ -133,7 +133,7 @@ public func resolveEmbeddingModelV4(_ model: EmbeddingModel) throws -> any Embed
     case .v4(let model):
         return model
     case .string(let id):
-        return try _resolveGlobalProviderV4(modelId: id, modelType: .textEmbeddingModel)
+        return try _resolveGlobalProviderV4(modelId: id, modelType: .embeddingModel)
             .embeddingModel(modelId: id)
     case .v3, .v2:
         return try asEmbeddingModelV4(resolveEmbeddingModel(model))
@@ -602,7 +602,7 @@ private func _convertSharedV4FileDataToLanguageModelV3DataContent(_ value: Share
         return .data(data)
     case .base64(let base64):
         return .base64(base64)
-    case .url(let url):
+    case .url(let url, _):
         return .url(url)
     case .text(let text):
         return .data(Data(text.utf8))
@@ -1390,7 +1390,7 @@ private func _convertTranscriptionModelV4AudioToV3(_ value: TranscriptionModelV4
 // MARK: - Video Model Adapter
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-private final class VideoModelV3ToV4Adapter: VideoModelV4, @unchecked Sendable {
+private final class VideoModelV3ToV4Adapter: VideoModelV4Generator, @unchecked Sendable {
     let specificationVersion = "v4"
 
     private let model: any VideoModelV3
@@ -1459,7 +1459,7 @@ private func _convertVideoModelV4FileToV3(_ value: VideoModelV4File) throws -> V
     switch value {
     case let .file(mediaType, data, providerOptions):
         return .file(mediaType: mediaType, data: _convertVideoModelV4FileDataToV3(data), providerOptions: providerOptions)
-    case let .url(url, providerOptions):
+    case let .url(url, _, providerOptions):
         return .url(url: url, providerOptions: providerOptions)
     }
 }

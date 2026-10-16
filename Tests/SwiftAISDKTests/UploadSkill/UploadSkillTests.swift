@@ -50,7 +50,7 @@ private final class MockSkillsProvider: ProviderV3, SkillsProvider {
     }
 
     func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV3 {
@@ -64,7 +64,7 @@ private final class UnsupportedSkillsProvider: ProviderV3 {
     }
 
     func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV3 {
@@ -88,7 +88,7 @@ private final class MockSkillsProviderV4: ProviderV4 {
     }
 
     func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV4 {
@@ -102,7 +102,7 @@ private final class UnsupportedSkillsProviderV4: ProviderV4 {
     }
 
     func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     func imageModel(modelId: String) throws -> any ImageModelV4 {

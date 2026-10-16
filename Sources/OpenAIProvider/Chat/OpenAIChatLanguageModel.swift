@@ -845,9 +845,9 @@ private func convertOpenAIChatStreamPartToV3(
         return .textStart(id: id, providerMetadata: providerMetadata)
     case let .textDelta(id, delta, providerMetadata):
         return .textDelta(id: id, delta: delta, providerMetadata: providerMetadata)
-    case let .textEnd(id, providerMetadata):
+    case let .textEnd(id, providerMetadata, _):
         return .textEnd(id: id, providerMetadata: providerMetadata)
-    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title):
+    case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynamic, title, _):
         return .toolInputStart(
             id: id,
             toolName: toolName,

@@ -53,7 +53,7 @@ public final class HuggingFaceProvider: ProviderV3 {
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         throw NoSuchModelError(
             modelId: modelId,
-            modelType: .textEmbeddingModel,
+            modelType: .embeddingModel,
             message: "Hugging Face Responses API does not support text embeddings. Use the Hugging Face Inference API directly for embeddings."
         )
     }

@@ -192,7 +192,7 @@ func convertAnthropicFileDataToV3(_ value: SharedV4FileData) throws -> LanguageM
         return .data(data)
     case .base64(let base64):
         return .base64(base64)
-    case .url(let url):
+    case .url(let url, _):
         return .url(url)
     case .text(let text):
         return .data(Data(text.utf8))

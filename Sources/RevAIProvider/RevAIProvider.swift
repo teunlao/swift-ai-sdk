@@ -52,7 +52,7 @@ public final class RevAIProvider: ProviderV3 {
     public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
         throw NoSuchModelError(
             modelId: modelId,
-            modelType: .textEmbeddingModel,
+            modelType: .embeddingModel,
             message: "Rev.ai does not provide text embedding models"
         )
     }

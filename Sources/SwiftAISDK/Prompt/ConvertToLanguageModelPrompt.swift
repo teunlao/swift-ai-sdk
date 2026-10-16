@@ -540,8 +540,8 @@ private func convertToLanguageModelV4FileData(
         return (.data(data), converted.mediaType)
     case .base64(let base64):
         return (.base64(base64), converted.mediaType)
-    case .url(let url):
-        return (.url(url), converted.mediaType)
+    case let .url(url, originalUrl):
+        return (.url(url, originalUrl: originalUrl), converted.mediaType)
     case .text(let text):
         return (.data(Data(text.utf8)), converted.mediaType)
     case .reference:
@@ -625,7 +625,7 @@ private func convertMediaPartToLanguageModelV4FilePart(
     var finalMediaType = converted.mediaType ?? mediaType
     var finalData = converted.data
 
-    if case .url(let url) = finalData {
+    if case .url(let url, _) = finalData {
         let downloadedFile = downloadedAssets[url.absoluteString]
         if let downloadedFile {
             if downloadedFile.data.isEmpty {

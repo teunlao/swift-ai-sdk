@@ -39,6 +39,8 @@ public struct TranscriptionModelV4Result: Sendable {
     public let language: String?
     public let durationInSeconds: Double?
     public let warnings: [SharedV4Warning]
+    /// Usage information reported by the provider, in its native JSON shape.
+    public let usage: JSONObject?
     public let request: RequestInfo?
     public let response: ResponseInfo
     public let providerMetadata: [String: JSONObject]?
@@ -49,6 +51,7 @@ public struct TranscriptionModelV4Result: Sendable {
         language: String? = nil,
         durationInSeconds: Double? = nil,
         warnings: [SharedV4Warning] = [],
+        usage: JSONObject? = nil,
         request: RequestInfo? = nil,
         response: ResponseInfo,
         providerMetadata: [String: JSONObject]? = nil
@@ -58,6 +61,7 @@ public struct TranscriptionModelV4Result: Sendable {
         self.language = language
         self.durationInSeconds = durationInSeconds
         self.warnings = warnings
+        self.usage = usage
         self.request = request
         self.response = response
         self.providerMetadata = providerMetadata

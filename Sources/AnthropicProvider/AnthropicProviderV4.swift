@@ -38,7 +38,7 @@ public final class AnthropicProviderV4: ProviderV4 {
     }
 
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .textEmbeddingModel)
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV4 {

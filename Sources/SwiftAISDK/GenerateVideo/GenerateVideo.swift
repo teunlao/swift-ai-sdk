@@ -115,12 +115,20 @@ func generateVideo(
         return min(remaining, maxVideosPerCallResolved)
     }
 
+    // The start/status flow is not orchestrated here yet; only doGenerate models are callable.
+    guard let generator = resolvedModel as? any VideoModelV4Generator else {
+        throw UnsupportedFunctionalityError(
+            functionality: "doGenerate",
+            message: "Video model \(resolvedModel.modelId) does not implement doGenerate or doStart/doStatus."
+        )
+    }
+
     var results: [VideoModelV4GenerateResult] = []
     results.reserveCapacity(callVideoCounts.count)
 
     for videosInCall in callVideoCounts {
         let result = try await preparedRetries.retry.call {
-            try await resolvedModel.doGenerate(
+            try await generator.doGenerate(
                 options: VideoModelV4CallOptions(
                     prompt: normalizedPrompt.prompt,
                     n: videosInCall,

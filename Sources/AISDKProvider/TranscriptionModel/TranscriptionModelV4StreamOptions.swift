@@ -29,15 +29,7 @@ public struct TranscriptionModelV4StreamOptions: Sendable {
         self.includeRawChunks = includeRawChunks
     }
 
-    public struct InputAudioFormat: Sendable, Equatable {
-        public let type: String
-        public let rate: Int?
-
-        public init(type: String, rate: Int? = nil) {
-            self.type = type
-            self.rate = rate
-        }
-    }
+    public typealias InputAudioFormat = SharedV4AudioFormat
 }
 
 public enum TranscriptionModelV4StreamAudio: Sendable, Equatable {

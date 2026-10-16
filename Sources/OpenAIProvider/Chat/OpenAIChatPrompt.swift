@@ -291,7 +291,7 @@ struct OpenAIChatMessagesConverter {
                             if topLevelType == "image" {
                                 let urlValue: String
                                 switch filePart.data {
-                                case .url(let url):
+                                case .url(let url, _):
                                     urlValue = url.absoluteString
                                 case .data(let data):
                                     urlValue = "data:\(try resolveFullMediaType(part: filePart));base64,\(convertDataToBase64(data))"

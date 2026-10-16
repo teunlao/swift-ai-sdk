@@ -46,7 +46,7 @@ private func textContent(from data: SharedV4FileData) throws -> String {
         return String(decoding: bytes, as: UTF8.self)
     case .base64(let base64):
         return String(decoding: try convertBase64ToData(base64), as: UTF8.self)
-    case .url(let url):
+    case .url(let url, _):
         return url.absoluteString
     case .reference, .text:
         throw UnsupportedFunctionalityError(functionality: "non-decodable text file data")
@@ -356,7 +356,7 @@ public func convertToOpenAICompatibleChatMessages(
                     case "image":
                         let url: String
                         switch filePart.data {
-                        case .url(let value):
+                        case .url(let value, _):
                             url = value.absoluteString
                         case .data, .base64:
                             let mediaType = try resolveFullMediaType(part: filePart)

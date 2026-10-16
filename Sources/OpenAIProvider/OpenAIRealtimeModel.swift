@@ -23,7 +23,7 @@ public struct OpenAIRealtimeModelConfig: Sendable {
 
 public typealias Experimental_OpenAIRealtimeModelConfig = OpenAIRealtimeModelConfig
 
-public final class OpenAIRealtimeModel: RealtimeModelV4 {
+public final class OpenAIRealtimeModel: RealtimeModelV4ClientSecretWebSocket {
     public let specificationVersion = "v4"
     public let provider: String
     public let modelId: String
@@ -125,7 +125,7 @@ final class OpenAIRealtimeFactory: RealtimeFactoryV4, @unchecked Sendable {
     }
 
     func getToken(options: RealtimeFactoryV4GetTokenOptions) async throws -> RealtimeFactoryV4GetTokenResult {
-        let secret = try await realtimeModel(modelId: options.model).doCreateClientSecret(
+        let secret = try await OpenAIRealtimeModel(modelId: options.model, config: config).doCreateClientSecret(
             options: .init(
                 expiresAfterSeconds: options.expiresAfterSeconds,
                 sessionConfig: options.sessionConfig
@@ -312,6 +312,7 @@ private func openAIRealtimeServerEvent(_ raw: JSONValue) -> RealtimeModelV4Serve
         return .error(
             message: stringValue(error["message"]) ?? stringValue(event["message"]) ?? "Unknown error",
             code: stringValue(error["code"]) ?? stringValue(event["code"]),
+            clientEventId: stringValue(error["event_id"]),
             raw: raw
         )
     default:
@@ -321,13 +322,24 @@ private func openAIRealtimeServerEvent(_ raw: JSONValue) -> RealtimeModelV4Serve
 
 private func openAIRealtimeClientEvent(_ event: RealtimeModelV4ClientEvent, modelId: String) throws -> JSONValue {
     switch event {
-    case .sessionUpdate(let config):
-        return [
+    case let .sessionUpdate(config, eventId):
+        var payload: [String: JSONValue] = [
             "type": "session.update",
             "session": .object(try buildOpenAIRealtimeSessionConfig(config, modelId: modelId))
         ]
-    case .inputAudioAppend(let audio):
-        return ["type": "input_audio_buffer.append", "audio": .string(audio)]
+        if let eventId {
+            payload["event_id"] = .string(eventId)
+        }
+        return .object(payload)
+    case let .inputAudioAppend(audio, eventId):
+        var payload: [String: JSONValue] = ["type": "input_audio_buffer.append", "audio": .string(audio)]
+        if let eventId {
+            payload["event_id"] = .string(eventId)
+        }
+        return .object(payload)
+    case .sessionStart, .sessionClose, .inputAudioMute, .inputAudioUnmute, .contextAppend:
+        // Upstream's OpenAI mapper has no wire form for these events and serializes nothing.
+        return .null
     case .inputAudioCommit:
         return ["type": "input_audio_buffer.commit"]
     case .inputAudioClear:

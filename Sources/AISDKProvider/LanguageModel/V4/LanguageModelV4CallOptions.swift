@@ -71,6 +71,7 @@ public enum LanguageModelV4ReasoningEffort: String, Sendable, Codable, Equatable
     case medium
     case high
     case xhigh
+    case max
 }
 
 public enum LanguageModelV4ResponseFormat: Sendable, Equatable, Codable {

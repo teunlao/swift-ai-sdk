@@ -7,7 +7,7 @@
 import Foundation
 import AISDKProvider
 
-public final class MockVideoModelV4: VideoModelV4, @unchecked Sendable {
+public final class MockVideoModelV4: VideoModelV4Generator, @unchecked Sendable {
     public let specificationVersion: String = "v4"
     public let provider: String
     public let modelId: String

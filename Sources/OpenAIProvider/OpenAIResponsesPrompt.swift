@@ -282,7 +282,7 @@ private extension OpenAIResponsesToolResultFileData {
         switch value {
         case .data(let data): self = .data(data)
         case .base64(let base64): self = .base64(base64)
-        case .url(let url): self = .url(url)
+        case .url(let url, _): self = .url(url)
         case .text(let text): self = .text(text)
         case .reference(let reference):
             self = .reference(reference)

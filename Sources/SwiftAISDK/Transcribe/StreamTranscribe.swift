@@ -190,7 +190,7 @@ private func makeStreamTranscriptionResult(
                     case let .error(error):
                         continuation.yield(.error(error: error))
 
-                    case let .finish(text, segments, language, durationInSeconds, providerMetadata):
+                    case let .finish(text, segments, language, durationInSeconds, _, providerMetadata):
                         if warningsPromise.isPending() {
                             resolveWarnings([])
                         }
