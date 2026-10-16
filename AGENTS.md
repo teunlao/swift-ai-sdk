@@ -2,8 +2,8 @@
 
 SwiftPM port of the Vercel AI SDK (`ai`, `@ai-sdk/*`). The goal is upstream
 behavior parity: public APIs, request shapes, response parsing, streaming order,
-errors, tools, usage, and defaults must match the TypeScript source unless this
-file records an intentional Swift contract.
+errors, tools, usage, and defaults must match the TypeScript source unless a
+deliberate Swift contract says otherwise.
 
 Reply to the user in Russian. Keep this file in English.
 
@@ -36,26 +36,15 @@ a race that only shows up under parallel execution will fail there, not locally.
   high-level orchestration belongs here, never in a provider target.
 - `Sources/<Name>Provider` — one target per provider. Provider-specific request
   building, auth, streaming, warnings, and decoding stay inside it.
-- `upstream/UPSTREAM.md` — pinned upstream commit. `upstream/PROGRESS.md` and
-  `upstream/providers/*.md` — durable parity evidence.
+- `upstream/UPSTREAM.md` — pinned upstream commit.
 - `apps/docs` — Starlight docs site. `examples/` — separate SwiftPM package.
 - `external/vercel-ai-sdk` — read-only upstream checkout. Nothing in `Sources`,
   `Tests`, docs builds, or scripts may depend on it, fixtures included.
-- `plan/`, `.upstream/`, `.staging/`, `.trash/`, `.archive/` are gitignored local
-  scratch. Do not read them unless asked.
 
 ## Upstream parity work
 
-Load the `swift-ai-sdk-upstream` skill before any upstream refresh, provider or
-core audit, or `upstream/**` update — it owns the refresh commands, the audit
-slice checklist, and the evidence format.
-
-Rules that hold outside a full audit too:
-
-- Prefer provider-first vertical slices. Touch core only when a provider or a
-  public contract forces it.
-- Match observable behavior contracts, not TypeScript line layout.
-- Update `upstream/providers/<provider>.md` when audited parity state changes.
+Load the `swift-ai-sdk-upstream` skill before porting upstream changes. Match
+observable behavior contracts, not TypeScript line layout.
 
 ## Gotchas
 
@@ -67,7 +56,6 @@ Rules that hold outside a full audit too:
   Swift-native persistence contracts. Explicit discriminators, tagged wrappers,
   and storage markers are deliberate for lossless round-trips — do not flatten
   them to resemble loose JavaScript JSON.
-- Record any new deviation in `plan/design-decisions.md` (local, gitignored).
 
 ## Tests
 
@@ -117,10 +105,8 @@ TypeScript → Swift:
 
 `apps/docs` pages are ported, not authored. For each page: copy the source from
 `external/vercel-ai-sdk/content/**` into the matching
-`apps/docs/src/content/docs/**` path, keep upstream frontmatter, add the
+  `apps/docs/src/content/docs/**` path, keep upstream frontmatter, add the
 adaptation banner, replace React-only components with Starlight/MDX equivalents,
 convert TypeScript examples to Swift using the public products, drop or mark
 JS-only AI SDK UI/RSC content, update `apps/docs/astro.config.mjs` when
 navigation changes, then run `docs:check` and `docs:build`.
-
-If the user sets an added-line quota, meet it and report per-file diff additions.

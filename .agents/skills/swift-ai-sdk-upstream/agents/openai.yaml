@@ -1,4 +1,4 @@
 interface:
   display_name: "Swift AI Upstream"
-  short_description: "Scan upstream drift and maintain Swift parity"
-  default_prompt: "Use $swift-ai-sdk-upstream to scan upstream coverage, classify drift, choose the next parity slice, and land evidence-backed fixes."
+  short_description: "Port Vercel AI SDK upstream changes into Swift"
+  default_prompt: "Use $swift-ai-sdk-upstream to compare a package with upstream at the target commit and port the differences with boundary tests."
