@@ -23,10 +23,7 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Us
     let completionTokens = intOrZero(dict["completion_tokens"])
 
     let cacheReadTokens: Int = {
-        if let cached = dict["cached_tokens"] {
-            let value = intOrZero(cached)
-            if value != 0 { return value }
-        }
+        if let cached = dict["cached_tokens"], cached != .null { return intOrZero(cached) }
 
         if case .object(let promptDetails)? = dict["prompt_tokens_details"] {
             return intOrZero(promptDetails["cached_tokens"])
@@ -51,7 +48,7 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Us
         ),
         outputTokens: .init(
             total: completionTokens,
-            text: completionTokens - reasoningTokens,
+            text: max(0, completionTokens - reasoningTokens),
             reasoning: reasoningTokens
         ),
         raw: usage

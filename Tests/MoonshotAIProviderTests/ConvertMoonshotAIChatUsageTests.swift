@@ -32,6 +32,16 @@ struct ConvertMoonshotAIChatUsageTests {
         #expect(result.outputTokens.text == 20)
     }
 
+    @Test("zero cached tokens take precedence and reasoning cannot make text negative")
+    func zeroCacheAndReasoningBounds() {
+        let usage: JSONValue = .object(["prompt_tokens": .number(10), "completion_tokens": .number(2), "cached_tokens": .number(0), "prompt_tokens_details": .object(["cached_tokens": .number(5)]), "completion_tokens_details": .object(["reasoning_tokens": .number(3)]), "future": .number(7)])
+        let result = convertMoonshotAIChatUsage(usage)
+        #expect(result.inputTokens.cacheRead == 0)
+        #expect(result.inputTokens.noCache == 10)
+        #expect(result.outputTokens.text == 0)
+        #expect(result.raw == usage)
+    }
+
     @Test("falls back to prompt_tokens_details.cached_tokens")
     func fallsBackToPromptTokensDetails() throws {
         let usage: JSONValue = .object([
