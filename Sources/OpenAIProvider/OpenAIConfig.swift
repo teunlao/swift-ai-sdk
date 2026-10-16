@@ -85,7 +85,7 @@ public struct OpenAIConfig: @unchecked Sendable {
         explicitMessageItemType: Bool? = nil,
         imageInputCapabilities: ImageInputCapabilities? = nil,
         url: @escaping @Sendable (_ options: URLOptions) throws -> String,
-        headers: @escaping @Sendable () throws -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?] = { [:] },
         fetch: FetchFunction? = nil,
         webSocket: OpenAIWebSocketFactory? = nil,
         generateId: (@Sendable () -> String)? = nil,

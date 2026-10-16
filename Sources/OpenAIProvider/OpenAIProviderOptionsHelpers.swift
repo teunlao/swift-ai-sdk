@@ -3,8 +3,6 @@ import AISDKProvider
 import AISDKProviderUtils
 
 public extension OpenAIProvider {
-  /// Swift-friendly builder for OpenAI Responses provider options.
-  /// Returns the same SharedV3ProviderOptions dictionary as manual construction.
   static func responsesOptions(
     include: [OpenAIResponsesProviderOptionsIncludeValue] = [],
     serviceTier: String? = nil,
