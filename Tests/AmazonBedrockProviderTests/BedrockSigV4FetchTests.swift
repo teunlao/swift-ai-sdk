@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Testing
 import AISDKProviderUtils
-@testable import AmazonBedrockProvider
+import AmazonBedrockProvider
 
 @Suite("BedrockSigV4Fetch")
 struct BedrockSigV4FetchTests {
@@ -68,7 +68,7 @@ struct BedrockSigV4FetchTests {
         #expect(headers["authorization"] == nil)
         #expect(headers["x-amz-date"] == nil)
         #expect(headers["x-amz-content-sha256"] == nil)
-        #expect(headers["user-agent"]?.contains("ai-sdk/amazon-bedrock/") == true)
+        #expect(headers["user-agent"]?.contains("ai-sdk-amazon-bedrock/") == true)
     }
 
     @Test("createSigV4FetchFunction bypasses signing for POST requests without body")
@@ -143,8 +143,7 @@ struct BedrockSigV4FetchTests {
         #expect(headers["custom-header"] == "value")
         #expect(headers["x-amz-security-token"] == "test-session-token")
 
-        let expectedHash = sha256Hex(body)
-        #expect(headers["x-amz-content-sha256"] == expectedHash)
+        #expect(headers["x-amz-content-sha256"] == nil)
 
         #expect(headers["host"] == "example.com")
 
@@ -160,7 +159,7 @@ struct BedrockSigV4FetchTests {
             Issue.record("Expected x-amz-date header")
         }
 
-        #expect(headers["user-agent"]?.contains("ai-sdk/amazon-bedrock/") == true)
+        #expect(headers["user-agent"]?.contains("ai-sdk-amazon-bedrock/") == true)
     }
 
     @Test("createSigV4FetchFunction propagates credential provider errors and does not call fetch")
@@ -220,6 +219,31 @@ struct BedrockSigV4FetchTests {
         let headers = normalizedHeaders(signed)
         #expect(headers["authorization"] == "Bearer test-api-key")
         #expect(headers["content-type"] == "application/json")
-        #expect(headers["user-agent"]?.contains("ai-sdk/amazon-bedrock/") == true)
+        #expect(headers["user-agent"]?.contains("ai-sdk-amazon-bedrock/") == true)
+    }
+
+    @Test("SigV4 signature covers the double-encoded model path and service scope")
+    func signatureMatchesWireRequest() async throws {
+        let capture = RequestCapture()
+        let fetch = createSigV4FetchFunction(getCredentials: { .init(region: "us-west-2", accessKeyId: "key", secretAccessKey: "secret") }, fetch: { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(Data()), urlResponse: try httpResponse(for: request))
+        }, service: "bedrock-mantle")
+        var request = URLRequest(url: try #require(URL(string: "https://bedrock.test/model/arn%3Aaws%2Fprofile/invoke?z=2&a=1")))
+        request.httpMethod = "POST"
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue("café", forHTTPHeaderField: "x-unicode")
+        _ = try await fetch(request)
+        let signed = try #require(await capture.current())
+        let date = try #require(signed.value(forHTTPHeaderField: "x-amz-date"))
+        let scope = "\(date.prefix(8))/us-west-2/bedrock-mantle/aws4_request"
+        let canonical = "POST\n/model/arn%253Aaws%252Fprofile/invoke\na=1&z=2\nhost:bedrock.test\nx-amz-date:\(date)\n\nhost;x-amz-date\n\(sha256Hex(Data("{}".utf8)))"
+        let toSign = "AWS4-HMAC-SHA256\n\(date)\n\(scope)\n\(sha256Hex(Data(canonical.utf8)))"
+        func hmac(_ key: Data, _ value: String) -> Data { Data(HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: SymmetricKey(data: key))) }
+        let key = hmac(hmac(hmac(hmac(Data("AWS4secret".utf8), String(date.prefix(8))), "us-west-2"), "bedrock-mantle"), "aws4_request")
+        let signature = hmac(key, toSign).map { String(format: "%02x", $0) }.joined()
+        #expect(signed.value(forHTTPHeaderField: "authorization") == "AWS4-HMAC-SHA256 Credential=key/\(scope), SignedHeaders=host;x-amz-date, Signature=\(signature)")
+        #expect(signed.value(forHTTPHeaderField: "x-unicode") == "café")
     }
 }

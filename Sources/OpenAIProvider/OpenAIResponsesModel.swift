@@ -64,7 +64,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     ) async throws -> LanguageModelV3GenerateResult {
         let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
 
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
@@ -167,7 +167,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     ) async throws -> LanguageModelV3StreamResult {
         let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
 
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
         let normalizedHeaders = headers.compactMapValues { $0 }
 
@@ -575,7 +575,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             addInclude(.messageOutputTextLogprobs)
         }
 
-        if webSearchToolName != nil {
+        if webSearchToolName != nil && config.supportsWebSearchSourcesInclude != false {
             addInclude(.webSearchCallActionSources)
         }
         if containsProviderTool(options.tools, id: "openai.code_interpreter") {

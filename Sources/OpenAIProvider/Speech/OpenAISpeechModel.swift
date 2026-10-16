@@ -40,7 +40,7 @@ private struct OpenAISpeechModelCore: Sendable {
             .compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/audio/speech")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/audio/speech")),
             headers: headers,
             body: JSONValue.object(prepared.body),
             failedResponseHandler: openAIFailedResponseHandler,

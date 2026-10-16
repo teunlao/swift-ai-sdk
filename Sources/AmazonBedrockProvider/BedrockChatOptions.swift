@@ -2,253 +2,127 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/amazon-bedrock/src/bedrock-chat-options.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
+public struct BedrockChatModelSettings: Sendable {
+    public enum ModelFamily: String, Sendable { case anthropic }
+    public var modelFamily: ModelFamily?
 
-public enum BedrockReasoningType: String, Sendable, Equatable {
-    case enabled
-    case disabled
-    case adaptive
+    public init(modelFamily: ModelFamily? = nil) {
+        self.modelFamily = modelFamily
+    }
 }
 
-public enum BedrockMaxReasoningEffort: String, Sendable, Equatable {
-    case low
-    case medium
-    case high
-    case max
-}
+public enum BedrockReasoningType: String, Sendable, Codable { case enabled, disabled, adaptive }
+public enum BedrockMaxReasoningEffort: String, Sendable, Codable { case low, medium, high, xhigh, max }
+public enum BedrockThinkingDisplay: String, Sendable, Codable { case omitted, summarized }
+public enum BedrockStructuredOutputMode: String, Sendable, Codable { case outputFormat, jsonTool, auto }
+public enum BedrockServiceTier: String, Sendable, Codable { case reserved, priority, `default`, flex }
 
-public struct BedrockReasoningConfig: Sendable, Equatable {
+public struct BedrockReasoningConfig: Sendable, Equatable, Codable {
     public var type: BedrockReasoningType?
-    public var budgetTokens: Int?
+    public var budgetTokens: Double?
     public var maxReasoningEffort: BedrockMaxReasoningEffort?
+    public var display: BedrockThinkingDisplay?
 
-    public init(
-        type: BedrockReasoningType? = nil,
-        budgetTokens: Int? = nil,
-        maxReasoningEffort: BedrockMaxReasoningEffort? = nil
-    ) {
+    public init(type: BedrockReasoningType? = nil, budgetTokens: Double? = nil, maxReasoningEffort: BedrockMaxReasoningEffort? = nil, display: BedrockThinkingDisplay? = nil) {
         self.type = type
         self.budgetTokens = budgetTokens
         self.maxReasoningEffort = maxReasoningEffort
+        self.display = display
     }
 }
 
-public struct BedrockProviderOptions: Sendable, Equatable {
+public struct BedrockProviderOptions: Sendable, Equatable, Codable {
     public var additionalModelRequestFields: [String: JSONValue]?
     public var reasoningConfig: BedrockReasoningConfig?
     public var anthropicBeta: [String]?
+    public var structuredOutputMode: BedrockStructuredOutputMode?
+    public var serviceTier: BedrockServiceTier?
+    public var requestMetadata: [String: String]?
 
-    public init(
-        additionalModelRequestFields: [String: JSONValue]? = nil,
-        reasoningConfig: BedrockReasoningConfig? = nil,
-        anthropicBeta: [String]? = nil
-    ) {
+    public init(additionalModelRequestFields: [String: JSONValue]? = nil, reasoningConfig: BedrockReasoningConfig? = nil, anthropicBeta: [String]? = nil, structuredOutputMode: BedrockStructuredOutputMode? = nil, serviceTier: BedrockServiceTier? = nil, requestMetadata: [String: String]? = nil) {
         self.additionalModelRequestFields = additionalModelRequestFields
         self.reasoningConfig = reasoningConfig
         self.anthropicBeta = anthropicBeta
+        self.structuredOutputMode = structuredOutputMode
+        self.serviceTier = serviceTier
+        self.requestMetadata = requestMetadata
     }
 }
 
-public struct BedrockFilePartProviderOptions: Sendable, Equatable {
-    public struct Citations: Sendable, Equatable {
+public struct BedrockFilePartProviderOptions: Sendable, Equatable, Codable {
+    public struct Citations: Sendable, Equatable, Codable {
         public var enabled: Bool
-
-        public init(enabled: Bool) {
-            self.enabled = enabled
-        }
+        public init(enabled: Bool) { self.enabled = enabled }
     }
-
     public var citations: Citations?
+    public init(citations: Citations? = nil) { self.citations = citations }
+}
 
-    public init(citations: Citations? = nil) {
-        self.citations = citations
+public struct BedrockTextPartProviderOptions: Sendable, Equatable, Codable {
+    public enum Qualifier: String, Sendable, Codable { case groundingSource = "grounding_source", query, guardContent = "guard_content" }
+    public var guardContent: Bool?
+    public var guardContentQualifiers: [Qualifier]?
+    public init(guardContent: Bool? = nil, guardContentQualifiers: [Qualifier]? = nil) {
+        self.guardContent = guardContent
+        self.guardContentQualifiers = guardContentQualifiers
     }
 }
 
-private let providerOptionsJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(true)
-])
+public struct BedrockImagePartProviderOptions: Sendable, Equatable, Codable {
+    public var guardContent: Bool?
+    public init(guardContent: Bool? = nil) { self.guardContent = guardContent }
+}
 
-private let filePartOptionsJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(true)
-])
+struct BedrockAnthropicOptions: Codable, Sendable {
+    let disableParallelToolUse: Bool?
+    let structuredOutputMode: BedrockStructuredOutputMode?
+}
 
-public let bedrockProviderOptionsSchema = FlexibleSchema(
-    Schema<BedrockProviderOptions>(
-        jsonSchemaResolver: { providerOptionsJSONSchema },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(
-                        vendor: "bedrock",
-                        issues: "provider options must be an object"
-                    )
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
+public let bedrockProviderOptionsSchema = bedrockOptionalFieldsSchema(BedrockProviderOptions.self, fields: ["additionalModelRequestFields", "reasoningConfig", "anthropicBeta", "structuredOutputMode", "serviceTier", "requestMetadata"], nestedFields: ["reasoningConfig": ["type", "budgetTokens", "maxReasoningEffort", "display"]])
+public let bedrockFilePartProviderOptionsSchema = bedrockOptionalFieldsSchema(BedrockFilePartProviderOptions.self, fields: ["citations"])
+public let bedrockTextPartProviderOptionsSchema = bedrockOptionalFieldsSchema(BedrockTextPartProviderOptions.self, fields: ["guardContent", "guardContentQualifiers"])
+public let bedrockImagePartProviderOptionsSchema = bedrockOptionalFieldsSchema(BedrockImagePartProviderOptions.self, fields: ["guardContent"])
+let bedrockAnthropicOptionsSchema = bedrockOptionalFieldsSchema(BedrockAnthropicOptions.self, fields: ["disableParallelToolUse", "structuredOutputMode"])
 
-                var additionalFields: [String: JSONValue]? = nil
-                if let rawAdditional = dict["additionalModelRequestFields"], rawAdditional != .null {
-                    guard case .object(let fields) = rawAdditional else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "additionalModelRequestFields must be an object"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: rawAdditional, cause: error))
-                    }
-                    additionalFields = fields
-                }
+func bedrockOptionsSchema<T: Decodable & Sendable>(_ type: T.Type) -> FlexibleSchema<T> {
+    FlexibleSchema(Schema<T>.codable(type, jsonSchema: .object(["type": .string("object")])))
+}
 
-                var reasoningConfig: BedrockReasoningConfig? = nil
-                if let rawReasoning = dict["reasoningConfig"], rawReasoning != .null {
-                    guard case .object(let reasoningDict) = rawReasoning else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "reasoningConfig must be an object"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: rawReasoning, cause: error))
-                    }
-
-                    var parsed = BedrockReasoningConfig()
-                    if let rawType = reasoningDict["type"], rawType != .null {
-                        guard case .string(let typeString) = rawType,
-                              let type = BedrockReasoningType(rawValue: typeString) else {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "bedrock",
-                                issues: "reasoningConfig.type must be 'enabled', 'disabled', or 'adaptive'"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: rawType, cause: error))
-                        }
-                        parsed.type = type
-                    }
-
-                    if let rawBudget = reasoningDict["budgetTokens"], rawBudget != .null {
-                        guard case .number(let number) = rawBudget else {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "bedrock",
-                                issues: "reasoningConfig.budgetTokens must be a number"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: rawBudget, cause: error))
-                        }
-                        let intValue = Int(number)
-                        if Double(intValue) != number {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "bedrock",
-                                issues: "reasoningConfig.budgetTokens must be an integer"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: rawBudget, cause: error))
-                        }
-                        parsed.budgetTokens = intValue
-                    }
-
-                    if let rawMaxEffort = reasoningDict["maxReasoningEffort"], rawMaxEffort != .null {
-                        guard case .string(let effortString) = rawMaxEffort,
-                              let effort = BedrockMaxReasoningEffort(rawValue: effortString) else {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "bedrock",
-                                issues: "reasoningConfig.maxReasoningEffort must be 'low', 'medium', 'high', or 'max'"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: rawMaxEffort, cause: error))
-                        }
-                        parsed.maxReasoningEffort = effort
-                    }
-
-                    reasoningConfig = parsed
-                }
-
-                var anthropicBeta: [String]? = nil
-                if let rawAnthropicBeta = dict["anthropicBeta"], rawAnthropicBeta != .null {
-                    guard case .array(let values) = rawAnthropicBeta else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "anthropicBeta must be an array"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: rawAnthropicBeta, cause: error))
-                    }
-
-                    var parsed: [String] = []
-                    parsed.reserveCapacity(values.count)
-                    for item in values {
-                        guard case .string(let string) = item else {
-                            let error = SchemaValidationIssuesError(
-                                vendor: "bedrock",
-                                issues: "anthropicBeta must be an array of strings"
-                            )
-                            return .failure(error: TypeValidationError.wrap(value: rawAnthropicBeta, cause: error))
-                        }
-                        parsed.append(string)
-                    }
-                    anthropicBeta = parsed
-                }
-
-                return .success(
-                    value: BedrockProviderOptions(
-                        additionalModelRequestFields: additionalFields,
-                        reasoningConfig: reasoningConfig,
-                        anthropicBeta: anthropicBeta
-                    )
-                )
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+func bedrockOptionalFieldsSchema<T: Decodable & Sendable>(_ type: T.Type, fields: [String], nestedFields: [String: [String]] = [:]) -> FlexibleSchema<T> {
+    let schema = Schema<T>.codable(type, jsonSchema: .object(["type": .string("object")]))
+    return FlexibleSchema(Schema<T>(jsonSchemaResolver: { try await schema.jsonSchema() }, validator: { value in
+        if let object = value as? [String: Any] {
+            var nullField = fields.first { object[$0] is NSNull }
+            for (key, fields) in nestedFields {
+                if let nested = object[key] as? [String: Any], let field = fields.first(where: { nested[$0] is NSNull }) { nullField = "\(key).\(field)" }
+            }
+            if let nullField {
+                return .failure(error: TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "amazonBedrock", issues: "\(nullField) must not be null")))
             }
         }
-    )
-)
+        return await schema.validate(value)
+    }))
+}
 
-public let bedrockFilePartProviderOptionsSchema = FlexibleSchema(
-    Schema<BedrockFilePartProviderOptions>(
-        jsonSchemaResolver: { filePartOptionsJSONSchema },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(
-                        vendor: "bedrock",
-                        issues: "provider options must be an object"
-                    )
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
+func parseBedrockOptions<T: Sendable>(providerOptions: SharedV4ProviderOptions?, schema: FlexibleSchema<T>) async throws -> T? {
+    try await parseProviderOptions(provider: providerOptions?["amazonBedrock"] != nil ? "amazonBedrock" : "bedrock", providerOptions: providerOptions, schema: schema)
+}
 
-                var citations: BedrockFilePartProviderOptions.Citations? = nil
-                if let rawCitations = dict["citations"], rawCitations != .null {
-                    guard case .object(let citationsDict) = rawCitations else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "citations must be an object"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: rawCitations, cause: error))
-                    }
+func isBedrockAnthropicModel(_ modelId: String, modelFamily: BedrockChatModelSettings.ModelFamily? = nil, reasoningBudgetTokens: Double? = nil) -> Bool {
+    modelFamily == .anthropic || modelId.contains("anthropic") || (modelId.contains(":application-inference-profile/") && reasoningBudgetTokens != nil)
+}
 
-                    guard let enabledValue = citationsDict["enabled"], enabledValue != .null else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "citations.enabled must be provided"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: rawCitations, cause: error))
-                    }
+func bedrockSupportsStrictTools(_ modelId: String) -> Bool {
+    guard modelId.contains("claude-") else { return true }
+    return [
+        "claude-(?:instant|v?2|3)(?=[-.:]|$)",
+        "claude-(?:opus|sonnet)-4(?:-\\d{8})?(?:-v\\d+)?(?=[:.]|$)",
+        "claude-opus-4-(?:1|5|6)(?=[-.:]|$)",
+        "claude-sonnet-4-(?:5|6)(?=[-.:]|$)",
+        "claude-haiku-4-5(?=[-.:]|$)"
+    ].contains { modelId.range(of: $0, options: .regularExpression) != nil }
+}
 
-                    guard case .bool(let enabled) = enabledValue else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "bedrock",
-                            issues: "citations.enabled must be a boolean"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: enabledValue, cause: error))
-                    }
-
-                    citations = .init(enabled: enabled)
-                }
-
-                return .success(value: BedrockFilePartProviderOptions(citations: citations))
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
-)
+func bedrockSupportsNativeStructuredOutput(_ modelId: String) -> Bool {
+    bedrockSupportsStrictTools(modelId) && modelId.range(of: "claude-(?:sonnet-4-6|haiku-4-5)(?=[-.:]|$)", options: .regularExpression) == nil
+}

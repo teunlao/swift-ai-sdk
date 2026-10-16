@@ -55,22 +55,24 @@ public struct OpenAIConfig: @unchecked Sendable {
     }
 
     public let provider: String
-    public let url: @Sendable (_ options: URLOptions) -> String
+    public let url: @Sendable (_ options: URLOptions) throws -> String
     public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
     public let webSocket: OpenAIWebSocketFactory?
     public let generateId: (@Sendable () -> String)?
     public let fileIdPrefixes: [String]?
+    public let supportsWebSearchSourcesInclude: Bool?
     public let _internal: InternalOptions?
 
     public init(
         provider: String,
-        url: @escaping @Sendable (_ options: URLOptions) -> String,
+        url: @escaping @Sendable (_ options: URLOptions) throws -> String,
         headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction? = nil,
         webSocket: OpenAIWebSocketFactory? = nil,
         generateId: (@Sendable () -> String)? = nil,
         fileIdPrefixes: [String]? = nil,
+        supportsWebSearchSourcesInclude: Bool? = nil,
         _internal: InternalOptions? = nil
     ) {
         self.provider = provider
@@ -80,6 +82,7 @@ public struct OpenAIConfig: @unchecked Sendable {
         self.webSocket = webSocket
         self.generateId = generateId
         self.fileIdPrefixes = fileIdPrefixes
+        self.supportsWebSearchSourcesInclude = supportsWebSearchSourcesInclude
         self._internal = _internal
     }
 }

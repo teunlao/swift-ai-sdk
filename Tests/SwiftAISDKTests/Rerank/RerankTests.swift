@@ -410,18 +410,16 @@ struct BedrockRerankingModelTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let model = BedrockRerankingModel(
-            modelId: .amazonRerankV1_0,
-            config: .init(
-                baseURL: { "https://bedrock-agent-runtime.us-east-1.amazonaws.com" },
-                region: "us-west-2",
-                headers: { ["config-header": "config-value", "shared-header": "config-shared"] },
-                fetch: fetch
-            )
-        )
+        let model = createAmazonBedrock(settings: .init(
+            region: "us-west-2",
+            apiKey: "test-token",
+            baseURL: "https://bedrock-agent-runtime.us-east-1.amazonaws.com",
+            headers: ["config-header": "config-value", "shared-header": "config-shared"],
+            fetch: fetch
+        )).reranking(modelId: .amazonRerankV1_0)
 
         let result = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .text(values: ["a", "b"]),
                 query: "q",
                 topN: 1,
@@ -435,7 +433,7 @@ struct BedrockRerankingModelTests {
         )
 
         #expect(result.ranking == [
-            RerankingModelV3Ranking(index: 0, relevanceScore: 0.7)
+            RerankingModelV4Ranking(index: 0, relevanceScore: 0.7)
         ])
         #expect(result.response?.headers?["x-bedrock"] == "ok")
 
@@ -536,15 +534,13 @@ struct BedrockRerankingModelTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let model = BedrockRerankingModel(
-            modelId: .cohereRerankV3_5_0,
-            config: .init(
-                baseURL: { "https://bedrock-agent-runtime.us-east-1.amazonaws.com" },
-                region: "us-west-2",
-                headers: { ["config-header": "config-value", "shared-header": "config-shared"] },
-                fetch: fetch
-            )
-        )
+        let model = createAmazonBedrock(settings: .init(
+            region: "us-west-2",
+            apiKey: "test-token",
+            baseURL: "https://bedrock-agent-runtime.us-east-1.amazonaws.com",
+            headers: ["config-header": "config-value", "shared-header": "config-shared"],
+            fetch: fetch
+        )).reranking(modelId: .cohereRerankV3_5_0)
 
         let documents: [JSONObject] = [
             ["example": .string("sunny day at the beach")],
@@ -552,7 +548,7 @@ struct BedrockRerankingModelTests {
         ]
 
         _ = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .object(values: documents),
                 query: "rainy day",
                 topN: 2,
@@ -637,7 +633,7 @@ struct BedrockRerankingModelTests {
 
         let model = provider.reranking(modelId: .amazonRerankV1_0)
         _ = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .text(values: ["a"]),
                 query: "q"
             )

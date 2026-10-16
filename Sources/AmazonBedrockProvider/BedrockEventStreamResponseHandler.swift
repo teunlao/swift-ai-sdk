@@ -19,35 +19,18 @@ public func createBedrockEventStreamResponseHandler<T>(
             let sourceStream = response.body.makeStream()
 
             let stream = AsyncThrowingStream<ParseJSONResult<T>, Error> { continuation in
-                Task {
-                    var decoder = BedrockEventStreamDecoder()
-
+                let task = Task {
                     do {
-                        for try await chunk in sourceStream {
-                            var messages: [BedrockEventStreamMessage] = []
-                            try decoder.feed(chunk) { message in
-                                messages.append(message)
-                            }
-
-                            for message in messages {
-                                try await process(message: message, schema: chunkSchema, continuation: continuation)
-                            }
-                        }
-
-                        var remainingMessages: [BedrockEventStreamMessage] = []
-                        try decoder.flush { message in
-                            remainingMessages.append(message)
-                        }
-
-                        for message in remainingMessages {
+                        for try await message in decodeBedrockEventStream(sourceStream) {
+                            try Task.checkCancellation()
                             try await process(message: message, schema: chunkSchema, continuation: continuation)
                         }
-
                         continuation.finish()
                     } catch {
                         continuation.finish(throwing: error)
                     }
                 }
+                continuation.onTermination = { _ in task.cancel() }
             }
 
             return ResponseHandlerResult(
@@ -60,6 +43,23 @@ public func createBedrockEventStreamResponseHandler<T>(
     }
 }
 
+func decodeBedrockEventStream(_ source: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<BedrockEventStreamMessage, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            var decoder = BedrockEventStreamDecoder()
+            do {
+                for try await chunk in source {
+                    try Task.checkCancellation()
+                    try decoder.feed(chunk) { continuation.yield($0) }
+                }
+                try decoder.flush { continuation.yield($0) }
+                continuation.finish()
+            } catch { continuation.finish(throwing: error) }
+        }
+        continuation.onTermination = { _ in task.cancel() }
+    }
+}
+
 // MARK: - Message Processing
 
 private func process<T>(
@@ -67,13 +67,13 @@ private func process<T>(
     schema: FlexibleSchema<T>,
     continuation: AsyncThrowingStream<ParseJSONResult<T>, Error>.Continuation
 ) async throws {
-    guard let messageType = message.headers[":message-type"], messageType == "event" else {
-        return
+    let eventType: String?
+    switch message.headers[":message-type"] {
+    case "event": eventType = message.headers[":event-type"]
+    case "exception": eventType = message.headers[":exception-type"]
+    default: eventType = nil
     }
-
-    guard let eventType = message.headers[":event-type"], !eventType.isEmpty else {
-        return
-    }
+    guard let eventType else { return }
 
     guard let bodyText = String(data: message.body, encoding: .utf8) else {
         let cause = NSError(
@@ -116,7 +116,7 @@ private func process<T>(
 
 // MARK: - Event Stream Decoder
 
-private struct BedrockEventStreamMessage {
+struct BedrockEventStreamMessage: Sendable {
     let headers: [String: String]
     let body: Data
 }
@@ -158,7 +158,12 @@ private struct BedrockEventStreamDecoder {
         guard buffer.count >= 4 else { return nil }
 
         let totalLength = try readUInt32(from: buffer, offset: 0)
+        guard totalLength >= 16 else { throw BedrockEventStreamError.invalidFrame }
         guard totalLength <= buffer.count else { return nil }
+        guard bedrockCRC32(buffer.prefix(8)) == UInt32(try readUInt32(from: buffer, offset: 8)),
+              bedrockCRC32(buffer.prefix(totalLength - 4)) == UInt32(try readUInt32(from: buffer, offset: totalLength - 4)) else {
+            throw BedrockEventStreamError.invalidFrame
+        }
 
         let headersLength = try readUInt32(from: buffer, offset: 4)
         let payloadLength = Int(totalLength) - Int(headersLength) - 16
@@ -233,10 +238,20 @@ private struct BedrockEventStreamDecoder {
             default:
                 throw BedrockEventStreamError.unsupportedHeaderType(headerType)
             }
+            guard index <= bytes.count else { throw BedrockEventStreamError.invalidHeader }
         }
 
         return result
     }
+}
+
+private func bedrockCRC32(_ data: Data) -> UInt32 {
+    var crc: UInt32 = 0xffffffff
+    for byte in data {
+        crc ^= UInt32(byte)
+        for _ in 0..<8 { crc = (crc >> 1) ^ (crc & 1 == 1 ? 0xedb88320 : 0) }
+    }
+    return ~crc
 }
 
 // MARK: - Binary Helpers

@@ -10,7 +10,7 @@ import AISDKProvider
 func mapBedrockFinishReason(
     _ reason: String?,
     isJsonResponseFromTool: Bool = false
-) -> LanguageModelV3FinishReason.Unified {
+) -> LanguageModelV4FinishReason.Unified {
     switch reason {
     case "stop_sequence", "end_turn":
         return .stop

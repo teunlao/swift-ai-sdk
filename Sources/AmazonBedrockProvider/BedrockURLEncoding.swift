@@ -10,7 +10,7 @@ import Foundation
 /// Percent-encodes a string using the same character set as JavaScript
 /// `encodeURIComponent(...)`.
 func bedrockEncodeURIComponent(_ value: String) -> String {
-    var allowed = CharacterSet.alphanumerics
+    var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
     allowed.insert(charactersIn: "-_.!~*'()")
     return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }

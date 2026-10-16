@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import AISDKProvider
 import AISDKProviderUtils
-@testable import AmazonBedrockProvider
+import AmazonBedrockProvider
 
 @Suite("BedrockChatLanguageModel")
 struct BedrockChatLanguageModelTests {
@@ -15,7 +15,7 @@ struct BedrockChatLanguageModelTests {
     private let baseURL = "https://bedrock-runtime.us-east-1.amazonaws.com"
     private let modelId: BedrockChatModelId = "anthropic.claude-3-haiku-20240307-v1:0"
 
-    private var testPrompt: LanguageModelV3Prompt {
+    private var testPrompt: LanguageModelV4Prompt {
         [
             .system(content: "System Prompt", providerOptions: nil),
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
@@ -49,15 +49,7 @@ struct BedrockChatLanguageModelTests {
         headers: [String: String?] = [:],
         fetch: @escaping FetchFunction
     ) -> BedrockChatLanguageModel {
-        BedrockChatLanguageModel(
-            modelId: modelId,
-            config: .init(
-                baseURL: { baseURL },
-                headers: { headers },
-                fetch: fetch,
-                generateId: { "test-id" }
-            )
-        )
+        createAmazonBedrock(settings: .init(region: "us-east-1", apiKey: "test-key", baseURL: baseURL, headers: headers.compactMapValues { $0 }, fetch: fetch, generateId: { "test-id" })).chat(modelId: modelId)
     }
 
     private func decodeRequestJSON(_ request: URLRequest) -> [String: Any]? {
@@ -131,10 +123,10 @@ struct BedrockChatLanguageModelTests {
         let result = try await model.doStream(options: .init(prompt: testPrompt, includeRawChunks: false))
         let parts = try await convertReadableStreamToArray(result.stream)
 
-        let expectedUsage = LanguageModelV3Usage(
+        let expectedUsage = LanguageModelV4Usage(
             inputTokens: .init(total: 4, noCache: 4, cacheRead: 0, cacheWrite: 0),
             outputTokens: .init(total: 34, text: 34, reasoning: nil),
-            raw: .object(["inputTokens": .number(4), "outputTokens": .number(34), "totalTokens": .number(38)])
+            raw: .object(["inputTokens": .number(4), "outputTokens": .number(34), "totalTokens": .number(38), "metrics": .object(["latencyMs": .number(10)])])
         )
 
         #expect(parts == [
@@ -159,7 +151,7 @@ struct BedrockChatLanguageModelTests {
             return
         }
 
-        #expect(request.url?.absoluteString == "\(baseURL)/model/\(bedrockEncodeURIComponent(modelId.rawValue))/converse-stream")
+        #expect(request.url?.absoluteString == "\(baseURL)/model/\(modelId.rawValue.replacingOccurrences(of: ":", with: "%3A"))/converse-stream")
         #expect(body["system"] != nil)
         #expect(body["messages"] != nil)
         #expect(body["additionalModelResponseFieldPaths"] as? [String] == ["/delta/stop_sequence"])
@@ -255,7 +247,7 @@ struct BedrockChatLanguageModelTests {
         }
 
         let model = makeModel(modelId: modelId, fetch: fetch)
-        let tools: [LanguageModelV3Tool] = [
+        let tools: [LanguageModelV4Tool] = [
             .function(.init(
                 name: "test-tool",
                 inputSchema: .object([
@@ -364,6 +356,10 @@ struct BedrockChatLanguageModelTests {
             finishReason: .init(unified: .stop, raw: "tool_use"),
             usage: .init(),
             providerMetadata: [
+                "amazonBedrock": [
+                    "isJsonResponseFromTool": .bool(true),
+                    "stopSequence": .null,
+                ],
                 "bedrock": [
                     "isJsonResponseFromTool": .bool(true),
                     "stopSequence": .null,

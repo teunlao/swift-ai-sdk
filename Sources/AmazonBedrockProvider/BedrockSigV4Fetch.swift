@@ -27,7 +27,8 @@ public struct BedrockCredentials: Sendable {
 
 public func createSigV4FetchFunction(
     getCredentials: @escaping @Sendable () async throws -> BedrockCredentials,
-    fetch: FetchFunction? = nil
+    fetch: FetchFunction? = nil,
+    service: String = "bedrock"
 ) -> FetchFunction {
     let underlyingFetch = fetch ?? defaultFetchFunction()
 
@@ -38,7 +39,7 @@ public func createSigV4FetchFunction(
         var headerMap = mutableRequest.allHTTPHeaderFields ?? [:]
         headerMap = withUserAgentSuffix(
             headerMap,
-            "ai-sdk/amazon-bedrock/\(AMAZON_BEDROCK_VERSION)",
+            "ai-sdk-amazon-bedrock/\(AMAZON_BEDROCK_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
 
@@ -58,18 +59,17 @@ public func createSigV4FetchFunction(
         let amzDate = iso8601Timestamp(now)
         let dateStamp = shortDate(now)
 
-        var signingHeaders = headerMap.mapKeys { $0.lowercased() }
-        let payloadHash = sha256Hex(bodyData)
+        var signingHeaders = headerMap.filter { $0.value.utf8.allSatisfy { $0 < 128 } }.mapKeys { $0.lowercased() }
+        let excluded = Set(["authorization", "content-type", "content-length", "user-agent", "presigned-expires", "expect", "x-amzn-trace-id", "range", "connection"])
+        signingHeaders = signingHeaders.filter { !excluded.contains($0.key) }
+        let payloadHash = signingHeaders["x-amz-content-sha256"] ?? sha256Hex(bodyData)
         signingHeaders["x-amz-date"] = amzDate
-        signingHeaders["x-amz-content-sha256"] = payloadHash
 
         if let token = credentials.sessionToken, !token.isEmpty {
             signingHeaders["x-amz-security-token"] = token
         }
 
-        if signingHeaders["host"] == nil {
-            signingHeaders["host"] = hostHeader(from: url)
-        }
+        signingHeaders["host"] = hostHeader(from: url)
 
         let canonicalRequest = buildCanonicalRequest(
             method: method,
@@ -79,7 +79,7 @@ public func createSigV4FetchFunction(
         )
 
         let canonicalRequestHash = sha256Hex(Data(canonicalRequest.utf8))
-        let credentialScope = "\(dateStamp)/\(credentials.region)/bedrock/aws4_request"
+        let credentialScope = "\(dateStamp)/\(credentials.region)/\(service)/aws4_request"
         let stringToSign = [
             "AWS4-HMAC-SHA256",
             amzDate,
@@ -91,7 +91,7 @@ public func createSigV4FetchFunction(
             stringToSign: stringToSign,
             dateStamp: dateStamp,
             region: credentials.region,
-            service: "bedrock",
+            service: service,
             secretAccessKey: credentials.secretAccessKey
         )
 
@@ -122,7 +122,7 @@ public func createApiKeyFetchFunction(
         var headers = mutableRequest.allHTTPHeaderFields ?? [:]
         headers = withUserAgentSuffix(
             headers,
-            "ai-sdk/amazon-bedrock/\(AMAZON_BEDROCK_VERSION)",
+            "ai-sdk-amazon-bedrock/\(AMAZON_BEDROCK_VERSION)",
             getRuntimeEnvironmentUserAgent()
         )
 
@@ -155,15 +155,15 @@ private func buildCanonicalRequest(
         canonicalUri,
         canonicalQuery,
         canonicalHeaders,
-        "",
         signedHeaders,
         payloadHash
     ].joined(separator: "\n")
 }
 
 private func canonicalURI(from url: URL) -> String {
-    let path = url.path.isEmpty ? "/" : url.path
-    return path.addingPercentEncoding(withAllowedCharacters: .awsSigV4PathAllowed) ?? path
+    let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "/"
+    let normalized = (path.isEmpty ? "/" : path).replacingOccurrences(of: "/+", with: "/", options: .regularExpression)
+    return normalized.addingPercentEncoding(withAllowedCharacters: .awsSigV4PathAllowed) ?? normalized
 }
 
 private func canonicalQueryString(from url: URL) -> String {
@@ -172,7 +172,7 @@ private func canonicalQueryString(from url: URL) -> String {
         return ""
     }
 
-    let encoded = queryItems.map { item -> (String, String) in
+    let encoded = queryItems.filter { !$0.name.isEmpty }.map { item -> (String, String) in
         let name = percentEncode(item.name)
         let value = percentEncode(item.value ?? "")
         return (name, value)
@@ -230,7 +230,7 @@ private func sha256Hex(_ data: Data) -> String {
 }
 
 private func percentEncode(_ value: String) -> String {
-    var allowed = CharacterSet.alphanumerics
+    var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
     allowed.insert(charactersIn: "-_.~")
     return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
@@ -284,8 +284,8 @@ private extension Dictionary where Key == String, Value == String {
 
 private extension CharacterSet {
     static let awsSigV4PathAllowed: CharacterSet = {
-        var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "-._~/%")
+        var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        allowed.insert(charactersIn: "-._~/")
         return allowed
     }()
 }

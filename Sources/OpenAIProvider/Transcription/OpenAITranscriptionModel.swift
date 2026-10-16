@@ -37,7 +37,7 @@ private struct OpenAITranscriptionModelCore: Sendable {
         requestHeaders["Content-Type"] = prepared.contentType
 
         let response = try await postToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/audio/transcriptions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/audio/transcriptions")),
             headers: requestHeaders,
             body: PostBody(content: .data(prepared.body), values: nil),
             failedResponseHandler: openAIFailedResponseHandler,
@@ -85,7 +85,7 @@ private struct OpenAITranscriptionModelCore: Sendable {
             providerOptions: openAIOptions
         )
         let webSocketURL = try makeWebSocketURL(
-            from: config.url(.init(modelId: modelIdentifier.rawValue, path: "/realtime?intent=transcription"))
+            from: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/realtime?intent=transcription"))
         )
 
         return TranscriptionModelV4StreamResult(

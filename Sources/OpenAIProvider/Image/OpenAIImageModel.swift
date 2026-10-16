@@ -62,7 +62,7 @@ private struct OpenAIImageModelCore: Sendable {
             multipartHeaders["Content-Type"] = prepared.contentType
 
             response = try await postToAPI(
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/edits")),
+                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/edits")),
                 headers: multipartHeaders,
                 body: PostBody(content: .data(prepared.body), values: nil),
                 failedResponseHandler: openAIFailedResponseHandler,
@@ -79,7 +79,7 @@ private struct OpenAIImageModelCore: Sendable {
             )
 
             response = try await postJsonToAPI(
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/generations")),
+                url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/images/generations")),
                 headers: combinedHeaders,
                 body: body,
                 failedResponseHandler: openAIFailedResponseHandler,

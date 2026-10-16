@@ -46,7 +46,7 @@ private struct OpenAIEmbeddingModelCore: Sendable {
         )
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/embeddings")),
             headers: normalizedHeaders,
             body: body,
             failedResponseHandler: openAIFailedResponseHandler,

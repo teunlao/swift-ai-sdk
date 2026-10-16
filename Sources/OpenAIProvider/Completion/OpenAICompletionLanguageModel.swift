@@ -28,7 +28,7 @@ private struct OpenAICompletionLanguageModelCore: Sendable {
             .compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions")),
             headers: headers,
             body: JSONValue.object(prepared.body),
             failedResponseHandler: openAIFailedResponseHandler,
@@ -78,7 +78,7 @@ private struct OpenAICompletionLanguageModelCore: Sendable {
 
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions"))
 
         let eventStream = try await postJsonToAPI(
             url: url,

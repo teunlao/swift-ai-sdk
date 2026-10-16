@@ -10,7 +10,7 @@ import AISDKProviderUtils
 //===----------------------------------------------------------------------===//
 
 struct BedrockImageModelConfig: Sendable {
-    let baseURL: @Sendable () -> String
+    let baseURL: @Sendable () throws -> String
     let headers: @Sendable () -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
@@ -31,7 +31,7 @@ private struct BedrockImageModelError: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
-public final class BedrockImageModel: ImageModelV3 {
+public final class BedrockImageModel: ImageModelV4 {
     private let modelIdentifier: BedrockImageModelId
     private let config: BedrockImageModelConfig
 
@@ -40,16 +40,19 @@ public final class BedrockImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public var specificationVersion: String { "v3" }
+    public var specificationVersion: String { "v4" }
     public var provider: String { "amazon-bedrock" }
     public var modelId: String { modelIdentifier.rawValue }
 
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall {
+    public var supportsFileInputs: Bool? { modelId == "amazon.nova-canvas-v1:0" ? true : nil }
+    public var supportsMaskInputs: Bool? { modelId == "amazon.nova-canvas-v1:0" ? true : nil }
+
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall {
         .value(bedrockModelMaxImagesPerCall[modelIdentifier] ?? 1)
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
-        var warnings: [SharedV3Warning] = []
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
+        var warnings: [SharedV4Warning] = []
 
         if options.aspectRatio != nil {
             warnings.append(.unsupported(
@@ -58,7 +61,8 @@ public final class BedrockImageModel: ImageModelV3 {
             ))
         }
 
-        let overrides: [String: JSONValue] = options.providerOptions?["bedrock"] ?? [:]
+        let parsed = try await parseBedrockOptions(providerOptions: options.providerOptions, schema: bedrockImageOptionsSchema) ?? .init()
+        let overrides = parsed.json
         let imageGenerationConfig = buildImageGenerationConfig(options: options, overrides: overrides)
 
         let args: JSONValue
@@ -159,9 +163,8 @@ public final class BedrockImageModel: ImageModelV3 {
                 throw BedrockImageModelError(message: "Unsupported task type: \(taskType)")
             }
         } else {
-            var textToImageParams: [String: JSONValue] = [
-                "text": .string(options.prompt ?? "")
-            ]
+            var textToImageParams: [String: JSONValue] = [:]
+            if let prompt = options.prompt { textToImageParams["text"] = .string(prompt) }
 
             if let negativeText = nonEmptyString(overrides["negativeText"]) {
                 textToImageParams["negativeText"] = .string(negativeText)
@@ -177,7 +180,7 @@ public final class BedrockImageModel: ImageModelV3 {
             ])
         }
 
-        let url = "\(config.baseURL())/model/\(encodeModelId(modelIdentifier.rawValue))/invoke"
+        let url = "\(try config.baseURL())/model/\(encodeModelId(modelIdentifier.rawValue))/invoke"
         let headers = mergeHeaders(base: config.headers(), overrides: options.headers)
         let timestamp = config.currentDate()
 
@@ -193,11 +196,11 @@ public final class BedrockImageModel: ImageModelV3 {
 
         let images = try extractImages(from: response.value)
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .base64(images),
             warnings: warnings,
             providerMetadata: nil,
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: timestamp,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders
@@ -219,16 +222,17 @@ public final class BedrockImageModel: ImageModelV3 {
 }
 
 private func buildImageGenerationConfig(
-    options: ImageModelV3CallOptions,
+    options: ImageModelV4CallOptions,
     overrides: [String: JSONValue]
 ) -> [String: JSONValue] {
     var config: [String: JSONValue] = [:]
 
     if let size = options.size {
-        let components = size.split(separator: "x").compactMap { Int($0) }
-        if components.count == 2, components[0] > 0, components[1] > 0 {
-            config["width"] = .number(Double(components[0]))
-            config["height"] = .number(Double(components[1]))
+        let components = size.split(separator: "x", omittingEmptySubsequences: false)
+        for (index, key) in ["width", "height"].enumerated() where index < components.count {
+            if let value = Double(components[index].trimmingCharacters(in: .whitespacesAndNewlines)), value != 0, value.isFinite {
+                config[key] = .number(value)
+            }
         }
     }
 
@@ -236,7 +240,7 @@ private func buildImageGenerationConfig(
         config["seed"] = .number(Double(seed))
     }
 
-    if options.n > 0 {
+    if options.n != 0 {
         config["numberOfImages"] = .number(Double(options.n))
     }
 
@@ -291,9 +295,11 @@ private func extractImages(from value: JSONValue) throws -> [String] {
         throw BedrockImageModelError(message: message)
     }
 
-    let images = imagesArray.compactMap { element -> String? in
-        if case .string(let text) = element { return text }
-        return nil
+    let images = try imagesArray.map { element -> String in
+        guard case .string(let text) = element else {
+            throw TypeValidationError.wrap(value: foundationValue, cause: BedrockImageModelError(message: "Expected string image data."))
+        }
+        return text
     }
 
     if images.isEmpty {
@@ -328,7 +334,7 @@ private func numberValue(_ value: JSONValue?) -> Double? {
     return number
 }
 
-private func getBase64Data(_ file: ImageModelV3File) throws -> String {
+private func getBase64Data(_ file: ImageModelV4File) throws -> String {
     switch file {
     case .url:
         throw BedrockImageModelError(

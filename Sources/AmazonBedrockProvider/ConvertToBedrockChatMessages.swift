@@ -2,444 +2,274 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/amazon-bedrock/src/convert-to-bedrock-chat-messages.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
 struct BedrockChatMessages: Sendable {
     let system: [JSONValue]
     let messages: [JSONValue]
 }
 
-private let bedrockImageMimeTypes: [String: String] = [
-    "image/jpeg": "jpeg",
-    "image/png": "png",
-    "image/gif": "gif",
-    "image/webp": "webp"
-]
-
-private let bedrockDocumentMimeTypes: [String: String] = [
-    "application/pdf": "pdf",
-    "text/csv": "csv",
-    "application/msword": "doc",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/vnd.ms-excel": "xls",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-    "text/html": "html",
-    "text/plain": "txt",
-    "text/markdown": "md"
-]
-
-public let bedrockReasoningMetadataSchema = FlexibleSchema(
-    Schema<BedrockReasoningMetadata>.codable(
-        BedrockReasoningMetadata.self,
-        jsonSchema: .object([
-            "type": .string("object"),
-            "properties": .object([
-                "signature": .object([
-                    "type": .array([.string("string"), .string("null")])
-                ]),
-                "redactedData": .object([
-                    "type": .array([.string("string"), .string("null")])
-                ])
-            ]),
-            "additionalProperties": .bool(true)
-        ])
-    )
-)
-
 public struct BedrockReasoningMetadata: Codable, Sendable, Equatable {
     public let signature: String?
     public let redactedData: String?
+    public let redactedContent: String?
+    public init(signature: String? = nil, redactedData: String? = nil, redactedContent: String? = nil) {
+        self.signature = signature
+        self.redactedData = redactedData
+        self.redactedContent = redactedContent
+    }
 }
+public let bedrockReasoningMetadataSchema = bedrockOptionalFieldsSchema(BedrockReasoningMetadata.self, fields: ["signature", "redactedData", "redactedContent"])
 
-func convertToBedrockChatMessages(
-    _ prompt: LanguageModelV3Prompt,
-    isMistral: Bool = false
-) async throws -> BedrockChatMessages {
-    let blocks = groupIntoBlocks(prompt)
+private let imageFormats = ["image/jpeg": "jpeg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"]
+private let documentFormats = [
+    "application/pdf": "pdf", "text/csv": "csv", "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/html": "html", "text/plain": "txt", "text/markdown": "md"
+]
+private let videoFormats = [
+    "video/x-matroska": "mkv", "video/quicktime": "mov", "video/mp4": "mp4", "video/webm": "webm",
+    "video/x-flv": "flv", "video/mpeg": "mpeg", "video/mpg": "mpg", "video/wmv": "wmv",
+    "video/x-ms-wmv": "wmv", "video/3gpp": "three_gp"
+]
+
+func convertToBedrockChatMessages(_ prompt: LanguageModelV4Prompt, isMistral: Bool = false) async throws -> BedrockChatMessages {
+    var blocks: [[LanguageModelV4Message]] = []
+    func role(_ message: LanguageModelV4Message) -> String {
+        switch message {
+        case .system: return "system"
+        case .assistant: return "assistant"
+        case .user, .tool: return "user"
+        }
+    }
+    for message in prompt {
+        if let last = blocks.last?.last, role(last) == role(message) {
+            blocks[blocks.count - 1].append(message)
+        } else {
+            blocks.append([message])
+        }
+    }
     var system: [JSONValue] = []
     var messages: [JSONValue] = []
-
     var documentCounter = 0
-    func nextDocumentName() -> String {
+    func documentName(_ filename: String?) -> String {
+        if let filename, !filename.isEmpty {
+            let name = stripFileExtension(filename)
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .replacingOccurrences(of: "[^a-zA-Z0-9 ()\\[\\]-]", with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let shortened = String(name.prefix(200)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !shortened.isEmpty { return shortened }
+        }
         documentCounter += 1
         return "document-\(documentCounter)"
     }
-
-    for (blockIndex, block) in blocks.enumerated() {
-        let isLastBlock = blockIndex == blocks.count - 1
-
-        switch block {
-        case .system(let systemMessages):
-            if !messages.isEmpty {
-                throw UnsupportedFunctionalityError(
-                    functionality: "Multiple system messages that are separated by user/assistant messages"
-                )
-            }
-            for message in systemMessages {
-                system.append(.object(["text": .string(message.content)]))
-                if let cachePoint = cachePoint(from: message.providerOptions) {
-                    system.append(cachePoint)
-                }
-            }
-
-        case .user(let entries):
-            var content: [JSONValue] = []
-
-            for entry in entries {
-                switch entry {
-                case .user(let parts, let providerOptions):
-                    for part in parts {
-                        switch part {
-                        case .text(let textPart):
-                            content.append(.object(["text": .string(textPart.text)]))
-                        case .file(let filePart):
-                            if case .url = filePart.data {
-                                throw UnsupportedFunctionalityError(functionality: "File URL data")
-                            }
-
-                            let base64 = try base64String(from: filePart.data)
-
-                            if filePart.mediaType.lowercased().hasPrefix("image/") {
-                                let format = try bedrockImageFormat(for: filePart.mediaType)
-                                content.append(
-                                    .object([
-                                        "image": .object([
-                                            "format": .string(format),
-                                            "source": .object([
-                                                "bytes": .string(base64)
-                                            ])
-                                        ])
-                                    ])
-                                )
-                            } else {
-                                let format = try bedrockDocumentFormat(for: filePart.mediaType)
-                                var documentPayload: [String: JSONValue] = [
-                                    "format": .string(format),
-                                    "name": .string(filePart.filename ?? nextDocumentName()),
-                                    "source": .object([
-                                        "bytes": .string(base64)
-                                    ])
-                                ]
-
-                                if try await shouldEnableCitations(providerMetadata: filePart.providerOptions) {
-                                    documentPayload["citations"] = .object(["enabled": .bool(true)])
-                                }
-
-                                content.append(.object(["document": .object(documentPayload)]))
-                            }
-                        }
-                    }
-
-                    if let cachePoint = cachePoint(from: providerOptions) {
-                        content.append(cachePoint)
-                    }
-
-                case .tool(let parts, let providerOptions):
-                    for part in parts {
-                        guard case .toolResult(let toolResult) = part else { continue }
-                        let converted = try await convertToolResult(toolResult.output)
-                        content.append(
-                            .object([
-                                "toolResult": .object([
-                                    "toolUseId": .string(normalizeToolCallId(toolResult.toolCallId, isMistral: isMistral)),
-                                    "content": .array(converted)
-                                ])
-                            ])
-                        )
-                    }
-
-                    if let cachePoint = cachePoint(from: providerOptions) {
-                        content.append(cachePoint)
-                    }
-                }
-            }
-
-            messages.append(.object([
-                "role": .string("user"),
-                "content": .array(content)
-            ]))
-
-        case .assistant(let assistantMessages):
-            var content: [JSONValue] = []
-
-            for (messageIndex, message) in assistantMessages.enumerated() {
-                let isLastMessage = messageIndex == assistantMessages.count - 1
-
-                for (partIndex, part) in message.parts.enumerated() {
-                    let isLastPart = partIndex == message.parts.count - 1
-
-                    switch part {
-                    case .text(let textPart):
-                        let trimmed = trimIfNeeded(textPart.text, isLastBlock: isLastBlock, isLastMessage: isLastMessage, isLastPart: isLastPart)
-                        if !trimmed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            content.append(.object(["text": .string(trimmed)]))
-                        }
-
-                    case .file:
-                        throw UnsupportedFunctionalityError(functionality: "Assistant file content")
-
-                    case .reasoning(let reasoningPart):
-                        let metadata = try await parseReasoningMetadata(reasoningPart.providerOptions)
-                        if let signature = metadata?.signature {
-                            // Bedrock signatures validate the exact original bytes, so keep text unchanged.
-                            content.append(.object([
-                                "reasoningContent": .object([
-                                    "reasoningText": .object([
-                                        "text": .string(reasoningPart.text),
-                                        "signature": .string(signature)
-                                    ])
-                                ])
-                            ]))
-                        } else if let redacted = metadata?.redactedData {
-                            content.append(.object([
-                                "reasoningContent": .object([
-                                    "redactedReasoning": .object([
-                                        "data": .string(redacted)
-                                    ])
-                                ])
-                            ]))
-                        } else {
-                            let trimmed = trimIfNeeded(
-                                reasoningPart.text,
-                                isLastBlock: isLastBlock,
-                                isLastMessage: isLastMessage,
-                                isLastPart: isLastPart
-                            )
-                            content.append(.object([
-                                "reasoningContent": .object([
-                                    "reasoningText": .object([
-                                        "text": .string(trimmed)
-                                    ])
-                                ])
-                            ]))
-                        }
-
-                    case .toolCall(let toolCallPart):
-                        content.append(.object([
-                            "toolUse": .object([
-                                "toolUseId": .string(normalizeToolCallId(toolCallPart.toolCallId, isMistral: isMistral)),
-                                "name": .string(toolCallPart.toolName),
-                                "input": toolCallPart.input
-                            ])
-                        ]))
-
-                    case .toolResult:
-                        throw UnsupportedFunctionalityError(functionality: "Assistant tool-result content")
-                    case .custom:
-                        throw UnsupportedFunctionalityError(functionality: "Assistant custom content")
-                    }
-                }
-
-                if let cachePoint = cachePoint(from: message.providerOptions) {
-                    content.append(cachePoint)
-                }
-            }
-
-            messages.append(.object([
-                "role": .string("assistant"),
-                "content": .array(content)
-            ]))
+    func appendUser(_ content: [JSONValue]) {
+        if case .object(var last)? = messages.last,
+           last["role"] == .string("user"), case .array(var previous)? = last["content"],
+           previous.contains(where: { if case .object(let block) = $0 { return block["toolResult"] != nil }; return false }) {
+            previous.append(contentsOf: content)
+            last["content"] = .array(previous)
+            messages[messages.count - 1] = .object(last)
+        } else {
+            messages.append(.object(["role": .string("user"), "content": .array(content)]))
         }
     }
-
+    for (blockIndex, block) in blocks.enumerated() {
+        let isLastBlock = blockIndex == blocks.count - 1
+        guard let first = block.first else { continue }
+        switch role(first) {
+        case "system":
+            guard messages.isEmpty else {
+                throw UnsupportedFunctionalityError(functionality: "Multiple system messages that are separated by user/assistant messages")
+            }
+            for case .system(let text, let options) in block {
+                system.append(.object(["text": .string(text)]))
+                appendCachePoint(options, to: &system)
+            }
+        case "user":
+            var content: [JSONValue] = []
+            for message in block {
+                switch message {
+                case .user(let parts, let options):
+                    for part in parts {
+                        switch part {
+                        case .text(let part):
+                            let guardOptions = try await parseBedrockOptions(providerOptions: part.providerOptions, schema: bedrockTextPartProviderOptionsSchema)
+                            if guardOptions?.guardContent == true {
+                                var text: [String: JSONValue] = ["text": .string(part.text)]
+                                if let qualifiers = guardOptions?.guardContentQualifiers { text["qualifiers"] = .array(qualifiers.map { .string($0.rawValue) }) }
+                                content.append(.object(["guardContent": .object(["text": .object(text)])]))
+                            } else {
+                                content.append(.object(["text": .string(part.text)]))
+                            }
+                            appendCachePoint(part.providerOptions, to: &content)
+                        case .file(let part):
+                            content.append(try await convertFile(part, toolResult: false, documentName: documentName))
+                            appendCachePoint(part.providerOptions, to: &content)
+                        }
+                    }
+                    appendCachePoint(options, to: &content)
+                case .tool(let parts, let options):
+                    for case .toolResult(let part) in parts {
+                        content.append(try await convertToolResult(part, isMistral: isMistral, documentName: documentName))
+                        appendCachePoint(part.providerOptions, to: &content)
+                    }
+                    appendCachePoint(options, to: &content)
+                default: break
+                }
+            }
+            appendUser(content)
+        default:
+            var assistant: [JSONValue] = []
+            var toolResults: [JSONValue] = []
+            func flushAssistant() {
+                if assistant.contains(where: { if case .object(let value) = $0 { return value["cachePoint"] == nil }; return true }) {
+                    messages.append(.object(["role": .string("assistant"), "content": .array(assistant)]))
+                }
+                assistant.removeAll()
+            }
+            func flushResults() {
+                if !toolResults.isEmpty { appendUser(toolResults); toolResults.removeAll() }
+            }
+            for (messageIndex, message) in block.enumerated() {
+                guard case .assistant(let parts, let options) = message else { continue }
+                let hasReasoning = parts.contains { if case .reasoning = $0 { return true }; return false }
+                for (partIndex, part) in parts.enumerated() {
+                    if case .toolResult = part {} else { flushResults() }
+                    let partOptions: SharedV4ProviderOptions?
+                    switch part {
+                    case .text(let part):
+                        partOptions = part.providerOptions
+                        if !part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasReasoning {
+                            let text = isLastBlock && messageIndex == block.count - 1 && partIndex == parts.count - 1 ? part.text.trimmingCharacters(in: .whitespacesAndNewlines) : part.text
+                            assistant.append(.object(["text": .string(text)]))
+                        }
+                    case .reasoning(let part):
+                        partOptions = part.providerOptions
+                        let metadata = try await parseBedrockOptions(providerOptions: part.providerOptions, schema: bedrockReasoningMetadataSchema)
+                        if let signature = metadata?.signature {
+                            assistant.append(.object(["reasoningContent": .object(["reasoningText": .object(["text": .string(part.text), "signature": .string(signature)])])]))
+                        } else if let redacted = metadata?.redactedContent {
+                            assistant.append(.object(["reasoningContent": .object(["redactedContent": .string(redacted)])]))
+                        } else if let redacted = metadata?.redactedData {
+                            assistant.append(.object(["reasoningContent": .object(["redactedReasoning": .object(["data": .string(redacted)])])]))
+                        }
+                    case .toolCall(let part):
+                        partOptions = part.providerOptions
+                        let name = part.toolName.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "", options: .regularExpression)
+                        let input: JSONValue
+                        if case .object = part.input { input = part.input } else { input = .object(["rawInvalidInput": part.input]) }
+                        assistant.append(.object(["toolUse": .object([
+                            "toolUseId": .string(normalizeToolCallId(part.toolCallId, isMistral: isMistral)),
+                            "name": .string(name.isEmpty ? "_" : name), "input": input
+                        ])]))
+                    case .toolResult(let part):
+                        partOptions = part.providerOptions
+                        flushAssistant()
+                        toolResults.append(try await convertToolResult(part, isMistral: isMistral, documentName: documentName))
+                    case .file(let part):
+                        partOptions = part.providerOptions
+                    case .custom(let part):
+                        partOptions = part.providerOptions
+                    case .reasoningFile(let part):
+                        partOptions = part.providerOptions
+                    }
+                    if case .toolResult = part { appendCachePoint(partOptions, to: &toolResults) } else { appendCachePoint(partOptions, to: &assistant) }
+                }
+                if case .toolResult? = parts.last { appendCachePoint(options, to: &toolResults) } else { appendCachePoint(options, to: &assistant) }
+            }
+            flushResults()
+            flushAssistant()
+        }
+    }
     return BedrockChatMessages(system: system, messages: messages)
 }
 
-// MARK: - Tool Result Conversion
-
-private func convertToolResult(_ output: LanguageModelV3ToolResultOutput) async throws -> [JSONValue] {
-    switch output {
-    case .content(let parts, _):
-        return try parts.map { part in
-            switch part {
-            case .text(let text):
-                return .object(["text": .string(text)])
-            case .media(let data, let mediaType):
-                guard mediaType.lowercased().hasPrefix("image/") else {
-                    throw UnsupportedFunctionalityError(functionality: "media type: \(mediaType)")
+private func convertFile(_ part: LanguageModelV4FilePart, toolResult: Bool, documentName: (String?) -> String) async throws -> JSONValue {
+    let mediaType: String
+    let source: JSONValue
+    switch part.data {
+    case .reference:
+        throw UnsupportedFunctionalityError(functionality: toolResult ? "tool result file data of type \"reference\"" : "file parts with provider references")
+    case .text(let text):
+        guard !toolResult else { throw UnsupportedFunctionalityError(functionality: "tool result file data of type \"text\"") }
+        mediaType = isFullMediaType(part.mediaType) ? part.mediaType : "text/plain"
+        source = .object(["bytes": .string(Data(text.utf8).base64EncodedString())])
+    case .url(let url, let original):
+        guard url.scheme == "s3" else { throw UnsupportedFunctionalityError(functionality: toolResult ? "tool result file data of type \"url\"" : "File URL data") }
+        mediaType = try resolveFullMediaType(part: part)
+        source = .object(["s3Location": .object(["uri": .string(original ?? url.absoluteString)])])
+    case .data(let data):
+        mediaType = try resolveFullMediaType(part: part)
+        source = .object(["bytes": .string(data.base64EncodedString())])
+    case .base64(let base64):
+        mediaType = try resolveFullMediaType(part: part)
+        source = .object(["bytes": .string(base64)])
+    }
+    let topLevel: String
+    if case .text = part.data { topLevel = "text" } else { topLevel = getTopLevelMediaType(mediaType) }
+    if topLevel == "image" || topLevel == "video" {
+        let formats = topLevel == "image" ? imageFormats : videoFormats
+        let format = try requireFormat(mediaType, formats: formats, kind: topLevel)
+        let block: JSONValue = .object([topLevel: .object(["format": .string(format), "source": source])])
+        if !toolResult && topLevel == "image" {
+            switch part.data {
+            case .data, .base64:
+                if try await parseBedrockOptions(providerOptions: part.providerOptions, schema: bedrockImagePartProviderOptionsSchema)?.guardContent == true {
+                    return .object(["guardContent": block])
                 }
-                let format = try bedrockImageFormat(for: mediaType)
-                return .object([
-                    "image": .object([
-                        "format": .string(format),
-                        "source": .object([
-                            "bytes": .string(data)
-                        ])
-                    ])
-                ])
+            default: break
             }
         }
-    case .text(let text, _):
-        return [.object(["text": .string(text)])]
-    case .errorText(let text, _):
-        return [.object(["text": .string(text)])]
-    case .executionDenied(let reason, _):
-        return [.object(["text": .string(reason ?? "Tool execution denied.")])]
-    case .json(let json, _), .errorJson(let json, _):
-        let jsonText = try canonicalJSONString(from: json)
-        return [.object(["text": .string(jsonText)])]
+        return block
     }
+    if case .url = part.data { throw UnsupportedFunctionalityError(functionality: toolResult ? "tool result file data of type \"url\"" : "File URL data") }
+    var document: [String: JSONValue] = [
+        "format": .string(try requireFormat(mediaType, formats: documentFormats, kind: "file")),
+        "name": .string(documentName(part.filename)), "source": source
+    ]
+    if try await parseBedrockOptions(providerOptions: part.providerOptions, schema: bedrockFilePartProviderOptionsSchema)?.citations?.enabled == true {
+        document["citations"] = .object(["enabled": .bool(true)])
+    }
+    return .object(["document": .object(document)])
 }
 
-// MARK: - Helpers
-
-private func base64String(from dataContent: LanguageModelV3DataContent) throws -> String {
-    switch dataContent {
-    case .data(let data):
-        return convertDataToBase64(data)
-    case .base64(let string):
-        return string
-    case .url:
-        throw UnsupportedFunctionalityError(functionality: "File URL data")
+private func convertToolResult(_ part: LanguageModelV4ToolResultPart, isMistral: Bool, documentName: (String?) -> String) async throws -> JSONValue {
+    var content: [JSONValue] = []
+    switch part.output {
+    case .text(let text, _), .errorText(let text, _): content = [.object(["text": .string(text)])]
+    case .executionDenied(let reason, _): content = [.object(["text": .string(reason ?? "Tool call execution denied.")])]
+    case .json(let value, _), .errorJson(let value, _): content = [.object(["text": .string(try bedrockJSONString(value))])]
+    case .content(let parts):
+        for part in parts {
+            switch part {
+            case .text(let text, _): content.append(.object(["text": .string(text)]))
+            case .file(let data, let mediaType, let filename, let options):
+                content.append(try await convertFile(.init(data: data, mediaType: mediaType, filename: filename, providerOptions: options), toolResult: true, documentName: documentName))
+            case .custom: throw UnsupportedFunctionalityError(functionality: "unsupported tool content part type: custom")
+            }
+        }
     }
+    return .object(["toolResult": .object(["toolUseId": .string(normalizeToolCallId(part.toolCallId, isMistral: isMistral)), "content": .array(content)])])
 }
 
-private func bedrockImageFormat(for mediaType: String) throws -> String {
-    guard let format = bedrockImageMimeTypes[mediaType.lowercased()] else {
-        throw UnsupportedFunctionalityError(
-            functionality: "image mime type: \(mediaType)",
-            message: "Unsupported image mime type: \(mediaType), expected one of: \(bedrockImageMimeTypes.keys.sorted().joined(separator: ", "))"
-        )
+private func requireFormat(_ mediaType: String, formats: [String: String], kind: String) throws -> String {
+    guard let format = formats[mediaType] else {
+        throw UnsupportedFunctionalityError(functionality: "\(kind) mime type: \(mediaType)", message: "Unsupported \(kind) mime type: \(mediaType), expected one of: \(formats.keys.sorted().joined(separator: ", "))")
     }
     return format
 }
 
-private func bedrockDocumentFormat(for mediaType: String) throws -> String {
-    guard let format = bedrockDocumentMimeTypes[mediaType.lowercased()] else {
-        throw UnsupportedFunctionalityError(
-            functionality: "file mime type: \(mediaType)",
-            message: "Unsupported file mime type: \(mediaType), expected one of: \(bedrockDocumentMimeTypes.keys.sorted().joined(separator: ", "))"
-        )
+private func appendCachePoint(_ options: SharedV4ProviderOptions?, to content: inout [JSONValue]) {
+    let canonical = options?["amazonBedrock"]?["cachePoint"].flatMap { $0 == .null ? nil : $0 }
+    guard let cachePoint = canonical ?? options?["bedrock"]?["cachePoint"] else { return }
+    switch cachePoint {
+    case .null, .bool(false), .number(0), .string(""): return
+    default: content.append(.object(["cachePoint": cachePoint]))
     }
-    return format
 }
 
-private func trimIfNeeded(_ text: String, isLastBlock: Bool, isLastMessage: Bool, isLastPart: Bool) -> String {
-    if isLastBlock && isLastMessage && isLastPart {
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    return text
-}
-
-private func cachePoint(from providerOptions: SharedV3ProviderOptions?) -> JSONValue? {
-    guard let value = providerOptions?["bedrock"]?["cachePoint"], value != .null else {
-        return nil
-    }
-    return .object(["cachePoint": value])
-}
-
-private func shouldEnableCitations(providerMetadata: SharedV3ProviderOptions?) async throws -> Bool {
-    guard let providerMetadata else { return false }
-    let parsed = try await parseProviderOptions(
-        provider: "bedrock",
-        providerOptions: providerMetadata,
-        schema: bedrockFilePartProviderOptionsSchema
-    )
-    return parsed?.citations?.enabled ?? false
-}
-
-private func parseReasoningMetadata(_ providerOptions: SharedV3ProviderOptions?) async throws -> BedrockReasoningMetadata? {
-    guard let providerOptions else { return nil }
-    return try await parseProviderOptions(
-        provider: "bedrock",
-        providerOptions: providerOptions,
-        schema: bedrockReasoningMetadataSchema
-    )
-}
-
-private func canonicalJSONString(from value: JSONValue) throws -> String {
-    let foundation = jsonValueToFoundation(value)
-    return try canonicalJSONString(any: foundation)
-}
-
-private func canonicalJSONString(any value: Any) throws -> String {
-    let data = try JSONSerialization.data(withJSONObject: value, options: [])
-    guard let string = String(data: data, encoding: .utf8) else {
-        let context = EncodingError.Context(codingPath: [], debugDescription: "Unable to encode JSON value to UTF-8 string.")
-        throw JSONParseError(text: "<json>", cause: EncodingError.invalidValue(value, context))
-    }
-    return string
-}
-
-// MARK: - Block Grouping
-
-private enum BedrockPromptBlock {
-    case system([SystemMessage])
-    case user([UserEntry])
-    case assistant([AssistantMessage])
-}
-
-private struct SystemMessage: Sendable {
-    let content: String
-    let providerOptions: SharedV3ProviderOptions?
-}
-
-private enum UserEntry: Sendable {
-    case user(parts: [LanguageModelV3UserMessagePart], providerOptions: SharedV3ProviderOptions?)
-    case tool(parts: [LanguageModelV3ToolMessagePart], providerOptions: SharedV3ProviderOptions?)
-}
-
-private struct AssistantMessage: Sendable {
-    let parts: [LanguageModelV3MessagePart]
-    let providerOptions: SharedV3ProviderOptions?
-}
-
-private func groupIntoBlocks(_ prompt: LanguageModelV3Prompt) -> [BedrockPromptBlock] {
-    var blocks: [BedrockPromptBlock] = []
-    var systemBuffer: [SystemMessage] = []
-    var assistantBuffer: [AssistantMessage] = []
-    var userBuffer: [UserEntry] = []
-
-    func flushSystem() {
-        if !systemBuffer.isEmpty {
-            blocks.append(.system(systemBuffer))
-            systemBuffer.removeAll()
-        }
-    }
-
-    func flushAssistant() {
-        if !assistantBuffer.isEmpty {
-            blocks.append(.assistant(assistantBuffer))
-            assistantBuffer.removeAll()
-        }
-    }
-
-    func flushUser() {
-        if !userBuffer.isEmpty {
-            blocks.append(.user(userBuffer))
-            userBuffer.removeAll()
-        }
-    }
-
-    for message in prompt {
-        switch message {
-        case .system(let content, let providerOptions):
-            flushAssistant()
-            flushUser()
-            systemBuffer.append(SystemMessage(content: content, providerOptions: providerOptions))
-        case .assistant(let parts, let providerOptions):
-            flushSystem()
-            flushUser()
-            assistantBuffer.append(AssistantMessage(parts: parts, providerOptions: providerOptions))
-        case .user(let parts, let providerOptions):
-            flushSystem()
-            flushAssistant()
-            userBuffer.append(.user(parts: parts, providerOptions: providerOptions))
-        case .tool(let parts, let providerOptions):
-            flushSystem()
-            flushAssistant()
-            userBuffer.append(.tool(parts: parts, providerOptions: providerOptions))
-        }
-    }
-
-    flushSystem()
-    flushAssistant()
-    flushUser()
-
-    return blocks
+func bedrockJSONString(_ value: JSONValue) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: jsonValueToFoundation(value), options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes])
+    return String(decoding: data, as: UTF8.self)
 }

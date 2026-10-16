@@ -27,7 +27,7 @@ private struct OpenAIChatLanguageModelCore: Sendable {
             .compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
+            url: try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions")),
             headers: headers,
             body: JSONValue.object(prepared.body),
             failedResponseHandler: openAIFailedResponseHandler,
@@ -106,7 +106,7 @@ private struct OpenAIChatLanguageModelCore: Sendable {
 
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
             .compactMapValues { $0 }
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/chat/completions"))
 
         let eventStream = try await postJsonToAPI(
             url: url,

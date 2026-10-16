@@ -141,7 +141,7 @@ private struct OpenAICompatibleCompletionLanguageModelCore: Sendable {
     ) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options)
         let headers = requestHeaders(for: options.headers)
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/completions"))
 
         let response = try await postJsonToAPI(
             url: url,

@@ -92,7 +92,7 @@ let package = Package(
 	        .target(name: "AlibabaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 	        .target(name: "KlingAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
 	        .target(name: "AnthropicProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
-	        .target(name: "AmazonBedrockProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AnthropicProvider"]),
+	        .target(name: "AmazonBedrockProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "AnthropicProvider", "OpenAIProvider"]),
 	        .target(name: "GatewayProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleVertexProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "GoogleProvider"]),

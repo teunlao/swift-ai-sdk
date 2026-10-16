@@ -2,13 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 import AnthropicProvider
-
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/amazon-bedrock/src/bedrock-provider.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
+@_exported import struct AnthropicProvider.AnthropicProviderOptions
 
 public struct AmazonBedrockProviderSettings: Sendable {
     public typealias CredentialProvider = @Sendable () async throws -> BedrockStaticCredentials
@@ -61,242 +55,165 @@ public struct BedrockStaticCredentials: Sendable {
     }
 }
 
-public final class AmazonBedrockProvider: ProviderV3 {
-    private let chatFactory: @Sendable (BedrockChatModelId) -> BedrockChatLanguageModel
-    private let embeddingFactory: @Sendable (BedrockEmbeddingModelId) -> BedrockEmbeddingModel
-    private let imageFactory: @Sendable (BedrockImageModelId) -> BedrockImageModel
-    private let rerankingFactory: @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel
+public final class AmazonBedrockProvider: ProviderV4 {
+    private let settings: AmazonBedrockProviderSettings
+    private let fetch: FetchFunction
+    public let tools: AnthropicTools = anthropicTools
 
-    public let tools: AnthropicTools
-
-    init(
-        chatFactory: @escaping @Sendable (BedrockChatModelId) -> BedrockChatLanguageModel,
-        embeddingFactory: @escaping @Sendable (BedrockEmbeddingModelId) -> BedrockEmbeddingModel,
-        imageFactory: @escaping @Sendable (BedrockImageModelId) -> BedrockImageModel,
-        rerankingFactory: @escaping @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel,
-        tools: AnthropicTools
-    ) {
-        self.chatFactory = chatFactory
-        self.embeddingFactory = embeddingFactory
-        self.imageFactory = imageFactory
-        self.rerankingFactory = rerankingFactory
-        self.tools = tools
+    init(settings: AmazonBedrockProviderSettings) {
+        self.settings = settings
+        self.fetch = makeBedrockFetchFunction(settings: settings)
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        chatFactory(BedrockChatModelId(rawValue: modelId))
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        chat(modelId: .init(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        embeddingFactory(BedrockEmbeddingModelId(rawValue: modelId))
+    public func languageModel(modelId: String, settings: BedrockChatModelSettings) -> BedrockChatLanguageModel {
+        chat(modelId: .init(rawValue: modelId), settings: settings)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        imageFactory(BedrockImageModelId(rawValue: modelId))
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        embedding(modelId: .init(rawValue: modelId))
     }
 
-    public func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
-        rerankingFactory(BedrockRerankingModelId(rawValue: modelId))
+    public func embeddingModel(modelId: String, settings: BedrockEmbeddingModelSettings) -> BedrockEmbeddingModel {
+        embedding(modelId: .init(rawValue: modelId), settings: settings)
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
+    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        try embeddingModel(modelId: modelId)
     }
 
-    // MARK: - Convenience
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
+        image(modelId: .init(rawValue: modelId))
+    }
 
-    public func chat(modelId: BedrockChatModelId) -> BedrockChatLanguageModel {
-        chatFactory(modelId)
+    public func rerankingModel(modelId: String) throws -> (any RerankingModelV4)? {
+        reranking(modelId: .init(rawValue: modelId))
+    }
+
+    public func callAsFunction(_ modelId: String, settings: BedrockChatModelSettings = .init()) -> BedrockChatLanguageModel {
+        chat(modelId: .init(rawValue: modelId), settings: settings)
+    }
+
+    public func chat(modelId: BedrockChatModelId, settings modelSettings: BedrockChatModelSettings = .init()) -> BedrockChatLanguageModel {
+        BedrockChatLanguageModel(modelId: modelId, config: .init(
+            baseURL: { try resolveBedrockBaseURL(settings: self.settings, service: "bedrock-runtime") },
+            headers: { bedrockHeaders(self.settings.headers) },
+            fetch: fetch,
+            generateId: settings.generateId,
+            modelFamily: modelSettings.modelFamily
+        ))
+    }
+
+    public func embedding(modelId: BedrockEmbeddingModelId, settings modelSettings: BedrockEmbeddingModelSettings = .init()) -> BedrockEmbeddingModel {
+        BedrockEmbeddingModel(modelId: modelId, config: .init(
+            baseURL: { try resolveBedrockBaseURL(settings: self.settings, service: "bedrock-runtime") },
+            headers: { bedrockHeaders(self.settings.headers) },
+            fetch: fetch,
+            modelFamily: modelSettings.modelFamily
+        ))
     }
 
     public func textEmbedding(modelId: BedrockEmbeddingModelId) -> BedrockEmbeddingModel {
-        embeddingFactory(modelId)
+        embedding(modelId: modelId)
     }
 
     public func image(modelId: BedrockImageModelId) -> BedrockImageModel {
-        imageFactory(modelId)
+        BedrockImageModel(modelId: modelId, config: .init(
+            baseURL: { try resolveBedrockBaseURL(settings: self.settings, service: "bedrock-runtime") },
+            headers: { bedrockHeaders(self.settings.headers) },
+            fetch: fetch,
+            currentDate: { Date() }
+        ))
     }
 
     public func reranking(modelId: BedrockRerankingModelId) -> BedrockRerankingModel {
-        rerankingFactory(modelId)
+        BedrockRerankingModel(modelId: modelId, config: .init(
+            baseURL: { try resolveBedrockBaseURL(settings: self.settings, service: "bedrock-agent-runtime") },
+            region: { try loadBedrockRegion(self.settings.region) },
+            headers: { bedrockHeaders(self.settings.headers) },
+            fetch: fetch
+        ))
     }
 }
 
-public func createAmazonBedrock(
-    settings: AmazonBedrockProviderSettings = .init()
-) -> AmazonBedrockProvider {
-    let fetch = makeFetchFunction(settings: settings)
-
-    let region: String = {
-        (try? loadSetting(
-            settingValue: settings.region,
-            environmentVariableName: "AWS_REGION",
-            settingName: "region",
-            description: "AWS region"
-        )) ?? "us-east-1"
-    }()
-
-    let runtimeBaseURLResolver: @Sendable () -> String = {
-        if let custom = withoutTrailingSlash(settings.baseURL) {
-            return custom
-        }
-
-        return "https://bedrock-runtime.\(region).amazonaws.com"
-    }
-
-    let agentRuntimeBaseURLResolver: @Sendable () -> String = {
-        if let custom = withoutTrailingSlash(settings.baseURL) {
-            return custom
-        }
-
-        return "https://bedrock-agent-runtime.\(region).amazonaws.com"
-    }
-
-    let headersResolver: @Sendable () -> [String: String?] = {
-        let base = settings.headers ?? [:]
-        let withUA = withUserAgentSuffix(
-            base,
-            "ai-sdk/amazon-bedrock/\(AMAZON_BEDROCK_VERSION)"
-        )
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let generateId = settings.generateId
-
-    let chatFactory: @Sendable (BedrockChatModelId) -> BedrockChatLanguageModel = { modelId in
-        BedrockChatLanguageModel(
-            modelId: modelId,
-            config: .init(
-                baseURL: runtimeBaseURLResolver,
-                headers: headersResolver,
-                fetch: fetch,
-                generateId: generateId
-            )
-        )
-    }
-
-    let embeddingFactory: @Sendable (BedrockEmbeddingModelId) -> BedrockEmbeddingModel = { modelId in
-        BedrockEmbeddingModel(
-            modelId: modelId,
-            config: BedrockEmbeddingConfig(
-                baseURL: runtimeBaseURLResolver,
-                headers: headersResolver,
-                fetch: fetch
-            )
-        )
-    }
-
-    let imageFactory: @Sendable (BedrockImageModelId) -> BedrockImageModel = { modelId in
-        BedrockImageModel(
-            modelId: modelId,
-            config: BedrockImageModelConfig(
-                baseURL: runtimeBaseURLResolver,
-                headers: headersResolver,
-                fetch: fetch,
-                currentDate: { Date() }
-            )
-        )
-    }
-
-    let rerankingFactory: @Sendable (BedrockRerankingModelId) -> BedrockRerankingModel = { modelId in
-        BedrockRerankingModel(
-            modelId: modelId,
-            config: BedrockRerankingModel.Config(
-                baseURL: agentRuntimeBaseURLResolver,
-                region: region,
-                headers: headersResolver,
-                fetch: fetch
-            )
-        )
-    }
-
-    return AmazonBedrockProvider(
-        chatFactory: chatFactory,
-        embeddingFactory: embeddingFactory,
-        imageFactory: imageFactory,
-        rerankingFactory: rerankingFactory,
-        tools: anthropicTools
-    )
+public func createAmazonBedrock(settings: AmazonBedrockProviderSettings = .init()) -> AmazonBedrockProvider {
+    AmazonBedrockProvider(settings: settings)
 }
 
-public let bedrock = createAmazonBedrock()
+public let amazonBedrock = createAmazonBedrock()
+public let bedrock = amazonBedrock
 
-// MARK: - Fetch Function Helpers
+func loadBedrockRegion(_ region: String?) throws -> String {
+    try loadSetting(settingValue: region, environmentVariableName: "AWS_REGION", settingName: "region", description: "AWS region")
+}
 
-private func makeFetchFunction(settings: AmazonBedrockProviderSettings) -> FetchFunction {
-    if let apiKey = trimmed(settings.apiKey) ?? trimmed(loadOptionalSetting(settingValue: nil, environmentVariableName: "AWS_BEARER_TOKEN_BEDROCK")),
-       !apiKey.isEmpty {
+func resolveBedrockBaseURL(settings: AmazonBedrockProviderSettings, service: String) throws -> String {
+    let endpointVariable = service == "bedrock-agent-runtime" ? "AWS_ENDPOINT_URL_BEDROCK_AGENT_RUNTIME" : "AWS_ENDPOINT_URL_BEDROCK_RUNTIME"
+    if let baseURL = settings.baseURL
+        ?? loadOptionalSetting(settingValue: nil, environmentVariableName: endpointVariable)
+        ?? loadOptionalSetting(settingValue: nil, environmentVariableName: "AWS_ENDPOINT_URL") {
+        return withoutTrailingSlash(baseURL) ?? baseURL
+    }
+    let region = try loadBedrockRegion(settings.region)
+    try validateBedrockRegion(region)
+    let partitions = [
+        ("cn-", "amazonaws.com.cn"), ("us-iso-", "c2s.ic.gov"),
+        ("us-isob-", "sc2s.sgov.gov"), ("eu-isoe-", "cloud.adc-e.uk"),
+        ("us-isof-", "csp.hci.ic.gov"), ("eusc-", "amazonaws.eu")
+    ]
+    let suffix = partitions.first { region.hasPrefix($0.0) }?.1 ?? "amazonaws.com"
+    return "https://\(service).\(region).\(suffix)"
+}
+
+func validateBedrockRegion(_ region: String) throws {
+    guard region.range(of: "\\A[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\z", options: .regularExpression) != nil else {
+        throw InvalidArgumentError(argument: "region", message: "Invalid AWS region. Expected a single DNS label (letters, digits, and hyphens). Use `baseURL` for custom endpoints.")
+    }
+}
+
+func bedrockHeaders(_ headers: [String: String]?) -> [String: String?] {
+    withUserAgentSuffix(headers ?? [:], "ai-sdk-amazon-bedrock/\(AMAZON_BEDROCK_VERSION)").mapValues { Optional($0) }
+}
+
+func makeBedrockFetchFunction(settings: AmazonBedrockProviderSettings, service: String = "bedrock", inheritSessionToken: Bool = false) -> FetchFunction {
+    let rawKey = loadOptionalSetting(settingValue: settings.apiKey, environmentVariableName: "AWS_BEARER_TOKEN_BEDROCK")
+    if let apiKey = rawKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
         return createApiKeyFetchFunction(apiKey: apiKey, fetch: settings.fetch)
     }
-
-    return createSigV4FetchFunction(
-        getCredentials: {
-            let region = try loadSetting(
-                settingValue: settings.region,
-                environmentVariableName: "AWS_REGION",
-                settingName: "region",
-                description: "AWS region"
-            )
-
-            if let provider = settings.credentialProvider {
-                let creds = try await provider()
-                return BedrockCredentials(
-                    region: region,
-                    accessKeyId: creds.accessKeyId,
-                    secretAccessKey: creds.secretAccessKey,
-                    sessionToken: creds.sessionToken
-                )
-            }
-
+    return createSigV4FetchFunction(getCredentials: {
+        let region = try loadBedrockRegion(settings.region)
+        if let provider = settings.credentialProvider {
             do {
-                let accessKeyId = try loadSetting(
-                    settingValue: settings.accessKeyId,
-                    environmentVariableName: "AWS_ACCESS_KEY_ID",
-                    settingName: "accessKeyId",
-                    description: "AWS access key ID"
-                )
-
-                let secretAccessKey = try loadSetting(
-                    settingValue: settings.secretAccessKey,
-                    environmentVariableName: "AWS_SECRET_ACCESS_KEY",
-                    settingName: "secretAccessKey",
-                    description: "AWS secret access key"
-                )
-
-                let sessionToken = loadOptionalSetting(
-                    settingValue: settings.sessionToken,
-                    environmentVariableName: "AWS_SESSION_TOKEN"
-                )
-
-                return BedrockCredentials(
-                    region: region,
-                    accessKeyId: accessKeyId,
-                    secretAccessKey: secretAccessKey,
-                    sessionToken: sessionToken
-                )
+                let credentials = try await provider()
+                return BedrockCredentials(region: region, accessKeyId: credentials.accessKeyId, secretAccessKey: credentials.secretAccessKey, sessionToken: credentials.sessionToken)
             } catch {
-                let message = errorMessage(for: error)
-                throw APICallError(message: message, url: "", requestBodyValues: nil, cause: error)
+                throw BedrockCredentialError(message: "AWS credential provider failed: \(AISDKProviderUtils.getErrorMessage(error)). Please ensure your credential provider returns valid AWS credentials with accessKeyId and secretAccessKey properties.")
             }
-        },
-        fetch: settings.fetch
-    )
+        }
+        do {
+            let accessKeyId = try loadSetting(settingValue: settings.accessKeyId, environmentVariableName: "AWS_ACCESS_KEY_ID", settingName: "accessKeyId", description: "AWS access key ID")
+            let secretAccessKey = try loadSetting(settingValue: settings.secretAccessKey, environmentVariableName: "AWS_SECRET_ACCESS_KEY", settingName: "secretAccessKey", description: "AWS secret access key")
+            let sessionToken = !inheritSessionToken && settings.accessKeyId != nil && settings.secretAccessKey != nil
+                ? settings.sessionToken
+                : loadOptionalSetting(settingValue: settings.sessionToken, environmentVariableName: "AWS_SESSION_TOKEN")
+            return BedrockCredentials(region: region, accessKeyId: accessKeyId, secretAccessKey: secretAccessKey, sessionToken: sessionToken)
+        } catch {
+            let message = AISDKProviderUtils.getErrorMessage(error)
+            if message.contains("AWS_ACCESS_KEY_ID") || message.contains("accessKeyId") {
+                throw BedrockCredentialError(message: "AWS SigV4 authentication requires AWS credentials. Please provide either:\n1. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables\n2. Provide accessKeyId and secretAccessKey in options\n3. Use a credentialProvider function\n4. Use API key authentication with AWS_BEARER_TOKEN_BEDROCK or apiKey option\nOriginal error: \(message)")
+            }
+            if message.contains("AWS_SECRET_ACCESS_KEY") || message.contains("secretAccessKey") {
+                throw BedrockCredentialError(message: "AWS SigV4 authentication requires both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Please ensure both credentials are provided.\nOriginal error: \(message)")
+            }
+            throw error
+        }
+    }, fetch: settings.fetch, service: service)
 }
 
-private func trimmed(_ value: String?) -> String? {
-    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-        return nil
-    }
-    return value
-}
-
-private func errorMessage(for error: Error) -> String {
-    let description = String(describing: error)
-    if description.contains("AWS_ACCESS_KEY_ID") || description.contains("accessKeyId") {
-        return "AWS SigV4 authentication requires AWS credentials. Provide AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, pass credentials in settings, use a credential provider, or provide an API key. Original error: \(description)"
-    }
-    if description.contains("AWS_SECRET_ACCESS_KEY") || description.contains("secretAccessKey") {
-        return "AWS SigV4 authentication requires both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Original error: \(description)"
-    }
-    return description
+struct BedrockCredentialError: LocalizedError, Sendable {
+    let message: String
+    var errorDescription: String? { message }
 }

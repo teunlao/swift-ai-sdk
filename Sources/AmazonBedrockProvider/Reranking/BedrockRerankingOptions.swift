@@ -63,7 +63,7 @@ public let bedrockRerankingOptionsSchema = FlexibleSchema(
 
                 var options = BedrockRerankingOptions()
 
-                if let rawNextToken = dict["nextToken"], rawNextToken != .null {
+                if let rawNextToken = dict["nextToken"] {
                     guard case .string(let token) = rawNextToken else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",
@@ -74,7 +74,7 @@ public let bedrockRerankingOptionsSchema = FlexibleSchema(
                     options.nextToken = token
                 }
 
-                if let rawAdditionalFields = dict["additionalModelRequestFields"], rawAdditionalFields != .null {
+                if let rawAdditionalFields = dict["additionalModelRequestFields"] {
                     guard case .object(let fields) = rawAdditionalFields else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",

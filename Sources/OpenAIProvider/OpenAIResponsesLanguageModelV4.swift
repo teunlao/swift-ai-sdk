@@ -39,7 +39,7 @@ public final class OpenAIResponsesLanguageModelV4: LanguageModelV4, @unchecked S
             providerOptionsName: providerOptionsName
         )
         let result = try await v3Model.doStream(options: v3Options, v4Prompt: options.prompt)
-        let url = config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
+        let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let checkedStream = try await throwIfOpenAIResponsesStreamErrorBeforeOutput(
             stream: result.stream,
             url: url,

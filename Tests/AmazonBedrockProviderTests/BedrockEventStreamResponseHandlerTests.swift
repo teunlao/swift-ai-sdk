@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import AISDKProvider
 import AISDKProviderUtils
-@testable import AmazonBedrockProvider
+import AmazonBedrockProvider
 
 @Suite("BedrockEventStreamResponseHandler")
 struct BedrockEventStreamResponseHandlerTests {
@@ -108,8 +108,8 @@ struct BedrockEventStreamResponseHandlerTests {
         #expect(chunks.count == 1)
 
         switch chunks.first {
-        case .failure:
-            #expect(true)
+        case .failure(let error, _):
+            #expect(error is JSONParseError)
         case .success(let value, _):
             Issue.record("Expected failure, got success: \(value)")
         case .none:
@@ -134,8 +134,8 @@ struct BedrockEventStreamResponseHandlerTests {
         #expect(chunks.count == 1)
 
         switch chunks.first {
-        case .failure:
-            #expect(true)
+        case .failure(let error, _):
+            #expect(error is TypeValidationError)
         case .success(let value, _):
             Issue.record("Expected failure, got success: \(value)")
         case .none:

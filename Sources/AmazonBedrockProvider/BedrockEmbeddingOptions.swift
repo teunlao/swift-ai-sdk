@@ -102,9 +102,9 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var dimensions: BedrockEmbeddingDimensions? = nil
-                if let rawDimensions = object["dimensions"], rawDimensions != .null {
+                if let rawDimensions = object["dimensions"] {
                     guard case .number(let number) = rawDimensions,
-                          let parsed = BedrockEmbeddingDimensions(rawValue: Int(number)),
+                          let parsed = BedrockEmbeddingDimensions(rawValue: (Int(exactly: number) ?? 0)),
                           Double(parsed.rawValue) == number else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",
@@ -116,7 +116,7 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var normalize: Bool? = nil
-                if let rawNormalize = object["normalize"], rawNormalize != .null {
+                if let rawNormalize = object["normalize"] {
                     guard case .bool(let boolValue) = rawNormalize else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",
@@ -128,9 +128,9 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var embeddingDimension: BedrockNovaEmbeddingDimension? = nil
-                if let rawEmbeddingDimension = object["embeddingDimension"], rawEmbeddingDimension != .null {
+                if let rawEmbeddingDimension = object["embeddingDimension"] {
                     guard case .number(let number) = rawEmbeddingDimension,
-                          let parsed = BedrockNovaEmbeddingDimension(rawValue: Int(number)),
+                          let parsed = BedrockNovaEmbeddingDimension(rawValue: (Int(exactly: number) ?? 0)),
                           Double(parsed.rawValue) == number else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",
@@ -142,7 +142,7 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var embeddingPurpose: BedrockEmbeddingPurpose? = nil
-                if let rawEmbeddingPurpose = object["embeddingPurpose"], rawEmbeddingPurpose != .null {
+                if let rawEmbeddingPurpose = object["embeddingPurpose"] {
                     guard case .string(let raw) = rawEmbeddingPurpose,
                           let parsed = BedrockEmbeddingPurpose(rawValue: raw) else {
                         let error = SchemaValidationIssuesError(
@@ -155,7 +155,7 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var inputType: BedrockCohereEmbeddingInputType? = nil
-                if let rawInputType = object["inputType"], rawInputType != .null {
+                if let rawInputType = object["inputType"] {
                     guard case .string(let raw) = rawInputType,
                           let parsed = BedrockCohereEmbeddingInputType(rawValue: raw) else {
                         let error = SchemaValidationIssuesError(
@@ -168,7 +168,7 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var truncate: BedrockEmbeddingTruncate? = nil
-                if let rawTruncate = object["truncate"], rawTruncate != .null {
+                if let rawTruncate = object["truncate"] {
                     guard case .string(let raw) = rawTruncate,
                           let parsed = BedrockEmbeddingTruncate(rawValue: raw) else {
                         let error = SchemaValidationIssuesError(
@@ -181,9 +181,9 @@ public let bedrockEmbeddingProviderOptionsSchema = FlexibleSchema(
                 }
 
                 var outputDimension: BedrockCohereOutputDimension? = nil
-                if let rawOutputDimension = object["outputDimension"], rawOutputDimension != .null {
+                if let rawOutputDimension = object["outputDimension"] {
                     guard case .number(let number) = rawOutputDimension,
-                          let parsed = BedrockCohereOutputDimension(rawValue: Int(number)),
+                          let parsed = BedrockCohereOutputDimension(rawValue: (Int(exactly: number) ?? 0)),
                           Double(parsed.rawValue) == number else {
                         let error = SchemaValidationIssuesError(
                             vendor: "bedrock",

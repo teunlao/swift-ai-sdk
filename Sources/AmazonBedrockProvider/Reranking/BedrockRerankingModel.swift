@@ -9,10 +9,10 @@ import AISDKProviderUtils
 // Upstream commit: f3a72bc2a
 //===----------------------------------------------------------------------===//
 
-public final class BedrockRerankingModel: RerankingModelV3 {
+public final class BedrockRerankingModel: RerankingModelV4 {
     struct Config: Sendable {
-        let baseURL: @Sendable () -> String
-        let region: String
+        let baseURL: @Sendable () throws -> String
+        let region: @Sendable () throws -> String
         let headers: @Sendable () -> [String: String?]
         let fetch: FetchFunction?
     }
@@ -28,14 +28,14 @@ public final class BedrockRerankingModel: RerankingModelV3 {
     public var provider: String { "amazon-bedrock" }
     public var modelId: String { modelIdentifier.rawValue }
 
-    public func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
+    public func doRerank(options: RerankingModelV4CallOptions) async throws -> RerankingModelV4Result {
         let bedrockOptions = try await parseProviderOptions(
-            provider: "bedrock",
+            provider: options.providerOptions?["amazonBedrock"] != nil ? "amazonBedrock" : "bedrock",
             providerOptions: options.providerOptions,
             schema: bedrockRerankingOptionsSchema
         )
 
-        let modelArn = "arn:aws:bedrock:\(config.region)::foundation-model/\(modelIdentifier.rawValue)"
+        let modelArn = "arn:aws:bedrock:\(try config.region())::foundation-model/\(modelIdentifier.rawValue)"
 
         var modelConfiguration: [String: JSONValue] = [
             "modelArn": .string(modelArn)
@@ -83,7 +83,7 @@ public final class BedrockRerankingModel: RerankingModelV3 {
         ).compactMapValues { $0 }
 
         let response = try await postJsonToAPI(
-            url: "\(config.baseURL())/rerank",
+            url: "\(try config.baseURL())/rerank",
             headers: headers,
             body: JSONValue.object(body),
             failedResponseHandler: bedrockFailedResponseHandler,
@@ -92,11 +92,11 @@ public final class BedrockRerankingModel: RerankingModelV3 {
             fetch: config.fetch
         )
 
-        return RerankingModelV3DoRerankResult(
+        return RerankingModelV4Result(
             ranking: response.value.results.map { result in
-                RerankingModelV3Ranking(index: result.index, relevanceScore: result.relevanceScore)
+                RerankingModelV4Ranking(index: result.index, relevanceScore: result.relevanceScore)
             },
-            response: RerankingModelV3ResponseInfo(
+            response: RerankingModelV4ResponseInfo(
                 headers: response.responseHeaders,
                 body: response.rawValue
             )
@@ -104,7 +104,7 @@ public final class BedrockRerankingModel: RerankingModelV3 {
     }
 }
 
-private func makeSources(from documents: RerankingModelV3CallOptions.Documents) -> [JSONValue] {
+private func makeSources(from documents: RerankingModelV4CallOptions.Documents) -> [JSONValue] {
     switch documents {
     case .text(let values):
         return values.map { value in
