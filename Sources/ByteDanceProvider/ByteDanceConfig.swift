@@ -5,14 +5,14 @@ import AISDKProviderUtils
 public struct ByteDanceConfig: Sendable {
     public let provider: String
     public let baseURL: String
-    public let headers: @Sendable () throws -> [String: String?]
+    public let headers: @Sendable () async throws -> [String: String?]
     public let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     public init(
         provider: String,
         baseURL: String,
-        headers: @escaping @Sendable () throws -> [String: String?] = { [:] },
+        headers: @escaping @Sendable () async throws -> [String: String?] = { [:] },
         fetch: FetchFunction? = nil,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {

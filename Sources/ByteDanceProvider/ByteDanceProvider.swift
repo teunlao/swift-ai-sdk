@@ -18,9 +18,14 @@ public struct ByteDanceProviderSettings: Sendable {
 
 public final class ByteDanceProvider: ProviderV4 {
     private let videoFactory: @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel
+    private let imageFactory: @Sendable (ByteDanceImageModelId) -> ByteDanceImageModel
 
-    init(videoFactory: @escaping @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel) {
+    init(
+        videoFactory: @escaping @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel,
+        imageFactory: @escaping @Sendable (ByteDanceImageModelId) -> ByteDanceImageModel
+    ) {
         self.videoFactory = videoFactory
+        self.imageFactory = imageFactory
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV4 {
@@ -32,7 +37,15 @@ public final class ByteDanceProvider: ProviderV4 {
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
+        imageFactory(ByteDanceImageModelId(rawValue: modelId))
+    }
+
+    public func image(modelId: ByteDanceImageModelId) -> ByteDanceImageModel {
+        imageFactory(modelId)
+    }
+
+    public func image(_ modelId: ByteDanceImageModelId) -> ByteDanceImageModel {
+        imageFactory(modelId)
     }
 
     public func videoModel(modelId: String) -> ByteDanceVideoModel {
@@ -61,6 +74,9 @@ public func createByteDance(settings: ByteDanceProviderSettings = .init()) -> By
     }
     return ByteDanceProvider(videoFactory: { modelId in
         ByteDanceVideoModel(modelId: modelId, config: .init(provider: "bytedance.video", baseURL: baseURL,
+                                                          headers: headers, fetch: settings.fetch))
+    }, imageFactory: { modelId in
+        ByteDanceImageModel(modelId: modelId, config: .init(provider: "bytedance.image", baseURL: baseURL,
                                                           headers: headers, fetch: settings.fetch))
     })
 }

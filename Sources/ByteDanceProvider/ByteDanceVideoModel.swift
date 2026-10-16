@@ -97,7 +97,7 @@ public final class ByteDanceVideoModel: VideoModelV4Operations {
         if let webhookUrl { body["callback_url"] = .string(webhookUrl) }
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/contents/generations/tasks",
-            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try await config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(body),
             failedResponseHandler: byteDanceFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceTaskResponseSchema),
@@ -118,7 +118,7 @@ public final class ByteDanceVideoModel: VideoModelV4Operations {
         }
         let response = try await getFromAPI(
             url: "\(config.baseURL)/contents/generations/tasks/\(taskId)",
-            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try await config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             failedResponseHandler: byteDanceFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: byteDanceStatusResponseSchema),
             isAborted: options.abortSignal,
