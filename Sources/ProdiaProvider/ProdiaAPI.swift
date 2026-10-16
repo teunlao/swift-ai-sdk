@@ -51,6 +51,13 @@ private struct ProdiaError: Decodable, Sendable {
     let message: String?
     let detail: JSONValue?
     let error: String?
+    private enum CodingKeys: String, CodingKey { case message, detail, error }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        message = values.contains(.message) ? try values.decode(String.self, forKey: .message) : nil
+        detail = try values.decodeIfPresent(JSONValue.self, forKey: .detail)
+        error = values.contains(.error) ? try values.decode(String.self, forKey: .error) : nil
+    }
 }
 
 let prodiaFailedResponseHandler = createJsonErrorResponseHandler(

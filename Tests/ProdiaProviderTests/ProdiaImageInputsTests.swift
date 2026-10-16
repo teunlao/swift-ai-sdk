@@ -26,6 +26,23 @@ struct ProdiaImageInputsTests {
         #expect(result.warnings == [.unsupported(feature: "aspectRatio", details: "This provider does not support aspect ratio. Use `size` instead.")])
     }
 
+    @Test("HTTP error fields distinguish optional strings from arbitrary detail", arguments: ["message-null", "error-null", "detail-null"])
+    func errorFields(_ scenario: String) async throws {
+        let json = scenario == "message-null" ? #"{"message":null}"# : scenario == "error-null" ? #"{"error":null}"# : #"{"detail":null,"message":"Provider message"}"#
+        let fetch: FetchFunction = { request in
+            FetchResponse(body: .data(Data(json.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }
+        let model = createProdia(settings: .init(apiKey: "secret", fetch: fetch)).image(.inferenceFluxSchnellTxt2imgV2)
+        do {
+            _ = try await model.doGenerate(options: .init(n: 1))
+            Issue.record("Expected HTTP error")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 400)
+            #expect(error.responseBody == json)
+            #expect(error.message == (scenario == "detail-null" ? "Provider message" : HTTPURLResponse.localizedString(forStatusCode: 400).capitalized))
+        }
+    }
+
     @Test("invalid known provider options fail before request creation", arguments: [
         ["width": JSONValue.string("1024")], ["steps": .number(0)], ["progressive": .null], ["loras": .array([.string("a"), .string("b"), .string("c"), .string("d")])]
     ])
