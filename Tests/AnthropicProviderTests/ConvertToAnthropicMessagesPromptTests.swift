@@ -2,26 +2,58 @@ import Foundation
 import Testing
 @testable import AnthropicProvider
 import AISDKProvider
+import AISDKProviderUtils
+
+private actor PromptRequestCapture {
+    var request: URLRequest?
+    func store(_ request: URLRequest) { self.request = request }
+}
 
 private func convert(
-    _ prompt: LanguageModelV3Prompt,
-    sendReasoning: Bool = true
-) async throws -> (AnthropicPromptConversionResult, [SharedV3Warning]) {
-    var warnings: [SharedV3Warning] = []
-    let result = try await convertToAnthropicMessagesPrompt(
+    _ prompt: LanguageModelV4Prompt,
+    sendReasoning: Bool = true,
+    tools: [LanguageModelV4Tool]? = nil
+) async throws -> (AnthropicPromptConversionResult, [SharedV4Warning]) {
+    let capture = PromptRequestCapture()
+    let response = Data(#"{"type":"message","id":"msg_test","model":"claude-sonnet-4-5","content":[],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}"#.utf8)
+    let model = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+        await capture.store(request)
+        return FetchResponse(body: .data(response), urlResponse: HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"]
+        )!)
+    })).messages("claude-sonnet-4-5")
+    let result = try await model.doGenerate(options: .init(
         prompt: prompt,
-        sendReasoning: sendReasoning,
-        warnings: &warnings
-    )
-    return (result, warnings)
+        tools: tools,
+        providerOptions: ["anthropic": ["sendReasoning": .bool(sendReasoning)]]
+    ))
+    let request = try #require(await capture.request)
+    let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+    guard case .object(let object) = body, case .array(let messageValues) = object["messages"] else {
+        throw PromptRequestError.invalidBody
+    }
+    let messages = try messageValues.map { value -> AnthropicMessage in
+        guard case .object(let message) = value, case .string(let role) = message["role"],
+              case .array(let content) = message["content"] else { throw PromptRequestError.invalidBody }
+        let clearAt: String? = if case .string(let value) = message["clear_at"] { value } else { nil }
+        let outputConfig: [String: JSONValue]? = if case .object(let value) = message["output_config"] { value } else { nil }
+        return AnthropicMessage(role: role, content: content, clearAt: clearAt, outputConfig: outputConfig)
+    }
+    let system: [JSONValue]? = if case .array(let value) = object["system"] { value } else { nil }
+    let betas = Set((request.value(forHTTPHeaderField: "anthropic-beta") ?? "").split(separator: ",").map {
+        $0.trimmingCharacters(in: .whitespacesAndNewlines)
+    })
+    return (.init(prompt: .init(system: system, messages: messages), betas: betas), result.warnings)
 }
+
+private enum PromptRequestError: Error { case invalidBody }
 
 private func jsonString(_ value: JSONValue) -> String {
     let data = try! JSONEncoder().encode(value)
     return String(data: data, encoding: .utf8)!
 }
 
-private func anthropicOptions(_ values: [String: JSONValue]) -> SharedV3ProviderOptions {
+private func anthropicOptions(_ values: [String: JSONValue]) -> SharedV4ProviderOptions {
     ["anthropic": values]
 }
 
@@ -31,7 +63,7 @@ private func anthropicOptions(_ values: [String: JSONValue]) -> SharedV3Provider
 struct ConvertToAnthropicMessagesPromptSystemTests {
     @Test("single system message")
     func singleSystemMessage() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "This is a system message", providerOptions: nil)
         ]
 
@@ -52,7 +84,7 @@ struct ConvertToAnthropicMessagesPromptSystemTests {
 
     @Test("multiple system messages")
     func multipleSystemMessages() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "This is a system message", providerOptions: nil),
             .system(content: "This is another system message", providerOptions: nil)
         ]
@@ -78,7 +110,7 @@ struct ConvertToAnthropicMessagesPromptSystemTests {
 
     @Test("mid-conversation system message is emitted inline with beta")
     func midConversationSystemMessage() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "initial", providerOptions: nil),
             .user(content: [.text(.init(text: "hi"))], providerOptions: nil),
             .assistant(content: [.text(.init(text: "hello"))], providerOptions: nil),
@@ -101,7 +133,7 @@ struct ConvertToAnthropicMessagesPromptSystemTests {
 
     @Test("system message uses cache control from provider options")
     func systemMessageCacheControl() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(
                 content: "Cached system",
                 providerOptions: anthropicOptions([
@@ -138,11 +170,11 @@ struct ConvertToAnthropicMessagesPromptSystemTests {
 struct ConvertToAnthropicMessagesPromptUserTests {
     @Test("image data part")
     func imageDataPart() async throws {
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .base64("AAECAw=="),
             mediaType: "image/png"
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
@@ -172,11 +204,11 @@ struct ConvertToAnthropicMessagesPromptUserTests {
 
     @Test("image url part")
     func imageURLPart() async throws {
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .url(URL(string: "https://example.com/image.png")!),
             mediaType: "image/*"
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
@@ -210,13 +242,13 @@ struct ConvertToAnthropicMessagesPromptUserTests {
             "context": .string("Q1 scope"),
             "citations": .object(["enabled": .bool(true)])
         ])
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .base64("BASE64PDF=="),
             mediaType: "application/pdf",
             filename: "requirements.pdf",
             providerOptions: providerOptions
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
@@ -259,13 +291,13 @@ struct ConvertToAnthropicMessagesPromptUserTests {
                 "ttl": .string("1h")
             ])
         ])
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .data("hello".data(using: .utf8)!),
             mediaType: "text/plain",
             filename: "notes.txt",
             providerOptions: providerOptions
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: messageOptions)
         ]
 
@@ -306,12 +338,12 @@ struct ConvertToAnthropicMessagesPromptUserTests {
 struct ConvertToAnthropicMessagesPromptToolTests {
     @Test("tool result with json output")
     func toolResultJSON() async throws {
-        let toolPart = LanguageModelV3ToolResultPart(
+        let toolPart = LanguageModelV4ToolResultPart(
             toolCallId: "call-1",
             toolName: "calculator",
             output: .json(value: .object(["answer": .number(42)]))
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
@@ -334,16 +366,16 @@ struct ConvertToAnthropicMessagesPromptToolTests {
 
     @Test("tool result with content parts adds pdf beta")
     func toolResultContentAddsBeta() async throws {
-        let output = LanguageModelV3ToolResultOutput.content(value: [
-            .text(text: "summary"),
-            .media(data: "PDFDATA", mediaType: "application/pdf")
+        let output = LanguageModelV4ToolResultOutput.content(value: [
+            .text(text: "summary", providerOptions: nil),
+            .file(data: .base64("PDFDATA"), mediaType: "application/pdf", filename: nil, providerOptions: nil)
         ])
-        let toolPart = LanguageModelV3ToolResultPart(
+        let toolPart = LanguageModelV4ToolResultPart(
             toolCallId: "call-2",
             toolName: "aggregator",
             output: output
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
@@ -387,10 +419,7 @@ struct ConvertToAnthropicMessagesPromptToolTests {
 struct ConvertToAnthropicMessagesPromptKeyOrderingTests {
     @Test("tool result with json output uses sorted keys")
     func toolResultJSONUsesSortedKeys() async throws {
-        // An object with keys that sort differently than hash order.
-        // Without .sortedKeys, Swift dictionaries iterate in non-deterministic
-        // hash order, producing different JSON strings across process launches.
-        let toolPart = LanguageModelV3ToolResultPart(
+        let toolPart = LanguageModelV4ToolResultPart(
             toolCallId: "call-1",
             toolName: "mcp_tool",
             output: .json(value: .object([
@@ -399,7 +428,7 @@ struct ConvertToAnthropicMessagesPromptKeyOrderingTests {
                 "middle": .number(42),
             ]))
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [.toolResult(toolPart)], providerOptions: nil)
         ]
 
@@ -407,52 +436,15 @@ struct ConvertToAnthropicMessagesPromptKeyOrderingTests {
         let msg = try #require(result.prompt.messages.first)
         let block = try #require(msg.content.first)
 
-        // Extract the stringified content field
         guard case .object(let obj) = block,
               case .string(let contentString) = obj["content"] else {
             Issue.record("Expected tool_result with string content")
             return
         }
 
-        // Keys must appear in sorted order: alpha, middle, zebra
-        let alphaIdx = try #require(contentString.range(of: "\"alpha\""))
-        let middleIdx = try #require(contentString.range(of: "\"middle\""))
-        let zebraIdx = try #require(contentString.range(of: "\"zebra\""))
-        #expect(alphaIdx.lowerBound < middleIdx.lowerBound, "alpha should come before middle")
-        #expect(middleIdx.lowerBound < zebraIdx.lowerBound, "middle should come before zebra")
+        #expect(contentString == #"{"alpha":"first","middle":42,"zebra":"last"}"#)
     }
 
-    @Test("tool result json output is byte-stable across repeated conversions")
-    func toolResultJSONByteStable() async throws {
-        let toolPart = LanguageModelV3ToolResultPart(
-            toolCallId: "call-1",
-            toolName: "mcp_tool",
-            output: .json(value: .object([
-                "zebra": .string("z"),
-                "alpha": .string("a"),
-                "nested": .object(["beta": .number(1), "alpha": .number(2)]),
-            ]))
-        )
-        let prompt: LanguageModelV3Prompt = [
-            .tool(content: [.toolResult(toolPart)], providerOptions: nil)
-        ]
-
-        // Convert multiple times — results must be byte-identical
-        // Use .sortedKeys to match the production postJsonToAPI encoder
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        var results: [String] = []
-        for _ in 0..<10 {
-            let (result, _) = try await convert(prompt)
-            let data = try encoder.encode(result.prompt.messages)
-            results.append(String(data: data, encoding: .utf8)!)
-        }
-
-        let first = results[0]
-        for (i, r) in results.enumerated().dropFirst() {
-            #expect(r == first, "Conversion \(i) differs from first — key ordering is non-deterministic")
-        }
-    }
 }
 
 // MARK: - Assistant Messages
@@ -461,13 +453,13 @@ struct ConvertToAnthropicMessagesPromptKeyOrderingTests {
 struct ConvertToAnthropicMessagesPromptAssistantTests {
     @Test("assistant text trims final whitespace")
     func assistantTextTrim() async throws {
-        let message = LanguageModelV3Message.assistant(
+        let message = LanguageModelV4Message.assistant(
             content: [
-                .text(.init(text: "Hello world  \n"))
+                .text(.init(text: "\u{feff}Hello world\u{0085}  \n"))
             ],
             providerOptions: nil
         )
-        let prompt: LanguageModelV3Prompt = [message]
+        let prompt: LanguageModelV4Prompt = [message]
 
         let (result, warnings) = try await convert(prompt)
 
@@ -478,7 +470,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 content: [
                     .object([
                         "type": .string("text"),
-                        "text": .string("Hello world")
+                        "text": .string("Hello world\u{0085}")
                     ])
                 ]
             )
@@ -487,7 +479,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant compaction text preserves its API discriminator")
     func assistantCompactionText() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .text(.init(
@@ -517,7 +509,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant client tool use follows provider-executed tool results")
     func clientToolUseFollowsProviderToolResults() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .text(.init(text: "I will save a note and search.")),
@@ -564,7 +556,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant tool-use reordering does not cross thinking boundaries")
     func toolUseReorderingPreservesThinkingBoundaries() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .reasoning(.init(
@@ -604,7 +596,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant reasoning requires signature metadata")
     func assistantReasoningWithSignature() async throws {
-        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+        let reasoningPart = LanguageModelV4MessagePart.reasoning(
             .init(
                 text: "Chain of thought",
                 providerOptions: anthropicOptions([
@@ -612,7 +604,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ])
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [reasoningPart], providerOptions: nil)
         ]
 
@@ -635,10 +627,10 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant reasoning disabled adds warning")
     func assistantReasoningDisabled() async throws {
-        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+        let reasoningPart = LanguageModelV4MessagePart.reasoning(
             .init(text: "Hidden thoughts", providerOptions: nil)
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [reasoningPart], providerOptions: nil)
         ]
 
@@ -649,7 +641,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed tool call mapped to server tool use")
     func assistantProviderExecutedToolCall() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -657,7 +649,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -682,7 +674,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed code_execution 20250825 maps subtool name for bash_code_execution")
     func assistantProviderExecutedCodeExecutionSubtoolBash() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -693,7 +685,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -710,7 +702,6 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                         "id": .string("tool-1"),
                         "name": .string("bash_code_execution"),
                         "input": .object([
-                            "type": .string("bash_code_execution"),
                             "command": .string("python /tmp/fibonacci.py"),
                         ]),
                     ])
@@ -721,7 +712,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed code_execution 20250825 maps subtool name for text_editor_code_execution")
     func assistantProviderExecutedCodeExecutionSubtoolTextEditor() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -733,7 +724,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -750,7 +741,6 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                         "id": .string("tool-1"),
                         "name": .string("text_editor_code_execution"),
                         "input": .object([
-                            "type": .string("text_editor_code_execution"),
                             "command": .string("view"),
                             "path": .string("/tmp/file.txt"),
                         ]),
@@ -762,7 +752,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed code_execution 20250825 strips programmatic-tool-call type")
     func assistantProviderExecutedCodeExecutionProgrammaticToolCalling() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -773,7 +763,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -800,7 +790,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant tool call mapped to tool use with object input")
     func assistantToolCallUsesObjectInput() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "read",
@@ -808,7 +798,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: false
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -832,7 +822,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant tool call includes caller metadata when present in providerOptions")
     func assistantToolCallCallerMetadata() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "rollDie",
@@ -846,7 +836,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ])
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -875,7 +865,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant tool call includes 20260120 caller metadata when present in providerOptions")
     func assistantToolCallCallerMetadata20260120() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "rollDie",
@@ -889,7 +879,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ])
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -918,7 +908,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant tool call includes direct caller metadata")
     func assistantToolCallDirectCallerMetadata() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "rollDie",
@@ -931,7 +921,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ])
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -959,7 +949,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed tool call unsupported warns")
     func assistantProviderExecutedUnsupportedToolCall() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-2",
                 toolName: "unsupported",
@@ -967,7 +957,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall], providerOptions: nil)
         ]
 
@@ -978,7 +968,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant provider executed tool_search_tool_regex tool call and result parts")
     func assistantToolSearchToolRegexCallAndResult() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
                 toolName: "tool_search_tool_regex",
@@ -989,7 +979,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let toolResult = LanguageModelV3MessagePart.toolResult(
+        let toolResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
                 toolName: "tool_search_tool_regex",
@@ -1001,7 +991,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]))
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall, toolResult], providerOptions: nil)
         ]
 
@@ -1042,7 +1032,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant advisor calls and result variants round-trip to API blocks")
     func assistantAdvisorRoundTrip() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [
                 .toolCall(.init(
                     toolCallId: "advisor-plain",
@@ -1070,6 +1060,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                     output: .json(value: .object([
                         "type": .string("advisor_redacted_result"),
                         "encryptedContent": .string("opaque-encrypted-advice"),
+                        "stopReason": .string("end_turn"),
                     ]))
                 )),
                 .toolCall(.init(
@@ -1122,6 +1113,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                         "content": .object([
                             "type": .string("advisor_redacted_result"),
                             "encrypted_content": .string("opaque-encrypted-advice"),
+                            "stop_reason": .string("end_turn"),
                         ]),
                     ]),
                     .object([
@@ -1145,7 +1137,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant mcp tool use call and result parts")
     func assistantMcpToolUseCallAndResult() async throws {
-        let toolCall = LanguageModelV3MessagePart.toolCall(
+        let toolCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
                 toolName: "echo",
@@ -1157,7 +1149,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ])
             )
         )
-        let toolResult = LanguageModelV3MessagePart.toolResult(
+        let toolResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "mcptoolu_01HXPYHs79HH36fBbKHysCrp",
                 toolName: "echo",
@@ -1169,10 +1161,10 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]))
             )
         )
-        let text = LanguageModelV3MessagePart.text(
+        let text = LanguageModelV4MessagePart.text(
             .init(text: "The echo tool responded back.")
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolCall, toolResult, text], providerOptions: nil)
         ]
 
@@ -1215,7 +1207,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant server tool results mapped to provider metadata")
     func assistantServerToolResults() async throws {
-        let codeCall = LanguageModelV3MessagePart.toolCall(
+        let codeCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -1223,7 +1215,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let webFetchCall = LanguageModelV3MessagePart.toolCall(
+        let webFetchCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-2",
                 toolName: "web_fetch",
@@ -1231,7 +1223,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let codeResult = LanguageModelV3MessagePart.toolResult(
+        let codeResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -1244,7 +1236,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]))
             )
         )
-        let webFetchResult = LanguageModelV3MessagePart.toolResult(
+        let webFetchResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-2",
                 toolName: "web_fetch",
@@ -1264,7 +1256,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]))
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [codeCall, webFetchCall, codeResult, webFetchResult], providerOptions: nil)
         ]
 
@@ -1301,7 +1293,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("assistant server tool maps encrypted code execution results")
     func assistantEncryptedCodeExecutionServerToolResult() async throws {
-        let codeCall = LanguageModelV3MessagePart.toolCall(
+        let codeCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -1309,7 +1301,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let codeResult = LanguageModelV3MessagePart.toolResult(
+        let codeResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-1",
                 toolName: "code_execution",
@@ -1322,7 +1314,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 ]))
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [codeCall, codeResult], providerOptions: nil)
         ]
 
@@ -1355,7 +1347,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("provider executed web search supports null title/pageAge")
     func providerExecutedWebSearchNulls() async throws {
-        let webSearchCall = LanguageModelV3MessagePart.toolCall(
+        let webSearchCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "web_search",
@@ -1363,7 +1355,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let webSearchResult = LanguageModelV3MessagePart.toolResult(
+        let webSearchResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-1",
                 toolName: "web_search",
@@ -1379,7 +1371,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             )
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [webSearchCall, webSearchResult], providerOptions: nil)
         ]
 
@@ -1417,7 +1409,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("provider executed web fetch rejects missing retrievedAt/title keys")
     func providerExecutedWebFetchRejectsMissingRequiredFields() async throws {
-        let webFetchCall = LanguageModelV3MessagePart.toolCall(
+        let webFetchCall = LanguageModelV4MessagePart.toolCall(
             .init(
                 toolCallId: "tool-1",
                 toolName: "web_fetch",
@@ -1425,7 +1417,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
                 providerExecuted: true
             )
         )
-        let webFetchResult = LanguageModelV3MessagePart.toolResult(
+        let webFetchResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-1",
                 toolName: "web_fetch",
@@ -1445,7 +1437,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             )
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [webFetchCall, webFetchResult], providerOptions: nil)
         ]
 
@@ -1456,10 +1448,8 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("rejects cache_control on thinking blocks")
     func rejectsCacheControlOnThinkingBlocks() async throws {
-        var warnings: [SharedV3Warning] = []
-        let cacheControlValidator = CacheControlValidator()
 
-        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+        let reasoningPart = LanguageModelV4MessagePart.reasoning(
             .init(
                 text: "thinking content",
                 providerOptions: anthropicOptions([
@@ -1469,16 +1459,9 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             )
         )
 
-        let result = try await convertToAnthropicMessagesPrompt(
-            prompt: [
-                .assistant(content: [reasoningPart], providerOptions: nil)
-            ],
-            sendReasoning: true,
-            warnings: &warnings,
-            cacheControlValidator: cacheControlValidator
-        )
-
-        #expect(warnings.isEmpty)
+        let (result, warnings) = try await convert([
+            .assistant(content: [reasoningPart], providerOptions: nil)
+        ])
 
         if case let .object(first)? = result.prompt.messages.first?.content.first {
             #expect(first["cache_control"] == nil)
@@ -1486,7 +1469,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             Issue.record("Expected first assistant content object")
         }
 
-        #expect(cacheControlValidator.getWarnings() == [
+        #expect(warnings == [
             .unsupported(
                 feature: "cache_control on non-cacheable context",
                 details: "cache_control cannot be set on thinking block. It will be ignored."
@@ -1496,10 +1479,8 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 
     @Test("rejects cache_control on redacted thinking blocks")
     func rejectsCacheControlOnRedactedThinkingBlocks() async throws {
-        var warnings: [SharedV3Warning] = []
-        let cacheControlValidator = CacheControlValidator()
 
-        let reasoningPart = LanguageModelV3MessagePart.reasoning(
+        let reasoningPart = LanguageModelV4MessagePart.reasoning(
             .init(
                 text: "redacted",
                 providerOptions: anthropicOptions([
@@ -1509,16 +1490,9 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             )
         )
 
-        let result = try await convertToAnthropicMessagesPrompt(
-            prompt: [
-                .assistant(content: [reasoningPart], providerOptions: nil)
-            ],
-            sendReasoning: true,
-            warnings: &warnings,
-            cacheControlValidator: cacheControlValidator
-        )
-
-        #expect(warnings.isEmpty)
+        let (result, warnings) = try await convert([
+            .assistant(content: [reasoningPart], providerOptions: nil)
+        ])
 
         if case let .object(first)? = result.prompt.messages.first?.content.first {
             #expect(first["cache_control"] == nil)
@@ -1526,7 +1500,7 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
             Issue.record("Expected first assistant content object")
         }
 
-        #expect(cacheControlValidator.getWarnings() == [
+        #expect(warnings == [
             .unsupported(
                 feature: "cache_control on non-cacheable context",
                 details: "cache_control cannot be set on redacted thinking block. It will be ignored."
@@ -1539,26 +1513,17 @@ struct ConvertToAnthropicMessagesPromptAssistantTests {
 struct ConvertToAnthropicMessagesPromptCacheControlBreakpointTests {
     @Test("limits cache breakpoints to 4")
     func limitsCacheBreakpointsTo4() async throws {
-        var warnings: [SharedV3Warning] = []
-        let cacheControlValidator = CacheControlValidator()
         let cacheOptions = anthropicOptions([
             "cacheControl": .object(["type": .string("ephemeral")])
         ])
 
-        let result = try await convertToAnthropicMessagesPrompt(
-            prompt: [
-                .system(content: "system 1", providerOptions: cacheOptions),
-                .system(content: "system 2", providerOptions: cacheOptions),
-                .user(content: [.text(.init(text: "user 1", providerOptions: cacheOptions))], providerOptions: nil),
-                .assistant(content: [.text(.init(text: "assistant 1", providerOptions: cacheOptions))], providerOptions: nil),
-                .user(content: [.text(.init(text: "user 2 (should be rejected)", providerOptions: cacheOptions))], providerOptions: nil),
-            ],
-            sendReasoning: true,
-            warnings: &warnings,
-            cacheControlValidator: cacheControlValidator
-        )
-
-        #expect(warnings.isEmpty)
+        let (result, warnings) = try await convert([
+            .system(content: "system 1", providerOptions: cacheOptions),
+            .system(content: "system 2", providerOptions: cacheOptions),
+            .user(content: [.text(.init(text: "user 1", providerOptions: cacheOptions))], providerOptions: nil),
+            .assistant(content: [.text(.init(text: "assistant 1", providerOptions: cacheOptions))], providerOptions: nil),
+            .user(content: [.text(.init(text: "user 2", providerOptions: cacheOptions))], providerOptions: nil),
+        ])
 
         if let system = result.prompt.system, system.count == 2 {
             if case let .object(first) = system[0] {
@@ -1591,7 +1556,7 @@ struct ConvertToAnthropicMessagesPromptCacheControlBreakpointTests {
             Issue.record("Expected second user content object")
         }
 
-        #expect(cacheControlValidator.getWarnings() == [
+        #expect(warnings == [
             .unsupported(
                 feature: "cacheControl breakpoint limit",
                 details: "Maximum 4 cache breakpoints exceeded (found 5). This breakpoint will be ignored."
@@ -1606,34 +1571,34 @@ struct ConvertToAnthropicMessagesPromptCacheControlBreakpointTests {
 struct ConvertToAnthropicMessagesPromptMiscTests {
     @Test("warnings propagate from tool result output type")
     func warningForUnsupportedProviderExecutedOutput() async throws {
-        let toolResult = LanguageModelV3MessagePart.toolResult(
+        let toolResult = LanguageModelV4MessagePart.toolResult(
             .init(
                 toolCallId: "tool-3",
                 toolName: "code_execution",
                 output: .text(value: "plain text")
             )
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [toolResult], providerOptions: nil)
         ]
 
         let (_, warnings) = try await convert(prompt)
 
-        #expect(warnings.contains(.other(message: "provider executed tool result output type for tool code_execution is not supported")))
+        #expect(warnings.contains(.other(message: "provider executed tool result output type text for tool code_execution is not supported")))
     }
 
     @Test("betas union from multiple sources")
     func betasUnion() async throws {
-        let pdf = LanguageModelV3FilePart(
+        let pdf = LanguageModelV4FilePart(
             data: .base64("PDF=="),
             mediaType: "application/pdf"
         )
-        let toolResult = LanguageModelV3ToolResultPart(
+        let toolResult = LanguageModelV4ToolResultPart(
             toolCallId: "call",
             toolName: "calculator",
-            output: .content(value: [.media(data: "PDFDATA", mediaType: "application/pdf")])
+            output: .content(value: [.file(data: .base64("PDFDATA"), mediaType: "application/pdf", filename: nil, providerOptions: nil)])
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(pdf)], providerOptions: nil),
             .tool(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
@@ -1644,118 +1609,324 @@ struct ConvertToAnthropicMessagesPromptMiscTests {
     }
 }
 
-// MARK: - Batch 18: File Content Tests
-
-@Suite("convertToAnthropicMessagesPrompt Batch 18: file content")
-struct ConvertToAnthropicMessagesPromptBatch18Tests {
-    @Test("add image parts for base64 images")
-    func addsImagePartsForBase64Images() async throws {
-        let file = LanguageModelV3FilePart(
-            data: .base64("AAECAw=="),
-            mediaType: "image/png"
-        )
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.file(file)], providerOptions: nil)
-        ]
-
-        let (result, warnings) = try await convert(prompt)
-
-        #expect(warnings.isEmpty)
-        #expect(result.betas.isEmpty)
-        #expect(result.prompt == AnthropicMessagesPrompt(
-            system: nil,
-            messages: [
-                AnthropicMessage(
-                    role: "user",
-                    content: [
-                        .object([
-                            "type": .string("image"),
-                            "source": .object([
-                                "type": .string("base64"),
-                                "data": .string("AAECAw=="),
-                                "media_type": .string("image/png")
-                            ])
-                        ])
-                    ]
-                )
-            ]
-        ))
+@Suite("Anthropic V4 prompt HTTP contracts")
+struct AnthropicPromptHTTPTests {
+    @Test("initial controls preserve instructions and route effort-only messages inline")
+    func initialSystemControls() async throws {
+        let (result, warnings) = try await convert([
+            .system(content: "Instructions", providerOptions: anthropicOptions([
+                "clearAt": .string("next_user_message"),
+                "toolChanges": .array([.object(["type": .string("tool_addition"), "toolName": .string("search")])]),
+            ])),
+            .system(content: "", providerOptions: anthropicOptions(["effort": .string("high")])),
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
+        ])
+        #expect(result.prompt.system == [.object(["type": .string("text"), "text": .string("Instructions")])])
+        #expect(result.prompt.messages.first == AnthropicMessage(role: "system", content: [], outputConfig: ["effort": .string("high")]))
+        #expect(result.betas == ["mid-conversation-output-config-2026-07-01"])
+        #expect(warnings.count == 2)
     }
 
-    @Test("add image parts for URL images")
-    func addsImagePartsForURLImages() async throws {
-        let file = LanguageModelV3FilePart(
-            data: .url(URL(string: "https://example.com/image.png")!),
-            mediaType: "image/*"
-        )
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.file(file)], providerOptions: nil)
-        ]
-
-        let (result, warnings) = try await convert(prompt)
-
+    @Test("mid-conversation controls remain separate and resolve custom provider tool names")
+    func midConversationSystemControls() async throws {
+        let (result, warnings) = try await convert([
+            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
+            .system(content: "", providerOptions: anthropicOptions([
+                "clearAt": .string("next_user_message"),
+                "effort": .string("max"),
+                "toolChanges": .array([.object(["type": .string("tool_removal"), "toolName": .string("searchNews")])]),
+            ])),
+            .system(content: "New instructions", providerOptions: nil),
+        ], tools: [.provider(.init(id: "anthropic.web_search_20250305", name: "searchNews", args: [:]))])
         #expect(warnings.isEmpty)
-        #expect(result.betas.isEmpty)
-        #expect(result.prompt == AnthropicMessagesPrompt(
-            system: nil,
-            messages: [
-                AnthropicMessage(
-                    role: "user",
-                    content: [
-                        .object([
-                            "type": .string("image"),
-                            "source": .object([
-                                "type": .string("url"),
-                                "url": .string("https://example.com/image.png")
-                            ])
-                        ])
-                    ]
-                )
-            ]
-        ))
+        #expect(Array(result.prompt.messages.suffix(2)) == [
+            AnthropicMessage(role: "system", content: [.object([
+                "type": .string("tool_removal"),
+                "tool": .object(["type": .string("tool_reference"), "name": .string("web_search")]),
+            ])], clearAt: "next_user_message", outputConfig: ["effort": .string("max")]),
+            AnthropicMessage(role: "system", content: [.object(["type": .string("text"), "text": .string("New instructions")])]),
+        ])
+        #expect(result.betas == [
+            "mid-conversation-system-2026-04-07", "mid-conversation-tool-changes-2026-07-01",
+            "mid-conversation-system-clear-at-2026-08-21", "mid-conversation-output-config-2026-07-01",
+        ])
     }
 
-    @Test("add PDF file parts for base64 PDFs")
-    func addsPDFFilePartsForBase64PDFs() async throws {
-        let file = LanguageModelV3FilePart(
-            data: .base64("base64PDFdata"),
-            mediaType: "application/pdf"
-        )
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.file(file)], providerOptions: nil)
-        ]
-
-        let (result, warnings) = try await convert(prompt)
-
+    @Test("V4 file references, text data, and wildcard media reach the HTTP payload")
+    func nativeFileData() async throws {
+        let (result, warnings) = try await convert([
+            .user(content: [
+                .file(.init(data: .reference(["anthropic": "file_image"]), mediaType: "image")),
+                .file(.init(data: .reference(["anthropic": "file_upload"]), mediaType: "application/zip", providerOptions: anthropicOptions(["containerUpload": .bool(true)]))),
+                .file(.init(data: .text("Document text"), mediaType: "application/custom", filename: "notes.txt", providerOptions: anthropicOptions([
+                    "context": .string(""), "citations": .object(["enabled": .bool(true)]),
+                ]))),
+                .file(.init(data: .base64("iVBORw0KGgo="), mediaType: "image/*")),
+                .file(.init(data: .data(Data([0xef, 0xbb, 0xbf, 0xff, 0x61])), mediaType: "text/plain")),
+            ], providerOptions: nil),
+        ])
         #expect(warnings.isEmpty)
-        #expect(result.betas == Set(["pdfs-2024-09-25"]))
-        #expect(result.prompt == AnthropicMessagesPrompt(
-            system: nil,
-            messages: [
-                AnthropicMessage(
-                    role: "user",
-                    content: [
-                        .object([
-                            "type": .string("document"),
-                            "source": .object([
-                                "type": .string("base64"),
-                                "media_type": .string("application/pdf"),
-                                "data": .string("base64PDFdata")
-                            ])
-                        ])
-                    ]
-                )
-            ]
-        ))
+        #expect(result.betas == ["files-api-2025-04-14"])
+        #expect(result.prompt.messages.first?.content == [
+            .object(["type": .string("image"), "source": .object(["type": .string("file"), "file_id": .string("file_image")])]),
+            .object(["type": .string("container_upload"), "file_id": .string("file_upload")]),
+            .object(["type": .string("document"), "source": .object(["type": .string("text"), "media_type": .string("text/plain"), "data": .string("Document text")]), "title": .string("notes.txt"), "citations": .object(["enabled": .bool(true)])]),
+            .object(["type": .string("image"), "source": .object(["type": .string("base64"), "media_type": .string("image/png"), "data": .string("iVBORw0KGgo=")])]),
+            .object(["type": .string("document"), "source": .object(["type": .string("text"), "media_type": .string("text/plain"), "data": .string("�a")])]),
+        ])
     }
 
+    @Test("references from another provider fail before request transmission")
+    func rejectsForeignReference() async throws {
+        await #expect(throws: NoSuchProviderReferenceError.self) {
+            _ = try await convert([.user(content: [
+                .file(.init(data: .reference(["other": "file_other"]), mediaType: "application/pdf")),
+            ], providerOptions: nil)])
+        }
+    }
+
+    @Test("tool result content supports references, URLs, and tool references while warning on unsupported data")
+    func toolResultContent() async throws {
+        let (result, warnings) = try await convert([
+            .tool(content: [.toolResult(.init(toolCallId: "call", toolName: "read", output: .content(value: [
+                .text(text: "Result", providerOptions: nil),
+                .file(data: .reference(["anthropic": "file_pdf"]), mediaType: "application/pdf", filename: nil, providerOptions: nil),
+                .file(data: .url(URL(string: "https://example.com/image.png")!), mediaType: "image", filename: nil, providerOptions: nil),
+                .custom(providerOptions: anthropicOptions(["type": .string("tool-reference"), "toolName": .string("search")])),
+                .file(data: .text("unsupported"), mediaType: "text/plain", filename: nil, providerOptions: nil),
+            ])))], providerOptions: nil),
+        ])
+        #expect(result.prompt.messages.first?.content == [.object([
+            "type": .string("tool_result"), "tool_use_id": .string("call"),
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Result")]),
+                .object(["type": .string("document"), "source": .object(["type": .string("file"), "file_id": .string("file_pdf")])]),
+                .object(["type": .string("image"), "source": .object(["type": .string("url"), "url": .string("https://example.com/image.png")])]),
+                .object(["type": .string("tool_reference"), "tool_name": .string("search")]),
+            ]),
+        ])])
+        #expect(result.betas == ["files-api-2025-04-14"])
+        #expect(warnings == [.other(message: "unsupported tool content part type: file with data type: text")])
+    }
+
+    @Test("tool cache precedence uses part, output, first content metadata, then message without stealing approval position")
+    func toolResultCachePrecedence() async throws {
+        func cache(_ ttl: String) -> SharedV4ProviderOptions {
+            anthropicOptions(["cacheControl": .object(["type": .string("ephemeral"), "ttl": .string(ttl)])])
+        }
+        let (result, warnings) = try await convert([
+            .tool(content: [
+                .toolResult(.init(toolCallId: "part", toolName: "read", output: .text(value: "one", providerOptions: cache("1h")), providerOptions: cache("5m"))),
+                .toolResult(.init(toolCallId: "output", toolName: "read", output: .json(value: .null, providerOptions: cache("1h")))),
+                .toolResult(.init(toolCallId: "content", toolName: "read", output: .content(value: [.text(text: "three", providerOptions: cache("5m"))]))),
+                .toolResult(.init(toolCallId: "message", toolName: "read", output: .executionDenied(reason: nil))),
+            ], providerOptions: cache("1h")),
+            .tool(content: [
+                .toolResult(.init(toolCallId: "approval", toolName: "read", output: .text(value: "four"))),
+                .toolApprovalResponse(.init(approvalId: "approve", approved: true)),
+            ], providerOptions: cache("5m")),
+        ])
+        let content = try #require(result.prompt.messages.first?.content)
+        let controls = content.map { value -> JSONValue? in
+            guard case .object(let object) = value else { return nil }
+            return object["cache_control"]
+        }
+        let expectedControls: [JSONValue?] = ["5m", "1h", "5m", "1h"].map { .object(["type": .string("ephemeral"), "ttl": .string($0)]) } + [nil]
+        #expect(controls == expectedControls)
+        guard case .object(let denied) = content[3] else { throw PromptRequestError.invalidBody }
+        #expect(denied["content"] == .string("Tool call execution denied."))
+        #expect(warnings.isEmpty)
+    }
+
+    @Test("fallback boundaries keep tool uses in their own segment and signed compaction keeps opaque text")
+    func signedCompactionAndFallback() async throws {
+        let citations: JSONValue = .array([.object(["type": .string("page_location"), "document_index": .number(0), "start_page_number": .number(1), "end_page_number": .number(2), "cited_text": .string("source"), "document_title": .string("Doc")])])
+        let (result, warnings) = try await convert([
+            .assistant(content: [
+                .toolCall(.init(toolCallId: "before", toolName: "save", input: .object([:]))),
+                .custom(.init(kind: "anthropic.fallback", providerOptions: anthropicOptions([
+                    "type": .string("fallback"), "from": .object(["model": .string("claude-opus-4-8")]), "to": .object(["model": .string("claude-sonnet-5")]),
+                ]))),
+                .text(.init(text: "Cited answer", providerOptions: anthropicOptions(["citations": citations]))),
+                .text(.init(text: "", providerOptions: anthropicOptions(["type": .string("compaction")]))),
+                .text(.init(text: "  condensed context \n", providerOptions: anthropicOptions(["type": .string("compaction"), "signature": .string("sig-compact")]))),
+            ], providerOptions: nil),
+        ])
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages.first?.content == [
+            .object(["type": .string("tool_use"), "id": .string("before"), "name": .string("save"), "input": .object([:])]),
+            .object(["type": .string("fallback"), "from": .object(["model": .string("claude-opus-4-8")]), "to": .object(["model": .string("claude-sonnet-5")])]),
+            .object(["type": .string("text"), "text": .string("Cited answer"), "citations": citations]),
+            .object(["type": .string("compaction"), "content": .string("  condensed context \n"), "signature": .string("sig-compact")]),
+        ])
+        #expect(result.betas == ["compact-2026-09-04", "server-side-fallback-2026-06-01"])
+    }
+
+    @Test("generated signed compaction and fallback metadata survive the next HTTP turn")
+    func generatedHistoryLifecycle() async throws {
+        let historyBlocks: [JSONValue] = [
+            .object(["type": .string("compaction"), "content": .string(" Condensed history \n"), "signature": .string("sig-generated")]),
+            .object(["type": .string("fallback"), "from": .object(["model": .string("claude-opus-4-8")]), "to": .object(["model": .string("claude-sonnet-5")])]),
+        ]
+        let response = try JSONEncoder().encode(JSONValue.object([
+            "type": .string("message"), "id": .string("msg_history"), "model": .string("claude-sonnet-5"),
+            "content": .array(historyBlocks), "stop_reason": .string("end_turn"),
+            "usage": .object(["input_tokens": .number(1), "output_tokens": .number(1)]),
+        ]))
+        let capture = PromptRequestCapture()
+        let model = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+            await capture.store(request)
+            return FetchResponse(body: .data(response), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })).messages("claude-opus-4-8")
+        let initial: LanguageModelV4Message = .user(content: [.text(.init(text: "Summarize"))], providerOptions: nil)
+        let generated = try await model.doGenerate(options: .init(prompt: [initial]))
+        let history: [LanguageModelV4MessagePart] = try generated.content.map { part in
+            switch part {
+            case .text(let text): .text(.init(text: text.text, providerOptions: text.providerMetadata))
+            case .custom(let custom): .custom(.init(kind: custom.kind, providerOptions: custom.providerMetadata))
+            default: throw PromptRequestError.invalidBody
+            }
+        }
+        _ = try await model.doGenerate(options: .init(prompt: [
+            initial,
+            .assistant(content: history, providerOptions: nil),
+            .user(content: [.text(.init(text: "Continue"))], providerOptions: nil),
+        ]))
+        let request = try #require(await capture.request)
+        let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+        guard case .object(let object) = body, case .array(let messages) = object["messages"], messages.count > 1,
+              case .object(let assistant) = messages[1] else { throw PromptRequestError.invalidBody }
+        #expect(assistant["content"] == .array(historyBlocks))
+        let betas = Set((request.value(forHTTPHeaderField: "anthropic-beta") ?? "").split(separator: ","))
+        #expect(betas.contains("compact-2026-09-04"))
+        #expect(betas.contains("server-side-fallback-2026-06-01"))
+    }
+
+    @Test("unsupported custom and empty compaction history does not create empty assistant API messages")
+    func omittedAssistantContent() async throws {
+        let (result, warnings) = try await convert([
+            .assistant(content: [
+                .custom(.init(kind: "other.content")),
+                .custom(.init(kind: "anthropic.fallback", providerOptions: anthropicOptions(["type": .string("fallback")]))),
+                .text(.init(text: "", providerOptions: anthropicOptions(["type": .string("compaction")]))),
+                .file(.init(data: .text("ignored"), mediaType: "text/plain")),
+            ], providerOptions: nil),
+            .user(content: [.text(.init(text: "Continue"))], providerOptions: nil),
+        ])
+        #expect(result.prompt.messages == [.init(role: "user", content: [.object(["type": .string("text"), "text": .string("Continue")])])])
+        #expect(warnings == [.other(message: "anthropic fallback metadata must include from.model and to.model")])
+    }
+
+    @Test("toolset calls use member names and configured toolset overrides metadata")
+    func toolsetMemberCalls() async throws {
+        let toolsetMetadata = anthropicOptions(["toolsetName": .string("previous-computer")])
+        let (result, warnings) = try await convert([
+            .assistant(content: [
+                .toolCall(.init(toolCallId: "member", toolName: "desktop", input: .object(["action": .string("screenshot")]), providerOptions: toolsetMetadata)),
+                .toolCall(.init(toolCallId: "invalid", toolName: "legacy", input: .array([.number(1)]), providerOptions: anthropicOptions(["toolsetName": .string("legacy-set")]))),
+            ], providerOptions: nil),
+            .tool(content: [.toolResult(.init(toolCallId: "member", toolName: "desktop", output: .text(value: "ok"), providerOptions: toolsetMetadata))], providerOptions: nil),
+        ], tools: [.provider(.init(id: "anthropic.computer_toolset_20260801", name: "desktop", args: ["displayWidthPx": .number(100), "displayHeightPx": .number(100)]))])
+        #expect(result.prompt.messages.first?.content == [
+            .object(["type": .string("tool_use"), "id": .string("member"), "name": .string("screenshot"), "toolset_name": .string("computer"), "input": .object(["action": .string("screenshot")])]),
+            .object(["type": .string("tool_use"), "id": .string("invalid"), "name": .string("legacy-set"), "toolset_name": .string("legacy-set"), "input": .object(["rawInvalidInput": .array([.number(1)])])]),
+        ])
+        #expect(result.prompt.messages.last?.content == [.object(["type": .string("tool_result"), "tool_use_id": .string("member"), "toolset_name": .string("computer"), "content": .string("ok")])])
+        #expect(warnings == [.other(message: "toolset tool call for tool legacy is missing the action")])
+    }
+
+    @Test("orphan caller metadata is removed only once the next nonempty user turn starts", arguments: ["active", "history", "empty-user", "retained-source"])
+    func callerHistoryNormalization(scenario: String) async throws {
+        let caller = anthropicOptions(["caller": .object(["type": .string("code_execution_20260120"), "toolId": .string("execution")])])
+        var parts: [LanguageModelV4MessagePart] = []
+        if scenario == "retained-source" {
+            parts.append(.toolCall(.init(toolCallId: "execution", toolName: "code_execution", input: .object(["code": .string("search()")]), providerExecuted: true)))
+        }
+        parts += [
+            .toolCall(.init(toolCallId: "search", toolName: "web_search", input: .object(["query": .string("news")]), providerExecuted: true, providerOptions: caller)),
+            .toolResult(.init(toolCallId: "search", toolName: "web_search", output: .errorJson(value: .object(["errorCode": .string("unavailable")])), providerOptions: caller)),
+        ]
+        var prompt: LanguageModelV4Prompt = [.assistant(content: parts, providerOptions: nil)]
+        if scenario == "active" {
+            prompt.append(.tool(content: [.toolResult(.init(toolCallId: "client", toolName: "read", output: .text(value: "ok")))], providerOptions: nil))
+        } else {
+            prompt.append(.user(content: scenario == "empty-user" ? [] : [.text(.init(text: "Continue"))], providerOptions: nil))
+        }
+        let (result, warnings) = try await convert(prompt)
+        let content = try #require(result.prompt.messages.first?.content)
+        let searchBlocks = content.filter { value in
+            guard case .object(let object) = value else { return false }
+            return object["id"] == .string("search") || object["tool_use_id"] == .string("search")
+        }
+        let callers = searchBlocks.map { value -> JSONValue? in
+            guard case .object(let object) = value else { return nil }
+            return object["caller"]
+        }
+        let expected: JSONValue? = scenario == "history" ? nil : .object(["type": .string("code_execution_20260120"), "tool_id": .string("execution")])
+        #expect(callers == [expected, expected])
+        #expect(warnings.count == (scenario == "history" ? 1 : 0))
+    }
+
+    @Test("code execution errors accept stringified output and fall back to bash unknown errors")
+    func codeExecutionErrors() async throws {
+        let (result, warnings) = try await convert([
+            .assistant(content: [
+                .toolResult(.init(toolCallId: "legacy", toolName: "code_execution", output: .errorText(value: #"{"type":"code_execution_tool_result_error","errorCode":"execution_failed"}"#))),
+                .toolResult(.init(toolCallId: "bash", toolName: "code_execution", output: .errorJson(value: .object([:])))),
+            ], providerOptions: nil),
+        ])
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages.first?.content == [
+            .object(["type": .string("code_execution_tool_result"), "tool_use_id": .string("legacy"), "content": .object(["type": .string("code_execution_tool_result_error"), "error_code": .string("execution_failed")])]),
+            .object(["type": .string("bash_code_execution_tool_result"), "tool_use_id": .string("bash"), "content": .object(["type": .string("bash_code_execution_tool_result_error"), "error_code": .string("unknown")])]),
+        ])
+    }
+
+    @Test("text editor results retain required nullable fields in the HTTP history")
+    func nullableTextEditorResult() async throws {
+        let value: JSONValue = .object([
+            "type": .string("text_editor_code_execution_view_result"), "content": .string("image data"), "file_type": .string("image"),
+            "num_lines": .null, "start_line": .null, "total_lines": .null,
+        ])
+        let (result, warnings) = try await convert([
+            .assistant(content: [.toolResult(.init(toolCallId: "editor", toolName: "code_execution", output: .json(value: value)))], providerOptions: nil),
+        ])
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages.first?.content == [.object([
+            "type": .string("text_editor_code_execution_tool_result"), "tool_use_id": .string("editor"), "content": value,
+        ])])
+    }
+
+    @Test("encrypted code execution history validates its required fields")
+    func rejectsInvalidEncryptedResult() async throws {
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await convert([
+                .assistant(content: [.toolResult(.init(toolCallId: "encrypted", toolName: "code_execution", output: .json(value: .object([
+                    "type": .string("encrypted_code_execution_result"), "encrypted_stdout": .number(1), "stderr": .string(""), "return_code": .number(0),
+                ]))))], providerOptions: nil),
+            ])
+        }
+    }
+
+    @Test("tool search error values are recognized before validating reference arrays")
+    func toolSearchErrorValue() async throws {
+        let (result, warnings) = try await convert([
+            .assistant(content: [.toolResult(.init(toolCallId: "search", toolName: "tool_search_tool_regex", output: .json(value: .object(["type": .string("tool_search_tool_result_error")]))))], providerOptions: nil),
+        ])
+        #expect(warnings.isEmpty)
+        #expect(result.prompt.messages.first?.content == [.object(["type": .string("tool_search_tool_result"), "tool_use_id": .string("search"), "content": .object(["type": .string("tool_search_tool_result_error"), "error_code": .string("unavailable")])])])
+    }
+}
+
+@Suite("convertToAnthropicMessagesPrompt additional file types")
+struct ConvertToAnthropicMessagesPromptFileTests {
     @Test("add PDF file parts for URL PDFs")
     func addsPDFFilePartsForURLPDFs() async throws {
-        let file = LanguageModelV3FilePart(
+        let file = LanguageModelV4FilePart(
             data: .url(URL(string: "https://example.com/document.pdf")!),
             mediaType: "application/pdf"
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(file)], providerOptions: nil)
         ]
 
@@ -1789,12 +1960,12 @@ struct ConvertToAnthropicMessagesPromptBatch18Tests {
         let textContent = "sample text content"
         let base64Data = textContent.data(using: .utf8)!.base64EncodedString()
 
-        let file = LanguageModelV3FilePart(
+        let file = LanguageModelV4FilePart(
             data: .base64(base64Data),
             mediaType: "text/plain",
             filename: "sample.txt"
         )
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(file)], providerOptions: nil)
         ]
 
