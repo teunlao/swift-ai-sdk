@@ -81,7 +81,7 @@ func fetchWithAbortCheck(
         throw CancellationError()
     }
 
-    return try await withThrowingTaskGroup(of: FetchResponse.self) { group in
+    let response = try await withThrowingTaskGroup(of: FetchResponse.self) { group in
         group.addTask {
             try await fetch(request)
         }
@@ -108,6 +108,108 @@ func fetchWithAbortCheck(
             while let _ = try? await group.next() {}
             throw error
         }
+    }
+
+    if isAborted() {
+        throw CancellationError()
+    }
+    guard case .stream(let stream) = response.body else {
+        return response
+    }
+
+    let body = AbortableResponseBody(stream: stream, isAborted: isAborted)
+    return FetchResponse(
+        body: .stream(AsyncThrowingStream { try await body.next() }),
+        urlResponse: response.urlResponse
+    )
+}
+
+private final class AbortableResponseBody: @unchecked Sendable {
+    private let lock = NSLock()
+    private var source: AsyncIteratorBox<AsyncThrowingStream<Data, Error>.AsyncIterator>?
+    private var isAborted: (@Sendable () -> Bool)?
+    private var observer: Task<Void, Never>?
+    private var read: Task<Data?, Error>?
+    private var cancelled = false
+
+    init(stream: AsyncThrowingStream<Data, Error>, isAborted: @escaping @Sendable () -> Bool) {
+        self.source = AsyncIteratorBox(stream.makeAsyncIterator())
+        self.isAborted = isAborted
+        // The stream owns the observer; the observer must not keep an abandoned body alive.
+        self.observer = Task { [weak self] in
+            while self?.checkAbort() == false {
+                do {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    deinit {
+        observer?.cancel()
+        read?.cancel()
+    }
+
+    private func checkAbort() -> Bool {
+        guard let isAborted = lock.withLock({ self.isAborted }) else {
+            return true
+        }
+        if isAborted() {
+            cancel()
+            return true
+        }
+        return false
+    }
+
+    func next() async throws -> Data? {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            _ = checkAbort()
+            let task = try lock.withLock { () throws -> Task<Data?, Error>? in
+                if cancelled {
+                    throw CancellationError()
+                }
+                guard let source else { return nil }
+                let task = Task { try await source.next() }
+                read = task
+                return task
+            }
+            guard let task else { return nil }
+            let result = await task.result
+            return try lock.withLock {
+                read = nil
+                if cancelled {
+                    throw CancellationError()
+                }
+                switch result {
+                case .success(.some(let chunk)):
+                    return chunk
+                case .success(nil), .failure:
+                    source = nil
+                    isAborted = nil
+                    observer?.cancel()
+                    observer = nil
+                    return try result.get()
+                }
+            }
+        } onCancel: {
+            self.cancel()
+        }
+    }
+
+    private func cancel() {
+        lock.lock()
+        cancelled = true
+        source = nil
+        isAborted = nil
+        let read = self.read
+        let observer = self.observer
+        self.observer = nil
+        lock.unlock()
+        read?.cancel()
+        observer?.cancel()
     }
 }
 

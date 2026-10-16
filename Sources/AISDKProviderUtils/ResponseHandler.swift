@@ -256,6 +256,9 @@ public func createBinaryResponseHandler() -> ResponseHandler<Data> {
                 responseHeaders: headers
             )
         } catch {
+            if isAbortError(error) {
+                throw error
+            }
             throw APICallError(
                 message: "Failed to read response as array buffer",
                 url: input.url,
