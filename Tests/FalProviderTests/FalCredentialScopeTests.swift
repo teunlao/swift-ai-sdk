@@ -87,4 +87,26 @@ struct FalCredentialScopeTests {
         #expect(await requests.authorization(for: apiURL) == .some("Key fal-secret"))
         #expect(await requests.authorization(for: assetURL) == .some(nil))
     }
+
+    @Test("response-supplied private image and audio URLs are rejected", arguments: [false, true])
+    func rejectsPrivateDownload(speech: Bool) async throws {
+        let assetURL = "http://127.0.0.1/private"
+        let apiURL = speech ? "https://fal.run/fal-ai/minimax/speech-02-hd" : "https://fal.run/fal-ai/flux/dev"
+        let requests = Requests()
+        let fetch = makeFetch(
+            requests: requests, apiURL: apiURL,
+            apiBody: speech ? #"{"audio":{"url":"\#(assetURL)"}}"# : #"{"images":[{"url":"\#(assetURL)"}]}"#,
+            assetURL: assetURL, assetContentType: "application/octet-stream"
+        )
+        let provider = createFal(settings: .init(apiKey: "fal-secret", fetch: fetch))
+        await #expect(throws: DownloadError.self) {
+            if speech {
+                _ = try await provider.speech("fal-ai/minimax/speech-02-hd").doGenerate(options: .init(text: "Hello"))
+            } else {
+                _ = try await provider.image("fal-ai/flux/dev").doGenerate(options: .init(n: 1))
+            }
+        }
+        #expect(await requests.authorization(for: apiURL) == .some("Key fal-secret"))
+        #expect(await requests.authorization(for: assetURL) == nil)
+    }
 }

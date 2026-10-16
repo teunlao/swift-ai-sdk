@@ -278,7 +278,7 @@ struct FalImageModelTests {
         }
     }
 
-    @Test("handles image API errors using fal error envelope")
+    @Test("unrecognized image error envelopes retain HTTP context")
     func handlesFalErrorEnvelope() async throws {
         let postURL = "https://api.example.com/\(modelId.rawValue)"
         let errorBody = try jsonData([
@@ -311,7 +311,8 @@ struct FalImageModelTests {
             _ = try await model.doGenerate(options: .init(prompt: prompt, n: 1, providerOptions: [:]))
             Issue.record("Expected APICallError")
         } catch let error as APICallError {
-            #expect(error.message == "Something went wrong")
+            #expect(error.data == nil)
+            #expect(error.responseBody == String(data: errorBody, encoding: .utf8))
             #expect(error.statusCode == 400)
             #expect(error.url == postURL)
         }
@@ -365,9 +366,9 @@ struct FalImageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: "Add a flamingo to the pool",
             n: 1,
-            providerOptions: [:],
             files: [.file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil)],
-            mask: .file(mediaType: "image/png", data: .binary(maskData), providerOptions: nil)
+            mask: .file(mediaType: "image/png", data: .binary(maskData), providerOptions: nil),
+            providerOptions: [:]
         ))
 
         guard let request = await capture.first() else {
@@ -394,11 +395,11 @@ struct FalImageModelTests {
         let result = try await model.doGenerate(options: .init(
             prompt: "Edit images",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil),
                 .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil)
-            ]
+            ],
+            providerOptions: [:]
         ))
 
         #expect(result.warnings.count == 1)
@@ -431,14 +432,14 @@ struct FalImageModelTests {
         let result = try await model.doGenerate(options: .init(
             prompt: "Edit these images",
             n: 1,
+            files: [
+                .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil),
+                .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil)
+            ],
             providerOptions: [
                 "fal": [
                     "useMultipleImages": .bool(true)
                 ]
-            ],
-            files: [
-                .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil),
-                .file(mediaType: "image/png", data: .binary(imageData), providerOptions: nil)
             ]
         ))
 
@@ -514,6 +515,79 @@ struct FalImageModelTests {
             return
         }
         #expect(rootMetadata["description"] == .string("response with nullable dimensions"))
+    }
+
+    @Test("capabilities distinguish editing, inpainting, text-only and unknown models", arguments: [
+        "fal-ai/flux-2/edit", "fal-ai/flux-general/inpainting", "fal-ai/recraft/v3/text-to-image", "custom/model",
+    ])
+    func capabilities(modelId: String) async throws {
+        let model = createFal().image(FalImageModelId(rawValue: modelId))
+        switch modelId {
+        case "fal-ai/flux-2/edit":
+            #expect(model.supportsFileInputs == true)
+            #expect(model.supportsMaskInputs == false)
+        case "fal-ai/flux-general/inpainting":
+            #expect(model.supportsFileInputs == true)
+            #expect(model.supportsMaskInputs == true)
+        case "fal-ai/recraft/v3/text-to-image":
+            #expect(model.supportsFileInputs == false)
+            #expect(model.supportsMaskInputs == false)
+        default:
+            #expect(model.supportsFileInputs == nil)
+            #expect(model.supportsMaskInputs == nil)
+        }
+    }
+
+    @Test("empty image results remain valid provider responses")
+    func emptyImageResponse() async throws {
+        let fetch = try makeSuccessfulFetch(capture: RequestCapture(), postResponseBody: ["images": []])
+        let result = try await makeModel(fetch: fetch).doGenerate(options: .init(n: 1))
+        #expect(result.images == .binary([]))
+        #expect(result.providerMetadata?["fal"]?.images.isEmpty == true)
+    }
+
+    @Test("response validation rejects malformed image metadata at the HTTP boundary")
+    func rejectsInvalidImageResponse() async throws {
+        let fetch = try makeSuccessfulFetch(capture: RequestCapture(), postResponseBody: [
+            "images": [["url": imageURL, "width": "invalid"]],
+        ])
+        do {
+            _ = try await makeModel(fetch: fetch).doGenerate(options: .init(n: 1))
+            Issue.record("Expected invalid response error")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+            #expect(error.url == "https://api.example.com/\(modelId.rawValue)")
+            #expect(error.statusCode == 200)
+        }
+    }
+
+    @Test("sparse NSFW flags and nested metadata follow the response schema")
+    func sparseImageMetadata() async throws {
+        let fetch = try makeSuccessfulFetch(capture: RequestCapture(), postResponseBody: [
+            "images": [
+                ["url": imageURL, "width": 1, "custom": "discarded"],
+                ["url": imageURL, "height": 2],
+            ],
+            "has_nsfw_concepts": [false], "nsfw_content_detected": [true, true],
+            "timings": ["inference": 3, "custom": "discarded"], "custom": "retained", "prompt": "pass-through",
+        ])
+        let result = try await makeModel(fetch: fetch).doGenerate(options: .init(n: 2))
+        let metadata = try #require(result.providerMetadata?["fal"])
+        #expect(metadata.images == [
+            .object(["width": .number(1), "nsfw": .bool(false)]),
+            .object(["height": .number(2), "nsfw": .bool(true)]),
+        ])
+        #expect(metadata.additionalData == .object(["timings": .object(["inference": .number(3)]), "custom": .string("retained")]))
+        #expect(result.images == .binary([Data("binary-image-data".utf8), Data("binary-image-data".utf8)]))
+    }
+
+    @Test("snake-case precedence does not bypass camelCase validation")
+    func validatesBothOptionForms() async throws {
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await makeModel().doGenerate(options: .init(n: 1, providerOptions: ["fal": [
+                "guidanceScale": .number(100), "guidance_scale": .number(2),
+            ]]))
+        }
     }
 
     @Test("includes timestamp, modelId and headers in response metadata")

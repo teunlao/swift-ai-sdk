@@ -6,11 +6,11 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-transcription-model.ts
-// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-public final class FalTranscriptionModel: TranscriptionModelV3 {
-    public var specificationVersion: String { "v3" }
+public final class FalTranscriptionModel: TranscriptionModelV4 {
+    public var specificationVersion: String { "v4" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
@@ -22,7 +22,8 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        let currentDate = config.currentDate()
         let prepared = try await prepareRequest(options: options)
 
         let audioBase64: String
@@ -45,36 +46,33 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
             fetch: config.fetch
         )
 
-        guard let requestId = queueResponse.value.requestId, !requestId.isEmpty else {
-            throw APICallError(message: "fal transcription response missing request_id", url: "", requestBodyValues: nil)
-        }
+        let requestId = queueResponse.value.requestId
 
-        let currentDate = config.currentDate()
         let (finalResponse, responseHeaders, rawValue) = try await pollForCompletion(
             requestId: requestId,
             headers: options.headers,
             abortSignal: options.abortSignal
         )
 
-        let segments: [TranscriptionModelV3Result.Segment] = finalResponse.chunks?.map { chunk in
-            TranscriptionModelV3Result.Segment(
+        let segments: [TranscriptionModelV4Result.Segment] = finalResponse.chunks?.map { chunk in
+            TranscriptionModelV4Result.Segment(
                 text: chunk.text,
                 startSecond: chunk.timestamp?.first ?? 0,
-                endSecond: chunk.timestamp?.last ?? 0
+                endSecond: chunk.timestamp.flatMap { $0.count > 1 ? $0[1] : nil } ?? 0
             )
         } ?? []
 
-        let duration = finalResponse.chunks?.last?.timestamp?.last
+        let duration = finalResponse.chunks?.last?.timestamp.flatMap { $0.count > 1 ? $0[1] : nil }
         let language = finalResponse.inferredLanguages?.first
 
-        return TranscriptionModelV3Result(
+        return TranscriptionModelV4Result(
             text: finalResponse.text,
             segments: segments,
             language: language,
             durationInSeconds: duration,
             warnings: prepared.warnings,
             request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
+            response: TranscriptionModelV4Result.ResponseInfo(
                 timestamp: currentDate,
                 modelId: modelIdentifier.rawValue,
                 headers: responseHeaders,
@@ -85,42 +83,28 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
+    private func prepareRequest(options: TranscriptionModelV4CallOptions) async throws -> PreparedRequest {
         var body: [String: JSONValue] = [
             "task": .string("transcribe"),
             "diarize": .bool(true),
             "chunk_level": .string("word")
         ]
-        let warnings: [SharedV3Warning] = []
+        let warnings: [SharedV4Warning] = []
 
         if let falOptions = try await parseProviderOptions(
             provider: "fal",
             providerOptions: options.providerOptions,
-            schema: falTranscriptionOptionsSchema
+            schema: falTranscriptionModelOptionsSchema
         ) {
-            switch falOptions.language {
-            case .value(let language):
-                body["language"] = .string(language)
-            case .null:
-                body["language"] = .null
-            }
-
-            body["diarize"] = .bool(falOptions.diarize)
-            body["chunk_level"] = .string(falOptions.chunkLevel.rawValue)
-            body["version"] = .string(falOptions.version)
-            body["batch_size"] = .number(Double(falOptions.batchSize))
-
-            switch falOptions.numSpeakers {
-            case .value(let value):
-                body["num_speakers"] = .number(Double(value))
-            case .null:
-                body["num_speakers"] = .null
-            case .unspecified:
-                break
-            }
+            body["language"] = falOptions.language.map(JSONValue.string) ?? .null
+            if let diarize = falOptions.diarize { body["diarize"] = .bool(diarize) }
+            if let chunkLevel = falOptions.chunkLevel { body["chunk_level"] = .string(chunkLevel.rawValue) }
+            if let version = falOptions.version { body["version"] = .string(version) }
+            if let batchSize = falOptions.batchSize { body["batch_size"] = .number(batchSize) }
+            if let numSpeakers = falOptions.numSpeakers { body["num_speakers"] = .number(numSpeakers) }
         }
 
         return PreparedRequest(body: body, warnings: warnings)
@@ -166,11 +150,20 @@ public final class FalTranscriptionModel: TranscriptionModelV3 {
     }
 }
 
-private struct FalTranscriptionJobResponse: Codable, Sendable {
-    let requestId: String?
+private struct FalTranscriptionJobResponse: Decodable, Sendable {
+    let requestId: String
 
     enum CodingKeys: String, CodingKey {
         case requestId = "request_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if !container.contains(.requestId) {
+            requestId = "undefined"
+        } else {
+            requestId = try container.decodeIfPresent(String.self, forKey: .requestId) ?? "null"
+        }
     }
 }
 

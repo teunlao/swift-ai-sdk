@@ -520,6 +520,60 @@ struct FalSpeechModelTests {
         #expect(result.response.headers?["x-request-id"] == "test-request-id")
     }
 
+    @Test("speech options override base fields and preserve the serialized request and raw response")
+    func speechRequestOptions() async throws {
+        let capture = RequestCapture()
+        let responseBody = #"{"audio":{"url":"\#(audioURL)"},"request_id":"speech-job","custom":"raw"}"#
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let isPost = request.httpMethod == "POST"
+            return FetchResponse(
+                body: .data(isPost ? Data(responseBody.utf8) : Data([1, 2, 3])),
+                urlResponse: makeHTTPResponse(url: request.url!, statusCode: 200,
+                                              headers: ["Content-Type": isPost ? "application/json" : "audio/mpeg"])
+            )
+        }
+        let result = try await makeModel(fetch: fetch).doGenerate(options: .init(
+            text: "base", voice: "voice", outputFormat: "hex", speed: 0.8, providerOptions: ["fal": [
+                "text": .string("override"), "voice": .null,
+                "voice_setting": .object(["voice_id": .string("reader"), "emotion": .string("happy"), "speed": .number(1)]),
+                "audio_setting": .object(["sample_rate": .number(48000)]), "language_boost": .string("English"),
+                "pronunciation_dict": .object(["SDK": .string("ess dee kay")]),
+            ]]
+        ))
+        let request = try #require(await capture.first())
+        let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+        #expect(body == .object([
+            "text": .string("override"), "voice": .null, "speed": .number(0.8), "output_format": .string("hex"),
+            "voice_setting": .object(["voice_id": .string("reader"), "emotion": .string("happy"), "speed": .number(1)]),
+            "audio_setting": .object(["sample_rate": .number(48000)]), "language_boost": .string("English"),
+            "pronunciation_dict": .object(["SDK": .string("ess dee kay")]),
+        ]))
+        let requestText = try #require(result.request?.body as? String)
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(requestText.utf8)) == body)
+        #expect((result.response.body as? [String: Any])?["custom"] as? String == "raw")
+        #expect(result.audio == .binary(Data([1, 2, 3])))
+    }
+
+    @Test("download errors retain their HTTP status and download URL")
+    func downloadFailure() async throws {
+        let fetch: FetchFunction = { request in
+            let isPost = request.httpMethod == "POST"
+            return FetchResponse(
+                body: .data(Data((isPost ? #"{"audio":{"url":"\#(audioURL)"}}"# : "denied").utf8)),
+                urlResponse: makeHTTPResponse(url: request.url!, statusCode: isPost ? 200 : 403,
+                                              headers: ["Content-Type": isPost ? "application/json" : "text/plain"])
+            )
+        }
+        do {
+            _ = try await makeModel(fetch: fetch).doGenerate(options: .init(text: "Hello"))
+            Issue.record("Expected download error")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 403)
+            #expect(error.url == audioURL)
+        }
+    }
+
     @Test("adds warnings for unsupported settings")
     func addsWarningsForUnsupportedSettings() async throws {
         let responseData = try jsonData([

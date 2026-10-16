@@ -4,10 +4,10 @@ import Foundation
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-api-types.ts (constants section)
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-public let falLanguageBoosts: [String] = [
+public let FAL_LANGUAGE_BOOSTS: [String] = [
     "Chinese",
     "Chinese,Yue",
     "English",
@@ -35,7 +35,7 @@ public let falLanguageBoosts: [String] = [
     "auto"
 ]
 
-public let falEmotions: [String] = [
+public let FAL_EMOTIONS: [String] = [
     "happy",
     "sad",
     "angry",

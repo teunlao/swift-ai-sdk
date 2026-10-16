@@ -5,14 +5,18 @@ import AISDKProviderUtils
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
-// Ported from packages/fal/src/fal-speech-model.ts (provider options schema)
-// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
+// Ported from packages/fal/src/fal-speech-model-options.ts
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-struct FalSpeechProviderOptions: Decodable, Sendable {
-    let options: [String: JSONValue]
+public struct FalSpeechModelOptions: Decodable, Sendable {
+    public let options: [String: JSONValue]
 
-    init(from decoder: Decoder) throws {
+    public init(options: [String: JSONValue] = [:]) throws {
+        self.options = try Self.normalize(options)
+    }
+
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawOptions = try container.decode([String: JSONValue].self)
         self.options = try Self.normalize(rawOptions)
@@ -42,7 +46,7 @@ struct FalSpeechProviderOptions: Decodable, Sendable {
             case .null:
                 result["language_boost"] = .null
             case .string(let value):
-                guard falLanguageBoosts.contains(value) else {
+                guard FAL_LANGUAGE_BOOSTS.contains(value) else {
                     throw DecodingError.dataCorrupted(.init(
                         codingPath: [],
                         debugDescription: "Invalid language_boost value: \(value)"
@@ -132,9 +136,9 @@ struct FalSpeechProviderOptions: Decodable, Sendable {
     }
 }
 
-let falSpeechProviderOptionsSchema = FlexibleSchema(
-    Schema<FalSpeechProviderOptions>.codable(
-        FalSpeechProviderOptions.self,
+let falSpeechModelOptionsSchema = FlexibleSchema(
+    Schema<FalSpeechModelOptions>.codable(
+        FalSpeechModelOptions.self,
         jsonSchema: .object(["type": .string("object")])
     )
 )
@@ -187,7 +191,7 @@ private func validateEmotionOrNull(_ key: String, _ value: JSONValue) throws -> 
     case .null:
         return .null
     case .string(let string):
-        guard falEmotions.contains(string) else {
+        guard FAL_EMOTIONS.contains(string) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "Invalid \(key) value: \(string)"

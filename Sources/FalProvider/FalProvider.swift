@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-provider.ts
-// Upstream commit: f3a72bc2
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct FalProviderSettings: Sendable {
@@ -23,7 +23,7 @@ public struct FalProviderSettings: Sendable {
     }
 }
 
-public final class FalProvider: ProviderV3 {
+public final class FalProvider: ProviderV4 {
     private let imageFactory: @Sendable (FalImageModelId) -> FalImageModel
     private let transcriptionFactory: @Sendable (FalTranscriptionModelId) -> FalTranscriptionModel
     private let speechFactory: @Sendable (FalSpeechModelId) -> FalSpeechModel
@@ -41,27 +41,27 @@ public final class FalProvider: ProviderV3 {
         self.videoFactory = videoFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         image(modelId: FalImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) -> FalVideoModel {
         video(modelId: FalVideoModelId(rawValue: modelId))
     }
 
-    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
+    public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
         speech(modelId: FalSpeechModelId(rawValue: modelId))
     }
 
-    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
+    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
         transcription(modelId: FalTranscriptionModelId(rawValue: modelId))
     }
 
@@ -98,7 +98,7 @@ public final class FalProvider: ProviderV3 {
     }
 }
 
-public func createFalProvider(settings: FalProviderSettings = .init()) -> FalProvider {
+public func createFal(settings: FalProviderSettings = .init()) -> FalProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL ?? "https://fal.run") ?? "https://fal.run"
 
     let headersClosure: @Sendable () throws -> [String: String?] = {
@@ -111,7 +111,7 @@ public func createFalProvider(settings: FalProviderSettings = .init()) -> FalPro
             }
         }
 
-        let withUA = withUserAgentSuffix(values, "ai-sdk/fal/\(FAL_VERSION)")
+        let withUA = withUserAgentSuffix(values, "ai-sdk-fal/\(VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
@@ -173,12 +173,7 @@ public func createFalProvider(settings: FalProviderSettings = .init()) -> FalPro
     )
 }
 
-/// Alias matching upstream naming (`createFal`).
-public func createFal(settings: FalProviderSettings = .init()) -> FalProvider {
-    createFalProvider(settings: settings)
-}
-
-public let fal = createFalProvider()
+public let fal = createFal()
 
 // MARK: - API Key Loading
 
@@ -188,10 +183,10 @@ private func loadFalAPIKey(apiKey: String?) throws -> String {
     }
 
     let environment = ProcessInfo.processInfo.environment
-    if let key = environment["FAL_API_KEY"], !key.isEmpty {
+    if let key = environment["FAL_API_KEY"] {
         return key
     }
-    if let key = environment["FAL_KEY"], !key.isEmpty {
+    if let key = environment["FAL_KEY"] {
         return key
     }
 

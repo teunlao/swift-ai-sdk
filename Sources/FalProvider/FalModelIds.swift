@@ -4,7 +4,7 @@ import Foundation
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-*-settings.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct FalImageModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {

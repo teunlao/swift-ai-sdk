@@ -6,11 +6,11 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-speech-model.ts
-// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-public final class FalSpeechModel: SpeechModelV3 {
-    public var specificationVersion: String { "v3" }
+public final class FalSpeechModel: SpeechModelV4 {
+    public var specificationVersion: String { "v4" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
@@ -22,12 +22,13 @@ public final class FalSpeechModel: SpeechModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: SpeechModelV3CallOptions) async throws -> SpeechModelV3Result {
-        let prepared = try await prepareRequest(options: options)
+    public func doGenerate(options: SpeechModelV4CallOptions) async throws -> SpeechModelV4Result {
         let now = config.currentDate()
+        let prepared = try await prepareRequest(options: options)
 
+        let requestURL = config.url(.init(modelId: modelId, path: "https://fal.run/\(modelId)"))
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "https://fal.run/\(modelIdentifier.rawValue)")),
+            url: requestURL,
             headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: falFailedResponseHandler,
@@ -37,13 +38,17 @@ public final class FalSpeechModel: SpeechModelV3 {
         )
 
         let audioURL = response.value.audio.url
-        let audioData = try await downloadAudio(url: audioURL, abortSignal: options.abortSignal)
+        let audioData = try await downloadAudio(
+            url: audioURL,
+            trustedOrigin: requestURL,
+            abortSignal: options.abortSignal
+        )
 
-        return SpeechModelV3Result(
+        return SpeechModelV4Result(
             audio: .binary(audioData),
             warnings: prepared.warnings,
-            request: SpeechModelV3Result.RequestInfo(body: prepared.requestBodyString),
-            response: SpeechModelV3Result.ResponseInfo(
+            request: SpeechModelV4Result.RequestInfo(body: prepared.requestBodyString),
+            response: SpeechModelV4Result.ResponseInfo(
                 timestamp: now,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders,
@@ -55,17 +60,17 @@ public final class FalSpeechModel: SpeechModelV3 {
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
         let requestBodyString: String?
     }
 
-    private func prepareRequest(options: SpeechModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: SpeechModelV4CallOptions) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
 
         let falOptions = try await parseProviderOptions(
             provider: "fal",
             providerOptions: options.providerOptions,
-            schema: falSpeechProviderOptionsSchema
+            schema: falSpeechModelOptionsSchema
         )
 
         var body: [String: JSONValue] = [
@@ -80,14 +85,14 @@ public final class FalSpeechModel: SpeechModelV3 {
             body["speed"] = .number(speed)
         }
 
-        if options.language != nil {
+        if let language = options.language, !language.isEmpty {
             warnings.append(.unsupported(
                 feature: "language",
                 details: "fal speech models don't support 'language' directly; consider providerOptions.fal.language_boost"
             ))
         }
 
-        if let output = options.outputFormat, output != "url", output != "hex" {
+        if let output = options.outputFormat, !output.isEmpty, output != "url", output != "hex" {
             warnings.append(.unsupported(
                 feature: "outputFormat",
                 details: "Unsupported outputFormat: \(output). Using 'url' instead."
@@ -106,7 +111,7 @@ public final class FalSpeechModel: SpeechModelV3 {
         return PreparedRequest(body: body, warnings: warnings, requestBodyString: requestBodyString)
     }
 
-    private func downloadAudio(url: String, abortSignal: (@Sendable () -> Bool)?) async throws -> Data {
+    private func downloadAudio(url: String, trustedOrigin: String, abortSignal: (@Sendable () -> Bool)?) async throws -> Data {
         // The audio URL comes from the response body and may point at a foreign host: send no credentials.
         let result = try await getFromAPI(
             url: url,
@@ -114,7 +119,9 @@ public final class FalSpeechModel: SpeechModelV3 {
             failedResponseHandler: createStatusCodeErrorResponseHandler(),
             successfulResponseHandler: createBinaryResponseHandler(),
             isAborted: abortSignal,
-            fetch: config.fetch
+            fetch: config.fetch,
+            validateUrl: true,
+            trustedOrigin: trustedOrigin
         )
         return result.value
     }

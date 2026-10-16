@@ -275,6 +275,94 @@ struct FalTranscriptionModelTests {
         #expect(result.response.headers?["x-request-id"] == "test-request-id")
     }
 
+    @Test("provider defaults, nulls and fractional values follow the transcription schema", arguments: ["defaults", "nulls", "numbers"])
+    func providerOptions(mode: String) async throws {
+        let capture = RequestCapture()
+        let fetch: FetchFunction = { request in
+            await capture.append(request)
+            let body = request.httpMethod == "POST" ? #"{"request_id":"test-id"}"# : #"{"text":"done"}"#
+            return FetchResponse(body: .data(Data(body.utf8)), urlResponse: makeHTTPResponse(
+                url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"]
+            ))
+        }
+        let falOptions: [String: JSONValue]
+        var expected: [String: JSONValue] = [
+            "audio_url": .string("data:audio/wav;base64,AQID"), "task": .string("transcribe"), "diarize": .bool(true),
+        ]
+        switch mode {
+        case "nulls":
+            falOptions = ["language": .null, "diarize": .null, "chunkLevel": .null, "version": .null,
+                          "batchSize": .null, "numSpeakers": .null, "task": .string("translate")]
+            expected["language"] = .null
+            expected["chunk_level"] = .string("word")
+        case "numbers":
+            falOptions = ["batchSize": .number(1.25), "numSpeakers": .number(2.5), "diarize": .bool(false), "chunkLevel": .string("word")]
+            expected["language"] = .string("en")
+            expected["chunk_level"] = .string("word")
+            expected["version"] = .string("3")
+            expected["batch_size"] = .number(1.25)
+            expected["num_speakers"] = .number(2.5)
+            expected["diarize"] = .bool(false)
+        default:
+            falOptions = [:]
+            expected["language"] = .string("en")
+            expected["chunk_level"] = .string("segment")
+            expected["version"] = .string("3")
+            expected["batch_size"] = .number(64)
+        }
+        let result = try await makeModel(fetch: fetch).doGenerate(options: .init(
+            audio: .base64("AQID"), mediaType: "audio/wav", providerOptions: ["fal": falOptions]
+        ))
+        let request = try #require(await capture.first())
+        #expect(try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody)) == .object(expected))
+        #expect(result.text == "done")
+    }
+
+    @Test("timestamp extraction uses the first two positions, including missing endpoints")
+    func timestampPositions() async throws {
+        let fetch: FetchFunction = { request in
+            let body = request.httpMethod == "POST" ? #"{"request_id":"test-id"}"# : #"{"text":"abc","chunks":[{"text":"a","timestamp":[1,2,99]},{"text":"b","timestamp":[3]},{"text":"c","timestamp":null}]}"#
+            return FetchResponse(body: .data(Data(body.utf8)), urlResponse: makeHTTPResponse(
+                url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"]
+            ))
+        }
+        let result = try await makeModel(fetch: fetch).doGenerate(options: .init(audio: .base64("AQID"), mediaType: "audio/wav"))
+        #expect(result.segments == [
+            .init(text: "a", startSecond: 1, endSecond: 2),
+            .init(text: "b", startSecond: 3, endSecond: 0),
+            .init(text: "c", startSecond: 0, endSecond: 0),
+        ])
+        #expect(result.durationInSeconds == nil)
+    }
+
+    @Test("invalid transcription versions fail before the HTTP request")
+    func invalidVersion() async throws {
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await makeModel().doGenerate(options: .init(audio: .base64("AQID"), mediaType: "audio/wav",
+                                                              providerOptions: ["fal": ["version": .string("2")]]))
+        }
+    }
+
+    @Test("polling failures retain the API error payload and HTTP context")
+    func pollingFailure() async throws {
+        let fetch: FetchFunction = { request in
+            let isPost = request.httpMethod == "POST"
+            let body = isPost ? #"{"request_id":"test-id"}"# : #"{"error":{"message":"quota exceeded","code":429.5}}"#
+            return FetchResponse(body: .data(Data(body.utf8)), urlResponse: makeHTTPResponse(
+                url: request.url!, statusCode: isPost ? 200 : 429,
+                headers: ["Content-Type": "application/json", "x-request-id": "failed-job"]
+            ))
+        }
+        do {
+            _ = try await makeModel(fetch: fetch).doGenerate(options: .init(audio: .base64("AQID"), mediaType: "audio/wav"))
+            Issue.record("Expected API error")
+        } catch let error as APICallError {
+            #expect(error.message == "quota exceeded")
+            #expect(error.statusCode == 429)
+            #expect(error.responseHeaders?["x-request-id"] == "failed-job")
+        }
+    }
+
     @Test("continues polling after in-progress queue status")
     func continuesPollingAfterInProgressStatus() async throws {
         actor Counter {

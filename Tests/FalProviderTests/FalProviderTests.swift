@@ -29,15 +29,15 @@ struct FalProviderTests {
 
         #expect(image.provider == "fal.image")
         #expect(image.modelId == "fal-ai/flux/dev")
-        #expect(image.specificationVersion == "v3")
+        #expect(image.specificationVersion == "v4")
 
         #expect(speech.provider == "fal.speech")
         #expect(speech.modelId == "fal-ai/minimax/speech-02-hd")
-        #expect(speech.specificationVersion == "v3")
+        #expect(speech.specificationVersion == "v4")
 
         #expect(transcription.provider == "fal.transcription")
         #expect(transcription.modelId == "wizper")
-        #expect(transcription.specificationVersion == "v3")
+        #expect(transcription.specificationVersion == "v4")
 
         #expect((try provider.imageModel(modelId: "fal-ai/flux/dev") as? FalImageModel)?.modelId == "fal-ai/flux/dev")
         #expect((try provider.speechModel(modelId: "fal-ai/minimax/speech-02-hd") as? FalSpeechModel)?.modelId == "fal-ai/minimax/speech-02-hd")
@@ -108,7 +108,7 @@ struct FalProviderTests {
 
         let model = provider.image("fal-ai/flux/dev")
         _ = try await model.doGenerate(
-            options: ImageModelV3CallOptions(
+            options: ImageModelV4CallOptions(
                 prompt: "A cute baby sea otter",
                 n: 1,
                 providerOptions: [:]
@@ -131,7 +131,7 @@ struct FalProviderTests {
 
         #expect(normalizedHeaders["authorization"] == "Key test-api-key")
         #expect(normalizedHeaders["x-custom-header"] == "value")
-        #expect((normalizedHeaders["user-agent"] ?? "").contains("ai-sdk/fal/"))
+        #expect((normalizedHeaders["user-agent"] ?? "").contains("ai-sdk-fal/"))
         #expect(normalizedHeaders["content-type"] == "application/json")
 
         let json = try JSONDecoder().decode(JSONValue.self, from: body)
@@ -150,7 +150,7 @@ struct FalProviderTests {
         }
 
         #expect(throws: NoSuchModelError.self) {
-            _ = try provider.textEmbeddingModel(modelId: "some-id")
+            _ = try provider.embeddingModel(modelId: "some-id")
         }
     }
 

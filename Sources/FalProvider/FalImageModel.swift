@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/fal/src/fal-image-model.ts
-// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 struct FalImageModelConfig: Sendable {
@@ -31,11 +31,37 @@ struct FalImageModelConfig: Sendable {
     }
 }
 
-public final class FalImageModel: ImageModelV3 {
-    public var specificationVersion: String { "v3" }
+public final class FalImageModel: ImageModelV4 {
+    public var specificationVersion: String { "v4" }
+
+    public var supportsFileInputs: Bool? {
+        if [
+            "fal-ai/flux-2/edit", "fal-ai/flux-pro/kontext", "fal-ai/flux-pro/kontext/max",
+            "fal-ai/flux-general/image-to-image", "fal-ai/flux-general/inpainting",
+            "fal-ai/flux-lora/image-to-image", "fal-ai/flux-lora/inpainting",
+            "fal-ai/flux/dev/image-to-image", "fal-ai/flux/krea/image-to-image",
+            "fal-ai/recraft/v3/image-to-image",
+        ].contains(modelId) {
+            return true
+        }
+        return [
+            "bria/text-to-image/3.2", "fal-ai/bria/text-to-image/base",
+            "fal-ai/bria/text-to-image/fast", "fal-ai/bria/text-to-image/hd",
+            "fal-ai/bytedance/dreamina/v3.1/text-to-image",
+            "fal-ai/flux-kontext-lora/text-to-image", "fal-ai/recraft/v3/text-to-image",
+            "fal-ai/wan/v2.2-5b/text-to-image", "fal-ai/wan/v2.2-a14b/text-to-image",
+        ].contains(modelId) ? false : nil
+    }
+
+    public var supportsMaskInputs: Bool? {
+        if ["fal-ai/flux-general/inpainting", "fal-ai/flux-lora/inpainting"].contains(modelId) {
+            return true
+        }
+        return supportsFileInputs == nil ? nil : false
+    }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(1) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
 
     private let modelIdentifier: FalImageModelId
     private let config: FalImageModelConfig
@@ -45,7 +71,7 @@ public final class FalImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options)
 
         let headers = combineHeaders(
@@ -65,44 +91,49 @@ public final class FalImageModel: ImageModelV3 {
             fetch: config.fetch
         )
 
-        let parsed = try FalImageResponse.parse(from: response.value)
+        let parsed = response.value
 
-        var imagesData: [Data] = []
-        imagesData.reserveCapacity(parsed.images.count)
-
-        for image in parsed.images {
-            // Image URLs come from the response body and may point at a foreign host: send no credentials.
-            let result = try await getFromAPI(
-                url: image.url,
-                headers: nil,
-                failedResponseHandler: createStatusCodeErrorResponseHandler(),
-                successfulResponseHandler: createBinaryResponseHandler(),
-                isAborted: options.abortSignal,
-                fetch: config.fetch
-            )
-            imagesData.append(result.value)
+        let imagesData = try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+            for (index, image) in parsed.images.enumerated() {
+                group.addTask { [config] in
+                    let result = try await getFromAPI(
+                        url: image.url,
+                        headers: nil,
+                        failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                        successfulResponseHandler: createBinaryResponseHandler(),
+                        isAborted: options.abortSignal,
+                        fetch: config.fetch,
+                        validateUrl: true,
+                        trustedOrigin: config.baseURL
+                    )
+                    return (index, result.value)
+                }
+            }
+            var images = Array(repeating: Data(), count: parsed.images.count)
+            for try await (index, data) in group { images[index] = data }
+            return images
         }
 
         let imageMetadata: [JSONValue] = parsed.images.enumerated().map { index, image in
             var metadata = image.metadata
-            if let nsfw = image.nsfw {
-                metadata["nsfw"] = .bool(nsfw)
-            }
+            let nsfw = parsed.nsfwConcepts.flatMap { index < $0.count ? $0[index] : nil }
+                ?? parsed.nsfwDetected.flatMap { index < $0.count ? $0[index] : nil }
+            if let nsfw { metadata["nsfw"] = .bool(nsfw) }
             return .object(metadata)
         }
 
         let additionalMetadata = parsed.additionalMetadata.isEmpty ? nil : JSONValue.object(parsed.additionalMetadata)
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: .binary(imagesData),
             warnings: prepared.warnings,
             providerMetadata: [
-                "fal": ImageModelV3ProviderMetadataValue(
+                "fal": ImageModelV4ProviderMetadataValue(
                     images: imageMetadata,
                     additionalData: additionalMetadata
                 )
             ],
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: now,
                 modelId: modelIdentifier.rawValue,
                 headers: response.responseHeaders
@@ -112,11 +143,11 @@ public final class FalImageModel: ImageModelV3 {
 
     private struct PreparedRequest: Sendable {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
-    private func prepareRequest(options: ImageModelV3CallOptions) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: ImageModelV4CallOptions) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
         var body: [String: JSONValue] = [
             "num_images": .number(Double(options.n))
         ]
@@ -136,7 +167,7 @@ public final class FalImageModel: ImageModelV3 {
         let falOptions = try await parseProviderOptions(
             provider: "fal",
             providerOptions: options.providerOptions,
-            schema: falImageProviderOptionsSchema
+            schema: falImageModelOptionsSchema
         )
         let useMultipleImages = falOptions?.useMultipleImages == true
 
@@ -172,7 +203,7 @@ public final class FalImageModel: ImageModelV3 {
 
         if let falOptions {
             for (key, value) in falOptions.options {
-                if key == "useMultipleImages" { continue }
+                if key == "useMultipleImages" || key == "__deprecatedKeys" { continue }
                 let apiKey = camelToAPIFieldMapping[key] ?? key
                 body[apiKey] = value
             }
@@ -186,13 +217,14 @@ public final class FalImageModel: ImageModelV3 {
 
 private func makeImageSize(size: String?, aspectRatio: String?) -> JSONValue? {
     if let size, !size.isEmpty {
-        let parts = size.split(separator: "x", omittingEmptySubsequences: true)
-        if parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]) {
-            return .object([
-                "width": .number(Double(width)),
-                "height": .number(Double(height))
-            ])
+        let parts = size.split(separator: "x", omittingEmptySubsequences: false)
+        var dimensions: [String: JSONValue] = [:]
+        for (key, part) in zip(["width", "height"], parts) {
+            let value = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            let number = value.isEmpty ? 0 : Double(value)
+            dimensions[key] = number.flatMap { $0.isFinite ? .number($0) : nil } ?? .null
         }
+        return .object(dimensions)
     }
 
     guard let aspectRatio else {
@@ -268,7 +300,7 @@ private func snakeToCamelCase(_ snakeKey: String) -> String {
     return result
 }
 
-private func convertImageFileToDataURI(_ file: ImageModelV3File) throws -> String {
+private func convertImageFileToDataURI(_ file: ImageModelV4File) throws -> String {
     switch file {
     case .url(let url, _):
         return url
@@ -286,99 +318,108 @@ private func convertImageFileToDataURI(_ file: ImageModelV3File) throws -> Strin
     }
 }
 
-private struct FalImageResponse {
-    struct Image {
+private struct FalImageResponse: Decodable, Sendable {
+    struct Image: Decodable, Sendable {
         let url: String
         let metadata: [String: JSONValue]
-        let nsfw: Bool?
+        let fields: [String: JSONValue]
+
+        enum CodingKeys: String, CodingKey {
+            case url, width, height
+            case contentType = "content_type", fileName = "file_name", fileData = "file_data", fileSize = "file_size"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            url = try container.decode(String.self, forKey: .url)
+            _ = try container.decodeIfPresent(Double.self, forKey: .width)
+            _ = try container.decodeIfPresent(Double.self, forKey: .height)
+            _ = try container.decodeIfPresent(Double.self, forKey: .fileSize)
+            _ = try container.decodeIfPresent(String.self, forKey: .contentType)
+            _ = try container.decodeIfPresent(String.self, forKey: .fileName)
+            if container.contains(.fileData) { _ = try container.decode(String.self, forKey: .fileData) }
+            let mapping: [CodingKeys: String] = [.width: "width", .height: "height", .contentType: "contentType",
+                                                .fileName: "fileName", .fileData: "fileData", .fileSize: "fileSize"]
+            var fields: [String: JSONValue] = ["url": .string(url)]
+            var metadata: [String: JSONValue] = [:]
+            for (key, name) in mapping where container.contains(key) {
+                let value = try container.decode(JSONValue.self, forKey: key)
+                fields[key.rawValue] = value
+                metadata[name] = value
+            }
+            self.fields = fields
+            self.metadata = metadata
+        }
     }
 
     let images: [Image]
+    let nsfwConcepts: [Bool]?
+    let nsfwDetected: [Bool]?
     let additionalMetadata: [String: JSONValue]
 
-    static func parse(from value: JSONValue) throws -> FalImageResponse {
-        guard case .object(var root) = value else {
-            throw APICallError(message: "Invalid fal image response", url: "", requestBodyValues: nil)
+    enum CodingKeys: String, CodingKey {
+        case images, image, timings, seed, prompt
+        case nsfwConcepts = "has_nsfw_concepts", nsfwDetected = "nsfw_content_detected"
+        case inferenceSteps = "num_inference_steps", debugLatents = "debug_latents", debugPerPassLatents = "debug_per_pass_latents"
+    }
+    struct Timings: Decodable {
+        let inference: Double?
+        enum CodingKeys: String, CodingKey { case inference }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            inference = container.contains(.inference) ? try container.decode(Double.self, forKey: .inference) : nil
         }
-
-        var imagesValue: [JSONValue] = []
-        if let imagesJSON = root.removeValue(forKey: "images"), case .array(let array) = imagesJSON {
-            imagesValue = array
-        } else if let imageJSON = root.removeValue(forKey: "image"), case .object = imageJSON {
-            imagesValue = [imageJSON]
+    }
+    struct LoraFile: Decodable {
+        enum CodingKeys: String, CodingKey { case url, contentType = "content_type", fileName = "file_name", fileData = "file_data", fileSize = "file_size" }
+        let fields: [String: JSONValue]
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            _ = try container.decode(String.self, forKey: .url)
+            for key in [CodingKeys.contentType, .fileData] where container.contains(key) { _ = try container.decode(String.self, forKey: key) }
+            _ = try container.decodeIfPresent(String.self, forKey: .fileName)
+            _ = try container.decodeIfPresent(Double.self, forKey: .fileSize)
+            fields = try Dictionary(uniqueKeysWithValues: container.allKeys.map { ($0.rawValue, try container.decode(JSONValue.self, forKey: $0)) })
         }
-
-        guard !imagesValue.isEmpty else {
-            throw APICallError(message: "fal image response missing images", url: "", requestBodyValues: nil)
-        }
-
-        let nsfwConcepts = extractBoolArray(root.removeValue(forKey: "has_nsfw_concepts"))
-        let nsfwDetected = extractBoolArray(root.removeValue(forKey: "nsfw_content_detected"))
-        _ = root.removeValue(forKey: "prompt")
-
-        var images: [Image] = []
-        images.reserveCapacity(imagesValue.count)
-
-        for (index, imageJSON) in imagesValue.enumerated() {
-            guard case .object(var imageDict) = imageJSON, let urlValue = imageDict.removeValue(forKey: "url"), case .string(let url) = urlValue else {
-                throw APICallError(message: "fal image entry missing url", url: "", requestBodyValues: nil)
-            }
-
-            let contentType = imageDict.removeValue(forKey: "content_type")
-            let fileName = imageDict.removeValue(forKey: "file_name")
-            let fileData = imageDict.removeValue(forKey: "file_data")
-            let fileSize = imageDict.removeValue(forKey: "file_size")
-
-            var metadata = imageDict
-            if let contentType { metadata["contentType"] = contentType }
-            if let fileName { metadata["fileName"] = fileName }
-            if let fileData { metadata["fileData"] = fileData }
-            if let fileSize { metadata["fileSize"] = fileSize }
-
-            let nsfw = nsfwConcepts?[index] ?? nsfwDetected?[index]
-
-            images.append(Image(url: url, metadata: metadata, nsfw: nsfw))
-        }
-
-        let additionalMetadata = root
-
-        return FalImageResponse(images: images, additionalMetadata: additionalMetadata)
     }
 
-    private static func extractBoolArray(_ value: JSONValue?) -> [Bool]? {
-        guard let value, case .array(let array) = value else {
-            return nil
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var root = try decoder.singleValueContainer().decode([String: JSONValue].self)
+        if let array = try? container.decode([Image].self, forKey: .images) {
+            images = array
+        } else {
+            let image = try container.decode(Image.self, forKey: .image)
+            images = [image]
+            root["image"] = .object(image.fields)
         }
-        var result: [Bool] = []
-        result.reserveCapacity(array.count)
-        for entry in array {
-            guard case .bool(let flag) = entry else { return nil }
-            result.append(flag)
+        nsfwConcepts = container.contains(.nsfwConcepts) ? try container.decode([Bool].self, forKey: .nsfwConcepts) : nil
+        nsfwDetected = container.contains(.nsfwDetected) ? try container.decode([Bool].self, forKey: .nsfwDetected) : nil
+        for key in [CodingKeys.seed, .inferenceSteps] where container.contains(key) { _ = try container.decode(Double.self, forKey: key) }
+        if container.contains(.prompt) { _ = try container.decode(String.self, forKey: .prompt) }
+        if container.contains(.timings) {
+            let timings = try container.decode(Timings.self, forKey: .timings)
+            root["timings"] = .object(timings.inference.map { ["inference": .number($0)] } ?? [:])
         }
-        return result
+        for key in [CodingKeys.debugLatents, .debugPerPassLatents] where container.contains(key) {
+            root[key.rawValue] = .object(try container.decode(LoraFile.self, forKey: key).fields)
+        }
+        for key in ["images", "prompt", "has_nsfw_concepts", "nsfw_content_detected"] { root.removeValue(forKey: key) }
+        additionalMetadata = root
     }
 }
 
 private let falImageResponseSchema = FlexibleSchema(
-    Schema<JSONValue>.codable(
-        JSONValue.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
+    Schema<FalImageResponse>.codable(FalImageResponse.self, jsonSchema: .object(["type": .string("object")]))
 )
 
 private enum FalImageErrorData: Decodable, Sendable {
     case validation(FalImageValidationError)
-    case fal(FalErrorPayload)
     case http(FalImageHttpError)
 
     init(from decoder: Decoder) throws {
         if let value = try? FalImageValidationError(from: decoder) {
             self = .validation(value)
-            return
-        }
-
-        if let value = try? FalErrorPayload(from: decoder) {
-            self = .fal(value)
             return
         }
 
@@ -423,8 +464,6 @@ private let falImageFailedResponseHandler: ResponseHandler<APICallError> = creat
             return validation.detail
                 .map { "\($0.loc.joined(separator: ".")): \($0.msg)" }
                 .joined(separator: "\n")
-        case .fal(let fal):
-            return fal.error.message
         case .http(let http):
             return http.message
         }

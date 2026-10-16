@@ -5,13 +5,19 @@ import AISDKProviderUtils
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
-// Ported from packages/fal/src/fal-image-options.ts
-// Upstream commit: f3a72bc2a0433fda9506b7c7ac1b28b4adafcfc9
+// Ported from packages/fal/src/fal-image-model-options.ts
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-struct FalImageProviderOptions: Decodable, Sendable {
-    let options: [String: JSONValue]
-    let deprecatedKeys: [String]
+public struct FalImageModelOptions: Decodable, Sendable {
+    public let options: [String: JSONValue]
+    public let deprecatedKeys: [String]
+
+    public init(options: [String: JSONValue] = [:]) throws {
+        let normalized = try Self.normalize(options)
+        self.options = normalized.options
+        self.deprecatedKeys = normalized.deprecatedKeys
+    }
 
     var useMultipleImages: Bool {
         if case .bool(let flag) = options["useMultipleImages"] {
@@ -20,7 +26,7 @@ struct FalImageProviderOptions: Decodable, Sendable {
         return false
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawOptions = try container.decode([String: JSONValue].self)
         let normalized = try Self.normalize(rawOptions)
@@ -37,6 +43,8 @@ struct FalImageProviderOptions: Decodable, Sendable {
             camelKey: String,
             validate: (String, JSONValue) throws -> JSONValue
         ) throws {
+            if let value = nonNullValue(rawOptions[snakeKey]) { _ = try validate(snakeKey, value) }
+            if let value = nonNullValue(rawOptions[camelKey]) { _ = try validate(camelKey, value) }
             if let snakeValue = nonNullValue(rawOptions[snakeKey]) {
                 deprecatedKeys.append(snakeKey)
                 result[camelKey] = try validate(snakeKey, snakeValue)
@@ -81,9 +89,9 @@ struct FalImageProviderOptions: Decodable, Sendable {
     }
 }
 
-let falImageProviderOptionsSchema = FlexibleSchema(
-    Schema<FalImageProviderOptions>.codable(
-        FalImageProviderOptions.self,
+let falImageModelOptionsSchema = FlexibleSchema(
+    Schema<FalImageModelOptions>.codable(
+        FalImageModelOptions.self,
         jsonSchema: .object(["type": .string("object")])
     )
 )
