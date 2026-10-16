@@ -33,6 +33,7 @@ public final class SerialJobExecutor: @unchecked Sendable {
     private let lock = NSLock()
     private var queue: [QueuedJob] = []
     private var isProcessing = false
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Creates a new serial job executor.
     public init() {}
@@ -48,6 +49,19 @@ public final class SerialJobExecutor: @unchecked Sendable {
     public func run(_ job: @escaping Job) async throws {
         try await withCheckedThrowingContinuation { continuation in
             enqueue(job: job, continuation: continuation)
+        }
+    }
+
+    public func waitForIdle() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if !isProcessing && queue.isEmpty {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                idleWaiters.append(continuation)
+                lock.unlock()
+            }
         }
     }
 
@@ -72,12 +86,17 @@ public final class SerialJobExecutor: @unchecked Sendable {
 
     private func dequeue() -> QueuedJob? {
         lock.lock()
-        defer { lock.unlock() }
         guard !queue.isEmpty else {
             isProcessing = false
+            let waiters = idleWaiters
+            idleWaiters = []
+            lock.unlock()
+            for waiter in waiters { waiter.resume() }
             return nil
         }
-        return queue.removeFirst()
+        let job = queue.removeFirst()
+        lock.unlock()
+        return job
     }
 
     private func processQueue() async {

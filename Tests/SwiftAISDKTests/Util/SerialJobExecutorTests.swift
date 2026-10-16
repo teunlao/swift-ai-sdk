@@ -41,6 +41,30 @@ actor ExecutionTracker {
 
 @Suite("SerialJobExecutor Tests")
 struct SerialJobExecutorTests {
+    @Test("waitForIdle observes the completion of the active job")
+    func idleWaitsForActiveJob() async throws {
+        let executor = SerialJobExecutor()
+        let tracker = ExecutionTracker()
+        let started = DelayedPromise<Void>()
+        let release = DelayedPromise<Void>()
+        let running = Task {
+            try await executor.run {
+                started.resolve(())
+                try await release.task.value
+                await tracker.appendExecution(1)
+            }
+        }
+        try await started.task.value
+        let waiting = Task {
+            await executor.waitForIdle()
+            await tracker.appendExecution(2)
+        }
+        release.resolve(())
+        try await running.value
+        await waiting.value
+        #expect(await tracker.executionOrder == [1, 2])
+    }
+
     @Test("should execute a single job successfully")
     func executeSingleJob() async throws {
         let executor = SerialJobExecutor()
