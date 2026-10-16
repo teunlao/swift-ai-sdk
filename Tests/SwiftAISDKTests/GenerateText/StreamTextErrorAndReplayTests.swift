@@ -8,8 +8,8 @@ import AISDKProviderUtils
 struct StreamTextErrorAndReplayTests {
     private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
 
-    @Test("provider error terminates with error and no finish")
-    func providerErrorTerminates() async throws {
+    @Test("provider error part reaches the stream as an error part")
+    func providerErrorPartIsForwarded() async throws {
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)))
@@ -19,13 +19,14 @@ struct StreamTextErrorAndReplayTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi")
+        let result = try streamText(model: .v3(model), prompt: "hi", onError: { _ in nil })
 
-        var gotError = false
-        do {
-            _ = try await result.collectFullStream()
-        } catch { gotError = true }
-        #expect(gotError)
+        let parts = try await result.collectFullStream()
+        let errors = parts.compactMap { part -> String? in
+            if case .error(let error) = part { return AISDKProvider.getErrorMessage(error) }
+            return nil
+        }
+        #expect(errors == ["boom"])
     }
 
     @Test("late subscriber gets replay and terminal")
@@ -55,13 +56,14 @@ struct StreamTextErrorAndReplayTests {
         #expect(hasStart && hasFinish)
     }
 
-    @Test("consumeStream routes errors to handler")
+    @Test("consumeStream routes a thrown stream error to its handler")
     func consumeStreamRoutesErrors() async throws {
+        struct Boom: Error {}
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.responseMetadata(id: "id-err", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)))
-            c.yield(.error(error: .string("boom")))
-            c.finish()
+            c.yield(.textStart(id: "1", providerMetadata: nil))
+            c.finish(throwing: Boom())
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
         let result = try streamText(model: .v3(model), prompt: "hi")

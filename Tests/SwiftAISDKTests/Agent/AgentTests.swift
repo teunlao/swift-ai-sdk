@@ -39,7 +39,8 @@ struct AgentTests {
             instructions: "You are helpful",
             model: .v3(model),
             tools: ["echo": Tool(description: "Echo", inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))))],
-            toolChoice: .required,
+            // A forced choice would reject the text-only response; `.none` still proves forwarding.
+            toolChoice: ToolChoice.none,
             providerOptions: ["openai": ["mode": .string("fast")]],
             callSettings: CallSettings(maxOutputTokens: 42, temperature: 0.1)
         ))
@@ -56,7 +57,7 @@ struct AgentTests {
         #expect(options.maxOutputTokens == 42)
         #expect(options.temperature == 0.1)
         #expect(options.tools?.count == 1)
-        #expect(options.toolChoice == .required)
+        #expect(options.toolChoice == LanguageModelV3ToolChoice.none)
         #expect(options.providerOptions?["openai"]?["mode"] == .string("fast"))
         #expect(options.headers?["user-agent"]?.contains("ai-sdk-agent/tool-loop") == true)
     }

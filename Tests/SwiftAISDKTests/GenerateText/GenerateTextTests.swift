@@ -838,21 +838,18 @@ struct GenerateTextTests {
             )
         ]
 
-        let task = Task {
-            try await generateText(
-                model: .v3(model),
-                tools: tools,
-                prompt: "test-input",
-                settings: CallSettings(abortSignal: { abortFlag.isAborted() })
-            )
-        }
-
-        abortFlag.abort()
-        _ = try await task.value
+        _ = try await generateText(
+            model: .v3(model),
+            tools: tools,
+            prompt: "test-input",
+            settings: CallSettings(abortSignal: { abortFlag.isAborted() })
+        )
 
         let recorded = await capturedOptions.entries()
         #expect(recorded.count == 1)
         if let first = recorded.first {
+            #expect(first.abortSignal?() == false)
+            abortFlag.abort()
             #expect(first.abortSignal?() == true)
             #expect(first.toolCallId == "call-1")
         }
@@ -980,11 +977,13 @@ struct GenerateTextTests {
             prompt: "prompt",
             telemetry: TelemetryOptions(
                 functionId: "test-function-id",
+                includeRuntimeContext: ["test1": true, "test2": true],
                 integrations: [LegacyOpenTelemetry(tracer: tracer)]
             ),
             runtimeContext: [
                 "test1": .string("value1"),
-                "test2": .bool(false)
+                "test2": .bool(false),
+                "secret": .string("excluded")
             ],
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
@@ -1013,6 +1012,7 @@ struct GenerateTextTests {
             #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
             #expect(outer.attributes["ai.settings.context.test1"] == .string("value1"))
             #expect(outer.attributes["ai.settings.context.test2"] == .bool(false))
+            #expect(outer.attributes["ai.settings.context.secret"] == nil)
             #expect(outer.attributes["ai.response.text"] == .string("Hello, world!"))
             #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
             #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
@@ -1275,7 +1275,7 @@ struct GenerateTextTests {
 
     // MARK: - result.request
 
-    @Test("result.request contains request body metadata")
+    @Test("result.request contains request body metadata when requested")
     func resultRequestContainsBody() async throws {
         let model = MockLanguageModelV3(
             doGenerate: .function { _ in
@@ -1292,7 +1292,8 @@ struct GenerateTextTests {
 
         let result = try await generateText(
             model: .v3(model),
-            prompt: "prompt"
+            prompt: "prompt",
+            include: GenerateTextInclude(requestBody: true)
         )
 
         #expect(result.request.body == JSONValue.string("test body"))
@@ -1330,7 +1331,7 @@ struct GenerateTextTests {
 
     // MARK: - result.response
 
-    @Test("result.response contains response metadata and body")
+    @Test("result.response contains response metadata and body when requested")
     func resultResponseContainsMetadata() async throws {
         let model = MockLanguageModelV3(
             doGenerate: .function { _ in
@@ -1353,7 +1354,8 @@ struct GenerateTextTests {
 
         let result = try await generateText(
             model: .v3(model),
-            prompt: "prompt"
+            prompt: "prompt",
+            include: GenerateTextInclude(responseBody: true)
         )
 
         guard let step = result.steps.first else {

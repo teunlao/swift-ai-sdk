@@ -122,7 +122,9 @@ struct StreamTextDeferredToolResultsTests {
         let steps = try await result.steps
         #expect(steps.count == 2)
 
-        let content = try await result.content
+        // Result content spans every step: the deferred call, then its later error and the text.
+        #expect(try await result.content.count == 3)
+        let content = steps[1].content
         #expect(content.count == 2)
 
         if content.count >= 2 {

@@ -281,11 +281,14 @@ struct StreamTextBasicTests {
 
         _ = try await result.readAllText()
         _ = try await result.waitForFinish()
+        let performance = try await result.steps[0].performance
+        let msToFirstChunk = try #require(performance.timeToFirstOutputMs)
+        #expect(msToFirstChunk > 0)
 
         let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
         let firstEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.firstChunk" })
-        #expect(firstEvent.attributes?["ai.response.msToFirstChunk"] == .double(123.0))
-        #expect(doStreamSpan.attributes["ai.response.msToFirstChunk"] == .double(123.0))
+        #expect(firstEvent.attributes?["ai.response.msToFirstChunk"] == .double(msToFirstChunk))
+        #expect(doStreamSpan.attributes["ai.response.msToFirstChunk"] == .double(msToFirstChunk))
     }
 
     @Test("telemetry records finish timing and speed")
@@ -333,12 +336,15 @@ struct StreamTextBasicTests {
 
         _ = try await result.readAllText()
         _ = try await result.waitForFinish()
+        let performance = try await result.steps[0].performance
+        #expect(performance.responseTimeMs > 0)
 
         let doStreamSpan = try #require(tracer.spanRecords.first { $0.name == "ai.streamText.doStream" })
         let finishEvent = try #require(doStreamSpan.events.first { $0.name == "ai.stream.finish" })
-        #expect(finishEvent.attributes?["ai.response.msToFinish"] == .double(210.0))
-        #expect(doStreamSpan.attributes["ai.response.msToFinish"] == .double(210.0))
-        #expect(doStreamSpan.attributes["ai.response.avgOutputTokensPerSecond"] == .double(1000.0 * 4.0 / 210.0))
+        #expect(finishEvent.attributes?["ai.response.msToFinish"] == .double(performance.responseTimeMs))
+        #expect(doStreamSpan.attributes["ai.response.msToFinish"] == .double(performance.responseTimeMs))
+        #expect(doStreamSpan.attributes["ai.response.avgOutputTokensPerSecond"]
+            == .double(performance.effectiveOutputTokensPerSecond))
     }
 
     @Test("telemetry records spans when enabled")
@@ -368,7 +374,10 @@ struct StreamTextBasicTests {
 
         let tracer = MockTracer()
         let fallbackDate = Date(timeIntervalSince1970: 456)
-        let telemetry = TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: tracer)])
+        let telemetry = TelemetryOptions(
+            includeRuntimeContext: ["test-key": true],
+            integrations: [LegacyOpenTelemetry(tracer: tracer)]
+        )
 
         let result = try streamText(
             model: .v3(model),

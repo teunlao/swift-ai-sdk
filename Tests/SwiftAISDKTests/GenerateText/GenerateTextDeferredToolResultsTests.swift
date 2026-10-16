@@ -94,10 +94,19 @@ struct GenerateTextDeferredToolResultsTests {
         #expect(result.steps.count == 2)
         #expect(model.doGenerateCalls.count == 2)
 
-        #expect(result.content.count == 2)
+        // Result content spans every step: the deferred call, then its later error and the text.
+        #expect(result.content.count == 3)
+        #expect(result.finalStep.content.count == 2)
 
-        if result.content.count >= 2 {
-            if case .toolError(let error, let metadata) = result.content[0] {
+        if case .toolCall(let call, _)? = result.content.first {
+            #expect(call.toolCallId == "call-1")
+        } else {
+            Issue.record("Expected the deferred tool call first.")
+        }
+
+        let finalContent = result.finalStep.content
+        if finalContent.count >= 2 {
+            if case .toolError(let error, let metadata) = finalContent[0] {
                 #expect(error.toolCallId == "call-1")
                 #expect(error.toolName == "deferred_tool")
                 #expect(error.input == .null)
@@ -109,7 +118,7 @@ struct GenerateTextDeferredToolResultsTests {
                 Issue.record("Expected tool-error content part.")
             }
 
-            if case .text(let text, _, _) = result.content[1] {
+            if case .text(let text, _, _) = finalContent[1] {
                 #expect(text == "Final response")
             } else {
                 Issue.record("Expected text content part.")

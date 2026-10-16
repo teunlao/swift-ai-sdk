@@ -518,7 +518,7 @@ struct ParseToolCallTests {
             return
         }
 
-        #expect(dynamicCall.invalid == false)
+        #expect(dynamicCall.invalid == nil)
         #expect(dynamicCall.toolCallId == "123")
         #expect(dynamicCall.toolName == "testTool")
         #expect(dynamicCall.title == "Test Tool")

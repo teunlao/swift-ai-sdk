@@ -292,8 +292,9 @@ struct GenerateTextProgrammaticToolCallingTests {
         // Final step prompt should include all prior response messages.
         #expect(model.doGenerateCalls[4].prompt.count == 9)
 
-        #expect(result.toolCalls.isEmpty)
-        #expect(result.toolResults.count == 1)
+        #expect(result.finalStep.toolCalls.isEmpty)
+        #expect(result.finalStep.toolResults.count == 1)
+        #expect(result.toolResults.count == result.steps.reduce(0) { $0 + $1.toolResults.count })
 
         // rollDie should have been executed for every client tool call.
         let recordedExecutions = executions.withValue { $0 }
@@ -301,10 +302,11 @@ struct GenerateTextProgrammaticToolCallingTests {
         #expect(recordedExecutions.filter { $0 == "player1" }.count == 4)
         #expect(recordedExecutions.filter { $0 == "player2" }.count == 4)
 
-        // Final content should contain the deferred provider tool result and final text.
-        #expect(result.content.count == 2)
-        if result.content.count == 2 {
-            if case .toolResult(let toolResult, _) = result.content[0],
+        // The final step's content holds the deferred provider tool result and final text.
+        let finalContent = result.finalStep.content
+        #expect(finalContent.count == 2)
+        if finalContent.count == 2 {
+            if case .toolResult(let toolResult, _) = finalContent[0],
                case .static(let staticResult) = toolResult {
                 #expect(staticResult.toolCallId == codeExecutionToolCallId)
                 #expect(staticResult.toolName == "code_execution")
@@ -315,16 +317,17 @@ struct GenerateTextProgrammaticToolCallingTests {
                 Issue.record("Expected provider tool result as first content part.")
             }
 
-            if case .text(let text, _, _) = result.content[1] {
+            if case .text(let text, _, _) = finalContent[1] {
                 #expect(text == "**Game Over!**")
             } else {
                 Issue.record("Expected final text as second content part.")
             }
         }
 
-        // Response messages should contain all assistant/tool messages from all steps.
-        #expect(result.response.messages.count == 9)
-        if let lastResponseMessage = result.response.messages.last {
+        // Response messages of all steps; the final step response holds only its own message.
+        #expect(result.responseMessages.count == 9)
+        #expect(result.response.messages.count == 1)
+        if let lastResponseMessage = result.responseMessages.last {
             if case .assistant(let assistantMessage) = lastResponseMessage,
                case .parts(let parts) = assistantMessage.content {
                 #expect(parts.count == 2)
@@ -370,8 +373,8 @@ struct GenerateTextProgrammaticToolCallingTests {
         let finishEvent = try #require(onFinishEvent.withValue { $0 })
         #expect(finishEvent.finishReason == .stop)
         #expect(finishEvent.steps.count == 5)
-        #expect(finishEvent.response.messages.count == 9)
-        #expect(finishEvent.toolCalls.isEmpty)
-        #expect(finishEvent.toolResults.count == 1)
+        #expect(finishEvent.responseMessages.count == 9)
+        #expect(finishEvent.finalStep.toolCalls.isEmpty)
+        #expect(finishEvent.finalStep.toolResults.count == 1)
     }
 }

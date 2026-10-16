@@ -216,14 +216,10 @@ struct GenerateTextAdvancedTests {
         )
 
         let records = await recorder.entries()
-        #expect(records.count == 1)
-        if let record = records.first {
-            #expect(record.type == .onInputAvailable)
-            #expect(record.toolCallId == "call-1")
-            #expect(record.input == JSONValue.object(["value": .string("value")]))
-            #expect(record.messageSummaries == ["user:text:test-input"])
-            #expect(record.inputTextDelta == nil)
-        }
+        #expect(records.map(\.type) == [.onInputStart, .onInputAvailable])
+        #expect(records.allSatisfy { $0.toolCallId == "call-1" && $0.messageSummaries == ["user:text:test-input"] })
+        #expect(records.last?.input == JSONValue.object(["value": .string("value")]))
+        #expect(records.allSatisfy { $0.inputTextDelta == nil })
     }
 
     // MARK: - Tools with custom schema
@@ -370,9 +366,7 @@ struct GenerateTextAdvancedTests {
                     #expect(staticError.toolName == "web_search")
                     #expect(staticError.providerExecuted == true)
                     #expect(staticError.input == JSONValue.object(["value": .string("value")]))
-                    if let error = staticError.error as? LocalizedError {
-                        #expect(error.errorDescription == "Provider tool execution error.")
-                    }
+                    // Upstream keeps the provider's raw error result as the error value.
                     #expect(String(describing: staticError.error) == #""ERROR""#)
                 } else {
                     Issue.record("Expected static tool error result")
@@ -1018,8 +1012,11 @@ struct GenerateTextAdvancedTests {
             _ = try result.output
         }
 
-        #expect(result.toolCalls.count == 1)
-        #expect(result.toolResults.count == 1)
+        // Every step ends in a tool call until the step limit; results aggregate all steps.
+        #expect(result.steps.count == 3)
+        #expect(result.toolCalls.count == 3)
+        #expect(result.toolResults.count == 3)
+        #expect(result.finalStep.toolCalls.count == 1)
     }
 
     // MARK: - Log warnings
@@ -1399,7 +1396,8 @@ struct GenerateTextAdvancedTests {
     @Test("approved tool response includes tool result")
     func approvedToolResponseIncludesToolResult() async throws {
         let scenario = try await runSingleApprovedToolScenario()
-        let messages = scenario.result.response.messages
+        // The approved tool result precedes the steps, so it is in `responseMessages`, not the final step response.
+        let messages = scenario.result.responseMessages
         #expect(messages.count == 2)
 
         if messages.count == 2 {
@@ -1444,7 +1442,7 @@ struct GenerateTextAdvancedTests {
     @Test("denied tool response includes error result")
     func deniedToolResponseIncludesErrorResult() async throws {
         let scenario = try await runSingleDeniedToolScenario()
-        if let toolMessage = scenario.result.response.messages.first, case .tool(let message) = toolMessage, let part = message.content.first, case .toolResult(let toolResult) = part {
+        if let toolMessage = scenario.result.responseMessages.first, case .tool(let message) = toolMessage, let part = message.content.first, case .toolResult(let toolResult) = part {
             #expect(toolResult.output == .executionDenied(reason: nil))
         } else {
             Issue.record("Expected tool response with execution denied result")
@@ -1472,7 +1470,7 @@ struct GenerateTextAdvancedTests {
     @Test("multiple approvals response includes tool results")
     func multipleApprovalsResponseIncludesToolResults() async throws {
         let scenario = try await runMultipleApprovedToolScenario()
-        if let toolMessage = scenario.result.response.messages.first, case .tool(let message) = toolMessage {
+        if let toolMessage = scenario.result.responseMessages.first, case .tool(let message) = toolMessage {
             #expect(message.content.count == 2)
             if message.content.count == 2 {
                 if case .toolResult(let firstResult) = message.content[0],

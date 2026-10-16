@@ -26,8 +26,8 @@ struct StreamTextRetentionTests {
         }
     }
 
-    @Test("request contains body by default")
-    func requestContainsBodyByDefault() async throws {
+    @Test("request contains body when requested")
+    func requestContainsBodyWhenRequested() async throws {
         let model = MockLanguageModelV3(
             doStream: .singleValue(
                 LanguageModelV3StreamResult(
@@ -39,7 +39,8 @@ struct StreamTextRetentionTests {
 
         let result = try streamText(
             model: .v3(model),
-            prompt: "test-input"
+            prompt: "test-input",
+            include: StreamTextInclude(requestBody: true)
         )
 
         let request = try await result.request
