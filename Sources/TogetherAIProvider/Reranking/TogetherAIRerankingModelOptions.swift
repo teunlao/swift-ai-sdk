@@ -5,11 +5,11 @@ import AISDKProviderUtils
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
-// Ported from packages/togetherai/src/reranking/togetherai-reranking-options.ts
-// Upstream commit: f3a72bc2a
+// Ported from packages/togetherai/src/reranking/togetherai-reranking-model-options.ts
+// Upstream commit: 8a5233b
 //===----------------------------------------------------------------------===//
 
-public struct TogetherAIRerankingOptions: Sendable, Equatable {
+public struct TogetherAIRerankingModelOptions: Codable, Sendable, Equatable {
     /// List of keys in the JSON object document to rank by.
     /// Defaults to use all supplied keys for ranking.
     public var rankFields: [String]?
@@ -24,8 +24,8 @@ private let optionsJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(true),
 ])
 
-public let togetheraiRerankingOptionsSchema = FlexibleSchema(
-    Schema<TogetherAIRerankingOptions>(
+public let togetheraiRerankingModelOptionsSchema = FlexibleSchema(
+    Schema<TogetherAIRerankingModelOptions>(
         jsonSchemaResolver: { optionsJSONSchema },
         validator: { value in
             do {
@@ -38,9 +38,9 @@ public let togetheraiRerankingOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var options = TogetherAIRerankingOptions()
+                var options = TogetherAIRerankingModelOptions()
 
-                if let rawRankFields = dict["rankFields"], rawRankFields != .null {
+                if let rawRankFields = dict["rankFields"] {
                     guard case .array(let values) = rawRankFields else {
                         let error = SchemaValidationIssuesError(
                             vendor: "togetherai",

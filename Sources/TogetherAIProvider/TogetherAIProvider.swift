@@ -3,6 +3,8 @@ import AISDKProvider
 import AISDKProviderUtils
 import OpenAICompatibleProvider
 
+public typealias TogetherAIErrorData = OpenAICompatibleErrorData
+
 //===----------------------------------------------------------------------===//
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//

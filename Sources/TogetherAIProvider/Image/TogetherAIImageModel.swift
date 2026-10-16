@@ -9,6 +9,17 @@ import AISDKProviderUtils
 // Upstream commit: f3a72bc2a
 //===----------------------------------------------------------------------===//
 
+public struct TogetherAIImageModelOptions: Codable, Sendable, Equatable {
+    public var steps: Double?
+    public var guidance: Double?
+    public var negative_prompt: String?
+    public var disable_safety_checker: Bool?
+    public init(steps: Double? = nil, guidance: Double? = nil, negative_prompt: String? = nil, disable_safety_checker: Bool? = nil) {
+        self.steps = steps; self.guidance = guidance
+        self.negative_prompt = negative_prompt; self.disable_safety_checker = disable_safety_checker
+    }
+}
+
 struct TogetherAIImageModelConfig: Sendable {
     let provider: String
     let baseURL: String
@@ -86,7 +97,7 @@ private let togetheraiImageProviderOptionsSchema: FlexibleSchema<[String: JSONVa
                     }
 
                     if let steps = dict["steps"], steps != .null {
-                        guard case .number = steps else {
+                        guard case .number(let number) = steps, number.isFinite else {
                             let error = SchemaValidationIssuesError(
                                 vendor: "togetherai",
                                 issues: "steps must be a number"
@@ -96,7 +107,7 @@ private let togetheraiImageProviderOptionsSchema: FlexibleSchema<[String: JSONVa
                     }
 
                     if let guidance = dict["guidance"], guidance != .null {
-                        guard case .number = guidance else {
+                        guard case .number(let number) = guidance, number.isFinite else {
                             let error = SchemaValidationIssuesError(
                                 vendor: "togetherai",
                                 issues: "guidance must be a number"
@@ -138,6 +149,17 @@ public final class TogetherAIImageModel: ImageModelV4 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
     public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
+    public var supportsFileInputs: Bool? {
+        get async throws {
+            if ["black-forest-labs/FLUX.1-kontext-pro", "black-forest-labs/FLUX.1-kontext-max", "black-forest-labs/FLUX.1-kontext-dev",
+                "black-forest-labs/FLUX.1-canny", "black-forest-labs/FLUX.1-depth", "black-forest-labs/FLUX.1-redux",
+                "black-forest-labs/FLUX.2-pro", "black-forest-labs/FLUX.2-flex"].contains(modelId) { return true }
+            return ["stabilityai/stable-diffusion-xl-base-1.0", "black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-dev-lora",
+                    "black-forest-labs/FLUX.1-schnell", "black-forest-labs/FLUX.1.1-pro", "black-forest-labs/FLUX.1-pro",
+                    "black-forest-labs/FLUX.1-schnell-Free", "black-forest-labs/FLUX.2-dev", "google/gemini-3-pro-image"].contains(modelId) ? false : nil
+        }
+    }
+    public var supportsMaskInputs: Bool? { get async throws { try await supportsFileInputs == nil ? nil : false } }
 
     private let modelIdentifier: TogetherAIImageModelId
     private let config: TogetherAIImageModelConfig
@@ -169,11 +191,17 @@ public final class TogetherAIImageModel: ImageModelV4 {
             )
         }
 
-        let togetheraiOptions = try await parseProviderOptions(
+        var togetheraiOptions = try await parseProviderOptions(
             provider: "togetherai",
             providerOptions: options.providerOptions,
             schema: togetheraiImageProviderOptionsSchema
         )
+
+        let nonDiffusion = modelId == "google/gemini-3-pro-image"
+        if nonDiffusion {
+            for key in ["steps", "guidance", "negative_prompt", "disable_safety_checker"] { togetheraiOptions?.removeValue(forKey: key) }
+            if options.seed != nil { warnings.append(.unsupported(feature: "seed", details: "The \(modelId) model does not support the `seed` option.")) }
+        }
 
         // Handle image input from files
         var imageURL: String?
@@ -198,7 +226,7 @@ public final class TogetherAIImageModel: ImageModelV4 {
             body["prompt"] = .string(prompt)
         }
 
-        if let seed = options.seed {
+        if let seed = options.seed, !nonDiffusion {
             body["seed"] = .number(Double(seed))
         }
 

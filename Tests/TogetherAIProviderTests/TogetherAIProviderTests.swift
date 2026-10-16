@@ -82,7 +82,9 @@ struct TogetherAIProviderTests {
         @Test("missing API key throws LoadAPIKeyError at request time")
         func missingAPIKeyThrowsAtRequestTime() async throws {
             let original = getenv("TOGETHER_AI_API_KEY").flatMap { String(validatingCString: $0) }
+            let current = getenv("TOGETHER_API_KEY").flatMap { String(validatingCString: $0) }
             defer {
+                if let current { setenv("TOGETHER_API_KEY", current, 1) } else { unsetenv("TOGETHER_API_KEY") }
                 if let original {
                     setenv("TOGETHER_AI_API_KEY", original, 1)
                 } else {
@@ -91,6 +93,7 @@ struct TogetherAIProviderTests {
             }
 
             unsetenv("TOGETHER_AI_API_KEY")
+            unsetenv("TOGETHER_API_KEY")
             let capture = RequestCapture()
             let provider = createTogetherAI(
                 settings: TogetherAIProviderSettings(fetch: try makeFetch(capture: capture))
@@ -108,6 +111,23 @@ struct TogetherAIProviderTests {
             }
 
             #expect(await capture.current() == nil)
+        }
+
+        @Test(arguments: ["current", "legacy", "explicit"])
+        func keyPrecedenceReachesAuthorization(source: String) async throws {
+            let names = ["TOGETHER_API_KEY", "TOGETHER_AI_API_KEY"]
+            let previous = ProcessInfo.processInfo.environment
+            defer {
+                for name in names {
+                    if let value = previous[name] { setenv(name, value, 1) } else { unsetenv(name) }
+                }
+            }
+            setenv("TOGETHER_AI_API_KEY", "legacy", 1)
+            if source == "legacy" { unsetenv("TOGETHER_API_KEY") } else { setenv("TOGETHER_API_KEY", "current", 1) }
+            let capture = RequestCapture()
+            let provider = createTogetherAI(settings: .init(apiKey: source == "explicit" ? "explicit" : nil, fetch: try makeFetch(capture: capture)))
+            _ = try await provider.embeddingModel(modelId: "embedding").doEmbed(options: .init(values: ["value"]))
+            #expect(await capture.current()?.value(forHTTPHeaderField: "Authorization") == "Bearer \(source)")
         }
 
         @Test("injects Authorization header using apiKey at request time")

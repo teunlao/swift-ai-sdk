@@ -44,7 +44,7 @@ public final class TogetherAIRerankingModel: RerankingModelV4 {
         let rerankingOptions = try await parseProviderOptions(
             provider: "togetherai",
             providerOptions: options.providerOptions,
-            schema: togetheraiRerankingOptionsSchema
+            schema: togetheraiRerankingModelOptionsSchema
         )
 
         var body: [String: JSONValue] = [
