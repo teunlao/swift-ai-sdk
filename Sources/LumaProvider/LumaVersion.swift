@@ -9,4 +9,4 @@ import AISDKProviderUtils
 
 /// Version string for the Luma provider package.
 /// Mirrors `packages/luma/src/version.ts`.
-public let LUMA_VERSION = SDKReleaseVersion.value
+public let VERSION = SDKReleaseVersion.value

@@ -76,7 +76,7 @@ public func createLuma(settings: LumaProviderSettings = .init()) -> LumaProvider
             }
         }
 
-        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk-luma/\(LUMA_VERSION)")
+        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk-luma/\(VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
