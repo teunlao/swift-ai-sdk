@@ -144,7 +144,9 @@ struct MCPClientTests {
             ToolCallOptions(toolCallId: "1", messages: [])
         ).resolve()
 
-        let modelOutput = tool.toModelOutput?(output)
+        let modelOutput = try await tool.toModelOutput?(
+            ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
+        )
         #expect(modelOutput == .content(value: [
             .media(data: "base64data", mediaType: "image/png"),
         ]))
@@ -185,7 +187,9 @@ struct MCPClientTests {
             ToolCallOptions(toolCallId: "1", messages: [])
         ).resolve()
 
-        let modelOutput = tool.toModelOutput?(output)
+        let modelOutput = try await tool.toModelOutput?(
+            ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
+        )
         #expect(modelOutput == .content(value: [
             .text(text: "Hello world"),
         ]))
@@ -227,7 +231,9 @@ struct MCPClientTests {
             ToolCallOptions(toolCallId: "1", messages: [])
         ).resolve()
 
-        let modelOutput = tool.toModelOutput?(output)
+        let modelOutput = try await tool.toModelOutput?(
+            ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
+        )
         #expect(modelOutput == .content(value: [
             .text(text: "Here is an image:"),
             .media(data: "base64data", mediaType: "image/png"),
@@ -276,7 +282,9 @@ struct MCPClientTests {
             ToolCallOptions(toolCallId: "1", messages: [])
         ).resolve()
 
-        let modelOutput = tool.toModelOutput?(output)
+        let modelOutput = try await tool.toModelOutput?(
+            ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
+        )
 
         guard let modelOutput, case .content(let parts, _) = modelOutput else {
             Issue.record("Expected content output")
@@ -328,7 +336,9 @@ struct MCPClientTests {
             ToolCallOptions(toolCallId: "1", messages: [])
         ).resolve()
 
-        let modelOutput = tool.toModelOutput?(output)
+        let modelOutput = try await tool.toModelOutput?(
+            ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
+        )
         #expect(modelOutput == .json(value: output))
     }
 

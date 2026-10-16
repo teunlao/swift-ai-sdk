@@ -72,7 +72,7 @@ struct PrepareStepProviderOptionsTests {
                 inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
                 needsApproval: .never,
                 execute: { _, options in
-                    #expect(options.experimentalContext == step0Context)
+                    #expect(options.context.map(JSONValue.object) == step0Context)
                     return .value(.string("ok"))
                 }
             )

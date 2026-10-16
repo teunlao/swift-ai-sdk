@@ -108,9 +108,9 @@ public enum ToolExecutionOutput<Output: Sendable>: Sendable {
  - Throws: Propagates errors from tool execution
  */
 public func executeTool<Input: Sendable, Output: Sendable>(
-    execute: @escaping @Sendable (Input, ToolCallOptions) async throws -> ToolExecutionResult<Output>,
+    execute: @escaping @Sendable (Input, ToolExecutionOptions) async throws -> ToolExecutionResult<Output>,
     input: Input,
-    options: ToolCallOptions
+    options: ToolExecutionOptions
 ) -> AsyncThrowingStream<ToolExecutionOutput<Output>, Error> {
     return AsyncThrowingStream { continuation in
         let task = Task {

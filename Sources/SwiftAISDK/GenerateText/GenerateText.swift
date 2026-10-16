@@ -1165,7 +1165,7 @@ public func generateText<OutputValue: Sendable>(
                                 toolCallId: toolCall.toolCallId,
                                 messages: stepInputMessages,
                                 abortSignal: effectiveAbortSignal,
-                                experimentalContext: currentExperimentalContext
+                                context: currentExperimentalContext.legacyToolContext
                             )
                         )
                     }

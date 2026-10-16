@@ -46,7 +46,7 @@ public func isApprovalNeeded(
                 ToolCallApprovalOptions(
                     toolCallId: toolCall.toolCallId,
                     messages: messages,
-                    experimentalContext: experimentalContext
+                    context: experimentalContext.legacyToolContext
                 )
             )
         } catch {

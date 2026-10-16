@@ -58,7 +58,7 @@ public func prepareToolsAndToolChoice(
                 name: name,
                 inputSchema: jsonSchema,
                 inputExamples: tool.inputExamples,
-                description: tool.description,
+                description: tool.description?.resolve(context: nil),
                 strict: tool.strict,
                 providerOptions: providerOptions
             )
@@ -148,7 +148,7 @@ public func prepareToolsAndToolChoiceV4(
                 name: name,
                 inputSchema: jsonSchema,
                 inputExamples: inputExamples,
-                description: tool.description,
+                description: tool.description?.resolve(context: nil),
                 strict: tool.strict,
                 providerOptions: providerOptions
             )))

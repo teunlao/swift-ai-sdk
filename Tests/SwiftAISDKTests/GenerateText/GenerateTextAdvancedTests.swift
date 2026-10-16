@@ -584,7 +584,7 @@ struct GenerateTextAdvancedTests {
             "contextTool": tool(
                 inputSchema: toolInputSchema(),
                 execute: { _, options in
-                    await contextRecorder.append(options.experimentalContext)
+                    await contextRecorder.append(options.context.map(JSONValue.object))
                     return .value(.object(["value": .string("result")]))
                 }
             )

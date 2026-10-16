@@ -157,7 +157,7 @@ public func runToolsTransformation(
                                     toolCallId: typedToolCall.toolCallId,
                                     messages: messages,
                                     abortSignal: abortSignal,
-                                    experimentalContext: experimentalContext
+                                    context: experimentalContext.legacyToolContext
                                 )
                                 try await onInputAvailable(options)
                             }
@@ -279,15 +279,6 @@ public func runToolsTransformation(
             state.cancelAllTasks()
             processingTask.cancel()
         }
-    }
-}
-
-private struct ToolCallNotFoundForApprovalError: LocalizedError, Sendable {
-    let toolCallId: String
-    let approvalId: String
-
-    var errorDescription: String? {
-        "Tool call not found for approval: toolCallId=\(toolCallId) approvalId=\(approvalId)"
     }
 }
 

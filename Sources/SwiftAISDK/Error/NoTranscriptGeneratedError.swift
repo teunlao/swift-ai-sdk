@@ -8,8 +8,7 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/error/no-transcript-generated-error.ts`.
  */
 public struct NoTranscriptGeneratedError: AISDKError, Sendable {
-    /// General AI SDK error domain (no specialized marker for this error type)
-    public static let errorDomain = "vercel.ai.error"
+    public static let errorDomain = "vercel.ai.error.AI_NoTranscriptGeneratedError"
 
     public let name = "AI_NoTranscriptGeneratedError"
     public let message = "No transcript generated."

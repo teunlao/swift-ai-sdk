@@ -49,11 +49,12 @@ import AISDKProviderUtils
  ```
  */
 public func createToolModelOutput(
+    toolCallId: String,
+    input: JSONValue,
     output: Any?,
     tool: Tool?,
     errorMode: ToolOutputErrorMode
-) -> LanguageModelV3ToolResultOutput {
-    // Handle error modes first (priority over tool.toModelOutput)
+) async throws -> ToolResultOutput {
     switch errorMode {
     case .text:
         return .errorText(value: AISDKProvider.getErrorMessage(output))
@@ -63,16 +64,40 @@ public func createToolModelOutput(
         break
     }
 
-    // If tool has custom toModelOutput, use it
-    // Swift adaptation: convert Any? → JSONValue before calling toModelOutput
-    // TypeScript: tool.toModelOutput(output: unknown)
-    // Swift: tool.toModelOutput(JSONValue) due to type safety
-    if let tool = tool, let toModelOutput = tool.toModelOutput {
-        let jsonOutput = toJSONValue(output)
-        return toModelOutput(jsonOutput)
+    if let toModelOutput = tool?.toModelOutput {
+        return try await toModelOutput(
+            ToolModelOutputOptions(toolCallId: toolCallId, input: input, output: toJSONValue(output))
+        )
     }
 
-    // Default handling: string → text, other → json.
+    // Swift tool outputs are JSON, so a JSON string is the upstream `typeof output === 'string'` case.
+    if let stringOutput = output as? String {
+        return .text(value: stringOutput)
+    }
+    if case .string(let stringOutput)? = output as? JSONValue {
+        return .text(value: stringOutput)
+    }
+
+    return .json(value: toJSONValue(output))
+}
+
+/// Synchronous variant kept for callers that are not async yet; it cannot run the
+/// async `Tool.toModelOutput` and therefore ignores it.
+@available(*, deprecated, message: "Use the async createToolModelOutput(toolCallId:input:output:tool:errorMode:)")
+public func createToolModelOutput(
+    output: Any?,
+    tool: Tool?,
+    errorMode: ToolOutputErrorMode
+) -> ToolResultOutput {
+    switch errorMode {
+    case .text:
+        return .errorText(value: AISDKProvider.getErrorMessage(output))
+    case .json:
+        return .errorJson(value: toJSONValue(output))
+    case .none:
+        break
+    }
+
     if let stringOutput = output as? String {
         return .text(value: stringOutput)
     }

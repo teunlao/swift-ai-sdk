@@ -256,7 +256,7 @@ actor StreamTextActor {
                     ToolCallApprovalOptions(
                         toolCallId: callId,
                         messages: currentMessagesForApproval(),
-                        experimentalContext: experimentalContext
+                        context: experimentalContext.legacyToolContext
                     )
                 )
             } catch {
@@ -596,7 +596,7 @@ actor StreamTextActor {
             toolCallId: pending.toolCallId,
             messages: currentMessagesForApproval(),
             abortSignal: nil,
-            experimentalContext: experimentalContext
+            context: experimentalContext.legacyToolContext
         )
         do {
             let result = try await execute(pending.input, options)
@@ -948,7 +948,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: id,
                         messages: messagesForInput,
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: experimentalContext
+                        context: experimentalContext.legacyToolContext
                     )
                     try await onInputStart(options)
                 }
@@ -988,7 +988,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: id,
                         messages: currentMessagesForApproval(),
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: experimentalContext
+                        context: experimentalContext.legacyToolContext
                     )
                     try await onInputDelta(options)
                 }
@@ -1050,7 +1050,7 @@ case let .toolInputStart(id, toolName, providerMetadata, providerExecuted, dynam
                         toolCallId: typed.toolCallId,
                         messages: approvalMessages,
                         abortSignal: configuration.abortSignal,
-                        experimentalContext: experimentalContext
+                        context: experimentalContext.legacyToolContext
                     )
                     do {
                         try await onInputAvailable(options)

@@ -8,8 +8,7 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/error/no-speech-generated-error.ts`.
  */
 public struct NoSpeechGeneratedError: AISDKError, Sendable {
-    /// General AI SDK error domain (no specialized marker for this error type)
-    public static let errorDomain = "vercel.ai.error"
+    public static let errorDomain = "vercel.ai.error.AI_NoSpeechGeneratedError"
 
     public let name = "AI_NoSpeechGeneratedError"
     public let message = "No speech audio generated."

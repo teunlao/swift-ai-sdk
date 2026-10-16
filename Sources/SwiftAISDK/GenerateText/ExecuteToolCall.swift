@@ -60,11 +60,11 @@ public func executeToolCall(
             let stream = executeTool(
                 execute: execute,
                 input: input,
-                options: ToolCallOptions(
+                options: ToolExecutionOptions(
                     toolCallId: toolCallId,
                     messages: messages,
                     abortSignal: abortSignal,
-                    experimentalContext: experimentalContext
+                    context: experimentalContext.legacyToolContext
                 )
             )
 
