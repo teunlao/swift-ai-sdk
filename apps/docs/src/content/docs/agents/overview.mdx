@@ -57,7 +57,7 @@ let agent = Agent<Never, Never>(settings: .init(
     "weather": weather.eraseToTool(),
     "convertFahrenheitToCelsius": toCelsius.eraseToTool()
   ]
-  // Default stopWhen is stepCountIs(20)
+  // Default stopWhen is isStepCount(20)
 ))
 
 let result = try await agent.generate(prompt: .text("What is the weather in San Francisco in celsius?"))

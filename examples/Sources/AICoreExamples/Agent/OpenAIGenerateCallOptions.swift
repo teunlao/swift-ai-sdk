@@ -21,13 +21,13 @@ struct AgentOpenAIGenerateCallOptionsExample: Example {
       let settings = AgentSettings<Recipe, JSONValue>(
         system: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
-        experimentalOutput: outputSpec,
+        output: outputSpec,
         providerOptions: providerOptions
       )
 
       let agent = Agent(settings: settings)
       let result = try await agent.generate(prompt: Prompt.text("Generate a lasagna recipe."))
-      let recipe = try result.experimentalOutput
+      let recipe = try result.output
       Logger.section("Strict JSON parsed")
       Logger.info("Recipe: \(recipe.name) (\(recipe.ingredients.count) ingredients)")
     } catch {

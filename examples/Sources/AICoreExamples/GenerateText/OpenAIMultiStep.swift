@@ -39,7 +39,7 @@ struct GenerateTextOpenAIMultiStepExample: Example {
           "weather": weatherTool.tool
         ],
         prompt: "What is the weather in my current location?",
-        stopWhen: [stepCountIs(5)],
+        stopWhen: [isStepCount(5)],
         onStepFinish: { step in
           let index = await stepCounter.next()
           Logger.section("Step \(index)")

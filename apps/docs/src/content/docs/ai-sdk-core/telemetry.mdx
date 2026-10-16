@@ -15,7 +15,9 @@ standardized instrumentation for collecting telemetry data.
 
 ## Enabling telemetry
 
-You can use the `experimentalTelemetry` parameter to enable telemetry on specific function calls while the feature is experimental:
+Telemetry is delivered to integrations: types conforming to `Telemetry` that receive the lifecycle events of
+each call. `LegacyOpenTelemetry` records the `ai.*` spans described below with a `Tracer` you provide.
+Register integrations for every call with `registerTelemetry`, or pass them to one call:
 
 ```swift
 import SwiftAISDK
@@ -24,11 +26,13 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Write a short story about a cat.",
-  experimentalTelemetry: TelemetrySettings(isEnabled: true)
+  telemetry: TelemetryOptions(integrations: [LegacyOpenTelemetry(tracer: myTracer)])
 )
 ```
 
-When telemetry is enabled, you can also control if you want to record the input values and the output values for the function.
+Per-call integrations replace the registered ones; `TelemetryOptions(isEnabled: false)` turns telemetry off for a call.
+
+You can also control if you want to record the input values and the output values for the function.
 By default, both are enabled. You can disable them by setting the `recordInputs` and `recordOutputs` options to `false`.
 
 Disabling the recording of inputs and outputs can be useful for privacy, data transfer, and performance reasons.
@@ -38,31 +42,24 @@ You might for example want to disable recording inputs if they contain sensitive
 let result = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Sensitive user data...",
-  experimentalTelemetry: TelemetrySettings(
-    isEnabled: true,
-    recordInputs: false,
-    recordOutputs: false
-  )
+  telemetry: TelemetryOptions(recordInputs: false, recordOutputs: false)
 )
 ```
 
 ## Telemetry Metadata
 
-You can provide a `functionId` to identify the function that the telemetry data is for,
-and `metadata` to include additional information in the telemetry data.
+You can provide a `functionId` to identify the function that the telemetry data is for.
+Runtime context keys are recorded only when `includeRuntimeContext` marks them.
 
 ```swift
 let result = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Write a short story about a cat.",
-  experimentalTelemetry: TelemetrySettings(
-    isEnabled: true,
+  telemetry: TelemetryOptions(
     functionId: "my-awesome-function",
-    metadata: [
-      "something": "custom",
-      "someOtherThing": "other-value"
-    ]
-  )
+    includeRuntimeContext: ["tenant": true]
+  ),
+  runtimeContext: ["tenant": "acme"]
 )
 ```
 

@@ -27,7 +27,7 @@ struct WeatherToolExample: Example {
     Logger.section("Weather tool output (local execution)")
     let localResult = try await weatherTool.execute?(
       WeatherQuery(location: "San Francisco"),
-      ToolCallOptions(toolCallId: "weather-call", messages: [])
+      ToolExecutionOptions(toolCallId: "weather-call", messages: [])
     )
 
     if let report = try await localResult?.resolve() {

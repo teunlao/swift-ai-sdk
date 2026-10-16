@@ -53,7 +53,7 @@ struct MathAgentExample: Example {
         "When you give the final answer, explain how you got it.",
       ].joined(separator: " "),
       prompt: prompt,
-      stopWhen: [stepCountIs(10)],
+      stopWhen: [isStepCount(10)],
       onStepFinish: { step in
         if !step.toolResults.isEmpty {
           Logger.info("STEP RESULTS count: \(step.toolResults.count)")
@@ -121,7 +121,7 @@ struct MathAgentRequiredToolChoiceExample: Example {
         "When you give the final answer, explain how you got it.",
       ].joined(separator: " "),
       prompt: prompt,
-      stopWhen: [stepCountIs(10)],
+      stopWhen: [isStepCount(10)],
       onStepFinish: { step in
         if !step.toolResults.isEmpty {
           Logger.info("STEP RESULTS count: \(step.toolResults.count)")

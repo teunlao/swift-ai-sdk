@@ -566,7 +566,7 @@ let result = try await generateText(
     ))
   ],
   prompt: "List the files in my home directory.",
-  stopWhen: stepCountIs(2)
+  stopWhen: isStepCount(2)
 )
 ```
 
@@ -650,7 +650,7 @@ let result = try await generateText(
     ))
   ],
   prompt: "Create a python file that calculates the factorial of a number",
-  stopWhen: stepCountIs(5)
+  stopWhen: isStepCount(5)
 )
 ```
 
@@ -801,7 +801,7 @@ and the `mediaType` should be set to `'application/pdf'`.
 
 #### Structured Outputs
 
-The OpenAI Responses API supports structured outputs. You can enforce structured outputs using `generateObject` or `streamObject`, which expose a `schema` option. Additionally, you can pass a Zod or JSON Schema object to the `experimentalOutput` option when using `generateText` or `streamText`.
+The OpenAI Responses API supports structured outputs. You can enforce structured outputs using `generateObject` or `streamObject`, which expose a `schema` option. Additionally, you can pass a Zod or JSON Schema object to the `output` option when using `generateText` or `streamText`.
 
 ```swift
 // Using generateObject

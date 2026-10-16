@@ -72,14 +72,14 @@ let codeAgent = Agent<Never, Never>(settings: .init(
 
 ### Loop Control
 
-By default, agents run for 20 steps (`stopWhen: stepCountIs(20)`). In each step, the model either generates text or calls a tool. If it generates text, the agent completes. If it calls a tool, the AI SDK executes that tool.
+By default, agents run for 20 steps (`stopWhen: isStepCount(20)`). In each step, the model either generates text or calls a tool. If it generates text, the agent completes. If it calls a tool, the AI SDK executes that tool.
 
 To let agents call multiple tools in sequence, configure `stopWhen` to allow more steps. After each tool execution, the agent triggers a new generation where the model can call another tool or generate text:
 
 ```swift
 let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
-  stopWhen: [stepCountIs(20)] // Allow up to 20 steps
+  stopWhen: [isStepCount(20)] // Allow up to 20 steps
 ))
 ```
 
@@ -94,7 +94,7 @@ You can combine multiple conditions:
 let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
   stopWhen: [
-    stepCountIs(20)
+    isStepCount(20)
     // Add custom conditions as needed
   ]
 ))
@@ -137,14 +137,14 @@ Define structured output schemas:
 
 let analysisAgent = Agent<MyOutput, Never>(settings: .init(
   model: openai("gpt-4o"),
-  experimentalOutput: outputSpec,
-  stopWhen: [stepCountIs(10)]
+  output: outputSpec,
+  stopWhen: [isStepCount(10)]
 ))
 
 let result: DefaultGenerateTextResult<MyOutput> = try await analysisAgent.generate(
   prompt: .text("Analyze customer feedback from the last quarter")
 )
-let output = try result.experimentalOutput
+let output = try result.output
 ```
 
 ## Define Agent Behavior with System Prompts

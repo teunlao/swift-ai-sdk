@@ -41,7 +41,7 @@ struct StreamTextOpenAIResponsesToolCallExample: Example {
           "weather": weatherTool.tool
         ],
         providerOptions: openai.options.responses(parallelToolCalls: false),
-        stopWhen: [stepCountIs(5)]
+        stopWhen: [isStepCount(5)]
       )
 
       for try await part in result.fullStream {

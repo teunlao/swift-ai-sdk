@@ -16,13 +16,13 @@ struct AgentOpenAIGenerateJSONExample: Example {
       let settings = AgentSettings<Recipe, JSONValue>(
         system: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
-        experimentalOutput: outputSpec
+        output: outputSpec
       )
       let agent = Agent(settings: settings)
       let result = try await agent.generate(prompt: Prompt.text("Generate a lasagna recipe."))
 
       Logger.section("Structured Output")
-      let recipe = try result.experimentalOutput
+      let recipe = try result.output
       Logger.info("Recipe: \(recipe.name)")
       for ing in recipe.ingredients.prefix(3) { Logger.info("- \(ing.amount) \(ing.name)") }
     } catch {

@@ -11,7 +11,7 @@ struct StreamTextOpenAIOnFinishStepsExample: Example {
       let result = try streamText(
         model: openai("gpt-4o"),
         prompt: "Give me a 3-step plan to learn Swift.",
-        stopWhen: [stepCountIs(3)],
+        stopWhen: [isStepCount(3)],
         onFinish: { _, steps, _, _ in
           Logger.section("steps summary")
           for (i, step) in steps.enumerated() {

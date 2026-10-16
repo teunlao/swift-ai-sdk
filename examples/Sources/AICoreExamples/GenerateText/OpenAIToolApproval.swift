@@ -61,7 +61,7 @@ struct GenerateTextOpenAIToolApprovalExample: Example {
           tools: ["weather": weatherTool.tool],
           system: "When a tool execution is not approved by the user, do not retry it. Just say that the tool execution was not approved.",
           messages: messages,
-          stopWhen: [stepCountIs(5)]
+          stopWhen: [isStepCount(5)]
         )
 
         Logger.section("Assistant")

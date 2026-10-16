@@ -95,7 +95,7 @@ let weatherTool = tool(
 let out = try await generateText(
   model: openai("gpt-4o"),
   tools: ["weather": weatherTool.tool],
-  stopWhen: [stepCountIs(5)], // stop after max 5 steps if tools were called
+  stopWhen: [isStepCount(5)], // stop after max 5 steps if tools were called
   prompt: "What is the weather in San Francisco?"
 )
 print(out.text)
@@ -118,7 +118,7 @@ import OpenAIProvider
 
 let rr = try await generateText(
   model: openai("gpt-4o"),
-  stopWhen: [stepCountIs(10)]
+  stopWhen: [isStepCount(10)]
 )
 let steps = rr.steps
 // extract all tool calls from the steps:

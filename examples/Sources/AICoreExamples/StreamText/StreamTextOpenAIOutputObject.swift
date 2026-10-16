@@ -22,7 +22,7 @@ struct StreamTextOpenAIOutputObjectExample: Example {
         model: openai("gpt-4o"),
         system: nil,
         messages: [.user(UserModelMessage(content: .text("Return a JSON object with name, version, and 3 short changes for 'Swift AI SDK'.")))],
-        experimentalOutput: outputSpec,
+        output: outputSpec,
         onFinish: { finalStep, _, usage, reason in
           Logger.section("onFinish")
           Logger.info("finishReason: \(reason)")
@@ -35,7 +35,7 @@ struct StreamTextOpenAIOutputObjectExample: Example {
 
       // Access parsed structured output
       do {
-        let release = try await result.experimentalOutput
+        let release = try await result.output
         Logger.section("Parsed Output")
         Logger.info("Release: \(release.name) v\(release.version)")
         for c in release.changes { Logger.info("- \(c)") }

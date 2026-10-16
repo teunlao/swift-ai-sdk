@@ -67,7 +67,7 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
           "countChar": countChar.tool
         ],
         providerOptions: providerOptions,
-        stopWhen: [stepCountIs(10)]
+        stopWhen: [isStepCount(10)]
       )
 
       for try await part in result.fullStream {

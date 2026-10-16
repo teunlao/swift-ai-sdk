@@ -64,7 +64,7 @@ func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
 
   let quality = try await generateText(
     model: openai("gpt-4o"),
-    experimentalOutput: Output.object(MarketingQuality.self, name: "quality_check"),
+    output: Output.object(MarketingQuality.self, name: "quality_check"),
     prompt: """
     Evaluate this marketing copy for:
     1. Presence of call to action (true/false)
@@ -73,7 +73,7 @@ func generateMarketingCopy(_ input: String) async throws -> MarketingResult {
 
     Copy to evaluate: \(copy)
     """
-  ).experimentalOutput
+  ).output
 
   if !quality.hasCallToAction || quality.emotionalAppeal < 7 || quality.clarity < 7 {
     let improved = try await generateText(
@@ -104,9 +104,9 @@ struct RoutingDecision: Codable, Sendable {
 func handleCustomerQuery(_ query: String) async throws -> (String, RoutingDecision) {
   let decision = try await generateText(
     model: openai("gpt-4o"),
-    experimentalOutput: Output.object(RoutingDecision.self, name: "routing"),
+    output: Output.object(RoutingDecision.self, name: "routing"),
     prompt: "Classify this customer query and explain your reasoning: \(query)"
-  ).experimentalOutput
+  ).output
 
   let systemMap: [String: String] = [
     "general": "You are an expert customer service agent handling general inquiries.",
@@ -140,7 +140,7 @@ struct Review: Sendable {
 func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summary: String) {
   async let security = generateText(
     model: openai("gpt-4o"),
-    experimentalOutput: Output.object(ReviewDetails.self, name: "security_review"),
+    output: Output.object(ReviewDetails.self, name: "security_review"),
     system: "Security expert.",
     prompt: """
     Review:
@@ -149,7 +149,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   )
   async let performance = generateText(
     model: openai("gpt-4o"),
-    experimentalOutput: Output.object(ReviewDetails.self, name: "performance_review"),
+    output: Output.object(ReviewDetails.self, name: "performance_review"),
     system: "Performance expert.",
     prompt: """
     Review:
@@ -158,7 +158,7 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   )
   async let quality = generateText(
     model: openai("gpt-4o"),
-    experimentalOutput: Output.object(ReviewDetails.self, name: "quality_review"),
+    output: Output.object(ReviewDetails.self, name: "quality_review"),
     system: "Code quality expert.",
     prompt: """
     Review:
@@ -167,9 +167,9 @@ func parallelCodeReview(_ code: String) async throws -> (reviews: [Review], summ
   )
 
   let reviews = try await [
-    Review(kind: "security", details: security.experimentalOutput),
-    Review(kind: "performance", details: performance.experimentalOutput),
-    Review(kind: "maintainability", details: quality.experimentalOutput)
+    Review(kind: "security", details: security.output),
+    Review(kind: "performance", details: performance.output),
+    Review(kind: "maintainability", details: quality.output)
   ]
 
   let summaryPrompt = reviews
@@ -206,10 +206,10 @@ struct ImplementationPlan: Codable, Sendable {
 func implementFeature(_ feature: String) async throws -> (plan: ImplementationPlan, changes: [String]) {
   let plan = try await generateText(
     model: openai("o4-mini"),
-    experimentalOutput: Output.object(ImplementationPlan.self, name: "implementation_plan"),
+    output: Output.object(ImplementationPlan.self, name: "implementation_plan"),
     system: "You are a senior software architect planning feature implementations.",
     prompt: "Analyze this feature request and create an implementation plan: \(feature)"
-  ).experimentalOutput
+  ).output
 
   // Workers would implement per-file changes based on `plan.steps`; omitted for brevity.
   return (plan, [])
@@ -247,7 +247,7 @@ func translateWithFeedback(text: String, targetLanguage: String) async throws ->
   while iterations < 3 {
     let evaluation = try await generateText(
       model: openai("gpt-4o"),
-      experimentalOutput: Output.object(TranslationEvaluation.self, name: "translation_evaluation"),
+      output: Output.object(TranslationEvaluation.self, name: "translation_evaluation"),
       system: "You are an expert in evaluating literary translations.",
       prompt: """
       Evaluate this translation.
@@ -255,7 +255,7 @@ func translateWithFeedback(text: String, targetLanguage: String) async throws ->
       Original: \(text)
       Translation: \(current)
       """
-    ).experimentalOutput
+    ).output
 
     if evaluation.qualityScore >= 8 && evaluation.preservesTone && evaluation.preservesNuance && evaluation.culturallyAccurate {
       break

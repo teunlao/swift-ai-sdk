@@ -23,7 +23,7 @@ struct StreamTextOpenAIOnStepFinishExample: Example {
         model: openai("gpt-4o"),
         prompt: "What is the current weather in San Francisco?",
         tools: ["weather": weather.tool],
-        stopWhen: [stepCountIs(5)],
+        stopWhen: [isStepCount(5)],
         onStepFinish: { step in
           Logger.section("Step Finished")
           Logger.info("finishReason=\(step.finishReason)")

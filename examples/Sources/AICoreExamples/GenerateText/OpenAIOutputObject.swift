@@ -28,12 +28,12 @@ struct GenerateTextOpenAIOutputObjectExample: Example {
         model: openai("gpt-4o-mini"),
         tools: ["weather": weatherTool.tool],
         prompt: "What is the weather in San Francisco?",
-        stopWhen: [stepCountIs(2)],
-        experimentalOutput: Output.object(WeatherReport.self, name: "weather")
+        stopWhen: [isStepCount(2)],
+        output: Output.object(WeatherReport.self, name: "weather")
       )
 
       Logger.section("Structured Output")
-      let output = try result.experimentalOutput
+      let output = try result.output
       Helpers.printJSON(output)
     } catch {
       Logger.warning("Skipping network call: \(error.localizedDescription)")

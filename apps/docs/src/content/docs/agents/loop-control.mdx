@@ -8,7 +8,7 @@ You can control both the execution flow and the settings at each step of the age
 
 ## Stop Conditions
 
-The `stopWhen` parameter controls when to stop execution when there are tool results in the last step. By default, agents stop after 20 steps using `stepCountIs(20)`.
+The `stopWhen` parameter controls when to stop execution when there are tool results in the last step. By default, agents stop after 20 steps using `isStepCount(20)`.
 
 When you provide `stopWhen`, the agent continues executing after tool calls until a stopping condition is met. When the condition is an array, execution stops when any of the conditions are met.
 
@@ -26,8 +26,8 @@ let toolset: ToolSet = [:]
 let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
   tools: toolset,
-  // Default behaviour in Agent is stepCountIs(20), shown here explicitly
-  stopWhen: [stepCountIs(20)]
+  // Default behaviour in Agent is isStepCount(20), shown here explicitly
+  stopWhen: [isStepCount(20)]
 ))
 
 let result = try await agent.generate(prompt: .text(
@@ -47,7 +47,7 @@ let agent = Agent<Never, Never>(settings: .init(
   model: openai("gpt-4o"),
   tools: toolset,
   stopWhen: [
-    stepCountIs(20),            // Maximum 20 steps
+    isStepCount(20),            // Maximum 20 steps
     hasToolCall("someTool"),    // Stop after calling 'someTool'
   ]
 ))

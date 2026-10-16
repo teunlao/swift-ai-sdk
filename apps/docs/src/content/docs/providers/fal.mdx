@@ -283,7 +283,7 @@ import SwiftAISDK
 import FalProvider
 import Foundation
 
-let result = try await experimental_generateSpeech(
+let result = try await generateSpeech(
   model: fal.speech("fal-ai/minimax/speech-02-hd"),
   text: "Hello from the Swift AI SDK!"
 )

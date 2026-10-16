@@ -16,14 +16,14 @@ struct AgentOpenAIStreamJSONExample: Example {
       let settings = AgentSettings<Recipe, JSONValue>(
         system: "You are a helpful assistant.",
         model: try openai("gpt-4o"),
-        experimentalOutput: outputSpec
+        output: outputSpec
       )
       let agent = Agent(settings: settings)
       let result = try agent.stream(prompt: Prompt.text("Generate a lasagna recipe."))
 
       Logger.section("Partial JSON stream (first 3 events)")
       var count = 0
-      for try await partial in result.experimentalPartialOutputStream {
+      for try await partial in result.partialOutputStream {
         Logger.info(String(describing: partial))
         count += 1
         if count >= 3 { break }
@@ -33,7 +33,7 @@ struct AgentOpenAIStreamJSONExample: Example {
       for try await _ in result.textStream { }
 
       do {
-        let recipe = try await result.experimentalOutput
+        let recipe = try await result.output
         Logger.section("Parsed Output")
         Logger.info("Recipe: \(recipe.name)")
       } catch {

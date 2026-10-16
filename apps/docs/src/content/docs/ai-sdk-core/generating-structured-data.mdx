@@ -347,7 +347,7 @@ let repaired = try await generateObject(
   schema: Recipe.self,
   prompt: "...",
   schemaName: "recipe",
-  experimentalRepairText: { text, error in
+  repairText: { text, error in
     return text + "}"
   }
 )
@@ -355,7 +355,7 @@ let repaired = try await generateObject(
 
 ## Structured outputs with `generateText` and `streamText`
 
-You can generate structured data with `generateText` and `streamText` by using the `experimentalOutput` setting.
+You can generate structured data with `generateText` and `streamText` by using the `output` setting.
 
 > Note
 > Some models support structured outputs and tool calling simultaneously with `generateText`/`streamText`.
@@ -386,10 +386,10 @@ struct Person: Codable, Sendable {
 
 let gt = try await generateText(
   model: openai("gpt-4o"),
-  experimentalOutput: Output.object(Person.self),
+  output: Output.object(Person.self),
   prompt: "Generate an example person for testing."
 )
-let person = try gt.experimentalOutput
+let person = try gt.output
 ```
 
 ### `streamText`
@@ -397,10 +397,10 @@ let person = try gt.experimentalOutput
 ```swift
 let st = try streamText(
   model: openai("gpt-4o"),
-  experimentalOutput: Output.object(Person.self),
+  output: Output.object(Person.self),
   prompt: "Generate an example person for testing."
 )
-for try await partial in st.experimentalPartialOutputStream {
+for try await partial in st.partialOutputStream {
   print(partial)
 }
 ```

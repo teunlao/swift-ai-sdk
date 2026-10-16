@@ -39,7 +39,7 @@ struct StreamTextOpenAIResponsesMCPToolExample: Example {
           Logger.info("approve MCP tool: \(request.toolCall.toolName)")
           return .approve
         },
-        stopWhen: [stepCountIs(4)]
+        stopWhen: [isStepCount(4)]
       )
 
       for try await part in result.fullStream {

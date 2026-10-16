@@ -24,7 +24,7 @@ struct StreamTextOpenAIPrepareStepExample: Example {
           Logger.info("prepareStep: step=\(options.stepNumber) toolChoice=none")
           return result
         },
-        stopWhen: [stepCountIs(2)],
+        stopWhen: [isStepCount(2)],
         onStepFinish: { step in
           Logger.info("step finish: reason=\(step.finishReason) tokens=\(step.usage.totalTokens ?? 0)")
         },

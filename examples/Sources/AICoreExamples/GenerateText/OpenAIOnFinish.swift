@@ -87,7 +87,7 @@ private struct FinishEventLogger {
     let steps: [StepLog]
   }
 
-  static func encode(event: GenerateTextFinishEvent) -> String? {
+  static func encode(event: GenerateTextEndEvent) -> String? {
     let toolCalls = event.toolCalls.map(Self.makeToolCallLog(_:))
     let toolResults = event.toolResults.map(Self.makeToolResultLog(_:))
     let reasoning = event.reasoning.map(Self.makeReasoningLog(_:))

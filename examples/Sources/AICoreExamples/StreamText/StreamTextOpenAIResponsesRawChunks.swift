@@ -11,7 +11,7 @@ struct StreamTextOpenAIResponsesRawChunksExample: Example {
       let result = try streamText(
         model: openai.responses("gpt-4o-mini"),
         prompt: "Name two features of this SDK in one sentence.",
-        includeRawChunks: true
+        include: StreamTextInclude(rawChunks: true)
       )
 
       Logger.section("Raw parts")

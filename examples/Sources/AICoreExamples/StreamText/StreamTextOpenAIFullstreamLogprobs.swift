@@ -11,8 +11,7 @@ struct StreamTextOpenAIFullstreamLogprobsExample: Example {
       let result = try streamText(
         model: try openai("gpt-5-mini"),
         prompt: "Write a short pangram.",
-        providerOptions: ["openai": ["logprobs": 2]],
-        includeRawChunks: false
+        providerOptions: ["openai": ["logprobs": 2]]
       )
 
       for try await part in result.fullStream {

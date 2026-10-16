@@ -49,7 +49,7 @@ struct GenerateTextOpenAIActiveToolsExample: Example {
           "cityAttractions": cityAttractionsTool.tool
         ],
         prompt: "What is the weather in San Francisco and what attractions should I visit?",
-        stopWhen: [stepCountIs(5)],
+        stopWhen: [isStepCount(5)],
         activeTools: [] // disables all tools for this request
       )
 
