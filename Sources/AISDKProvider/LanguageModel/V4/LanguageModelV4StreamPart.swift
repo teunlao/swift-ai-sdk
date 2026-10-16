@@ -36,7 +36,7 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
     case responseMetadata(id: String?, modelId: String?, timestamp: Date?)
     case finish(finishReason: LanguageModelV4FinishReason, usage: LanguageModelV4Usage, providerMetadata: SharedV4ProviderMetadata?)
     case raw(rawValue: JSONValue)
-    case error(error: JSONValue)
+    case error(error: LanguageModelV4StreamError)
 
     private enum CodingKeys: String, CodingKey {
         case type, id, providerMetadata, delta, toolName, providerExecuted, dynamic, title
@@ -134,7 +134,7 @@ public enum LanguageModelV4StreamPart: Sendable, Equatable, Codable {
         case "raw":
             self = .raw(rawValue: try container.decode(JSONValue.self, forKey: .rawValue))
         case "error":
-            self = .error(error: try container.decode(JSONValue.self, forKey: .error))
+            self = .error(error: try container.decode(LanguageModelV4StreamError.self, forKey: .error))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,

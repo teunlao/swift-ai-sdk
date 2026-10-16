@@ -317,7 +317,7 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                         switch parseResult {
                         case .failure(let error, _):
                             finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
+                            continuation.yield(.error(error: .error(error)))
                         case .success(let chunk, let raw):
                             if let metadataExtractor, let json = try? jsonValue(from: raw) {
                                 metadataExtractor.processChunk(json)
@@ -327,9 +327,9 @@ private struct OpenAICompatibleChatLanguageModelCore: Sendable {
                             case .error(let errorData):
                                 finishReason = .init(unified: .error, raw: nil)
                                 if options.contract.usesV4StreamErrorPayload {
-                                    continuation.yield(.error(error: .string(errorData.message)))
+                                    continuation.yield(.error(error: .value(.string(errorData.message))))
                                 } else {
-                                    continuation.yield(.error(error: errorData.rawValue))
+                                    continuation.yield(.error(error: .value(errorData.rawValue)))
                                 }
                             case .data(let data):
                                 if isFirstChunk {
@@ -1058,7 +1058,7 @@ private func convertOpenAICompatibleStreamPartToV3(
     case let .raw(rawValue):
         return .raw(rawValue: rawValue)
     case let .error(error):
-        return .error(error: error)
+        return .error(error: error.jsonValue)
     default:
         throw UnsupportedFunctionalityError(functionality: "OpenAI-compatible V4 stream part \(value) on V3 facade")
     }

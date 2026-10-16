@@ -711,7 +711,7 @@ private func _convertLanguageModelV3StreamPartToV4(_ value: LanguageModelV3Strea
     case .raw(let rawValue):
         return .raw(rawValue: rawValue)
     case .error(let error):
-        return .error(error: error)
+        return .error(error: .value(error))
     }
 }
 
