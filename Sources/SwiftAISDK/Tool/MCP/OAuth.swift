@@ -284,13 +284,14 @@ private func discoverMetadataWithFallback(
             return metadataUrl
         }
 
-        let wellKnownPath = buildWellKnownPath(wellKnownType, pathname: issuer.path)
+        let pathname = URLComponents(url: issuer, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? issuer.path
+        let wellKnownPath = buildWellKnownPath(wellKnownType, pathname: pathname)
         let base = metadataServerUrl ?? issuer
         var resolved = URL(string: wellKnownPath, relativeTo: base)?.absoluteURL ?? base
 
         if let components = URLComponents(url: resolved, resolvingAgainstBaseURL: false) {
             var updated = components
-            updated.query = URLComponents(url: issuer, resolvingAgainstBaseURL: false)?.query
+            updated.percentEncodedQuery = URLComponents(url: issuer, resolvingAgainstBaseURL: false)?.percentEncodedQuery
             resolved = updated.url ?? resolved
         }
 
@@ -299,7 +300,8 @@ private func discoverMetadataWithFallback(
 
     var response = try await tryMetadataDiscovery(url: url, protocolVersion: protocolVersion, fetchFn: fetchFn, trustedOrigin: serverUrl.origin)
 
-    if metadataUrl == nil && shouldAttemptFallback(response: response?.1, pathname: issuer.path) {
+    let pathname = URLComponents(url: issuer, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? issuer.path
+    if metadataUrl == nil && shouldAttemptFallback(response: response?.1, pathname: pathname) {
         let rootUrl = URL(string: "/.well-known/\(wellKnownType)", relativeTo: issuer)?.absoluteURL ?? issuer
         response = try await tryMetadataDiscovery(url: rootUrl, protocolVersion: protocolVersion, fetchFn: fetchFn, trustedOrigin: serverUrl.origin)
     }
@@ -375,13 +377,6 @@ public func buildDiscoveryUrls(
     ]
 }
 
-private struct OpenIDDiscoveryFields: Decodable {
-    let jwks_uri: SafeURL
-    let subject_types_supported: [String]
-    let id_token_signing_alg_values_supported: [String]
-    let userinfo_endpoint: SafeURL?
-}
-
 public func discoverAuthorizationServerMetadata(
     authorizationServerUrl: URL,
     protocolVersion: String = LATEST_PROTOCOL_VERSION,
@@ -412,8 +407,8 @@ public func discoverAuthorizationServerMetadata(
         }
 
         let metadata = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: data)
-        if type == .oidc {
-            _ = try JSONDecoder().decode(OpenIDDiscoveryFields.self, from: data)
+        if type == .oidc, metadata.jwksUri == nil || metadata.subjectTypesSupported == nil || metadata.idTokenSigningAlgValuesSupported == nil {
+            throw MCPClientError(message: "OpenID provider metadata must include jwks_uri, subject_types_supported, and id_token_signing_alg_values_supported")
         }
         let issuerMatches = metadata.issuer == expectedIssuer
             || (expectedIssuer == URL(string: expectedIssuer)?.origin && metadata.issuer == expectedIssuer + "/")
@@ -487,7 +482,10 @@ public func startAuthorization(
     let challenge = try pkceChallenge()
 
     var components = URLComponents(url: authorizationUrl, resolvingAgainstBaseURL: false)
-    var items = components?.queryItems ?? []
+    if let query = components?.percentEncodedQuery {
+        components?.percentEncodedQuery = query.replacingOccurrences(of: "+", with: "%20")
+    }
+    var items = (components?.queryItems ?? []).filter { !$0.name.isEmpty || $0.value != nil }
 
     func set(_ name: String, _ value: String) {
         items.removeAll { $0.name == name }
@@ -514,7 +512,9 @@ public func startAuthorization(
         set("resource", resourceUrlStripSlash(resource))
     }
 
-    components?.queryItems = items
+    components?.percentEncodedQuery = items.map {
+        "\(percentEncodeFormComponent($0.name))=\(percentEncodeFormComponent($0.value ?? ""))"
+    }.joined(separator: "&")
     return (components?.url ?? authorizationUrl, challenge.codeVerifier)
 }
 
@@ -1013,10 +1013,7 @@ private func authInternal(
             authorizationServerUrl: authorizationServerUrl, metadata: metadata,
             clientMetadata: clientMetadata, fetchFn: fetchFn
         )
-        let client = try pinClientInformation(OAuthClientInformation(
-            clientId: full.clientId, clientSecret: full.clientSecret,
-            clientIdIssuedAt: full.clientIdIssuedAt, clientSecretExpiresAt: full.clientSecretExpiresAt
-        ), to: currentInformation)
+        let client = try pinClientInformation(OAuthClientInformation(full), to: currentInformation)
         try await saveClientInformation(client)
         clientInformation = client
     }

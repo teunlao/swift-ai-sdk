@@ -131,7 +131,7 @@ struct OAuthUtilTests {
     func checkResourceAllowedSubpaths() throws {
         #expect(
             !checkResourceAllowed(
-                requestedResource: try #require(URL(string: "https://example.com/mcpxxxx")),
+                requestedResource: try #require(URL(string: "https://example.com/mcp%2Ftenant")),
                 configuredResource: try #require(URL(string: "https://example.com/mcp"))
             )
         )

@@ -94,12 +94,12 @@ public func checkResourceAllowed(requestedResource: URL, configuredResource: URL
 }
 
 private func normalizePathname(_ url: URL) -> String {
-    // `URL.path` drops a trailing slash, but JavaScript's `URL.pathname` preserves it.
+    // JavaScript's pathname preserves percent escapes and trailing slashes.
     let pathname: String = {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url.path
         }
-        return components.path
+        return components.percentEncodedPath
     }()
 
     return pathname.isEmpty ? "/" : pathname

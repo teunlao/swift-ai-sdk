@@ -11,7 +11,10 @@ import SwiftAISDK
 import AISDKProviderUtils
 
 private func queryValue(_ url: URL, name: String) -> String? {
-    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    if let query = components?.percentEncodedQuery {
+        components?.percentEncodedQuery = query.replacingOccurrences(of: "+", with: "%20")
+    }
     return components?.queryItems?.first(where: { $0.name == name })?.value
 }
 
@@ -113,11 +116,11 @@ struct OAuthAuthorizationTests {
             clientInformation: makeClientInfo(),
             redirectUrl: #require(URL(string: "http://localhost:3000/callback")),
             scope: nil,
-            state: "foobar",
+            state: "foo+bar",
             resource: nil
         )
 
-        #expect(queryValue(result.authorizationUrl, name: "state") == "foobar")
+        #expect(queryValue(result.authorizationUrl, name: "state") == "foo+bar")
     }
 
     @Test("startAuthorization excludes state parameter when not provided")
@@ -394,6 +397,15 @@ extension OAuthAuthorizationTests {
         #expect(body["application_type"] as? String == "native")
         #expect(await store.client?.issuer?.url.absoluteString == "https://auth.example.com")
         #expect(await store.client?.tokenEndpoint?.url.absoluteString == "https://auth.example.com/token")
+        let client = try #require(await store.client)
+        let persisted = try JSONEncoder().encode(client)
+        let restored = try JSONDecoder().decode(OAuthClientInformation.self, from: persisted)
+        #expect(restored == client)
+        #expect(restored.registrationMetadata?.scope == source.expected)
+        #expect(restored.registrationMetadata?.applicationType == .native)
+        #expect(restored.registrationMetadata?.redirectUris.map(\.url.absoluteString) == ["http://localhost:3000/callback"])
+        let registrationMetadata = try JSONDecoder().decode(OAuthClientMetadata.self, from: persisted)
+        #expect(registrationMetadata == restored.registrationMetadata)
     }
 
     @Test("callback reuses the pinned external authorization server when PRM is unavailable")
@@ -548,28 +560,36 @@ extension OAuthAuthorizationTests {
         }
     }
 
-    @Test("token requests serialize origin resources and preserve refresh credentials")
-    func tokenRequestBoundary() async throws {
+    @Test("token responses preserve an omitted refresh token and reject null", arguments: [false, true])
+    func tokenRequestBoundary(nullRefreshToken: Bool) async throws {
         let server = URL(string: "http://localhost:4000")!
-        let tokens = try await refreshAuthorization(
-            authorizationServerUrl: server, metadata: nil, clientInformation: makeClientInfo(), refreshToken: "refresh+token",
-            resource: URL(string: "https://resource.example.com/")!, fetchFn: { request in
-                let body = try #require(String(data: request.httpBody!, encoding: .utf8))
-                let fields = URLComponents(string: "https://example.com/?" + body)?.queryItems
-                #expect(fields?.first { $0.name == "resource" }?.value == "https://resource.example.com")
-                #expect(fields?.first { $0.name == "refresh_token" }?.value == "refresh+token")
-                #expect(request.url?.absoluteString == "http://localhost:4000/token")
-                #expect(request.fetchRedirectMode == .error)
-                return try oauthResponse(request, json: ["access_token": "refreshed-access", "token_type": "Bearer"])
-            }
-        )
-        #expect(tokens.accessToken == "refreshed-access")
-        #expect(tokens.refreshToken == "refresh+token")
+        do {
+            let tokens = try await refreshAuthorization(
+                authorizationServerUrl: server, metadata: nil, clientInformation: makeClientInfo(), refreshToken: "refresh+token",
+                resource: URL(string: "https://resource.example.com/")!, fetchFn: { request in
+                    let body = try #require(String(data: request.httpBody!, encoding: .utf8))
+                    let fields = URLComponents(string: "https://example.com/?" + body)?.queryItems
+                    #expect(fields?.first { $0.name == "resource" }?.value == "https://resource.example.com")
+                    #expect(fields?.first { $0.name == "refresh_token" }?.value == "refresh+token")
+                    #expect(request.url?.absoluteString == "http://localhost:4000/token")
+                    #expect(request.fetchRedirectMode == .error)
+                    var response: [String: Any] = ["access_token": "refreshed-access", "token_type": "Bearer"]
+                    if nullRefreshToken { response["refresh_token"] = NSNull() }
+                    return try oauthResponse(request, json: response)
+                }
+            )
+            #expect(!nullRefreshToken)
+            #expect(tokens.accessToken == "refreshed-access")
+            #expect(tokens.refreshToken == "refresh+token")
+        } catch let error as DecodingError {
+            #expect(nullRefreshToken)
+            guard case .valueNotFound = error else { throw error }
+        }
     }
 
     @Test("authorization replaces preexisting OAuth query values")
     func replacesAuthorizationParameters() throws {
-        let endpoint = URL(string: "https://auth.example.com/authorize?client_id=stale&scope=stale&tenant=blue")!
+        let endpoint = URL(string: "https://auth.example.com/authorize?client_id=stale&scope=stale&tenant=blue+sky")!
         let metadata = AuthorizationServerMetadata(
             issuer: "https://auth.example.com", authorizationEndpoint: try SafeURL(endpoint),
             tokenEndpoint: try SafeURL(URL(string: "https://auth.example.com/token")!), responseTypesSupported: ["code"],
@@ -582,7 +602,7 @@ extension OAuthAuthorizationTests {
         let parameters = try #require(URLComponents(url: authorization.authorizationUrl, resolvingAgainstBaseURL: false)?.queryItems)
         #expect(parameters.filter { $0.name == "client_id" }.map(\.value) == ["client123"])
         #expect(parameters.filter { $0.name == "scope" }.map(\.value) == ["selected"])
-        #expect(queryValue(authorization.authorizationUrl, name: "tenant") == "blue")
+        #expect(queryValue(authorization.authorizationUrl, name: "tenant") == "blue sky")
     }
 
     @Test("OAuth credential operations reject private endpoints and redirect responses", arguments: ["exchange", "refresh", "register"])
