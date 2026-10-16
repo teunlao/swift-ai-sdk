@@ -468,15 +468,13 @@ struct GenerateImageTests {
             resetLogWarningsState()
             defer { resetWarningHooks() }
 
-            let counter = Counter()
 
             _ = try await generateImage(
                 model: MockImageModelV3(
-                    maxImagesPerCall: .value(1),
-                    doGenerate: { _ in
-                        let index = await counter.next()
-                        switch index {
-                        case 0:
+                    maxImagesPerCall: .value(2),
+                    doGenerate: { options in
+                        switch options.n {
+                        case 2:
                             return self.createMockResponse(
                                 images: .base64([self.pngBase64]),
                                 warnings: [warning1]
@@ -492,7 +490,7 @@ struct GenerateImageTests {
                     }
                 ),
                 prompt: prompt,
-                n: 2
+                n: 3
             )
 
             guard let observed = warningsBox.get() else {
@@ -625,16 +623,13 @@ struct GenerateImageTests {
         let requestHeaders: [String: String] = [
             "custom-request-header": "request-header-value"
         ]
-        let counter = Counter()
 
         let result: DefaultGenerateImageResult = try await generateImage(
             model: MockImageModelV3(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         #expect(options.prompt == self.prompt)
                         #expect(options.seed == 12345)
                         #expect(options.size == "1024x1024")
@@ -646,7 +641,6 @@ struct GenerateImageTests {
                             images: .base64(Array(base64Images.prefix(2)))
                         )
                     case 1:
-                        #expect(options.n == 1)
                         #expect(options.prompt == self.prompt)
                         #expect(options.seed == 12345)
                         #expect(options.size == "1024x1024")
@@ -685,22 +679,18 @@ struct GenerateImageTests {
         let requestHeaders: [String: String] = [
             "custom-request-header": "request-header-value"
         ]
-        let counter = Counter()
 
         let result: DefaultGenerateImageResult = try await generateImage(
             model: MockImageModelV3(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             images: .base64(Array(base64Images.prefix(2))),
                             warnings: [.other(message: "1")]
                         )
                     case 1:
-                        #expect(options.n == 1)
                         return self.createMockResponse(
                             images: .base64([base64Images[2]]),
                             warnings: [.other(message: "2")]
@@ -961,15 +951,13 @@ struct GenerateImageTests {
 
     @Test("should aggregate usage across multiple provider calls")
     func aggregatesUsageAcrossMultipleProviderCalls() async throws {
-        let counter = Counter()
 
         let result = try await generateImage(
             model: MockImageModelV3(
-                maxImagesPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxImagesPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             images: .base64([self.pngBase64]),
                             usage: ImageModelV3Usage(
@@ -994,7 +982,7 @@ struct GenerateImageTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.usage == ImageModelUsage(inputTokens: 15, outputTokens: 0, totalTokens: 15))
@@ -1054,16 +1042,6 @@ private actor SingleValueBox<Value: Sendable> {
         return await withCheckedContinuation { continuation in
             continuations.append(continuation)
         }
-    }
-}
-
-private actor Counter {
-    private var value = 0
-
-    func next() -> Int {
-        let current = value
-        value += 1
-        return current
     }
 }
 

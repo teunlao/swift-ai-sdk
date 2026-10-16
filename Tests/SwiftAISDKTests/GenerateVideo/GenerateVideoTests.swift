@@ -590,16 +590,13 @@ struct GenerateVideoTests {
 
     @Test("should generate videos when several calls are required")
     func generatesAcrossMultipleCalls() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
-                        #expect(options.n == 2)
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4"),
@@ -607,7 +604,6 @@ struct GenerateVideoTests {
                             ]
                         )
                     case 1:
-                        #expect(options.n == 1)
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.webmBase64, mediaType: "video/webm")
@@ -630,15 +626,13 @@ struct GenerateVideoTests {
     func aggregatesWarningsAcrossCalls() async throws {
         let warning1: VideoGenerationWarning = .other(message: "Warning from call 1")
         let warning2: VideoGenerationWarning = .other(message: "Warning from call 2")
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -659,7 +653,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.warnings == [warning1, warning2])
@@ -667,7 +661,6 @@ struct GenerateVideoTests {
 
     @Test("should generate with maxVideosPerCall returned by model")
     func supportsModelMaxVideosPerCallFunction() async throws {
-        let counter = Counter()
         let maxVideosCalls = SingleValueBox<String>()
 
         let model = MockVideoModelV3(
@@ -676,10 +669,8 @@ struct GenerateVideoTests {
                 return 2
             }),
             doGenerate: { options in
-                let index = await counter.next()
-                switch index {
-                case 0:
-                    #expect(options.n == 2)
+                switch options.n {
+                case 2:
                     return self.createMockResponse(
                         videos: [
                             .base64(data: self.mp4Base64, mediaType: "video/mp4"),
@@ -687,7 +678,6 @@ struct GenerateVideoTests {
                         ]
                     )
                 case 1:
-                    #expect(options.n == 1)
                     return self.createMockResponse(
                         videos: [
                             .base64(data: self.webmBase64, mediaType: "video/webm")
@@ -827,15 +817,13 @@ struct GenerateVideoTests {
 
     @Test("should merge provider metadata from multiple calls")
     func mergesProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -868,7 +856,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.providerMetadata == [
@@ -883,15 +871,13 @@ struct GenerateVideoTests {
 
     @Test("should handle gateway provider metadata")
     func mergesGatewayProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -926,7 +912,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.providerMetadata["gateway"] == [
@@ -966,15 +952,13 @@ struct GenerateVideoTests {
 
     @Test("should preserve per-call providerMetadata in responses array")
     func preservesPerCallProviderMetadata() async throws {
-        let counter = Counter()
 
         let result = try await experimental_generateVideo(
             model: MockVideoModelV3(
-                maxVideosPerCall: .value(1),
-                doGenerate: { _ in
-                    let index = await counter.next()
-                    switch index {
-                    case 0:
+                maxVideosPerCall: .value(2),
+                doGenerate: { options in
+                    switch options.n {
+                    case 2:
                         return self.createMockResponse(
                             videos: [
                                 .base64(data: self.mp4Base64, mediaType: "video/mp4")
@@ -1009,7 +993,7 @@ struct GenerateVideoTests {
                 }
             ),
             prompt: prompt,
-            n: 2
+            n: 3
         )
 
         #expect(result.responses.count == 2)
@@ -1206,14 +1190,6 @@ private actor SingleValueBox<Value: Sendable> {
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
-    }
-}
-
-private actor Counter {
-    private var value = 0
-    func next() -> Int {
-        defer { value += 1 }
-        return value
     }
 }
 
