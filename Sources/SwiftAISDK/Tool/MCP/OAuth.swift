@@ -1,12 +1,13 @@
 import Foundation
 import CryptoKit
 import Security
+import AISDKProviderUtils
 
 /**
  OAuth support for MCP transports.
 
  Port of `packages/mcp/src/tool/oauth.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  */
 
 public enum AuthResult: String, Sendable {
@@ -28,9 +29,35 @@ public typealias OAuthAddClientAuthentication = @Sendable (
     _ metadata: AuthorizationServerMetadata?
 ) async throws -> Void
 
+public struct OAuthCredentialInvalidationContext: Sendable {
+    public let tokens: OAuthTokens
+
+    public init(tokens: OAuthTokens) {
+        self.tokens = tokens
+    }
+}
+
 public typealias OAuthInvalidateCredentials = @Sendable (
-    _ scope: OAuthCredentialInvalidationScope
+    _ scope: OAuthCredentialInvalidationScope,
+    _ context: OAuthCredentialInvalidationContext?
 ) async throws -> Void
+
+public struct OAuthAuthorizationServerInformation: Codable, Sendable, Equatable {
+    public let issuer: String?
+    public let authorizationServerUrl: URL
+    public let tokenEndpoint: URL
+
+    public init(issuer: String? = nil, authorizationServerUrl: URL, tokenEndpoint: URL) {
+        self.issuer = issuer
+        self.authorizationServerUrl = authorizationServerUrl
+        self.tokenEndpoint = tokenEndpoint
+    }
+}
+
+public typealias OAuthSaveAuthorizationServerInformation = @Sendable (OAuthAuthorizationServerInformation) async throws -> Void
+public typealias OAuthValidateAuthorizationServerURL = @Sendable (URL, URL) async throws -> Void
+public typealias OAuthSaveState = @Sendable (String) async throws -> Void
+public typealias OAuthStoredState = @Sendable () async throws -> String?
 
 public typealias OAuthSaveClientInformation = @Sendable (
     _ clientInformation: OAuthClientInformation
@@ -60,7 +87,7 @@ public protocol OAuthClientProvider: Sendable {
     /// When provided, this overrides the default OAuth 2.1 authentication selection logic.
     var addClientAuthentication: OAuthAddClientAuthentication? { get }
 
-    /// Provides a way for the client to invalidate stored credentials if the server indicates they are no longer valid.
+    /// Shared stores must atomically compare the supplied token generation before deleting it.
     var invalidateCredentials: OAuthInvalidateCredentials? { get }
 
     var redirectUrl: URL { get }
@@ -71,7 +98,19 @@ public protocol OAuthClientProvider: Sendable {
 
     var saveClientInformation: OAuthSaveClientInformation? { get }
 
+    func isClientInformationDynamicallyRegistered() async throws -> Bool
+
+    func authorizationServerInformation() async throws -> OAuthAuthorizationServerInformation?
+
+    var saveAuthorizationServerInformation: OAuthSaveAuthorizationServerInformation? { get }
+
+    var validateAuthorizationServerURL: OAuthValidateAuthorizationServerURL? { get }
+
     var state: OAuthStateProvider? { get }
+
+    var saveState: OAuthSaveState? { get }
+
+    var storedState: OAuthStoredState? { get }
 
     var validateResourceURL: OAuthValidateResourceURL? { get }
 }
@@ -80,7 +119,13 @@ public extension OAuthClientProvider {
     var addClientAuthentication: OAuthAddClientAuthentication? { nil }
     var invalidateCredentials: OAuthInvalidateCredentials? { nil }
     var saveClientInformation: OAuthSaveClientInformation? { nil }
+    func isClientInformationDynamicallyRegistered() async throws -> Bool { false }
+    func authorizationServerInformation() async throws -> OAuthAuthorizationServerInformation? { nil }
+    var saveAuthorizationServerInformation: OAuthSaveAuthorizationServerInformation? { nil }
+    var validateAuthorizationServerURL: OAuthValidateAuthorizationServerURL? { nil }
     var state: OAuthStateProvider? { nil }
+    var saveState: OAuthSaveState? { nil }
+    var storedState: OAuthStoredState? { nil }
     var validateResourceURL: OAuthValidateResourceURL? { nil }
 }
 
@@ -94,74 +139,97 @@ public struct UnauthorizedError: Error, LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Extracts the OAuth 2.0 Protected Resource Metadata URL from a WWW-Authenticate header (RFC9728).
-/// Looks for a `resource_metadata="..."` parameter.
-public func extractResourceMetadataUrl(_ response: HTTPURLResponse) -> URL? {
-    let headerValue: String? = {
-        for (keyAny, valueAny) in response.allHeaderFields {
-            guard let key = keyAny as? String else { continue }
-            if key.lowercased() == "www-authenticate" {
-                return valueAny as? String
-            }
-        }
-        return nil
-    }()
+public func extractWWWAuthenticateParams(
+    _ response: HTTPURLResponse
+) -> (resourceMetadataUrl: URL?, scope: String?) {
+    guard let header = response.value(forHTTPHeaderField: "WWW-Authenticate") else { return (nil, nil) }
+    let parts = header.split(separator: " ", maxSplits: 1)
+    guard parts.count == 2, parts[0].lowercased() == "bearer" else { return (nil, nil) }
 
-    guard let header = headerValue else { return nil }
-
-    let parts = header.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-    guard parts.count == 2 else { return nil }
-
-    let type = parts[0].lowercased()
-    guard type == "bearer" else { return nil }
-
-    // regex taken from MCP spec
-    let pattern = "resource_metadata=\\\"([^\\\"]*)\\\""
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-    let range = NSRange(header.startIndex..<header.endIndex, in: header)
-    guard let match = regex.firstMatch(in: header, range: range),
-          match.numberOfRanges >= 2,
-          let urlRange = Range(match.range(at: 1), in: header)
-    else { return nil }
-
-    let urlString = String(header[urlRange])
-    guard let url = URL(string: urlString),
-          url.scheme != nil,
-          url.host != nil
-    else {
-        return nil
+    func parameter(_ name: String) -> String? {
+        let pattern = "(?:^|[,\\s])\(name)=\"([^\"]*)\""
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: header, range: NSRange(header.startIndex..., in: header)),
+              let range = Range(match.range(at: 1), in: header) else { return nil }
+        return String(header[range])
     }
-    return url
+
+    let url = parameter("resource_metadata").flatMap(URL.init(string:))
+    return (url?.scheme == nil ? nil : url, parameter("scope"))
+}
+
+/// Extracts the OAuth protected resource metadata URL from a bearer challenge.
+public func extractResourceMetadataUrl(_ response: HTTPURLResponse) -> URL? {
+    extractWWWAuthenticateParams(response).resourceMetadataUrl
 }
 
 // MARK: - Network Helpers
 
+/// An injected fetch must honor `URLRequest.fetchRedirectMode` before sending credentials.
 public typealias MCPFetchFunction = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
 
-private func defaultFetch(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse else {
-        throw MCPClientError(message: "OAuth fetch failed: invalid response type")
+private func providerFetch(_ fetch: MCPFetchFunction?) -> FetchFunction? {
+    guard let fetch else { return nil }
+    return { request in
+        let (data, response) = try await fetch(request)
+        return FetchResponse(body: .data(data), urlResponse: response)
     }
-    return (data, http)
+}
+
+private func isOAuthLoopbackHost(_ hostname: String?) -> Bool {
+    guard let hostname else { return false }
+    var host = hostname.lowercased()
+    while host.hasSuffix(".") { host.removeLast() }
+    return host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1" || host == "[::1]" || host == "::1"
+}
+
+private func assertSafeOAuthEndpoint(_ url: URL, allowLoopback: Bool = false) throws {
+    if allowLoopback, ["http", "https"].contains(url.scheme?.lowercased() ?? ""), isOAuthLoopbackHost(url.host) {
+        return
+    }
+    do {
+        try validateDownloadUrl(url.absoluteString)
+    } catch {
+        throw MCPClientOAuthError(message: "OAuth endpoint URL is not allowed: \(url.absoluteString)", cause: error)
+    }
+}
+
+private func trustedLoopbackOrigin(_ url: URL) -> String? {
+    isOAuthLoopbackHost(url.host) ? url.origin : nil
+}
+
+private func fetchOAuthCredentials(
+    _ request: URLRequest,
+    authorizationServerUrl: URL,
+    fetchFn: MCPFetchFunction?
+) async throws -> (Data, HTTPURLResponse) {
+    let response = try await fetchWithValidatedEndpoint(
+        request: request,
+        fetch: providerFetch(fetchFn),
+        trustedOrigin: trustedLoopbackOrigin(authorizationServerUrl)
+    )
+    return (try await response.body.collectData(), response.httpResponse)
 }
 
 private func fetchWithCorsRetry(
     url: URL,
     headers: [String: String]?,
-    fetchFn: MCPFetchFunction
+    fetchFn: MCPFetchFunction?,
+    trustedOrigin: String? = nil
 ) async throws -> (Data, HTTPURLResponse)? {
     do {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        headers?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-        let (data, response) = try await fetchFn(request)
-        return (data, response)
-    } catch let error as URLError {
+        let response = try await fetchUntrustedUrl(
+            url: url.absoluteString,
+            headers: headers,
+            fetch: providerFetch(fetchFn),
+            trustedOrigin: trustedOrigin,
+            untrustedFirstHopHeaders: ["mcp-protocol-version"]
+        )
+        return (try await response.body.collectData(), response.httpResponse)
+    } catch is URLError {
         if headers != nil {
-            return try await fetchWithCorsRetry(url: url, headers: nil, fetchFn: fetchFn)
+            return try await fetchWithCorsRetry(url: url, headers: nil, fetchFn: fetchFn, trustedOrigin: trustedOrigin)
         }
-        _ = error
         return nil
     }
 }
@@ -169,12 +237,13 @@ private func fetchWithCorsRetry(
 private func tryMetadataDiscovery(
     url: URL,
     protocolVersion: String,
-    fetchFn: MCPFetchFunction
+    fetchFn: MCPFetchFunction?,
+    trustedOrigin: String? = nil
 ) async throws -> (Data, HTTPURLResponse)? {
     let headers = [
         "MCP-Protocol-Version": protocolVersion,
     ]
-    return try await fetchWithCorsRetry(url: url, headers: headers, fetchFn: fetchFn)
+    return try await fetchWithCorsRetry(url: url, headers: headers, fetchFn: fetchFn, trustedOrigin: trustedOrigin)
 }
 
 private func shouldAttemptFallback(response: HTTPURLResponse?, pathname: String) -> Bool {
@@ -203,7 +272,7 @@ private func buildWellKnownPath(
 private func discoverMetadataWithFallback(
     serverUrl: URL,
     wellKnownType: String,
-    fetchFn: MCPFetchFunction,
+    fetchFn: MCPFetchFunction?,
     protocolVersion: String = LATEST_PROTOCOL_VERSION,
     metadataUrl: URL? = nil,
     metadataServerUrl: URL? = nil
@@ -228,11 +297,11 @@ private func discoverMetadataWithFallback(
         return resolved
     }()
 
-    var response = try await tryMetadataDiscovery(url: url, protocolVersion: protocolVersion, fetchFn: fetchFn)
+    var response = try await tryMetadataDiscovery(url: url, protocolVersion: protocolVersion, fetchFn: fetchFn, trustedOrigin: serverUrl.origin)
 
     if metadataUrl == nil && shouldAttemptFallback(response: response?.1, pathname: issuer.path) {
         let rootUrl = URL(string: "/.well-known/\(wellKnownType)", relativeTo: issuer)?.absoluteURL ?? issuer
-        response = try await tryMetadataDiscovery(url: rootUrl, protocolVersion: protocolVersion, fetchFn: fetchFn)
+        response = try await tryMetadataDiscovery(url: rootUrl, protocolVersion: protocolVersion, fetchFn: fetchFn, trustedOrigin: serverUrl.origin)
     }
 
     return response
@@ -246,7 +315,6 @@ public func discoverOAuthProtectedResourceMetadata(
     resourceMetadataUrl: URL? = nil,
     fetchFn: MCPFetchFunction? = nil
 ) async throws -> OAuthProtectedResourceMetadata {
-    let fetchFn = fetchFn ?? defaultFetch
     let response = try await discoverMetadataWithFallback(
         serverUrl: serverUrl,
         wellKnownType: "oauth-protected-resource",
@@ -277,46 +345,57 @@ public enum AuthorizationServerDiscoveryType: Sendable {
     case oidc
 }
 
-public func buildDiscoveryUrls(authorizationServerUrl: URL) -> [(url: URL, type: AuthorizationServerDiscoveryType)] {
-    let pathname: String = {
-        let raw = URLComponents(url: authorizationServerUrl, resolvingAgainstBaseURL: false)?.path ?? authorizationServerUrl.path
-        return raw.isEmpty ? "/" : raw
-    }()
+public func buildDiscoveryUrls(
+    authorizationServerUrl: URL
+) -> [(url: URL, type: AuthorizationServerDiscoveryType, expectedIssuer: String)] {
+    let origin = authorizationServerUrl.origin
+    var pathname = URLComponents(url: authorizationServerUrl, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+    if pathname.hasSuffix("/") { pathname.removeLast() }
 
-    let hasPath = pathname != "/"
-    var urlsToTry: [(url: URL, type: AuthorizationServerDiscoveryType)] = []
-
-    let origin = URL(string: authorizationServerUrl.origin)!
-
-    if !hasPath {
-        urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server", relativeTo: origin)!.absoluteURL, .oauth))
-        urlsToTry.append((URL(string: "/.well-known/openid-configuration", relativeTo: origin)!.absoluteURL, .oidc))
-        return urlsToTry
+    func endpoint(_ path: String) -> URL {
+        var components = URLComponents(string: origin)!
+        // Assigning the path keeps a leading double slash on the approved origin.
+        components.percentEncodedPath = path
+        return components.url!
     }
 
-    var normalizedPathname = pathname
-    if normalizedPathname.hasSuffix("/") {
-        normalizedPathname = String(normalizedPathname.dropLast())
+    if pathname.isEmpty {
+        return [
+            (endpoint("/.well-known/oauth-authorization-server"), .oauth, origin),
+            (endpoint("/.well-known/openid-configuration"), .oidc, origin),
+        ]
     }
 
-    urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server\(normalizedPathname)", relativeTo: origin)!.absoluteURL, .oauth))
-    urlsToTry.append((URL(string: "/.well-known/oauth-authorization-server", relativeTo: origin)!.absoluteURL, .oauth))
-    urlsToTry.append((URL(string: "/.well-known/openid-configuration\(normalizedPathname)", relativeTo: origin)!.absoluteURL, .oidc))
-    urlsToTry.append((URL(string: "\(normalizedPathname)/.well-known/openid-configuration", relativeTo: origin)!.absoluteURL, .oidc))
+    let pathIssuer = origin + pathname
+    return [
+        (endpoint("/.well-known/oauth-authorization-server\(pathname)"), .oauth, pathIssuer),
+        (endpoint("/.well-known/oauth-authorization-server"), .oauth, origin),
+        (endpoint("/.well-known/openid-configuration\(pathname)"), .oidc, pathIssuer),
+        (endpoint("\(pathname)/.well-known/openid-configuration"), .oidc, pathIssuer),
+    ]
+}
 
-    return urlsToTry
+private struct OpenIDDiscoveryFields: Decodable {
+    let jwks_uri: SafeURL
+    let subject_types_supported: [String]
+    let id_token_signing_alg_values_supported: [String]
+    let userinfo_endpoint: SafeURL?
 }
 
 public func discoverAuthorizationServerMetadata(
     authorizationServerUrl: URL,
     protocolVersion: String = LATEST_PROTOCOL_VERSION,
-    fetchFn: MCPFetchFunction? = nil
+    fetchFn: MCPFetchFunction? = nil,
+    trustedOrigin: String? = nil
 ) async throws -> AuthorizationServerMetadata? {
-    let fetchFn = fetchFn ?? defaultFetch
     let headers = ["MCP-Protocol-Version": protocolVersion]
+    let candidates = buildDiscoveryUrls(authorizationServerUrl: authorizationServerUrl)
+    guard candidates.allSatisfy({ $0.url.origin == authorizationServerUrl.origin }) else {
+        throw MCPClientOAuthError(message: "OAuth discovery URL changed authorization-server origin")
+    }
 
-    for (endpointUrl, type) in buildDiscoveryUrls(authorizationServerUrl: authorizationServerUrl) {
-        let response = try await fetchWithCorsRetry(url: endpointUrl, headers: headers, fetchFn: fetchFn)
+    for (endpointUrl, type, expectedIssuer) in candidates {
+        let response = try await fetchWithCorsRetry(url: endpointUrl, headers: headers, fetchFn: fetchFn, trustedOrigin: trustedOrigin)
 
         guard let (data, http) = response else {
             continue
@@ -333,6 +412,14 @@ public func discoverAuthorizationServerMetadata(
         }
 
         let metadata = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: data)
+        if type == .oidc {
+            _ = try JSONDecoder().decode(OpenIDDiscoveryFields.self, from: data)
+        }
+        let issuerMatches = metadata.issuer == expectedIssuer
+            || (expectedIssuer == URL(string: expectedIssuer)?.origin && metadata.issuer == expectedIssuer + "/")
+        guard issuerMatches else {
+            throw MCPClientOAuthError(message: "OAuth authorization server metadata issuer \(metadata.issuer) does not match expected issuer \(expectedIssuer)")
+        }
 
         if type == .oidc && metadata.codeChallengeMethodsSupported?.contains("S256") != true {
             throw MCPClientError(
@@ -355,9 +442,11 @@ private func base64URLEncode(_ data: Data) -> String {
         .replacingOccurrences(of: "=", with: "")
 }
 
-private func pkceChallenge() -> (codeVerifier: String, codeChallenge: String) {
+private func pkceChallenge() throws -> (codeVerifier: String, codeChallenge: String) {
     var bytes = [UInt8](repeating: 0, count: 32)
-    _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+    guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+        throw MCPClientOAuthError(message: "Could not generate a secure PKCE verifier")
+    }
     let verifier = base64URLEncode(Data(bytes))
 
     let digest = SHA256.hash(data: Data(verifier.utf8))
@@ -395,30 +484,34 @@ public func startAuthorization(
         authorizationUrl = URL(string: "/authorize", relativeTo: authorizationServerUrl)?.absoluteURL ?? authorizationServerUrl
     }
 
-    let challenge = pkceChallenge()
+    let challenge = try pkceChallenge()
 
     var components = URLComponents(url: authorizationUrl, resolvingAgainstBaseURL: false)
     var items = components?.queryItems ?? []
 
-    items.append(URLQueryItem(name: "response_type", value: responseType))
-    items.append(URLQueryItem(name: "client_id", value: clientInformation.clientId))
-    items.append(URLQueryItem(name: "code_challenge", value: challenge.codeChallenge))
-    items.append(URLQueryItem(name: "code_challenge_method", value: codeChallengeMethod))
-    items.append(URLQueryItem(name: "redirect_uri", value: redirectUrl.absoluteString))
+    func set(_ name: String, _ value: String) {
+        items.removeAll { $0.name == name }
+        items.append(URLQueryItem(name: name, value: value))
+    }
+    set("response_type", responseType)
+    set("client_id", clientInformation.clientId)
+    set("code_challenge", challenge.codeChallenge)
+    set("code_challenge_method", codeChallengeMethod)
+    set("redirect_uri", redirectUrl.absoluteString)
 
-    if let state {
-        items.append(URLQueryItem(name: "state", value: state))
+    if let state, !state.isEmpty {
+        set("state", state)
     }
 
-    if let scope {
-        items.append(URLQueryItem(name: "scope", value: scope))
+    if let scope, !scope.isEmpty {
+        set("scope", scope)
         if scope.contains("offline_access") {
             items.append(URLQueryItem(name: "prompt", value: "consent"))
         }
     }
 
     if let resource {
-        items.append(URLQueryItem(name: "resource", value: resource.absoluteString))
+        set("resource", resourceUrlStripSlash(resource))
     }
 
     components?.queryItems = items
@@ -457,7 +550,7 @@ private func selectClientAuthMethod(
 }
 
 private func applyBasicAuth(clientId: String, clientSecret: String?, headers: inout [String: String]) throws {
-    guard let clientSecret else {
+    guard let clientSecret, !clientSecret.isEmpty else {
         throw MCPClientError(message: "client_secret_basic authentication requires a client_secret")
     }
 
@@ -467,7 +560,7 @@ private func applyBasicAuth(clientId: String, clientSecret: String?, headers: in
 
 private func applyPostAuth(clientId: String, clientSecret: String?, params: inout [String: String]) {
     params["client_id"] = clientId
-    if let clientSecret {
+    if let clientSecret, !clientSecret.isEmpty {
         params["client_secret"] = clientSecret
     }
 }
@@ -524,9 +617,9 @@ public func parseErrorResponse(statusCode: Int?, body: String) -> any Error {
 }
 
 private func percentEncodeFormComponent(_ string: String) -> String {
-    var allowed = CharacterSet.urlQueryAllowed
-    allowed.remove(charactersIn: "+&=")
-    return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*-._ ")
+    return (string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string)
+        .replacingOccurrences(of: " ", with: "+")
 }
 
 private func formURLEncodedBody(_ params: [String: String]) -> Data {
@@ -547,10 +640,11 @@ public func exchangeAuthorization(
     addClientAuthentication: OAuthAddClientAuthentication? = nil,
     fetchFn: MCPFetchFunction? = nil
 ) async throws -> OAuthTokens {
-    let fetchFn = fetchFn ?? defaultFetch
     let grantType = "authorization_code"
 
     let tokenUrl = metadata?.tokenEndpoint.url ?? URL(string: "/token", relativeTo: authorizationServerUrl)?.absoluteURL ?? authorizationServerUrl
+
+    try assertSafeOAuthEndpoint(tokenUrl, allowLoopback: tokenUrl.origin == trustedLoopbackOrigin(authorizationServerUrl))
 
     if let grantTypes = metadata?.grantTypesSupported, !grantTypes.contains(grantType) {
         throw MCPClientError(message: "Incompatible auth server: does not support grant type \(grantType)")
@@ -576,7 +670,7 @@ public func exchangeAuthorization(
     }
 
     if let resource {
-        params["resource"] = resource.absoluteString
+        params["resource"] = resourceUrlStripSlash(resource)
     }
 
     var request = URLRequest(url: tokenUrl)
@@ -584,7 +678,7 @@ public func exchangeAuthorization(
     headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
     request.httpBody = formURLEncodedBody(params)
 
-    let (data, http) = try await fetchFn(request)
+    let (data, http) = try await fetchOAuthCredentials(request, authorizationServerUrl: authorizationServerUrl, fetchFn: fetchFn)
     guard (200...299).contains(http.statusCode) else {
         let body = String(data: data, encoding: .utf8) ?? ""
         throw parseErrorResponse(statusCode: http.statusCode, body: body)
@@ -602,10 +696,11 @@ public func refreshAuthorization(
     addClientAuthentication: OAuthAddClientAuthentication? = nil,
     fetchFn: MCPFetchFunction? = nil
 ) async throws -> OAuthTokens {
-    let fetchFn = fetchFn ?? defaultFetch
     let grantType = "refresh_token"
 
     let tokenUrl = metadata?.tokenEndpoint.url ?? URL(string: "/token", relativeTo: authorizationServerUrl)?.absoluteURL ?? authorizationServerUrl
+
+    try assertSafeOAuthEndpoint(tokenUrl, allowLoopback: tokenUrl.origin == trustedLoopbackOrigin(authorizationServerUrl))
 
     if let grantTypes = metadata?.grantTypesSupported, !grantTypes.contains(grantType) {
         throw MCPClientError(message: "Incompatible auth server: does not support grant type \(grantType)")
@@ -629,7 +724,7 @@ public func refreshAuthorization(
     }
 
     if let resource {
-        params["resource"] = resource.absoluteString
+        params["resource"] = resourceUrlStripSlash(resource)
     }
 
     var request = URLRequest(url: tokenUrl)
@@ -637,7 +732,7 @@ public func refreshAuthorization(
     headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
     request.httpBody = formURLEncodedBody(params)
 
-    let (data, http) = try await fetchFn(request)
+    let (data, http) = try await fetchOAuthCredentials(request, authorizationServerUrl: authorizationServerUrl, fetchFn: fetchFn)
     guard (200...299).contains(http.statusCode) else {
         let body = String(data: data, encoding: .utf8) ?? ""
         throw parseErrorResponse(statusCode: http.statusCode, body: body)
@@ -645,14 +740,7 @@ public func refreshAuthorization(
 
     var decoded = try JSONDecoder().decode(OAuthTokens.self, from: data)
     if decoded.refreshToken == nil {
-        decoded = OAuthTokens(
-            accessToken: decoded.accessToken,
-            idToken: decoded.idToken,
-            tokenType: decoded.tokenType,
-            expiresIn: decoded.expiresIn,
-            scope: decoded.scope,
-            refreshToken: refreshToken
-        )
+        decoded.refreshToken = refreshToken
     }
     return decoded
 }
@@ -663,8 +751,6 @@ public func registerClient(
     clientMetadata: OAuthClientMetadata,
     fetchFn: MCPFetchFunction? = nil
 ) async throws -> OAuthClientInformationFull {
-    let fetchFn = fetchFn ?? defaultFetch
-
     let registrationUrl: URL
     if let endpoint = metadata?.registrationEndpoint?.url {
         registrationUrl = endpoint
@@ -674,12 +760,21 @@ public func registerClient(
         registrationUrl = URL(string: "/register", relativeTo: authorizationServerUrl)?.absoluteURL ?? authorizationServerUrl
     }
 
+    try assertSafeOAuthEndpoint(registrationUrl, allowLoopback: registrationUrl.origin == trustedLoopbackOrigin(authorizationServerUrl))
+    var registrationMetadata = clientMetadata
+    if registrationMetadata.applicationType == nil {
+        registrationMetadata.applicationType = clientMetadata.redirectUris.allSatisfy { redirect in
+            let url = redirect.url
+            return !["http", "https"].contains(url.scheme?.lowercased() ?? "") || isOAuthLoopbackHost(url.host)
+        } ? .native : .web
+    }
+
     var request = URLRequest(url: registrationUrl)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONEncoder().encode(clientMetadata)
+    request.httpBody = try JSONEncoder().encode(registrationMetadata)
 
-    let (data, http) = try await fetchFn(request)
+    let (data, http) = try await fetchOAuthCredentials(request, authorizationServerUrl: authorizationServerUrl, fetchFn: fetchFn)
     guard (200...299).contains(http.statusCode) else {
         let body = String(data: data, encoding: .utf8) ?? ""
         throw parseErrorResponse(statusCode: http.statusCode, body: body)
@@ -690,49 +785,133 @@ public func registerClient(
 
 // MARK: - auth()
 
+private func normalizedOAuthURL(_ url: URL) -> URL {
+    var components = URLComponents(url: url, resolvingAgainstBaseURL: true)!
+    components.scheme = components.scheme?.lowercased()
+    components.host = components.host?.lowercased()
+    if (components.scheme == "https" && components.port == 443) || (components.scheme == "http" && components.port == 80) {
+        components.port = nil
+    }
+    if components.host != nil, components.path.isEmpty { components.path = "/" }
+    return components.url!
+}
+
+private func authorizationServerInformation(
+    _ serverUrl: URL,
+    metadata: AuthorizationServerMetadata?
+) -> OAuthAuthorizationServerInformation {
+    OAuthAuthorizationServerInformation(
+        issuer: metadata?.issuer ?? serverUrl.absoluteString,
+        authorizationServerUrl: normalizedOAuthURL(serverUrl),
+        tokenEndpoint: normalizedOAuthURL(metadata?.tokenEndpoint.url ?? URL(string: "/token", relativeTo: serverUrl)!.absoluteURL)
+    )
+}
+
+private func credentialsInformation(
+    issuer: SafeURL?,
+    authorizationServer: SafeURL?,
+    tokenEndpoint: SafeURL?
+) -> OAuthAuthorizationServerInformation? {
+    guard let authorizationServer, let tokenEndpoint else { return nil }
+    return OAuthAuthorizationServerInformation(
+        issuer: issuer?.url.absoluteString,
+        authorizationServerUrl: normalizedOAuthURL(authorizationServer.url),
+        tokenEndpoint: normalizedOAuthURL(tokenEndpoint.url)
+    )
+}
+
+private func storedAuthorizationServerInformation(
+    provider: any OAuthClientProvider,
+    clientInformation: OAuthClientInformation,
+    tokens: OAuthTokens? = nil
+) async throws -> OAuthAuthorizationServerInformation? {
+    if let tokens, let stored = credentialsInformation(
+        issuer: tokens.issuer, authorizationServer: tokens.authorizationServer, tokenEndpoint: tokens.tokenEndpoint
+    ) { return stored }
+    if let stored = try await provider.authorizationServerInformation() {
+        return OAuthAuthorizationServerInformation(
+            issuer: stored.issuer,
+            authorizationServerUrl: normalizedOAuthURL(stored.authorizationServerUrl),
+            tokenEndpoint: normalizedOAuthURL(stored.tokenEndpoint)
+        )
+    }
+    return credentialsInformation(
+        issuer: clientInformation.issuer,
+        authorizationServer: clientInformation.authorizationServer,
+        tokenEndpoint: clientInformation.tokenEndpoint
+    )
+}
+
+private func assertAuthorizationServerMatches(
+    _ stored: OAuthAuthorizationServerInformation,
+    _ current: OAuthAuthorizationServerInformation
+) throws {
+    if (stored.issuer != nil && current.issuer != nil && stored.issuer != current.issuer)
+        || stored.authorizationServerUrl != current.authorizationServerUrl
+        || stored.tokenEndpoint != current.tokenEndpoint {
+        throw AuthorizationServerMismatchError(
+            message: "OAuth authorization server metadata does not match the metadata that issued the stored credentials"
+        )
+    }
+}
+
+private func pinClientInformation(
+    _ client: OAuthClientInformation,
+    to information: OAuthAuthorizationServerInformation
+) throws -> OAuthClientInformation {
+    var result = client
+    result.issuer = try information.issuer.map { issuer in
+        guard let url = URL(string: issuer) else { throw SafeURLValidationError.invalidURL(url: issuer) }
+        return try SafeURL(url)
+    }
+    result.authorizationServer = try SafeURL(information.authorizationServerUrl)
+    result.tokenEndpoint = try SafeURL(information.tokenEndpoint)
+    return result
+}
+
+private func pinTokens(_ tokens: OAuthTokens, to information: OAuthAuthorizationServerInformation) throws -> OAuthTokens {
+    var result = tokens
+    result.issuer = try information.issuer.map { issuer in
+        guard let url = URL(string: issuer) else { throw SafeURLValidationError.invalidURL(url: issuer) }
+        return try SafeURL(url)
+    }
+    result.authorizationServer = try SafeURL(information.authorizationServerUrl)
+    result.tokenEndpoint = try SafeURL(information.tokenEndpoint)
+    return result
+}
+
 public func auth(
     _ provider: any OAuthClientProvider,
     serverUrl: URL,
     authorizationCode: String? = nil,
+    callbackState: String? = nil,
+    callbackIssuer: String? = nil,
     scope: String? = nil,
     resourceMetadataUrl: URL? = nil,
     fetchFn: MCPFetchFunction? = nil
 ) async throws -> AuthResult {
+    var refreshAttempt: OAuthTokens?
     do {
         return try await authInternal(
-            provider,
-            serverUrl: serverUrl,
-            authorizationCode: authorizationCode,
-            scope: scope,
-            resourceMetadataUrl: resourceMetadataUrl,
-            fetchFn: fetchFn
+            provider, serverUrl: serverUrl, authorizationCode: authorizationCode,
+            callbackState: callbackState, callbackIssuer: callbackIssuer, scope: scope,
+            resourceMetadataUrl: resourceMetadataUrl, fetchFn: fetchFn, refreshAttempt: &refreshAttempt
         )
     } catch {
         if error is InvalidClientError || error is UnauthorizedClientError {
-            try await provider.invalidateCredentials?(.all)
-            return try await authInternal(
-                provider,
-                serverUrl: serverUrl,
-                authorizationCode: authorizationCode,
-                scope: scope,
-                resourceMetadataUrl: resourceMetadataUrl,
-                fetchFn: fetchFn
-            )
+            guard authorizationCode == nil, try await provider.isClientInformationDynamicallyRegistered() else { throw error }
+            try await provider.invalidateCredentials?(.all, nil)
+        } else if error is InvalidGrantError, let tokens = refreshAttempt {
+            try await provider.invalidateCredentials?(.tokens, OAuthCredentialInvalidationContext(tokens: tokens))
+        } else {
+            throw error
         }
-
-        if error is InvalidGrantError {
-            try await provider.invalidateCredentials?(.tokens)
-            return try await authInternal(
-                provider,
-                serverUrl: serverUrl,
-                authorizationCode: authorizationCode,
-                scope: scope,
-                resourceMetadataUrl: resourceMetadataUrl,
-                fetchFn: fetchFn
-            )
-        }
-
-        throw error
+        var retryAttempt: OAuthTokens?
+        return try await authInternal(
+            provider, serverUrl: serverUrl, authorizationCode: authorizationCode,
+            callbackState: callbackState, callbackIssuer: callbackIssuer, scope: scope,
+            resourceMetadataUrl: resourceMetadataUrl, fetchFn: fetchFn, refreshAttempt: &retryAttempt
+        )
     }
 }
 
@@ -764,126 +943,146 @@ private func authInternal(
     _ provider: any OAuthClientProvider,
     serverUrl: URL,
     authorizationCode: String?,
+    callbackState: String?,
+    callbackIssuer: String?,
     scope: String?,
     resourceMetadataUrl: URL?,
-    fetchFn: MCPFetchFunction?
+    fetchFn: MCPFetchFunction?,
+    refreshAttempt: inout OAuthTokens?
 ) async throws -> AuthResult {
-    var resourceMetadata: OAuthProtectedResourceMetadata?
-    var authorizationServerUrl: URL?
+    if let resourceMetadataUrl, resourceMetadataUrl.origin != serverUrl.origin {
+        throw MCPClientOAuthError(
+            message: "OAuth protected resource metadata URL \(resourceMetadataUrl) must have the same origin as the MCP server URL \(serverUrl.origin)"
+        )
+    }
 
+    var resourceMetadata: OAuthProtectedResourceMetadata?
+    var discoveredServerUrl: URL?
     do {
         resourceMetadata = try await discoverOAuthProtectedResourceMetadata(
-            serverUrl: serverUrl,
-            resourceMetadataUrl: resourceMetadataUrl,
-            fetchFn: fetchFn
+            serverUrl: serverUrl, resourceMetadataUrl: resourceMetadataUrl, fetchFn: fetchFn
         )
-
-        if let servers = resourceMetadata?.authorizationServers, !servers.isEmpty {
-            authorizationServerUrl = servers[0].url
-        }
+        discoveredServerUrl = resourceMetadata?.authorizationServers?.first?.url
     } catch {
-        // ignore and fall back
+        // Missing protected resource metadata retains legacy MCP-as-AS discovery.
     }
 
-    if authorizationServerUrl == nil {
-        authorizationServerUrl = serverUrl
+    var clientInformation: OAuthClientInformation?
+    var callbackInformation: OAuthAuthorizationServerInformation?
+    if authorizationCode != nil {
+        clientInformation = try await provider.clientInformation()
+        if let clientInformation {
+            callbackInformation = try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation)
+        }
     }
+    let authorizationServerUrl = discoveredServerUrl ?? callbackInformation?.authorizationServerUrl ?? serverUrl
+    let trustedOrigin = authorizationServerUrl.origin == serverUrl.origin
+        || (isOAuthLoopbackHost(serverUrl.host) && isOAuthLoopbackHost(authorizationServerUrl.host))
+        ? authorizationServerUrl.origin : nil
+    if trustedOrigin == nil { try assertSafeOAuthEndpoint(authorizationServerUrl) }
 
     let resource = try await selectResourceURL(serverUrl: serverUrl, provider: provider, resourceMetadata: resourceMetadata)
-
+    try await provider.validateAuthorizationServerURL?(serverUrl, authorizationServerUrl)
     let metadata = try await discoverAuthorizationServerMetadata(
-        authorizationServerUrl: authorizationServerUrl!,
-        fetchFn: fetchFn
+        authorizationServerUrl: authorizationServerUrl, fetchFn: fetchFn, trustedOrigin: trustedOrigin
     )
+    let currentInformation = authorizationServerInformation(authorizationServerUrl, metadata: metadata)
+    var clientMetadata = provider.clientMetadata
+    let resourceScopes = resourceMetadata?.scopesSupported?.joined(separator: " ")
+    let selectedScope = scope.flatMap { $0.isEmpty ? nil : $0 }
+        ?? resourceScopes.flatMap { $0.isEmpty ? nil : $0 }
+        ?? clientMetadata.scope
 
-    var clientInformation = try await provider.clientInformation()
-
-    if clientInformation == nil {
-        if authorizationCode != nil {
-            throw MCPClientError(
-                message: "Existing OAuth client information is required when exchanging an authorization code"
-            )
-        }
-
-        guard let saveClientInformation = provider.saveClientInformation else {
-            throw MCPClientError(
-                message: "OAuth client information must be saveable for dynamic registration"
-            )
-        }
-
-        let fullInformation = try await registerClient(
-            authorizationServerUrl: authorizationServerUrl!,
-            metadata: metadata,
-            clientMetadata: provider.clientMetadata,
-            fetchFn: fetchFn
-        )
-
-        let minimal = OAuthClientInformation(
-            clientId: fullInformation.clientId,
-            clientSecret: fullInformation.clientSecret,
-            clientIdIssuedAt: fullInformation.clientIdIssuedAt,
-            clientSecretExpiresAt: fullInformation.clientSecretExpiresAt
-        )
-
-        try await saveClientInformation(minimal)
-        clientInformation = minimal
+    if authorizationCode == nil { clientInformation = try await provider.clientInformation() }
+    if let client = clientInformation, client.issuer != nil {
+        let stored: OAuthAuthorizationServerInformation?
+        if let callbackInformation { stored = callbackInformation }
+        else { stored = try await storedAuthorizationServerInformation(provider: provider, clientInformation: client) }
+        if let stored { try assertAuthorizationServerMatches(stored, currentInformation) }
     }
 
+    if clientInformation == nil {
+        guard authorizationCode == nil else {
+            throw MCPClientError(message: "Existing OAuth client information is required when exchanging an authorization code")
+        }
+        guard let saveClientInformation = provider.saveClientInformation else {
+            throw MCPClientError(message: "OAuth client information must be saveable for dynamic registration")
+        }
+        clientMetadata.scope = selectedScope
+        let full = try await registerClient(
+            authorizationServerUrl: authorizationServerUrl, metadata: metadata,
+            clientMetadata: clientMetadata, fetchFn: fetchFn
+        )
+        let client = try pinClientInformation(OAuthClientInformation(
+            clientId: full.clientId, clientSecret: full.clientSecret,
+            clientIdIssuedAt: full.clientIdIssuedAt, clientSecretExpiresAt: full.clientSecretExpiresAt
+        ), to: currentInformation)
+        try await saveClientInformation(client)
+        clientInformation = client
+    }
+    let client = clientInformation!
+
     if let authorizationCode {
+        if let expected = try await provider.storedState?(), expected != callbackState {
+            throw MCPClientError(message: "OAuth state parameter mismatch - possible CSRF attack")
+        }
+        let callbackPin: OAuthAuthorizationServerInformation?
+        if let callbackInformation { callbackPin = callbackInformation }
+        else { callbackPin = try await storedAuthorizationServerInformation(provider: provider, clientInformation: client) }
+        guard let stored = callbackPin else {
+            throw MCPClientOAuthError(message: "Stored OAuth authorization server metadata is required when exchanging an authorization code")
+        }
+        let expectedIssuer = stored.issuer ?? metadata?.issuer ?? authorizationServerUrl.absoluteString
+        if let callbackIssuer, callbackIssuer != expectedIssuer {
+            throw MCPClientOAuthError(message: "OAuth authorization response issuer \(callbackIssuer) does not match expected issuer \(expectedIssuer)")
+        }
+        try assertAuthorizationServerMatches(stored, currentInformation)
         let verifier = try await provider.codeVerifier()
         let tokens = try await exchangeAuthorization(
-            authorizationServerUrl: authorizationServerUrl!,
-            metadata: metadata,
-            clientInformation: clientInformation!,
-            authorizationCode: authorizationCode,
-            codeVerifier: verifier,
-            redirectUri: provider.redirectUrl,
-            resource: resource,
-            addClientAuthentication: provider.addClientAuthentication,
-            fetchFn: fetchFn
+            authorizationServerUrl: authorizationServerUrl, metadata: metadata, clientInformation: client,
+            authorizationCode: authorizationCode, codeVerifier: verifier, redirectUri: provider.redirectUrl,
+            resource: resource, addClientAuthentication: provider.addClientAuthentication, fetchFn: fetchFn
         )
-
-        try await provider.saveTokens(tokens)
+        try await provider.saveTokens(pinTokens(tokens, to: currentInformation))
         return .authorized
     }
 
-    let tokens = try await provider.tokens()
-
-    if let refreshToken = tokens?.refreshToken {
-        do {
-            let newTokens = try await refreshAuthorization(
-                authorizationServerUrl: authorizationServerUrl!,
-                metadata: metadata,
-                clientInformation: clientInformation!,
-                refreshToken: refreshToken,
-                resource: resource,
-                addClientAuthentication: provider.addClientAuthentication,
-                fetchFn: fetchFn
-            )
-
-            try await provider.saveTokens(newTokens)
-            return .authorized
-        } catch {
-            if !MCPClientOAuthError.isInstance(error) || error is ServerError {
-                // Could not refresh OAuth tokens - continue to interactive authorization
-            } else {
-                throw error
+    if let tokens = try await provider.tokens(), let refreshToken = tokens.refreshToken, !refreshToken.isEmpty {
+        let stored = try await storedAuthorizationServerInformation(provider: provider, clientInformation: client, tokens: tokens)
+        if let stored {
+            try assertAuthorizationServerMatches(stored, currentInformation)
+        } else {
+            try await provider.invalidateCredentials?(.tokens, OAuthCredentialInvalidationContext(tokens: tokens))
+        }
+        if stored != nil {
+            do {
+                refreshAttempt = tokens
+                let refreshed = try await refreshAuthorization(
+                    authorizationServerUrl: authorizationServerUrl, metadata: metadata, clientInformation: client,
+                    refreshToken: refreshToken, resource: resource,
+                    addClientAuthentication: provider.addClientAuthentication, fetchFn: fetchFn
+                )
+                try await provider.saveTokens(pinTokens(refreshed, to: currentInformation))
+                return .authorized
+            } catch {
+                if MCPClientOAuthError.isInstance(error), !(error is ServerError) { throw error }
             }
         }
     }
 
     let state = try await provider.state?()
-
+    if let state, !state.isEmpty { try await provider.saveState?(state) }
     let authorization = try startAuthorization(
-        authorizationServerUrl: authorizationServerUrl!,
-        metadata: metadata,
-        clientInformation: clientInformation!,
-        redirectUrl: provider.redirectUrl,
-        scope: scope ?? provider.clientMetadata.scope,
-        state: state,
-        resource: resource
+        authorizationServerUrl: authorizationServerUrl, metadata: metadata, clientInformation: client,
+        redirectUrl: provider.redirectUrl, scope: selectedScope, state: state, resource: resource
     )
-
+    if let save = provider.saveAuthorizationServerInformation {
+        try await save(currentInformation)
+    } else if let save = provider.saveClientInformation {
+        try await save(pinClientInformation(client, to: currentInformation))
+    } else {
+        throw MCPClientOAuthError(message: "OAuth authorization server metadata must be saveable before starting authorization")
+    }
     try await provider.saveCodeVerifier(authorization.codeVerifier)
     try await provider.redirectToAuthorization(authorization.authorizationUrl)
     return .redirect

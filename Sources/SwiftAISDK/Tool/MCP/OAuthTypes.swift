@@ -5,7 +5,7 @@ import AISDKProvider
  OAuth types for MCP.
 
  Port of `packages/mcp/src/tool/oauth-types.ts`.
- Upstream commit: f3a72bc2a
+ Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
  */
 
 // MARK: - SafeURL
@@ -73,7 +73,10 @@ public struct OAuthTokens: Codable, Sendable, Equatable {
     public let tokenType: String
     public let expiresIn: Double?
     public let scope: String?
-    public let refreshToken: String?
+    public var refreshToken: String?
+    public var issuer: SafeURL? = nil
+    public var authorizationServer: SafeURL? = nil
+    public var tokenEndpoint: SafeURL? = nil
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
@@ -82,6 +85,9 @@ public struct OAuthTokens: Codable, Sendable, Equatable {
         case expiresIn = "expires_in"
         case scope
         case refreshToken = "refresh_token"
+        case issuer
+        case authorizationServer = "authorization_server"
+        case tokenEndpoint = "token_endpoint"
     }
 
     public init(
@@ -90,7 +96,10 @@ public struct OAuthTokens: Codable, Sendable, Equatable {
         tokenType: String,
         expiresIn: Double? = nil,
         scope: String? = nil,
-        refreshToken: String? = nil
+        refreshToken: String? = nil,
+        issuer: SafeURL? = nil,
+        authorizationServer: SafeURL? = nil,
+        tokenEndpoint: SafeURL? = nil
     ) {
         self.accessToken = accessToken
         self.idToken = idToken
@@ -98,6 +107,9 @@ public struct OAuthTokens: Codable, Sendable, Equatable {
         self.expiresIn = expiresIn
         self.scope = scope
         self.refreshToken = refreshToken
+        self.issuer = issuer
+        self.authorizationServer = authorizationServer
+        self.tokenEndpoint = tokenEndpoint
     }
 }
 
@@ -143,10 +155,40 @@ public struct OAuthProtectedResourceMetadata: Codable, Sendable, Equatable {
 ///
 /// Swift simplification: represents the shared fields used by MCP OAuth flows.
 public struct AuthorizationServerMetadata: Codable, Sendable, Equatable {
+    public init(
+        issuer: String,
+        authorizationEndpoint: SafeURL,
+        tokenEndpoint: SafeURL,
+        registrationEndpoint: SafeURL? = nil,
+        authorizationResponseIssParameterSupported: Bool? = nil,
+        clientIdMetadataDocumentSupported: Bool? = nil,
+        scopesSupported: [String]? = nil,
+        responseTypesSupported: [String],
+        grantTypesSupported: [String]? = nil,
+        codeChallengeMethodsSupported: [String]? = nil,
+        tokenEndpointAuthMethodsSupported: [String]? = nil,
+        tokenEndpointAuthSigningAlgValuesSupported: [String]? = nil
+    ) {
+        self.issuer = issuer
+        self.authorizationEndpoint = authorizationEndpoint
+        self.tokenEndpoint = tokenEndpoint
+        self.registrationEndpoint = registrationEndpoint
+        self.authorizationResponseIssParameterSupported = authorizationResponseIssParameterSupported
+        self.clientIdMetadataDocumentSupported = clientIdMetadataDocumentSupported
+        self.scopesSupported = scopesSupported
+        self.responseTypesSupported = responseTypesSupported
+        self.grantTypesSupported = grantTypesSupported
+        self.codeChallengeMethodsSupported = codeChallengeMethodsSupported
+        self.tokenEndpointAuthMethodsSupported = tokenEndpointAuthMethodsSupported
+        self.tokenEndpointAuthSigningAlgValuesSupported = tokenEndpointAuthSigningAlgValuesSupported
+    }
+
     public let issuer: String
     public let authorizationEndpoint: SafeURL
     public let tokenEndpoint: SafeURL
     public let registrationEndpoint: SafeURL?
+    public var authorizationResponseIssParameterSupported: Bool? = nil
+    public var clientIdMetadataDocumentSupported: Bool? = nil
     public let scopesSupported: [String]?
     public let responseTypesSupported: [String]
     public let grantTypesSupported: [String]?
@@ -159,6 +201,8 @@ public struct AuthorizationServerMetadata: Codable, Sendable, Equatable {
         case authorizationEndpoint = "authorization_endpoint"
         case tokenEndpoint = "token_endpoint"
         case registrationEndpoint = "registration_endpoint"
+        case authorizationResponseIssParameterSupported = "authorization_response_iss_parameter_supported"
+        case clientIdMetadataDocumentSupported = "client_id_metadata_document_supported"
         case scopesSupported = "scopes_supported"
         case responseTypesSupported = "response_types_supported"
         case grantTypesSupported = "grant_types_supported"
@@ -170,29 +214,97 @@ public struct AuthorizationServerMetadata: Codable, Sendable, Equatable {
 
 // MARK: - Client Registration Types
 
+public enum OAuthApplicationType: String, Codable, Sendable {
+    case native
+    case web
+}
+
 public struct OAuthClientInformation: Codable, Sendable, Equatable {
+    public init(
+        clientId: String,
+        clientSecret: String? = nil,
+        clientIdIssuedAt: Double? = nil,
+        clientSecretExpiresAt: Double? = nil,
+        issuer: SafeURL? = nil,
+        authorizationServer: SafeURL? = nil,
+        tokenEndpoint: SafeURL? = nil
+    ) {
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        self.clientIdIssuedAt = clientIdIssuedAt
+        self.clientSecretExpiresAt = clientSecretExpiresAt
+        self.issuer = issuer
+        self.authorizationServer = authorizationServer
+        self.tokenEndpoint = tokenEndpoint
+    }
+
     public let clientId: String
     public let clientSecret: String?
     public let clientIdIssuedAt: Double?
     public let clientSecretExpiresAt: Double?
+    public var issuer: SafeURL? = nil
+    public var authorizationServer: SafeURL? = nil
+    public var tokenEndpoint: SafeURL? = nil
 
     enum CodingKeys: String, CodingKey {
         case clientId = "client_id"
         case clientSecret = "client_secret"
         case clientIdIssuedAt = "client_id_issued_at"
         case clientSecretExpiresAt = "client_secret_expires_at"
+        case issuer
+        case authorizationServer = "authorization_server"
+        case tokenEndpoint = "token_endpoint"
     }
 }
 
 public struct OAuthClientMetadata: Codable, Sendable, Equatable {
+    public init(
+        redirectUris: [SafeURL],
+        applicationType: OAuthApplicationType? = nil,
+        tokenEndpointAuthMethod: String? = nil,
+        grantTypes: [String]? = nil,
+        responseTypes: [String]? = nil,
+        clientName: String? = nil,
+        clientUri: SafeURL? = nil,
+        logoUri: SafeURL? = nil,
+        scope: String? = nil,
+        contacts: [String]? = nil,
+        tosUri: SafeURL? = nil,
+        policyUri: String? = nil,
+        jwksUri: SafeURL? = nil,
+        jwks: JSONValue? = nil,
+        softwareId: String? = nil,
+        softwareVersion: String? = nil,
+        softwareStatement: String? = nil
+    ) {
+        self.redirectUris = redirectUris
+        self.applicationType = applicationType
+        self.tokenEndpointAuthMethod = tokenEndpointAuthMethod
+        self.grantTypes = grantTypes
+        self.responseTypes = responseTypes
+        self.clientName = clientName
+        self.clientUri = clientUri
+        self.logoUri = logoUri
+        self.scope = scope
+        self.contacts = contacts
+        self.tosUri = tosUri
+        self.policyUri = policyUri
+        self.jwksUri = jwksUri
+        self.jwks = jwks
+        self.softwareId = softwareId
+        self.softwareVersion = softwareVersion
+        self.softwareStatement = softwareStatement
+    }
+
     public let redirectUris: [SafeURL]
+    public var applicationType: OAuthApplicationType? = nil
     public let tokenEndpointAuthMethod: String?
     public let grantTypes: [String]?
     public let responseTypes: [String]?
     public let clientName: String?
     public let clientUri: SafeURL?
     public let logoUri: SafeURL?
-    public let scope: String?
+    public var scope: String?
     public let contacts: [String]?
     public let tosUri: SafeURL?
     public let policyUri: String?
@@ -204,6 +316,7 @@ public struct OAuthClientMetadata: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case redirectUris = "redirect_uris"
+        case applicationType = "application_type"
         case tokenEndpointAuthMethod = "token_endpoint_auth_method"
         case grantTypes = "grant_types"
         case responseTypes = "response_types"
@@ -227,7 +340,11 @@ public struct OAuthClientInformationFull: Codable, Sendable, Equatable {
     public let clientSecret: String?
     public let clientIdIssuedAt: Double?
     public let clientSecretExpiresAt: Double?
+    public var issuer: SafeURL? = nil
+    public var authorizationServer: SafeURL? = nil
+    public var tokenEndpoint: SafeURL? = nil
     public let redirectUris: [SafeURL]
+    public var applicationType: OAuthApplicationType? = nil
     public let tokenEndpointAuthMethod: String?
     public let grantTypes: [String]?
     public let responseTypes: [String]?
@@ -249,7 +366,11 @@ public struct OAuthClientInformationFull: Codable, Sendable, Equatable {
         case clientSecret = "client_secret"
         case clientIdIssuedAt = "client_id_issued_at"
         case clientSecretExpiresAt = "client_secret_expires_at"
+        case issuer
+        case authorizationServer = "authorization_server"
+        case tokenEndpoint = "token_endpoint"
         case redirectUris = "redirect_uris"
+        case applicationType = "application_type"
         case tokenEndpointAuthMethod = "token_endpoint_auth_method"
         case grantTypes = "grant_types"
         case responseTypes = "response_types"
