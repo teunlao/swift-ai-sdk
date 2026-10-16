@@ -29,7 +29,7 @@ struct EmbedTests {
             model: model, value: "hello", dimensions: 2,
             runtimeContext: ["requestId": "request-1"],
             onStart: { event in
-                #expect(event.runtimeContext["requestId"] as? String == "request-1")
+                #expect(event.runtimeContext["requestId"] == .string("request-1"))
                 #expect(event.dimensions == 2)
                 await events.append("start")
                 throw CancellationError()
@@ -287,7 +287,7 @@ struct EmbedTests {
                     }
                 ),
                 value: testValue,
-                experimentalTelemetry: TelemetrySettings(tracer: tracer)
+                telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
             ) as DefaultEmbedResult<String>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -308,47 +308,31 @@ struct EmbedTests {
                     }
                 ),
                 value: testValue,
-                experimentalTelemetry: TelemetrySettings(
-                    isEnabled: true,
+                telemetry: TelemetryOptions(
                     functionId: "test-function-id",
-                    metadata: [
-                        "test1": .string("value1"),
-                        "test2": .bool(false),
-                    ],
-                    tracer: tracer
-                )
+                    includeRuntimeContext: ["tenant": true],
+                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
+                ),
+                runtimeContext: ["tenant": .string("acme"), "secret": .string("hidden")]
             ) as DefaultEmbedResult<String>
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 2)
+        #expect(spans.map(\.name) == ["ai.embed", "ai.embed.doEmbed"])
 
         if spans.count >= 2 {
             let outer = spans[0]
-            #expect(outer.name == "ai.embed")
             #expect(outer.attributes["ai.model.id"] == .string("test-model"))
             #expect(outer.attributes["ai.model.provider"] == .string("test-provider"))
-            #expect(
-                outer.attributes["ai.value"] == .string(embedTelemetryJSONString(from: testValue))
-            )
+            #expect(outer.attributes["ai.value"] == .string("\"sunny day at the beach\""))
+            #expect(outer.attributes["ai.embedding"] == .string("[0.1,0.2,0.3]"))
             #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.telemetry.metadata.test1"] == .string("value1"))
-            #expect(outer.attributes["ai.telemetry.metadata.test2"] == .bool(false))
+            #expect(outer.attributes["ai.settings.context.tenant"] == .string("acme"))
+            #expect(outer.attributes["ai.settings.context.secret"] == nil)
             #expect(outer.attributes["ai.usage.tokens"] == .int(10))
 
             let inner = spans[1]
-            #expect(inner.name == "ai.embed.doEmbed")
-            #expect(
-                inner.attributes["ai.values"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: [testValue as Any])
-                    )
-            )
-            #expect(
-                inner.attributes["ai.embeddings"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: [dummyEmbedding as Any])
-                    )
-            )
+            #expect(inner.attributes["ai.values"] == .stringArray(["\"sunny day at the beach\""]))
+            #expect(inner.attributes["ai.embeddings"] == .stringArray(["[0.1,0.2,0.3]"]))
             #expect(inner.attributes["ai.usage.tokens"] == .int(10))
         }
     }
@@ -368,11 +352,10 @@ struct EmbedTests {
                     }
                 ),
                 value: testValue,
-                experimentalTelemetry: TelemetrySettings(
-                    isEnabled: true,
+                telemetry: TelemetryOptions(
                     recordInputs: false,
                     recordOutputs: false,
-                    tracer: tracer
+                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
                 )
             ) as DefaultEmbedResult<String>
 

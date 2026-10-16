@@ -438,7 +438,7 @@ struct EmbedManyTests {
                     }
                 ),
                 values: testValues,
-                experimentalTelemetry: TelemetrySettings(tracer: tracer)
+                telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
             ) as DefaultEmbedManyResult<String>
 
         #expect(tracer.spanRecords.isEmpty)
@@ -465,50 +465,27 @@ struct EmbedManyTests {
             try await embedMany(
                 model: .v3(model),
                 values: testValues,
-                experimentalTelemetry: TelemetrySettings(
-                    isEnabled: true,
+                telemetry: TelemetryOptions(
                     functionId: "test-function-id",
-                    metadata: [
-                        "test1": .string("value1"),
-                        "test2": .bool(false),
-                    ],
-                    tracer: tracer
+                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
                 )
             ) as DefaultEmbedManyResult<String>
 
         let spans = tracer.spanRecords
-        #expect(spans.count == 3)
+        #expect(spans.map(\.name) == ["ai.embedMany", "ai.embedMany.doEmbed", "ai.embedMany.doEmbed"])
 
         if spans.count >= 3 {
             let outer = spans[0]
-            #expect(outer.name == "ai.embedMany")
             #expect(outer.attributes["ai.usage.tokens"] == .int(30))
-            #expect(
-                outer.attributes["ai.values"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: testValues.map { $0 as Any })
-                    )
-            )
+            #expect(outer.attributes["ai.values"] == .stringArray(testValues.map { "\"\($0)\"" }))
 
             let firstInner = spans[1]
-            #expect(firstInner.name == "ai.embedMany.doEmbed")
             #expect(firstInner.attributes["ai.usage.tokens"] == .int(10))
-            #expect(
-                firstInner.attributes["ai.values"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(
-                            from: Array(testValues.prefix(2)).map { $0 as Any })
-                    )
-            )
+            #expect(firstInner.attributes["ai.values"] == .stringArray(testValues.prefix(2).map { "\"\($0)\"" }))
 
             let secondInner = spans[2]
             #expect(secondInner.attributes["ai.usage.tokens"] == .int(20))
-            #expect(
-                secondInner.attributes["ai.values"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: [testValues[2] as Any])
-                    )
-            )
+            #expect(secondInner.attributes["ai.values"] == .stringArray(["\"\(testValues[2])\""]))
         }
     }
 
@@ -529,10 +506,9 @@ struct EmbedManyTests {
                     }
                 ),
                 values: testValues,
-                experimentalTelemetry: TelemetrySettings(
-                    isEnabled: true,
+                telemetry: TelemetryOptions(
                     functionId: "test-function-id",
-                    tracer: tracer
+                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
                 )
             ) as DefaultEmbedManyResult<String>
 
@@ -542,20 +518,12 @@ struct EmbedManyTests {
         if spans.count >= 2 {
             let outer = spans[0]
             #expect(outer.attributes["ai.usage.tokens"] == .int(10))
-            #expect(
-                outer.attributes["ai.values"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: testValues.map { $0 as Any })
-                    )
-            )
+            #expect(outer.attributes["ai.values"] == .stringArray(testValues.map { "\"\($0)\"" }))
 
             let inner = spans[1]
-            #expect(
-                inner.attributes["ai.embeddings"]
-                    == .stringArray(
-                        embedTelemetryJSONStringArray(from: dummyEmbeddings.map { $0 as Any })
-                    )
-            )
+            #expect(inner.attributes["ai.embeddings"] == .stringArray([
+                "[0.1,0.2,0.3]", "[0.4,0.5,0.6]", "[0.7,0.8,0.9]",
+            ]))
             #expect(inner.attributes["ai.usage.tokens"] == .int(10))
         }
     }
@@ -577,11 +545,10 @@ struct EmbedManyTests {
                     }
                 ),
                 values: testValues,
-                experimentalTelemetry: TelemetrySettings(
-                    isEnabled: true,
+                telemetry: TelemetryOptions(
                     recordInputs: false,
                     recordOutputs: false,
-                    tracer: tracer
+                    integrations: [LegacyOpenTelemetry(tracer: tracer)]
                 )
             ) as DefaultEmbedManyResult<String>
 

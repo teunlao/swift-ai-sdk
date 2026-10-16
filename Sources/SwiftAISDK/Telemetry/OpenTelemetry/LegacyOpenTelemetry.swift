@@ -29,9 +29,10 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
     private let lock = NSLock()
     private var callStates: [String: CallState] = [:]
 
-    /// - Parameter tracer: The tracer to record with. Default: the global default tracer.
-    public init(tracer: (any Tracer)? = nil) {
-        self.tracer = tracer ?? getTracer(isEnabled: true)
+    /// - Parameter tracer: The tracer to record with. Swift has no process-wide
+    ///   OpenTelemetry tracer provider, so the tracer is always explicit.
+    public init(tracer: any Tracer) {
+        self.tracer = tracer
     }
 
     private final class CallState: @unchecked Sendable {
@@ -40,6 +41,8 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
         let rootSpan: any Span
         var stepSpan: (any Span)?
         var toolSpans: [String: any Span] = [:]
+        var embedSpans: [String: any Span] = [:]
+        var rerankSpan: (any Span)?
         let baseAttributes: Attributes
         let settings: Settings
 
@@ -142,7 +145,179 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
             onGenerateStart(start, recording: Recording(event))
         case .generateObject(let start):
             onObjectOperationStart(start, recording: Recording(event))
+        case .embed(let start):
+            onEmbedOperationStart(
+                callId: start.callId, operationId: start.operationId, provider: start.provider,
+                modelId: start.modelId, maxRetries: start.maxRetries, headers: start.headers,
+                context: start.runtimeContext, recording: Recording(event),
+                input: ("ai.value", .input { .string(telemetryJSON(.string(start.value))) })
+            )
+        case .embedMany(let start):
+            onEmbedOperationStart(
+                callId: start.callId, operationId: start.operationId, provider: start.provider,
+                modelId: start.modelId, maxRetries: start.maxRetries, headers: start.headers,
+                context: start.runtimeContext, recording: Recording(event),
+                input: ("ai.values", .input { .stringArray(start.value.map { telemetryJSON(.string($0)) }) })
+            )
+        case .rerank(let start):
+            onEmbedOperationStart(
+                callId: start.callId, operationId: start.operationId, provider: start.provider,
+                modelId: start.modelId, maxRetries: start.maxRetries, headers: start.headers,
+                context: start.runtimeContext, recording: Recording(event),
+                input: ("ai.documents", .input { .stringArray(start.documents.map(telemetryJSON)) })
+            )
+        case .generateSpeech(let start):
+            onAudioOperationStart(
+                callId: start.callId, operationId: start.operationId, provider: start.provider,
+                modelId: start.modelId, headers: start.headers, recording: Recording(event),
+                text: start.text, audioSize: nil, audioMediaType: nil
+            )
+        case .transcribe(let start):
+            onAudioOperationStart(
+                callId: start.callId, operationId: start.operationId, provider: start.provider,
+                modelId: start.modelId, headers: start.headers, recording: Recording(event),
+                text: nil, audioSize: start.audio.byteLength, audioMediaType: start.audio.mediaType
+            )
         }
+    }
+
+    public func onStreamTranscriptionStart(_ event: TelemetryEvent<StreamTranscriptionStartEvent>) async throws {
+        let start = event.event
+        onAudioOperationStart(
+            callId: start.callId, operationId: start.operationId, provider: start.provider,
+            modelId: start.modelId, headers: start.headers, recording: Recording(event),
+            text: nil, audioSize: start.audio.byteLength, audioMediaType: start.audio.mediaType
+        )
+    }
+
+    /// Root span of an embedding or reranking operation.
+    private func onEmbedOperationStart(
+        callId: String,
+        operationId: String,
+        provider: String,
+        modelId: String,
+        maxRetries: Int,
+        headers: [String: String]?,
+        context: Context,
+        recording: Recording,
+        input: (String, AttributeSpec)
+    ) {
+        let settings = Settings(maxRetries: maxRetries)
+        let baseAttributes = baseTelemetryAttributes(
+            provider: provider,
+            modelId: modelId,
+            settings: settings,
+            headers: headers,
+            context: context
+        )
+        var specs = operationName(operationId, recording: recording)
+        specs += baseAttributes.map { ($0.key, .value($0.value)) }
+        specs.append(input)
+
+        let rootSpan = tracer.startSpan(
+            name: operationId,
+            options: SpanOptions(attributes: select(recording, specs), parent: Self.activeSpan)
+        )
+        setState(callId, CallState(
+            operationId: operationId,
+            recording: recording,
+            rootSpan: rootSpan,
+            baseAttributes: baseAttributes,
+            settings: settings
+        ))
+    }
+
+    private func onAudioOperationStart(
+        callId: String,
+        operationId: String,
+        provider: String,
+        modelId: String,
+        headers: [String: String]?,
+        recording: Recording,
+        text: String?,
+        audioSize: Int?,
+        audioMediaType: String?
+    ) {
+        var baseAttributes: Attributes = [
+            "ai.model.provider": .string(provider),
+            "ai.model.id": .string(modelId),
+        ]
+        for (key, value) in headers ?? [:] {
+            baseAttributes["ai.request.headers.\(key)"] = .string(value)
+        }
+        var specs = operationName(operationId, recording: recording)
+        specs += baseAttributes.map { ($0.key, .value($0.value)) }
+        if let text { specs.append(("ai.request.text", .input { .string(text) })) }
+        if let audioSize { specs.append(("ai.request.audio.size", .input { .int(audioSize) })) }
+        if let audioMediaType { specs.append(("ai.request.audio.mediaType", .input { .string(audioMediaType) })) }
+
+        let rootSpan = tracer.startSpan(
+            name: operationId,
+            options: SpanOptions(attributes: select(recording, specs), parent: Self.activeSpan)
+        )
+        setState(callId, CallState(
+            operationId: operationId,
+            recording: recording,
+            rootSpan: rootSpan,
+            baseAttributes: baseAttributes,
+            settings: Settings()
+        ))
+    }
+
+    // MARK: - Embedding and reranking model calls
+
+    public func onEmbedStart(_ event: TelemetryEvent<EmbeddingModelCallStartEvent>) async throws {
+        guard let state = state(event.callId) else { return }
+        var specs = operationName(event.operationId, recording: state.recording)
+        specs += state.baseAttributes.map { ($0.key, .value($0.value)) }
+        specs.append(("ai.values", .input { .stringArray(event.values.map { telemetryJSON(.string($0)) }) }))
+        let span = tracer.startSpan(
+            name: event.operationId,
+            options: SpanOptions(attributes: select(state.recording, specs), parent: state.rootSpan)
+        )
+        lock.withLock { state.embedSpans[event.embedCallId] = span }
+    }
+
+    public func onEmbedEnd(_ event: TelemetryEvent<EmbeddingModelCallEndEvent>) async throws {
+        guard let state = state(event.callId),
+              let span = lock.withLock({ state.embedSpans.removeValue(forKey: event.embedCallId) }) else { return }
+        span.setAttributes(select(state.recording, [
+            ("ai.embeddings", .output { .stringArray(event.embeddings.map(embeddingJSON)) }),
+            ("ai.usage.tokens", .value(tokenAttribute(event.usage.tokens))),
+        ]))
+        span.end()
+    }
+
+    public func onRerankStart(_ event: TelemetryEvent<RerankingModelCallStartEvent>) async throws {
+        guard let state = state(event.callId) else { return }
+        var specs = operationName(event.operationId, recording: state.recording)
+        specs += state.baseAttributes.map { ($0.key, .value($0.value)) }
+        specs.append(("ai.documents", .input { .stringArray(event.documents.map(telemetryJSON)) }))
+        let span = tracer.startSpan(
+            name: event.operationId,
+            options: SpanOptions(attributes: select(state.recording, specs), parent: state.rootSpan)
+        )
+        lock.withLock { state.rerankSpan = span }
+    }
+
+    public func onRerankEnd(_ event: TelemetryEvent<RerankingModelCallEndEvent>) async throws {
+        guard let state = state(event.callId),
+              let span = lock.withLock({ () -> (any Span)? in
+                  defer { state.rerankSpan = nil }
+                  return state.rerankSpan
+              }) else { return }
+        span.setAttributes(select(state.recording, [
+            ("ai.ranking.type", .value(.string(event.documentsType))),
+            ("ai.ranking", .output {
+                .stringArray(event.ranking.map { ranking in
+                    telemetryJSON(.object([
+                        "index": .number(Double(ranking.index)),
+                        "relevanceScore": .number(ranking.relevanceScore),
+                    ]))
+                })
+            }),
+        ]))
+        span.end()
     }
 
     private func onGenerateStart(_ event: GenerateTextStartEvent, recording: Recording) {
@@ -452,9 +627,75 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
             onGenerateEnd(end, state: state)
         case .generateObject(let end):
             onObjectOperationEnd(end, state: state)
+        case .embed(let end):
+            state.rootSpan.setAttributes(select(state.recording, [
+                ("ai.embedding", .output { .string(embeddingJSON(end.embedding)) }),
+                ("ai.usage.tokens", .value(tokenAttribute(end.usage.tokens))),
+            ]))
+        case .embedMany(let end):
+            state.rootSpan.setAttributes(select(state.recording, [
+                ("ai.embeddings", .output { .stringArray(end.embedding.map(embeddingJSON)) }),
+                ("ai.usage.tokens", .value(tokenAttribute(end.usage.tokens))),
+            ]))
+        case .rerank:
+            break
+        case .generateSpeech(let end):
+            onAudioOperationEnd(
+                state: state, isSpeech: true, text: nil,
+                audioSize: end.audio.byteLength, audioMediaType: end.audio.mediaType, audioFormat: end.audio.format,
+                usage: end.usage, providerMetadata: end.providerMetadata
+            )
+        case .transcribe(let end):
+            onAudioOperationEnd(
+                state: state, isSpeech: false, text: end.text,
+                audioSize: end.audio.byteLength, audioMediaType: end.audio.mediaType, audioFormat: nil,
+                usage: end.usage, providerMetadata: end.providerMetadata
+            )
         }
         state.rootSpan.end()
         setState(event.event.callId, nil)
+    }
+
+    public func onStreamTranscriptionEnd(_ event: TelemetryEvent<StreamTranscriptionEndEvent>) async throws {
+        let end = event.event
+        guard let state = state(end.callId) else { return }
+        onAudioOperationEnd(
+            state: state, isSpeech: false, text: end.text,
+            audioSize: end.audio.byteLength, audioMediaType: end.audio.mediaType, audioFormat: nil,
+            usage: end.usage, providerMetadata: end.providerMetadata
+        )
+        state.rootSpan.end()
+        setState(end.callId, nil)
+    }
+
+    private func onAudioOperationEnd(
+        state: CallState,
+        isSpeech: Bool,
+        text: String?,
+        audioSize: Int,
+        audioMediaType: String,
+        audioFormat: String?,
+        usage: JSONObject?,
+        providerMetadata: ProviderMetadata?
+    ) {
+        var specs: [(String, AttributeSpec)] = []
+        if isSpeech {
+            specs += [
+                ("ai.response.audio.size", .output { .int(audioSize) }),
+                ("ai.response.audio.mediaType", .output { .string(audioMediaType) }),
+            ]
+            if let audioFormat { specs.append(("ai.response.audio.format", .output { .string(audioFormat) })) }
+        } else {
+            specs += [
+                ("ai.request.audio.size", .input { .int(audioSize) }),
+                ("ai.request.audio.mediaType", .input { .string(audioMediaType) }),
+            ]
+            if let text { specs.append(("ai.response.text", .output { .string(text) })) }
+        }
+        specs += providerUsageAttributes(usage, prefix: "ai.usage").map { ($0.key, .value($0.value)) }
+        specs.append(("ai.response.usage", .value(usage.map { .string(jsonString($0)) })))
+        specs.append(("ai.response.providerMetadata", .value(providerMetadata.map { .string(jsonString($0)) })))
+        state.rootSpan.setAttributes(select(state.recording, specs))
     }
 
     private func onGenerateEnd(_ event: GenerateTextEndEvent, state: CallState) {
@@ -507,9 +748,17 @@ public final class LegacyOpenTelemetry: Telemetry, @unchecked Sendable {
         guard let state = state(event.callId) else { return }
         let error = event.error
 
-        if let stepSpan = lock.withLock({ state.stepSpan }) {
-            recordSpanError(stepSpan, error)
-            stepSpan.end()
+        let (stepSpan, embedSpans, rerankSpan) = lock.withLock { () -> ((any Span)?, [any Span], (any Span)?) in
+            defer {
+                state.stepSpan = nil
+                state.embedSpans = [:]
+                state.rerankSpan = nil
+            }
+            return (state.stepSpan, Array(state.embedSpans.values), state.rerankSpan)
+        }
+        for span in [stepSpan].compactMap({ $0 }) + embedSpans + [rerankSpan].compactMap({ $0 }) {
+            recordSpanError(span, error)
+            span.end()
         }
         recordSpanError(state.rootSpan, error)
         state.rootSpan.end()
@@ -656,6 +905,82 @@ private func jsonValue<T: Encodable>(_ value: T) -> JSONValue {
         return .null
     }
     return json
+}
+
+/// `JSON.stringify` of a JSON value, with JavaScript number formatting.
+private func telemetryJSON(_ value: JSONValue) -> String {
+    (try? canonicalJSON(value)) ?? "null"
+}
+
+private func embeddingJSON(_ embedding: Embedding) -> String {
+    telemetryJSON(.array(embedding.map { .number($0) }))
+}
+
+/// A token count as an attribute: integral counts as integers; NaN is dropped on selection.
+private func tokenAttribute(_ tokens: Double) -> AttributeValue {
+    if tokens.isFinite, tokens.rounded() == tokens, abs(tokens) < Double(Int.max) {
+        return .int(Int(tokens))
+    }
+    return .double(tokens)
+}
+
+/// Port of `getProviderUsageAttributes` from `@ai-sdk/otel/src/provider-usage-attributes.ts`.
+private func providerUsageAttributes(_ usage: JSONObject?, prefix: String) -> Attributes {
+    var attributes: Attributes = [:]
+    func add(_ value: JSONValue, path: [String]) {
+        switch value {
+        case .number(let number):
+            if number.isFinite, !path.isEmpty {
+                attributes["\(prefix).\(path.joined(separator: "."))"] = .double(number)
+            }
+        case .object(let object):
+            for (key, nested) in object {
+                let normalized = normalizeUsageKey(key)
+                if !normalized.isEmpty { add(nested, path: path + [normalized]) }
+            }
+        default:
+            return
+        }
+    }
+    if let usage { add(.object(usage), path: []) }
+    return attributes
+}
+
+private let usageKeyAliases: [String: String] = [
+    "inputtokens": "input_tokens",
+    "prompttokens": "input_tokens",
+    "prompttokencount": "input_tokens",
+    "totalinputtokens": "input_tokens",
+    "outputtokens": "output_tokens",
+    "completiontokens": "output_tokens",
+    "completiontokencount": "output_tokens",
+    "candidatestokencount": "output_tokens",
+    "totaltokens": "total_tokens",
+    "totaltokencount": "total_tokens",
+]
+
+private func normalizeUsageKey(_ key: String) -> String {
+    let alphanumeric = key.unicodeScalars.filter { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
+    if let alias = usageKeyAliases[String(String.UnicodeScalarView(alphanumeric)).lowercased()] {
+        return alias
+    }
+    var result = ""
+    var previous: Character?
+    for character in key {
+        let isAlphanumeric = character.isASCII && (character.isLetter || character.isNumber)
+        if isAlphanumeric {
+            if character.isUppercase, let previous, previous.isASCII, previous.isLowercase || previous.isNumber {
+                result.append("_")
+            }
+            result.append(character)
+        } else if result.last != "_" {
+            result.append("_")
+        }
+        previous = character
+    }
+    while result.hasPrefix("_") { result.removeFirst() }
+    while result.hasSuffix("_") { result.removeLast() }
+    return result.lowercased()
 }
 
 private func instructionsJSON(_ instructions: Instructions) -> JSONValue {

@@ -2,7 +2,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 public struct EmbedStartEvent<Value: Sendable>: Sendable {
-    public let runtimeContext: [String: any Sendable]
+    public let runtimeContext: Context
     public let callId: String
     public let operationId: String
     public let provider: String
@@ -20,7 +20,7 @@ public enum EmbedResponse: Sendable {
 }
 
 public struct EmbedEndEvent<Value: Sendable, Output: Sendable>: Sendable {
-    public let runtimeContext: [String: any Sendable]
+    public let runtimeContext: Context
     public let callId: String
     public let operationId: String
     public let provider: String
@@ -52,4 +52,24 @@ public struct EmbeddingModelCallEndEvent: Sendable {
     public let values: [String]
     public let embeddings: [Embedding]
     public let usage: EmbeddingModelUsage
+}
+
+extension EmbedStartEvent {
+    func with(runtimeContext: Context) -> Self {
+        EmbedStartEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: operationId,
+            provider: provider, modelId: modelId, value: value, dimensions: dimensions,
+            maxRetries: maxRetries, headers: headers, providerOptions: providerOptions
+        )
+    }
+}
+
+extension EmbedEndEvent {
+    func with(runtimeContext: Context) -> Self {
+        EmbedEndEvent(
+            runtimeContext: runtimeContext, callId: callId, operationId: operationId,
+            provider: provider, modelId: modelId, value: value, embedding: embedding,
+            usage: usage, warnings: warnings, providerMetadata: providerMetadata, response: response
+        )
+    }
 }

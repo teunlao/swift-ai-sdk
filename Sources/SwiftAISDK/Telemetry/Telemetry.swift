@@ -44,11 +44,22 @@ public struct TelemetryEvent<Event: Sendable>: Sendable {
 public enum TelemetryStartEvent: Sendable {
     case generateText(GenerateTextStartEvent)
     case generateObject(GenerateObjectStartEvent)
+    case embed(EmbedStartEvent<String>)
+    case embedMany(EmbedStartEvent<[String]>)
+    /// Rerank documents are carried as JSON: a string or an object per document.
+    case rerank(RerankStartEvent<JSONValue>)
+    case generateSpeech(GenerateSpeechStartEvent)
+    case transcribe(TranscriptionStartEvent)
 
     public var callId: String {
         switch self {
         case .generateText(let event): return event.callId
         case .generateObject(let event): return event.callId
+        case .embed(let event): return event.callId
+        case .embedMany(let event): return event.callId
+        case .rerank(let event): return event.callId
+        case .generateSpeech(let event): return event.callId
+        case .transcribe(let event): return event.callId
         }
     }
 
@@ -56,6 +67,11 @@ public enum TelemetryStartEvent: Sendable {
         switch self {
         case .generateText(let event): return event.operationId
         case .generateObject(let event): return event.operationId
+        case .embed(let event): return event.operationId
+        case .embedMany(let event): return event.operationId
+        case .rerank(let event): return event.operationId
+        case .generateSpeech(let event): return event.operationId
+        case .transcribe(let event): return event.operationId
         }
     }
 }
@@ -68,11 +84,22 @@ public enum TelemetryStartEvent: Sendable {
 public enum TelemetryEndEvent: Sendable {
     case generateText(GenerateTextEndEvent)
     case generateObject(GenerateObjectEndEvent)
+    case embed(EmbedEndEvent<String, Embedding>)
+    case embedMany(EmbedEndEvent<[String], [Embedding]>)
+    /// Rerank documents are carried as JSON: a string or an object per document.
+    case rerank(RerankEndEvent<JSONValue>)
+    case generateSpeech(GenerateSpeechEndEvent)
+    case transcribe(TranscriptionEndEvent)
 
     public var callId: String {
         switch self {
         case .generateText(let event): return event.callId
         case .generateObject(let event): return event.callId
+        case .embed(let event): return event.callId
+        case .embedMany(let event): return event.callId
+        case .rerank(let event): return event.callId
+        case .generateSpeech(let event): return event.callId
+        case .transcribe(let event): return event.callId
         }
     }
 }
@@ -96,7 +123,7 @@ public struct TelemetryErrorEvent: Sendable {
  by an integration never interrupt the operation.
  */
 public protocol Telemetry: Sendable {
-    /// An operation begins (generateText/streamText, generateObject/streamObject).
+    /// An operation begins: text, object, embedding, reranking, speech or non-streaming transcription.
     func onStart(_ event: TelemetryEvent<TelemetryStartEvent>) async throws
 
     /// A step (single model invocation plus tool execution) begins.
@@ -122,6 +149,24 @@ public protocol Telemetry: Sendable {
 
     /// The object generation step finished, before parsing and validation.
     func onObjectStepEnd(_ event: TelemetryEvent<GenerateObjectStepEndEvent>) async throws
+
+    /// An embedding model call (`doEmbed`) begins; `embedMany` makes one per chunk.
+    func onEmbedStart(_ event: TelemetryEvent<EmbeddingModelCallStartEvent>) async throws
+
+    /// An embedding model call finished.
+    func onEmbedEnd(_ event: TelemetryEvent<EmbeddingModelCallEndEvent>) async throws
+
+    /// A reranking model call (`doRerank`) begins.
+    func onRerankStart(_ event: TelemetryEvent<RerankingModelCallStartEvent>) async throws
+
+    /// A reranking model call finished.
+    func onRerankEnd(_ event: TelemetryEvent<RerankingModelCallEndEvent>) async throws
+
+    /// A streaming transcription begins.
+    func onStreamTranscriptionStart(_ event: TelemetryEvent<StreamTranscriptionStartEvent>) async throws
+
+    /// A streaming transcription finished.
+    func onStreamTranscriptionEnd(_ event: TelemetryEvent<StreamTranscriptionEndEvent>) async throws
 
     /// An operation finished.
     func onEnd(_ event: TelemetryEvent<TelemetryEndEvent>) async throws
@@ -161,6 +206,12 @@ public extension Telemetry {
     func onStepEnd(_ event: TelemetryEvent<any StepResult>) async throws {}
     func onObjectStepStart(_ event: TelemetryEvent<GenerateObjectStepStartEvent>) async throws {}
     func onObjectStepEnd(_ event: TelemetryEvent<GenerateObjectStepEndEvent>) async throws {}
+    func onEmbedStart(_ event: TelemetryEvent<EmbeddingModelCallStartEvent>) async throws {}
+    func onEmbedEnd(_ event: TelemetryEvent<EmbeddingModelCallEndEvent>) async throws {}
+    func onRerankStart(_ event: TelemetryEvent<RerankingModelCallStartEvent>) async throws {}
+    func onRerankEnd(_ event: TelemetryEvent<RerankingModelCallEndEvent>) async throws {}
+    func onStreamTranscriptionStart(_ event: TelemetryEvent<StreamTranscriptionStartEvent>) async throws {}
+    func onStreamTranscriptionEnd(_ event: TelemetryEvent<StreamTranscriptionEndEvent>) async throws {}
     func onEnd(_ event: TelemetryEvent<TelemetryEndEvent>) async throws {}
     func onAbort(_ event: TelemetryEvent<GenerateTextAbortEvent>) async throws {}
     func onError(_ event: TelemetryEvent<TelemetryErrorEvent>) async throws {}

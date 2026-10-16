@@ -88,7 +88,13 @@ struct TelemetryDispatcher: Sendable {
                 runtimeContext: restrict(start.runtimeContext),
                 toolsContext: restrict(start.toolsContext)
             ))
-        case .generateObject:
+        case .embed(let start):
+            restricted = .embed(start.with(runtimeContext: restrict(start.runtimeContext)))
+        case .embedMany(let start):
+            restricted = .embedMany(start.with(runtimeContext: restrict(start.runtimeContext)))
+        case .rerank(let start):
+            restricted = .rerank(start.with(runtimeContext: restrict(start.runtimeContext)))
+        case .generateObject, .generateSpeech, .transcribe:
             restricted = event
         }
         let wrapped = wrap(restricted)
@@ -157,11 +163,53 @@ struct TelemetryDispatcher: Sendable {
                 toolsContext: restrict(end.toolsContext),
                 steps: end.steps.map(restrict)
             ))
-        case .generateObject:
+        case .embed(let end):
+            restricted = .embed(end.with(runtimeContext: restrict(end.runtimeContext)))
+        case .embedMany(let end):
+            restricted = .embedMany(end.with(runtimeContext: restrict(end.runtimeContext)))
+        case .rerank(let end):
+            restricted = .rerank(end.with(runtimeContext: restrict(end.runtimeContext)))
+        case .generateObject, .generateSpeech, .transcribe:
             restricted = event
         }
         let wrapped = wrap(restricted)
         await fanOut { try await $0.onEnd(wrapped) }
+    }
+
+    func onEmbedStart(_ event: EmbeddingModelCallStartEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onEmbedStart(wrapped) }
+    }
+
+    func onEmbedEnd(_ event: EmbeddingModelCallEndEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onEmbedEnd(wrapped) }
+    }
+
+    func onRerankStart(_ event: RerankingModelCallStartEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onRerankStart(wrapped) }
+    }
+
+    func onRerankEnd(_ event: RerankingModelCallEndEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onRerankEnd(wrapped) }
+    }
+
+    func onStreamTranscriptionStart(_ event: StreamTranscriptionStartEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onStreamTranscriptionStart(wrapped) }
+    }
+
+    func onStreamTranscriptionEnd(_ event: StreamTranscriptionEndEvent) async {
+        guard isActive else { return }
+        let wrapped = wrap(event)
+        await fanOut { try await $0.onStreamTranscriptionEnd(wrapped) }
     }
 
     func onAbort(_ event: GenerateTextAbortEvent) async {

@@ -2,6 +2,9 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+/// Callback for embedding operation lifecycle events.
+public typealias EmbedCallback<Event: Sendable> = @Sendable (Event) async throws -> Void
+
 /**
  Embed a single value using an embedding model.
 
@@ -16,12 +19,10 @@ public func embed(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
-    runtimeContext: [String: any Sendable] = [:],
-    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
-    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
+    telemetry: TelemetryOptions? = nil,
+    runtimeContext: Context = [:],
+    onStart: EmbedCallback<EmbedStartEvent<String>>? = nil,
+    onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try validateEmbeddingDimensions(dimensions)
     let model = try resolveEmbeddingModelV4(modelArg)
@@ -36,129 +37,75 @@ public func embed(
         "ai/\(VERSION)"
     )
 
-    var telemetrySettings = CallSettings()
-    telemetrySettings.maxRetries = preparedRetries.maxRetries
+    let generateCallId = try createIDGenerator(prefix: "call", size: 24)
+    let callId = generateCallId()
+    let dispatcher = TelemetryDispatcher(telemetry: telemetry)
 
-    let baseTelemetryAttributes = getBaseTelemetryAttributes(
-        model: TelemetryModelInfo(modelId: model.modelId, provider: model.provider),
-        settings: telemetrySettings,
-        telemetry: telemetry,
-        headers: headersWithUserAgent
+    let startEvent = EmbedStartEvent(
+        runtimeContext: runtimeContext, callId: callId, operationId: "ai.embed",
+        provider: model.provider, modelId: model.modelId, value: value,
+        dimensions: dimensions, maxRetries: preparedRetries.maxRetries,
+        headers: headersWithUserAgent, providerOptions: providerOptions
+    )
+    await notify(
+        invoke(onStart, with: startEvent),
+        { await dispatcher.onStart(.embed(startEvent)) }
     )
 
-    let tracer = getTracer(
-        isEnabled: telemetry?.isEnabled ?? false,
-        tracer: telemetry?.tracer
-    )
-
-    let outerAttributeDescriptors = makeEmbedTelemetryAttributes(
-        operationId: "ai.embed",
-        telemetry: telemetry,
-        baseAttributes: baseTelemetryAttributes,
-        additional: [
-            "ai.value": .input {
-                .string(embedTelemetryJSONString(from: value))
-            }
-        ]
-    )
-
-    let outerAttributes = try await selectTelemetryAttributes(
-        telemetry: telemetry,
-        attributes: outerAttributeDescriptors
-    )
-
-    let callId = try createIDGenerator(prefix: "call", size: 24)()
-    return try await recordSpan(
-        name: "ai.embed",
-        tracer: tracer,
-        attributes: outerAttributes
-    ) { span in
-        try? await (onStart ?? experimentalOnStart)?(EmbedStartEvent(
-            runtimeContext: runtimeContext, callId: callId, operationId: "ai.embed",
-            provider: model.provider, modelId: model.modelId, value: value,
-            dimensions: dimensions, maxRetries: preparedRetries.maxRetries,
-            headers: headersWithUserAgent, providerOptions: providerOptions
-        ))
+    do {
         let (embedding, usage, warnings, providerMetadata, providerResponse) = try await preparedRetries.retry.call {
-            try await recordSpan(
-                name: "ai.embed.doEmbed",
-                tracer: tracer,
-                attributes: try await selectTelemetryAttributes(
-                    telemetry: telemetry,
-                    attributes: makeEmbedTelemetryAttributes(
-                        operationId: "ai.embed.doEmbed",
-                        telemetry: telemetry,
-                        baseAttributes: baseTelemetryAttributes,
-                        additional: [
-                            "ai.values": .input {
-                                .stringArray(embedTelemetryJSONStringArray(from: [value as Any]))
-                            }
-                        ]
-                    )
+            let embedCallId = generateCallId()
+            await dispatcher.onEmbedStart(EmbeddingModelCallStartEvent(
+                callId: callId, embedCallId: embedCallId, operationId: "ai.embed.doEmbed",
+                provider: model.provider, modelId: model.modelId, values: [value], dimensions: dimensions
+            ))
+
+            let modelResponse = try await model.doEmbed(
+                options: EmbeddingModelV4CallOptions(
+                    values: [value],
+                    dimensions: dimensions,
+                    abortSignal: abortSignal,
+                    providerOptions: providerOptions,
+                    headers: headersWithUserAgent
                 )
-            ) { doEmbedSpan in
-                let modelResponse = try await model.doEmbed(
-                    options: EmbeddingModelV4CallOptions(
-                        values: [value],
-                        dimensions: dimensions,
-                        abortSignal: abortSignal,
-                        providerOptions: providerOptions,
-                        headers: headersWithUserAgent
-                    )
-                )
+            )
+            let usage = makeEmbeddingUsage(from: modelResponse.usage)
 
-                guard let embedding = modelResponse.embeddings.first else {
-                    throw InvalidResponseDataError(
-                        data: modelResponse.embeddings,
-                        message: "No embedding generated."
-                    )
-                }
-                let usage = makeEmbeddingUsage(from: modelResponse.usage)
+            await dispatcher.onEmbedEnd(EmbeddingModelCallEndEvent(
+                callId: callId, embedCallId: embedCallId, operationId: "ai.embed.doEmbed",
+                provider: model.provider, modelId: model.modelId, values: [value],
+                embeddings: modelResponse.embeddings, usage: usage
+            ))
 
-                let innerAttributes = try await selectTelemetryAttributes(
-                    telemetry: telemetry,
-                    attributes: [
-                        "ai.embeddings": .output {
-                            .stringArray(
-                                embedTelemetryJSONStringArray(from: modelResponse.embeddings.map { $0 as Any })
-                            )
-                        },
-                        "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
-                    ]
-                )
-
-                doEmbedSpan.setAttributes(innerAttributes)
-
-                return (
-                    embedding,
-                    usage,
-                    modelResponse.warnings,
-                    modelResponse.providerMetadata,
-                    modelResponse.response
+            guard let embedding = modelResponse.embeddings.first else {
+                throw InvalidResponseDataError(
+                    data: modelResponse.embeddings,
+                    message: "No embedding generated."
                 )
             }
+
+            return (
+                embedding,
+                usage,
+                modelResponse.warnings,
+                modelResponse.providerMetadata,
+                modelResponse.response
+            )
         }
 
         logWarnings(warnings.map { .embeddingModel($0) })
 
-        let outerResultAttributes = try await selectTelemetryAttributes(
-            telemetry: telemetry,
-            attributes: [
-                "ai.embedding": .output {
-                    .string(embedTelemetryJSONString(from: embedding))
-                },
-                "ai.usage.tokens": .value(embeddingTokenAttribute(usage.tokens))
-            ]
-        )
-
-        span.setAttributes(outerResultAttributes)
-
-        try? await (onEnd ?? experimentalOnEnd)?(EmbedEndEvent(
+        let endEvent = EmbedEndEvent(
             runtimeContext: runtimeContext, callId: callId, operationId: "ai.embed",
             provider: model.provider, modelId: model.modelId, value: value,
             embedding: embedding, usage: usage, warnings: warnings,
             providerMetadata: providerMetadata, response: .single(providerResponse)
-        ))
+        )
+        await notify(
+            invoke(onEnd, with: endEvent),
+            { await dispatcher.onEnd(.embed(endEvent)) }
+        )
+
         return DefaultEmbedResult(
             value: value,
             embedding: embedding,
@@ -167,6 +114,9 @@ public func embed(
             providerMetadata: providerMetadata,
             response: providerResponse
         )
+    } catch {
+        await dispatcher.onError(callId: callId, error: error)
+        throw error
     }
 }
 
@@ -181,12 +131,10 @@ public func embed(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
-    runtimeContext: [String: any Sendable] = [:],
-    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
-    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
+    telemetry: TelemetryOptions? = nil,
+    runtimeContext: Context = [:],
+    onStart: EmbedCallback<EmbedStartEvent<String>>? = nil,
+    onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v4(model),
@@ -196,12 +144,10 @@ public func embed(
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalTelemetry: telemetry,
+        telemetry: telemetry,
         runtimeContext: runtimeContext,
         onStart: onStart,
-        experimentalOnStart: experimentalOnStart,
-        onEnd: onEnd,
-        experimentalOnEnd: experimentalOnEnd
+        onEnd: onEnd
     )
 }
 
@@ -214,12 +160,10 @@ public func embed(
     maxRetries: Int? = nil,
     abortSignal: (@Sendable () -> Bool)? = nil,
     headers: [String: String]? = nil,
-    experimentalTelemetry telemetry: TelemetrySettings? = nil,
-    runtimeContext: [String: any Sendable] = [:],
-    onStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    experimentalOnStart: (@Sendable (EmbedStartEvent<String>) async throws -> Void)? = nil,
-    onEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil,
-    experimentalOnEnd: (@Sendable (EmbedEndEvent<String, Embedding>) async throws -> Void)? = nil
+    telemetry: TelemetryOptions? = nil,
+    runtimeContext: Context = [:],
+    onStart: EmbedCallback<EmbedStartEvent<String>>? = nil,
+    onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try await embed(
         model: .v3(model),
@@ -229,11 +173,9 @@ public func embed(
         maxRetries: maxRetries,
         abortSignal: abortSignal,
         headers: headers,
-        experimentalTelemetry: telemetry,
+        telemetry: telemetry,
         runtimeContext: runtimeContext,
         onStart: onStart,
-        experimentalOnStart: experimentalOnStart,
-        onEnd: onEnd,
-        experimentalOnEnd: experimentalOnEnd
+        onEnd: onEnd
     )
 }
