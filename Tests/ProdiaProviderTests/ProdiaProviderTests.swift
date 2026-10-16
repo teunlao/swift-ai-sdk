@@ -151,10 +151,6 @@ struct ProdiaProviderTests {
         let provider = createProdia(settings: .init(apiKey: "test-api-key"))
 
         #expect(throws: NoSuchModelError.self) {
-            _ = try provider.languageModel(modelId: "some-id")
-        }
-
-        #expect(throws: NoSuchModelError.self) {
             _ = try provider.embeddingModel(modelId: "some-id")
         }
     }

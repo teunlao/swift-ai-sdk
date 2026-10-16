@@ -23,7 +23,10 @@ public final class ProdiaProvider: ProviderV4 {
         self.baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://inference.prodia.com/v2"
     }
     public func languageModel(modelId: String) throws -> any LanguageModelV4 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
+        languageModel(ProdiaLanguageModelId(rawValue: modelId))
+    }
+    public func languageModel(_ modelId: ProdiaLanguageModelId) -> ProdiaLanguageModel {
+        ProdiaLanguageModel(modelId: modelId, config: config(provider: "prodia.language"))
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
