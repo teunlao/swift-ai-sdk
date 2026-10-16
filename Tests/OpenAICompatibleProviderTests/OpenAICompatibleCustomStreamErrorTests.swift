@@ -88,7 +88,7 @@ struct OpenAICompatibleCustomStreamErrorTests {
             parts.append(part)
         }
 
-        #expect(parts.contains(.error(error: .string("Error 4290: overloaded"))))
+        #expect(parts.contains(.error(error: .value(.string("Error 4290: overloaded")))))
         guard case let .finish(reason, _, _) = parts.last else {
             Issue.record("Missing chat error finish")
             return
@@ -122,7 +122,7 @@ struct OpenAICompatibleCustomStreamErrorTests {
             parts.append(part)
         }
 
-        #expect(parts.contains(.error(error: .string("overloaded"))))
+        #expect(parts.contains(.error(error: .value(.string("overloaded")))))
         guard case let .finish(reason, _, _) = parts.last else {
             Issue.record("Missing completion error finish")
             return

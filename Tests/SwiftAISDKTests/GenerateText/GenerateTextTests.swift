@@ -262,7 +262,7 @@ struct GenerateTextTests {
             }
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "prompt"
@@ -278,7 +278,7 @@ struct GenerateTextTests {
 
         #expect(result.content.count == 7)
 
-        if case .text(let text, _) = result.content[0] {
+        if case .text(let text, _, _) = result.content[0] {
             #expect(text == "Hello, world!")
         } else {
             Issue.record("Expected first content part to be text")
@@ -319,7 +319,7 @@ struct GenerateTextTests {
             Issue.record("Expected fifth content part to be tool call")
         }
 
-        if case .text(let moreText, _) = result.content[5] {
+        if case .text(let moreText, _, _) = result.content[5] {
             #expect(moreText == "More text")
         } else {
             Issue.record("Expected sixth content part to be text")
@@ -350,7 +350,7 @@ struct GenerateTextTests {
 
         let referenceModel = makeModelWithSources()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -366,7 +366,7 @@ struct GenerateTextTests {
     func resultReasoningTextContainsReasoning() async throws {
         let model = makeModelWithReasoning()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -380,7 +380,7 @@ struct GenerateTextTests {
     func resultSourcesContainsSources() async throws {
         let model = makeModelWithSources()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -413,7 +413,7 @@ struct GenerateTextTests {
     func resultFilesContainsFiles() async throws {
         let model = makeModelWithFiles()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -433,7 +433,7 @@ struct GenerateTextTests {
     @Test("result.steps includes reasoning output from model response")
     func resultStepsIncludeReasoning() async throws {
         let model = makeModelWithReasoning()
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
@@ -480,7 +480,7 @@ struct GenerateTextTests {
             Issue.record("Expected second step content to be reasoning")
         }
 
-        if case .text(let text, _) = step.content[2] {
+        if case .text(let text, _, _) = step.content[2] {
             #expect(text == "Hello, world!")
         } else {
             Issue.record("Expected third step content to be text")
@@ -490,7 +490,7 @@ struct GenerateTextTests {
     @Test("result.steps includes sources from model response")
     func resultStepsIncludeSources() async throws {
         let model = makeModelWithSources()
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
@@ -530,7 +530,7 @@ struct GenerateTextTests {
     @Test("result.steps includes files from model response")
     func resultStepsIncludeFiles() async throws {
         let model = makeModelWithFiles()
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
@@ -619,7 +619,7 @@ struct GenerateTextTests {
             "tool2": tool(inputSchema: toolInputSchema(requiredKey: "somethingElse"))
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             toolChoice: .required,
@@ -695,7 +695,7 @@ struct GenerateTextTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input"
@@ -733,7 +733,7 @@ struct GenerateTextTests {
             )
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "test-input"
         )
@@ -760,7 +760,7 @@ struct GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(headers: ["custom-request-header": "request-header-value"])
@@ -793,7 +793,7 @@ struct GenerateTextTests {
             ]
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "test-input",
             providerOptions: providerOptions
@@ -844,7 +844,7 @@ struct GenerateTextTests {
                 tools: tools,
                 prompt: "test-input",
                 settings: CallSettings(abortSignal: { abortFlag.isAborted() })
-            ) as DefaultGenerateTextResult<JSONValue>
+            )
         }
 
         abortFlag.abort()
@@ -895,7 +895,7 @@ struct GenerateTextTests {
             tools: tools,
             prompt: "test-input",
             activeTools: ["tool1"]
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         #expect(capturedTools?.count == 1)
         if let capturedTools {
@@ -943,8 +943,8 @@ struct GenerateTextTests {
                 )
             ),
             prompt: "prompt",
-            experimentalTelemetry: TelemetrySettings(tracer: tracer)
-        ) as DefaultGenerateTextResult<JSONValue>
+            telemetry: TelemetryOptions(isEnabled: false, integrations: [LegacyOpenTelemetry(tracer: tracer)])
+        )
 
         #expect(tracer.spanRecords.isEmpty)
     }
@@ -978,15 +978,14 @@ struct GenerateTextTests {
                 )
             ),
             prompt: "prompt",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
+            telemetry: TelemetryOptions(
                 functionId: "test-function-id",
-                metadata: [
-                    "test1": .string("value1"),
-                    "test2": .bool(false)
-                ],
-                tracer: tracer
+                integrations: [LegacyOpenTelemetry(tracer: tracer)]
             ),
+            runtimeContext: [
+                "test1": .string("value1"),
+                "test2": .bool(false)
+            ],
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
@@ -1003,7 +1002,7 @@ struct GenerateTextTests {
                     "header2": "value2"
                 ]
             )
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let spans = tracer.spanRecords
         #expect(spans.count == 2)
@@ -1012,8 +1011,8 @@ struct GenerateTextTests {
             let outer = spans[0]
             #expect(outer.name == "ai.generateText")
             #expect(outer.attributes["ai.telemetry.functionId"] == .string("test-function-id"))
-            #expect(outer.attributes["ai.telemetry.metadata.test1"] == .string("value1"))
-            #expect(outer.attributes["ai.telemetry.metadata.test2"] == .bool(false))
+            #expect(outer.attributes["ai.settings.context.test1"] == .string("value1"))
+            #expect(outer.attributes["ai.settings.context.test2"] == .bool(false))
             #expect(outer.attributes["ai.response.text"] == .string("Hello, world!"))
             #expect(outer.attributes["ai.response.providerMetadata"] == .string("{\"testProvider\":{\"testKey\":\"testValue\"}}"))
             #expect(outer.attributes["ai.request.headers.header1"] == .string("value1"))
@@ -1030,7 +1029,7 @@ struct GenerateTextTests {
             #expect(inner.name == "ai.generateText.doGenerate")
             #expect(inner.attributes["ai.prompt.messages"] != nil)
             #expect(inner.attributes["ai.response.id"] == .string("test-id-from-model"))
-            #expect(inner.attributes["ai.response.timestamp"] == .string("1970-01-01T00:00:10Z"))
+            #expect(inner.attributes["ai.response.timestamp"] == .string("1970-01-01T00:00:10.000Z"))
         }
     }
 
@@ -1067,17 +1066,16 @@ struct GenerateTextTests {
             ),
             tools: tools,
             prompt: "test-input",
-            experimentalTelemetry: TelemetrySettings(
-                isEnabled: true,
+            telemetry: TelemetryOptions(
                 recordInputs: false,
                 recordOutputs: false,
-                tracer: tracer
+                integrations: [LegacyOpenTelemetry(tracer: tracer)]
             ),
             internalOptions: GenerateTextInternalOptions(
                 generateId: { "test-id" },
                 currentDate: { Date(timeIntervalSince1970: 0) }
             )
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let spans = tracer.spanRecords
         #expect(spans.count == 3)
@@ -1109,7 +1107,7 @@ struct GenerateTextTests {
             )
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "test-input"
         )
@@ -1178,7 +1176,7 @@ struct GenerateTextTests {
             )
         ]
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input"
@@ -1235,7 +1233,7 @@ struct GenerateTextTests {
     func resultResponseMessagesContainReasoning() async throws {
         let model = makeModelWithReasoning()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "test-input"
         )
@@ -1292,7 +1290,7 @@ struct GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -1315,10 +1313,10 @@ struct GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt",
-            experimentalInclude: GenerateTextInclude(requestBody: false)
+            include: GenerateTextInclude(requestBody: false)
         )
 
         guard let step = result.steps.first else {
@@ -1353,7 +1351,7 @@ struct GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt"
         )
@@ -1400,10 +1398,10 @@ struct GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             prompt: "prompt",
-            experimentalInclude: GenerateTextInclude(responseBody: false)
+            include: GenerateTextInclude(responseBody: false)
         )
 
         guard let step = result.steps.first else {
@@ -1463,10 +1461,10 @@ struct GenerateTextTests {
             model: .v3(model),
             tools: tools,
             prompt: "irrelevant",
-            onFinish: { event in
+            onEnd: { event in
                 await finishRecorder.append(event)
             }
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         let captured = await finishRecorder.entries()
         guard let event = captured.first else {
@@ -1534,366 +1532,79 @@ struct GenerateTextTests {
 
     // MARK: - options.stopWhen (two steps: initial, tool-result)
 
-    @Test("stopWhen two-step result.text equals last step")
-    func stopWhenTwoStepResultText() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        #expect(scenario.result.text == "Hello, world!")
+    @Test("two steps: the result aggregates all steps and reads text, finish reason and response from the final step")
+    func stopWhenTwoStepResult() async throws {
+        let result = try await runTwoStepStopWhenScenario().result
+
+        #expect(result.text == "Hello, world!")
+        #expect(result.finishReason == .stop)
+        #expect(result.response.id == "test-id-2-from-model")
+        #expect(result.toolCalls.map(\.toolCallId) == ["call-1"])
+        #expect(result.toolResults.map(\.toolCallId) == ["call-1"])
+        #expect(result.usage == result.totalUsage)
+        #expect(result.totalUsage.inputTokens == 13)
+        #expect(result.totalUsage.outputTokens == 15)
+        #expect(result.totalUsage.totalTokens == 28)
+        #expect(result.steps.map(\.finishReason) == [.toolCalls, .stop])
+        #expect(result.steps.map(\.response.id) == ["test-id-1-from-model", "test-id-2-from-model"])
+        #expect(result.responseMessages.map(responseRole) == ["assistant", "tool", "assistant"])
+        #expect(result.response.messages.map(responseRole) == ["assistant"])
     }
 
-    @Test("stopWhen two-step result.toolCalls empty for last step")
-    func stopWhenTwoStepToolCallsEmpty() async throws {
+    @Test("two steps: onEnd aggregates the steps and onStepEnd sees each step's own response messages")
+    func stopWhenTwoStepCallbacks() async throws {
         let scenario = try await runTwoStepStopWhenScenario()
-        #expect(scenario.result.toolCalls.isEmpty)
-    }
-
-    @Test("stopWhen two-step result.toolResults empty for last step")
-    func stopWhenTwoStepToolResultsEmpty() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        #expect(scenario.result.toolResults.isEmpty)
-    }
-
-    @Test("stopWhen two-step response messages include all steps")
-    func stopWhenTwoStepResponseMessages() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        let messages = scenario.result.response.messages
-        #expect(messages.count == 3)
-
-        if case .assistant(let firstAssistant) = messages[0] {
-            if case .parts(let parts) = firstAssistant.content {
-                #expect(parts.count == 1)
-                if case .toolCall(let toolCallPart) = parts[0] {
-                    #expect(toolCallPart.toolCallId == "call-1")
-                } else {
-                    Issue.record("Expected tool call part in first assistant message")
-                }
-            } else {
-                Issue.record("Expected assistant parts in first message")
-            }
-        } else {
-            Issue.record("Expected first message to be assistant")
-        }
-
-        if case .tool(let toolMessage) = messages[1] {
-            #expect(toolMessage.content.count == 1)
-        } else {
-            Issue.record("Expected second message to be tool message")
-        }
-
-        if case .assistant(let secondAssistant) = messages[2] {
-            switch secondAssistant.content {
-            case .text(let text):
-                #expect(text == "Hello, world!")
-            case .parts(let parts):
-                if case .text(let textPart) = parts.first {
-                    #expect(textPart.text == "Hello, world!")
-                } else {
-                    Issue.record("Expected text part in final assistant message")
-                }
-            }
-        } else {
-            Issue.record("Expected third message to be assistant")
-        }
-    }
-
-    @Test("stopWhen two-step totalUsage sums step usage")
-    func stopWhenTwoStepTotalUsage() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        let usage = scenario.result.totalUsage
-        #expect(usage.inputTokens == 13)
-        #expect(usage.outputTokens == 15)
-        #expect(usage.totalTokens == 28)
-    }
-
-    @Test("stopWhen two-step usage reflects final step usage")
-    func stopWhenTwoStepFinalUsage() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        let usage = scenario.result.usage
-        #expect(usage.inputTokens == 3)
-        #expect(usage.outputTokens == 10)
-        #expect(usage.totalTokens == 13)
-    }
-
-    @Test("stopWhen two-step steps include both intermediate and final results")
-    func stopWhenTwoStepIncludesAllSteps() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        let steps = scenario.result.steps
-        #expect(steps.count == 2)
-
-        if let first = steps.first {
-            #expect(first.finishReason == .toolCalls)
-            #expect(first.toolCalls.count == 1)
-            #expect(first.toolResults.count == 1)
-            #expect(first.response.id == "test-id-1-from-model")
-        }
-
-        if let last = steps.last {
-            #expect(last.finishReason == .stop)
-            #expect(last.text == "Hello, world!")
-            #expect(last.toolCalls.isEmpty)
-            #expect(last.toolResults.isEmpty)
-            #expect(last.response.id == "test-id-2-from-model")
-        }
-    }
-
-    @Test("stopWhen two-step onFinish event includes aggregated information")
-    func stopWhenTwoStepOnFinishEvent() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        guard let event = scenario.finishEvent else {
-            Issue.record("Expected onFinish event")
-            return
-        }
+        let event = try #require(scenario.finishEvent)
 
         #expect(event.finishReason == .stop)
         #expect(event.text == "Hello, world!")
-        #expect(event.totalUsage.inputTokens == 13)
-        #expect(event.totalUsage.outputTokens == 15)
         #expect(event.totalUsage.totalTokens == 28)
-        #expect(event.toolCalls.isEmpty)
-        #expect(event.toolResults.isEmpty)
+        #expect(event.toolCalls.map(\.toolCallId) == ["call-1"])
         #expect(event.steps.count == 2)
-        #expect(event.response.id == "test-id-2-from-model")
-        #expect(event.response.messages.count == 3)
+        #expect(event.responseMessages.count == 3)
+
+        #expect(scenario.stepSnapshots.map(\.responseMessageRoles) == [["assistant", "tool"], ["assistant"]])
     }
 
-    @Test("stopWhen two-step onStepFinish called for each step")
-    func stopWhenTwoStepOnStepFinish() async throws {
-        let scenario = try await runTwoStepStopWhenScenario()
-        #expect(scenario.stepSnapshots.count == 2)
-
-        if scenario.stepSnapshots.count == 2 {
-            let first = scenario.stepSnapshots[0]
-            #expect(first.finishReason == .toolCalls)
-            #expect(first.toolCallCount == 1)
-            #expect(first.toolResultCount == 1)
-            #expect(first.responseMessageRoles == ["assistant", "tool"])
-
-            let second = scenario.stepSnapshots[1]
-            #expect(second.finishReason == .stop)
-            #expect(second.toolCallCount == 0)
-            #expect(second.toolResultCount == 0)
-            #expect(second.responseMessageRoles == ["assistant", "tool", "assistant"])
+    private func responseRole(_ message: ResponseMessage) -> String {
+        switch message {
+        case .assistant: return "assistant"
+        case .tool: return "tool"
         }
     }
 
     // MARK: - options.stopWhen with prepareStep
 
-    @Test("prepareStep records all calls")
-    func prepareStepRecordsAllCalls() async throws {
+    @Test("prepareStep overrides apply to their step and its messages carry into the next step")
+    func prepareStepOverrides() async throws {
         let scenario = try await runPrepareStepScenario()
+
         let calls = scenario.prepareSnapshots
-        #expect(calls.count == 2)
+        #expect(calls.map(\.stepNumber) == [0, 1])
+        #expect(calls.first?.messageSummaries == ["user:text:test-input"])
+        #expect(Set(calls.last?.messageSummaries ?? []) == [
+            "user:text:new input from prepareStep",
+            "assistant:tool-call:tool1",
+            "tool:tool-result:tool1",
+        ])
 
-        if calls.count == 2 {
-            let first = calls[0]
-            #expect(first.stepNumber == 0)
-            #expect(first.stepCount == 0)
-            #expect(first.finishReasons.isEmpty)
-            #expect(first.messageSummaries == ["user:text:test-input"])
-
-            let second = calls[1]
-            #expect(second.stepNumber == 1)
-            #expect(second.stepCount == 1)
-            #expect(second.finishReasons == [.toolCalls])
-            let expectedSummaries: Set<String> = [
-                "user:text:test-input",
-                "assistant:tool-call:tool1",
-                "tool:tool-result:tool1"
-            ]
-            #expect(Set(second.messageSummaries) == expectedSummaries)
+        let modelCalls = scenario.doGenerateCalls
+        #expect(modelCalls.count == 2)
+        #expect(modelCalls.first?.toolChoice == .tool(toolName: "tool1"))
+        #expect(modelCalls.first?.tools?.count == 1)
+        guard modelCalls.count == 2, case .system(let firstSystem, _) = modelCalls[0].prompt.first,
+              case .system(let secondSystem, _) = modelCalls[1].prompt.first else {
+            Issue.record("Expected system messages from prepareStep")
+            return
         }
-    }
+        #expect(firstSystem == "system-message-0")
+        #expect(secondSystem == "system-message-1")
+        #expect(modelCalls[1].tools?.isEmpty ?? true)
+        #expect(modelCalls[1].prompt.count == 4)
 
-    @Test("prepareStep doGenerate receives expected call options")
-    func prepareStepDoGenerateCalls() async throws {
-        let scenario = try await runPrepareStepScenario()
-        let calls = scenario.doGenerateCalls
-        #expect(calls.count == 2)
-
-        if calls.count == 2 {
-            let first = calls[0]
-            #expect(first.toolChoice == .tool(toolName: "tool1"))
-            #expect(first.tools?.count == 1)
-            if let tool = first.tools?.first, case .function(let functionTool) = tool {
-                #expect(functionTool.name == "tool1")
-                #expect(functionTool.inputSchema == toolSchemaJSON(requiredKey: "value"))
-            }
-            #expect(first.prompt.count == 2)
-            if first.prompt.count == 2 {
-                if case .system(let content, _) = first.prompt[0] {
-                    #expect(content == "system-message-0")
-                } else {
-                    Issue.record("Expected system message in first prompt entry")
-                }
-
-                if case .user(let userParts, _) = first.prompt[1] {
-                    #expect(userParts.count == 1)
-                    if let part = userParts.first, case .text(let textPart) = part {
-                        #expect(textPart.text == "new input from prepareStep")
-                    } else {
-                        Issue.record("Expected text user content in first prompt")
-                    }
-                } else {
-                    Issue.record("Expected user message in first prompt entry")
-                }
-            }
-
-            let second = calls[1]
-            if let choice = second.toolChoice {
-                #expect(choice == .auto)
-            }
-            #expect(second.tools?.isEmpty ?? true)
-            #expect(second.prompt.count == 4)
-            if second.prompt.count == 4 {
-                if case .system(let systemContent, _) = second.prompt[0] {
-                    #expect(systemContent == "system-message-1")
-                }
-                if case .user(let userParts, _) = second.prompt[1] {
-                    #expect(userParts.count == 1)
-                    if let part = userParts.first, case .text(let textPart) = part {
-                        #expect(textPart.text == "test-input")
-                    } else {
-                        Issue.record("Expected text in second prompt user message")
-                    }
-                }
-                if case .assistant(let assistantParts, _) = second.prompt[2] {
-                    #expect(assistantParts.contains(where: { part in
-                        if case .toolCall(let callPart) = part {
-                            return callPart.toolName == "tool1"
-                        }
-                        return false
-                    }))
-                }
-                if case .tool(let toolParts, _) = second.prompt[3] {
-                    var found = false
-                    for part in toolParts {
-                        if case .toolResult(let resultPart) = part, resultPart.toolName == "tool1" {
-                            found = true
-                            break
-                        }
-                    }
-                    #expect(found)
-            }
-        }
-    }
-    }
-
-    @Test("prepareStep result text uses last step")
-    func prepareStepResultText() async throws {
-        let scenario = try await runPrepareStepScenario()
         #expect(scenario.result.text == "Hello, world!")
-    }
-
-    @Test("prepareStep result toolCalls empty for last step")
-    func prepareStepResultToolCallsEmpty() async throws {
-        let scenario = try await runPrepareStepScenario()
-        #expect(scenario.result.toolCalls.isEmpty)
-    }
-
-    @Test("prepareStep result toolResults empty for last step")
-    func prepareStepResultToolResultsEmpty() async throws {
-        let scenario = try await runPrepareStepScenario()
-        #expect(scenario.result.toolResults.isEmpty)
-    }
-
-    @Test("prepareStep response messages aggregate all steps")
-    func prepareStepResponseMessages() async throws {
-        let scenario = try await runPrepareStepScenario()
-        let messages = scenario.result.response.messages
-        #expect(messages.count == 3)
-
-        if messages.count == 3 {
-            if case .assistant(let firstAssistant) = messages[0], case .parts(let parts) = firstAssistant.content {
-                #expect(parts.contains(where: { part in
-                    if case .toolCall(let call) = part {
-                        return call.toolName == "tool1"
-                    }
-                    return false
-                }))
-            } else {
-                Issue.record("Expected assistant message with tool-call in first response entry")
-            }
-
-            if case .tool(let toolMessage) = messages[1] {
-                #expect(toolMessage.content.contains(where: { part in
-                    if case .toolResult(let resultPart) = part {
-                        return resultPart.toolName == "tool1"
-                    }
-                    return false
-                }))
-            } else {
-                Issue.record("Expected tool message in second response entry")
-            }
-
-            if case .assistant(let finalAssistant) = messages[2] {
-                switch finalAssistant.content {
-                case .parts(let parts):
-                    #expect(parts.contains(where: { part in
-                        if case .text(let textPart) = part {
-                            return textPart.text == "Hello, world!"
-                        }
-                        return false
-                    }))
-                case .text(let text):
-                    #expect(text == "Hello, world!")
-                }
-            } else {
-                Issue.record("Expected assistant message in final response entry")
-            }
-        }
-    }
-
-    @Test("prepareStep totalUsage aggregates all steps")
-    func prepareStepTotalUsage() async throws {
-        let scenario = try await runPrepareStepScenario()
-        let usage = scenario.result.totalUsage
-        #expect(usage.inputTokens == 13)
-        #expect(usage.outputTokens == 15)
-        #expect(usage.totalTokens == 28)
-    }
-
-    @Test("prepareStep usage equals final step usage")
-    func prepareStepFinalUsage() async throws {
-        let scenario = try await runPrepareStepScenario()
-        let usage = scenario.result.usage
-        #expect(usage.inputTokens == 3)
-        #expect(usage.outputTokens == 10)
-        #expect(usage.totalTokens == 13)
-    }
-
-    @Test("prepareStep steps include all results")
-    func prepareStepStepsIncludeAllResults() async throws {
-        let scenario = try await runPrepareStepScenario()
-        let steps = scenario.result.steps
-        #expect(steps.count == 2)
-        if steps.count == 2 {
-            let first = steps[0]
-            #expect(first.finishReason == .toolCalls)
-            #expect(first.toolCalls.count == 1)
-            #expect(first.toolResults.count == 1)
-
-            let second = steps[1]
-            #expect(second.finishReason == .stop)
-            #expect(second.toolCalls.isEmpty)
-            #expect(second.toolResults.isEmpty)
-            #expect(second.text == "Hello, world!")
-        }
-    }
-
-    @Test("prepareStep onStepFinish invoked per step")
-    func prepareStepOnStepFinish() async throws {
-        let scenario = try await runPrepareStepScenario()
+        #expect(scenario.result.steps.count == 2)
         #expect(scenario.onStepFinishSnapshots.count == 2)
-    }
-
-    @Test("prepareStep content reflects last step")
-    func prepareStepContentFromLastStep() async throws {
-        let scenario = try await runPrepareStepScenario()
-        #expect(scenario.result.content.count == 1)
-        if let first = scenario.result.content.first, case .text(let text, _) = first {
-            #expect(text == "Hello, world!")
-        } else {
-            Issue.record("Expected text content from final step")
-        }
     }
 
     // MARK: - options.stopWhen with multiple conditions
@@ -1970,7 +1681,7 @@ private struct StepSnapshot: Sendable {
 }
 
 private struct StopWhenScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
     let finishEvent: GenerateTextFinishEvent?
     let stepSnapshots: [StepSnapshot]
 }
@@ -2060,12 +1771,12 @@ private extension GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
             stopWhen: [stepCountIs(3)],
-            onStepFinish: { step in
+            onStepEnd: { step in
                 let snapshot = StepSnapshot(
                     finishReason: step.finishReason,
                     text: step.text,
@@ -2081,7 +1792,7 @@ private extension GenerateTextTests {
                 )
                 await stepRecorder.append(snapshot)
             },
-            onFinish: { event in
+            onEnd: { event in
                 await finishRecorder.append(event)
             }
         )
@@ -2108,7 +1819,7 @@ private extension GenerateTextTests {
                         if case .user(let userMessage) = options.messages[0] {
                             switch userMessage.content {
                             case .text(let text):
-                                #expect(text == "test-input")
+                                #expect(text == "new input from prepareStep")
                             case .parts:
                                 Issue.record("Expected text user message in prepare step scenario")
                             }
@@ -2166,7 +1877,7 @@ private extension GenerateTextTests {
 
         let baseModel = makeModelWithFiles()
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(baseModel),
             tools: tools,
             prompt: "test-input",
@@ -2204,7 +1915,7 @@ private extension GenerateTextTests {
 
                 return nil
             },
-            onStepFinish: { step in
+            onStepEnd: { step in
                 let snapshot = StepSnapshot(
                     finishReason: step.finishReason,
                     text: step.text,
@@ -2220,7 +1931,7 @@ private extension GenerateTextTests {
                 )
                 await stepRecorder.append(snapshot)
             },
-            onFinish: { event in
+            onEnd: { event in
                 await finishRecorder.append(event)
             }
         )
@@ -2294,7 +2005,7 @@ private extension GenerateTextTests {
             }
         )
 
-        let result: DefaultGenerateTextResult<JSONValue> = try await generateText(
+        let result = try await generateText(
             model: .v3(model),
             tools: tools,
             prompt: "test-input",
@@ -2335,7 +2046,7 @@ private struct PrepareStepCallSnapshot: Sendable {
 }
 
 private struct PrepareStepScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
     let finishEvent: GenerateTextFinishEvent?
     let onStepFinishSnapshots: [StepSnapshot]
     let doGenerateCalls: [LanguageModelV3CallOptions]
@@ -2349,7 +2060,7 @@ private struct StopConditionCallSnapshot: Sendable {
 }
 
 private struct StopConditionsScenario: Sendable {
-    let result: DefaultGenerateTextResult<JSONValue>
+    let result: DefaultGenerateTextResult<String>
     let stopConditionSnapshots: [StopConditionCallSnapshot]
 }
 

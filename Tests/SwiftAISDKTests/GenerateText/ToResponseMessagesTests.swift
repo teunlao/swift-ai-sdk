@@ -9,16 +9,20 @@ import AISDKProvider
 import AISDKProviderUtils
 @testable import SwiftAISDK
 
+private func modelResponseMessages(content: [ContentPart], tools: ToolSet?) async throws -> [ModelMessage] {
+    try await toResponseMessages(content: content, tools: tools).map { $0.modelMessage }
+}
+
 @Suite("To Response Messages")
 struct ToResponseMessagesTests {
     @Test("assistant message with text when no tool calls")
-    func assistantMessageTextOnly() throws {
+    func assistantMessageTextOnly() async throws {
         let content: [ContentPart] = [
             .text(text: "Hello, world!", providerMetadata: nil)
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         #expect(result == [
             .assistant(
@@ -32,7 +36,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool calls in assistant message")
-    func assistantMessageIncludesToolCall() throws {
+    func assistantMessageIncludesToolCall() async throws {
         let toolCall = makeToolCall(
             id: "123",
             name: "testTool"
@@ -44,7 +48,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -69,7 +73,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool call metadata in assistant message")
-    func assistantMessageIncludesToolCallMetadata() throws {
+    func assistantMessageIncludesToolCallMetadata() async throws {
         let metadata: ProviderMetadata = [
             "testProvider": ["signature": .string("sig")]
         ]
@@ -86,7 +90,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -111,7 +115,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool results as separate message")
-    func toolResultsAsSeparateMessage() throws {
+    func toolResultsAsSeparateMessage() async throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolResult = makeToolResult(
             id: "123",
@@ -126,7 +130,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expectedAssistantContent: [AssistantContentPart] = [
             .text(TextPart(text: "Tool used", providerOptions: nil)),
@@ -160,7 +164,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include tool errors as separate message")
-    func toolErrorsAsSeparateMessage() throws {
+    func toolErrorsAsSeparateMessage() async throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolError = makeToolError(
             id: "123",
@@ -175,7 +179,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expectedAssistantContent: [AssistantContentPart] = [
             .text(TextPart(text: "Tool used", providerOptions: nil)),
@@ -209,7 +213,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle reasoning content")
-    func handleReasoningContent() throws {
+    func handleReasoningContent() async throws {
         let metadata: ProviderMetadata = [
             "testProvider": ["signature": .string("sig")]
         ]
@@ -218,7 +222,7 @@ struct ToResponseMessagesTests {
             .reasoning(ReasoningOutput(text: "Thinking text", providerMetadata: metadata))
         ]
 
-        let result = toResponseMessages(content: content, tools: [:])
+        let result = try await modelResponseMessages(content: content, tools: [:])
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -236,7 +240,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle reasoning array with redacted reasoning")
-    func handleRedactedReasoning() throws {
+    func handleRedactedReasoning() async throws {
         let redacted: ProviderMetadata = ["testProvider": ["isRedacted": .bool(true)]]
         let metadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
 
@@ -246,7 +250,7 @@ struct ToResponseMessagesTests {
             .text(text: "Final text", providerMetadata: nil)
         ]
 
-        let result = toResponseMessages(content: content, tools: [:])
+        let result = try await modelResponseMessages(content: content, tools: [:])
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -264,7 +268,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle tool toModelOutput override")
-    func toolToModelOutputOverride() throws {
+    func toolToModelOutputOverride() async throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let toolResult = makeToolResult(
             id: "123",
@@ -301,7 +305,7 @@ struct ToResponseMessagesTests {
             toolResult
         ]
 
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expectedToolContent: [ToolContentPart] = [
             .toolResult(
@@ -317,7 +321,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include images in assistant message")
-    func includeImagesInAssistantMessage() throws {
+    func includeImagesInAssistantMessage() async throws {
         let pngData = Data([137, 80, 78, 71, 13, 10, 26, 10])
         let pngFile = DefaultGeneratedFileWithType(data: pngData, mediaType: "image/png")
 
@@ -326,7 +330,7 @@ struct ToResponseMessagesTests {
             .file(file: pngFile, providerMetadata: nil)
         ]
 
-        let result = toResponseMessages(content: content, tools: [:])
+        let result = try await modelResponseMessages(content: content, tools: [:])
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -349,7 +353,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("handle multiple images")
-    func handleMultipleImages() throws {
+    func handleMultipleImages() async throws {
         let pngFile = DefaultGeneratedFileWithType(data: Data([137, 80, 78, 71, 13, 10, 26, 10]), mediaType: "image/png")
         let jpegFile = DefaultGeneratedFileWithType(data: Data([255, 216, 255]), mediaType: "image/jpeg")
 
@@ -359,7 +363,7 @@ struct ToResponseMessagesTests {
             .file(file: jpegFile, providerMetadata: nil)
         ]
 
-        let result = toResponseMessages(content: content, tools: [:])
+        let result = try await modelResponseMessages(content: content, tools: [:])
 
         let expected: [ModelMessage] = [
             .assistant(
@@ -377,7 +381,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include images reasoning and tool calls in order")
-    func includeImagesReasoningAndToolCalls() throws {
+    func includeImagesReasoningAndToolCalls() async throws {
         let pngFile = DefaultGeneratedFileWithType(data: Data([137, 80, 78, 71, 13, 10, 26, 10]), mediaType: "image/png")
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let reasoningMetadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
@@ -390,7 +394,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expectedAssistantContent: [AssistantContentPart] = [
             .reasoning(ReasoningPart(text: "Thinking text", providerOptions: reasoningMetadata)),
@@ -413,7 +417,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("skip empty text parts")
-    func skipEmptyTextParts() throws {
+    func skipEmptyTextParts() async throws {
         let toolCall = makeToolCall(id: "123", name: "testTool")
         let content: [ContentPart] = [
             .text(text: "", providerMetadata: nil),
@@ -421,7 +425,7 @@ struct ToResponseMessagesTests {
         ]
 
         let tools = makeToolSet()
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         let expectedAssistantContent: [AssistantContentPart] = [
             .toolCall(
@@ -441,13 +445,13 @@ struct ToResponseMessagesTests {
     }
 
     @Test("return empty array without content")
-    func emptyContentReturnsEmptyArray() throws {
-        let result = toResponseMessages(content: [], tools: [:])
+    func emptyContentReturnsEmptyArray() async throws {
+        let result = try await modelResponseMessages(content: [], tools: [:])
         #expect(result.isEmpty)
     }
 
     @Test("include provider-executed tool calls and results")
-    func providerExecutedToolCalls() throws {
+    func providerExecutedToolCalls() async throws {
         let queryValue = JSONValue.string("San Francisco major news events June 22 2025")
         let toolCall = makeToolCall(
             id: "srvtoolu_011cNtbtzFARKPcAcp7w4nh9",
@@ -493,7 +497,7 @@ struct ToResponseMessagesTests {
 
         let tools: ToolSet = ["web_search": providerDefinedTool]
 
-        let result = toResponseMessages(content: content, tools: tools)
+        let result = try await modelResponseMessages(content: content, tools: tools)
 
         #expect(result.count == 1)
         let assistantMessage = result.first!
@@ -530,7 +534,7 @@ struct ToResponseMessagesTests {
     }
 
     @Test("provider-executed string tool results stay text in assistant message")
-    func providerExecutedStringToolResultStaysText() throws {
+    func providerExecutedStringToolResultStaysText() async throws {
         let toolCall = makeToolCall(
             id: "srvtoolu_text_001",
             name: "web_search",
@@ -561,7 +565,7 @@ struct ToResponseMessagesTests {
             args: [:]
         )
 
-        let result = toResponseMessages(
+        let result = try await modelResponseMessages(
             content: [
                 .toolCall(toolCall, providerMetadata: nil),
                 toolResult
@@ -597,13 +601,13 @@ struct ToResponseMessagesTests {
     }
 
     @Test("include provider metadata in text parts")
-    func includeProviderMetadataInText() throws {
+    func includeProviderMetadataInText() async throws {
         let metadata: ProviderMetadata = ["testProvider": ["signature": .string("sig")]]
         let content: [ContentPart] = [
             .text(text: "Here is a text", providerMetadata: metadata)
         ]
 
-        let result = toResponseMessages(content: content, tools: [:])
+        let result = try await modelResponseMessages(content: content, tools: [:])
 
         let expected: [ModelMessage] = [
             .assistant(

@@ -28,7 +28,7 @@ struct StreamTextTimeoutTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)
@@ -46,7 +46,7 @@ struct StreamTextTimeoutTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input"
         )
@@ -63,7 +63,7 @@ struct StreamTextTimeoutTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration())
@@ -81,7 +81,7 @@ struct StreamTextTimeoutTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration(stepMs: 5000))
@@ -99,7 +99,7 @@ struct StreamTextTimeoutTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration(chunkMs: 5000))

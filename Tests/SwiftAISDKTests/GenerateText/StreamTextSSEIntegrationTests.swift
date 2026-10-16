@@ -33,7 +33,7 @@ struct StreamTextSSEIntegrationTests {
             continuation.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -62,7 +62,7 @@ struct StreamTextSSEIntegrationTests {
             c.finish()
         }
         let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "hi"
         )
@@ -219,7 +219,7 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: request, warnings: []),
-            .finishStep(response: response, usage: usage, finishReason: .stop, rawFinishReason: nil, providerMetadata: providerMetadata),
+            .finishStep(response: response, usage: usage, performance: .empty, finishReason: .stop, rawFinishReason: nil, providerMetadata: providerMetadata),
             .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage)
         ]
 
@@ -277,7 +277,7 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
-            .finishStep(response: response, usage: usage, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
+            .finishStep(response: response, usage: usage, performance: .empty, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
             .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: usage)
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -336,7 +336,7 @@ struct StreamTextSSEIntegrationTests {
             .textStart(id: "t", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
             .source(docSource),
-            .file(file),
+            .file(file: file, providerMetadata: nil),
             .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage())
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in
@@ -393,12 +393,12 @@ struct StreamTextSSEIntegrationTests {
         let parts: [TextStreamPart] = [
             .start,
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
-            .finishStep(response: response1, usage: usage1, finishReason: .toolCalls, rawFinishReason: nil, providerMetadata: nil),
+            .finishStep(response: response1, usage: usage1, performance: .empty, finishReason: .toolCalls, rawFinishReason: nil, providerMetadata: nil),
             .startStep(request: LanguageModelRequestMetadata(body: nil), warnings: []),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", text: "ok", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finishStep(response: response2, usage: usage2, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
+            .finishStep(response: response2, usage: usage2, performance: .empty, finishReason: .stop, rawFinishReason: nil, providerMetadata: nil),
             .finish(finishReason: .stop, rawFinishReason: nil, totalUsage: LanguageModelUsage(inputTokens: 3, outputTokens: 4, totalTokens: 7))
         ]
         let stream = AsyncThrowingStream<TextStreamPart, Error> { c in

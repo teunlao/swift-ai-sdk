@@ -1,215 +1,139 @@
+import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-import SwiftAISDK
+@testable import SwiftAISDK
 import Testing
 
-@Suite("Agent")
+@Suite("ToolLoopAgent")
 struct AgentTests {
-    @Test("generate applies agent settings")
-    func generateAppliesSettings() async throws {
-        let mockModel = MockLanguageModel()
-        let emptySchema = jsonSchema(
-            .object([
-                "type": .string("object"),
-                "properties": .object([:]),
-                "additionalProperties": .bool(false)
-            ])
+    private func textStream(_ text: String) -> LanguageModelV3StreamResult {
+        let parts: [LanguageModelV3StreamPart] = [
+            .streamStart(warnings: []),
+            .textStart(id: "1", providerMetadata: nil),
+            .textDelta(id: "1", delta: text, providerMetadata: nil),
+            .textEnd(id: "1", providerMetadata: nil),
+            .finish(
+                finishReason: LanguageModelV3FinishReason(unified: .stop),
+                usage: LanguageModelV3Usage(),
+                providerMetadata: nil
+            ),
+        ]
+        return LanguageModelV3StreamResult(stream: AsyncThrowingStream { continuation in
+            parts.forEach { continuation.yield($0) }
+            continuation.finish()
+        })
+    }
+
+    private func textResult(_ text: String) -> LanguageModelV3GenerateResult {
+        LanguageModelV3GenerateResult(
+            content: [.text(LanguageModelV3Text(text: text))],
+            finishReason: LanguageModelV3FinishReason(unified: .stop),
+            usage: LanguageModelV3Usage()
         )
-        let echoTool = Tool(
-            description: "Echo",
-            inputSchema: FlexibleSchema(emptySchema)
-        )
-        let settings = AgentSettings<String, Never>(
-            name: "helper",
-            system: "You are helpful",
-            model: .v3(mockModel),
-            tools: ["echo": echoTool],
+    }
+
+    @Test("generate forwards the agent settings and tags the user agent")
+    func generateForwardsSettings() async throws {
+        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
+        let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(
+            instructions: "You are helpful",
+            model: .v3(model),
+            tools: ["echo": Tool(description: "Echo", inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))))],
             toolChoice: .required,
-            stopWhen: nil,
-            experimentalTelemetry: nil,
-            activeTools: nil,
-            experimentalOutput: nil,
-            experimentalPrepareStep: nil,
-            prepareStep: nil,
-            experimentalRepairToolCall: nil,
-            onStepFinish: nil,
-            onFinish: nil,
             providerOptions: ["openai": ["mode": .string("fast")]],
-            experimentalContext: nil,
             callSettings: CallSettings(maxOutputTokens: 42, temperature: 0.1)
-        )
+        ))
 
-        let agent = Agent<String, Never>(settings: settings)
-        let result = try await agent.generate(prompt: .text("Hello"))
-        #expect(result.text.isEmpty)
+        let result = try await agent.generate(prompt: "Hello")
 
-        guard let options = mockModel.lastGenerateOptions else {
-            Issue.record("Expected language model to be invoked")
+        #expect(result.text == "ok")
+        let options = try #require(model.doGenerateCalls.first)
+        guard case .system(let system, _) = options.prompt.first else {
+            Issue.record("Expected the instructions as the first message")
             return
         }
-
-        guard case let .system(systemContent, _) = options.prompt.first else {
-            Issue.record("Expected first message to be system")
-            return
-        }
-        #expect(systemContent == "You are helpful")
-
-        guard case let .user(userContent, _) = options.prompt.last else {
-            Issue.record("Expected user message")
-            return
-        }
-        guard case let .text(textPart) = userContent.first else {
-            Issue.record("Expected text part in user message")
-            return
-        }
-        #expect(textPart.text == "Hello")
-
-        // Call settings are forwarded.
+        #expect(system == "You are helpful")
         #expect(options.maxOutputTokens == 42)
         #expect(options.temperature == 0.1)
         #expect(options.tools?.count == 1)
         #expect(options.toolChoice == .required)
         #expect(options.providerOptions?["openai"]?["mode"] == .string("fast"))
+        #expect(options.headers?["user-agent"]?.contains("ai-sdk-agent/tool-loop") == true)
     }
 
-    @Test("generate accepts direct V4 model in settings")
-    func generateAcceptsDirectV4ModelInSettings() async throws {
-        let mockModel = MockLanguageModelV4(
-            doGenerate: .function { _ in
-                LanguageModelV4GenerateResult(
-                    content: [.text(LanguageModelV4Text(text: "Hello from V4 agent"))],
-                    finishReason: LanguageModelV4FinishReason(unified: .stop),
-                    usage: LanguageModelV4Usage()
-                )
+    @Test("call options are validated and shape the call through prepareCall")
+    func prepareCallUsesValidatedOptions() async throws {
+        struct CallOptions: Codable, Sendable { let userName: String }
+
+        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
+        let agent = ToolLoopAgent<CallOptions, String, String>(ToolLoopAgentSettings(
+            model: .v3(model),
+            callOptionsSchema: FlexibleSchema(Schema.codable(
+                CallOptions.self,
+                jsonSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object(["userName": .object(["type": .string("string")])]),
+                    "required": .array([.string("userName")]),
+                ])
+            )),
+            prepareCall: { call in
+                var call = call
+                call.instructions = .text("Address the user as \(call.options?.userName ?? "?")")
+                return call
             }
-        )
+        ))
 
-        let settings = AgentSettings<Never, Never>(
-            system: "You are helpful",
-            model: mockModel
-        )
+        _ = try await agent.generate(prompt: "Hello", options: CallOptions(userName: "Ada"))
 
-        let agent = Agent<Never, Never>(settings: settings)
-        let result = try await agent.generate(prompt: .text("Hello"))
-
-        #expect(result.text == "Hello from V4 agent")
-        #expect(mockModel.doGenerateCalls.count == 1)
+        let options = try #require(model.doGenerateCalls.first)
+        guard case .system(let system, _) = options.prompt.first else {
+            Issue.record("Expected prepared instructions as the first message")
+            return
+        }
+        #expect(system == "Address the user as Ada")
     }
 
-    @Test("generate forwards timeout as abort signal")
-    func generateForwardsTimeoutAsAbortSignal() async throws {
-        let mockModel = MockLanguageModel()
-        let settings = AgentSettings<String, Never>(
-            model: .v3(mockModel),
-            callSettings: CallSettings(timeout: 5000)
-        )
+    @Test("settings and call callbacks both receive the end event")
+    func callbacksAreMerged() async throws {
+        let model = MockLanguageModelV3(doStream: .singleValue(textStream("streamed")))
+        let calls = CallRecorder()
+        let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(
+            model: .v3(model),
+            onEnd: { _ in calls.record("settings") }
+        ))
 
-        let agent = Agent<String, Never>(settings: settings)
-        _ = try await agent.generate(prompt: .text("Hello"))
+        let result = try await agent.stream(AgentStreamParameters(AgentCallParameters(
+            prompt: .text("Ping"),
+            onEnd: { event in calls.record("call:\(event.text)") }
+        )))
+        #expect(try await result.collectText() == "streamed")
+        _ = try await result.steps
 
-        #expect(mockModel.lastGenerateOptions?.abortSignal != nil)
+        #expect(Set(calls.values) == ["settings", "call:streamed"])
     }
 
-    @Test("stream standardizes prompt and records system message")
-    func streamStandardizesPrompt() async throws {
-        let mockModel = MockLanguageModel()
-        let settings = AgentSettings<Never, Never>(
-            system: "Context",
-            model: .v3(mockModel)
-        )
+    @Test("a prompt given as both prompt and messages is rejected")
+    func promptAndMessagesAreRejected() async throws {
+        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
+        let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(model: .v3(model)))
 
-        let agent = Agent<Never, Never>(settings: settings)
-        let result = try agent.stream(prompt: .messages([
-            .user(UserModelMessage(content: .text("Ping")))
-        ]))
-        _ = try await result.collectText()
-
-        guard let options = mockModel.lastStreamOptions else {
-            Issue.record("Expected stream invocation")
-            return
+        await #expect(throws: InvalidPromptError.self) {
+            _ = try await agent.generate(AgentCallParameters(
+                prompt: .text("Hello"),
+                messages: [.user(UserModelMessage(content: .text("Hi")))]
+            ))
         }
-
-        guard case let .system(systemContent, _) = options.prompt.first else {
-            Issue.record("Expected system message to lead prompt")
-            return
-        }
-        #expect(systemContent == "Context")
-    }
-
-    @Test("stream forwards timeout as abort signal")
-    func streamForwardsTimeoutAsAbortSignal() async throws {
-        let mockModel = MockLanguageModel()
-        let settings = AgentSettings<Never, Never>(
-            model: .v3(mockModel),
-            callSettings: CallSettings(timeout: 5000)
-        )
-
-        let agent = Agent<Never, Never>(settings: settings)
-        let result = try agent.stream(prompt: .text("Ping"))
-        _ = try await result.collectText()
-
-        #expect(mockModel.lastStreamOptions?.abortSignal != nil)
-    }
-
-    @Test("respond converts UI messages before streaming")
-    func respondConvertsMessages() async throws {
-        let mockModel = MockLanguageModel()
-        let settings = AgentSettings<Never, Never>(
-            model: .v3(mockModel),
-            tools: [:]
-        )
-        let agent = Agent<Never, Never>(settings: settings)
-
-        let uiMessage = UIMessage(
-            id: "user-1",
-            role: .user,
-            parts: [.text(TextUIPart(text: "Hi there"))]
-        )
-
-        let response = try agent.respond(messages: [uiMessage])
-        var iterator = response.stream.makeAsyncIterator()
-        while try await iterator.next() != nil {}
-
-        guard let options = mockModel.lastStreamOptions else {
-            Issue.record("Expected stream invocation")
-            return
-        }
-
-        guard case let .user(userContent, _) = options.prompt.last else {
-            Issue.record("Expected user message passed to model")
-            return
-        }
-        guard case let .text(textPart) = userContent.first else {
-            Issue.record("Expected text part")
-            return
-        }
-        #expect(textPart.text == "Hi there")
+        #expect(model.doGenerateCalls.isEmpty)
     }
 }
 
-// MARK: - Test doubles
+private final class CallRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
 
-private final class MockLanguageModel: LanguageModelV3, @unchecked Sendable {
-    var lastGenerateOptions: LanguageModelV3CallOptions?
-    var lastStreamOptions: LanguageModelV3CallOptions?
+    var values: [String] { lock.withLock { storage } }
 
-    func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        lastGenerateOptions = options
-        return LanguageModelV3GenerateResult(
-            content: [],
-            finishReason: .stop,
-            usage: LanguageModelV3Usage()
-        )
+    func record(_ value: String) {
+        lock.withLock { storage.append(value) }
     }
-
-    func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        lastStreamOptions = options
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
-            continuation.finish()
-        }
-        return LanguageModelV3StreamResult(stream: stream)
-    }
-
-    var provider: String { "mock" }
-    var modelId: String { "mock-model" }
 }

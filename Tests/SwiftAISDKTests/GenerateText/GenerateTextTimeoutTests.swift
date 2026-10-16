@@ -37,7 +37,7 @@ struct GenerateTextTimeoutTests {
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         #expect(model.doGenerateCalls.count == 1)
         #expect(model.doGenerateCalls.first?.abortSignal != nil)
@@ -58,7 +58,7 @@ struct GenerateTextTimeoutTests {
         _ = try await generateText(
             model: .v3(model),
             prompt: "test-input"
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         #expect(model.doGenerateCalls.count == 1)
         #expect(model.doGenerateCalls.first?.abortSignal == nil)
@@ -80,7 +80,7 @@ struct GenerateTextTimeoutTests {
             model: .v3(model),
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration())
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         #expect(model.doGenerateCalls.count == 1)
         #expect(model.doGenerateCalls.first?.abortSignal == nil)
@@ -142,7 +142,7 @@ struct GenerateTextTimeoutTests {
             tools: tools,
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)
-        ) as DefaultGenerateTextResult<JSONValue>
+        )
 
         #expect(capturedAbortSignal.get() != nil)
     }

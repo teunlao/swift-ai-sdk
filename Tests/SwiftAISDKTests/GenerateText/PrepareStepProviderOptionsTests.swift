@@ -19,10 +19,10 @@ private final class LockedValue<Value>: @unchecked Sendable {
     }
 }
 
-@Suite("PrepareStep – providerOptions + experimentalContext")
+@Suite("PrepareStep – providerOptions and contexts")
 struct PrepareStepProviderOptionsTests {
-    @Test("prepareStep can override providerOptions and experimentalContext")
-    func prepareStepOverridesProviderOptionsAndExperimentalContext() async throws {
+    @Test("prepareStep merges providerOptions for its step and replaces the contexts for later steps")
+    func prepareStepOverridesProviderOptionsAndContexts() async throws {
         let baseProviderOptions: ProviderOptions = [
             "anthropic": [
                 "container": .object([
@@ -61,10 +61,11 @@ struct PrepareStepProviderOptionsTests {
             ],
         ]
 
-        let initialContext: JSONValue = .object(["ctx": .string("initial")])
-        let step0Context: JSONValue = .object(["ctx": .string("step0")])
+        let initialContext: Context = ["ctx": .string("initial")]
+        let step0Context: Context = ["ctx": .string("step0")]
+        let step0ToolContext: Context = ["key": .string("step0")]
 
-        let prepareSnapshots = LockedValue(initial: [(step: Int, context: JSONValue?)]())
+        let runtimeContexts = LockedValue(initial: [Context]())
 
         let tools: ToolSet = [
             "tool1": Tool(
@@ -72,7 +73,7 @@ struct PrepareStepProviderOptionsTests {
                 inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
                 needsApproval: .never,
                 execute: { _, options in
-                    #expect(options.context.map(JSONValue.object) == step0Context)
+                    #expect(options.context == step0ToolContext)
                     return .value(.string("ok"))
                 }
             )
@@ -106,33 +107,23 @@ struct PrepareStepProviderOptionsTests {
             model: .v3(model),
             tools: tools,
             prompt: "test",
-            stopWhen: [stepCountIs(2)],
+            stopWhen: [isStepCount(2)],
             providerOptions: baseProviderOptions,
             prepareStep: { options in
-                prepareSnapshots.withValue { $0.append((step: options.stepNumber, context: options.experimentalContext)) }
-
-                if options.stepNumber == 0 {
-                    #expect(options.experimentalContext == initialContext)
-                    return PrepareStepResult(
-                        experimentalContext: step0Context,
-                        providerOptions: step0ProviderOptions
-                    )
-                }
-
-                if options.stepNumber == 1 {
-                    #expect(options.experimentalContext == step0Context)
-                }
-
-                return nil
+                runtimeContexts.withValue { $0.append(options.runtimeContext) }
+                guard options.stepNumber == 0 else { return nil }
+                return PrepareStepResult(
+                    toolsContext: ["tool1": step0ToolContext],
+                    runtimeContext: step0Context,
+                    providerOptions: step0ProviderOptions
+                )
             },
-            experimentalContext: initialContext
-        ) as DefaultGenerateTextResult<JSONValue>
+            runtimeContext: initialContext
+        )
 
         #expect(model.doGenerateCalls.count == 2)
         #expect(model.doGenerateCalls[0].providerOptions == expectedStep0ProviderOptions)
         #expect(model.doGenerateCalls[1].providerOptions == baseProviderOptions)
-
-        let snapshots = prepareSnapshots.withValue { $0 }
-        #expect(snapshots.map(\.step) == [0, 1])
+        #expect(runtimeContexts.withValue { $0 } == [initialContext, step0Context])
     }
 }

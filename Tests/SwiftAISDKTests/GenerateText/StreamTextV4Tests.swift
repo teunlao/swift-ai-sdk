@@ -64,7 +64,7 @@ struct StreamTextV4Tests {
             }
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: model,
             system: "You are a V4 stream test.",
             prompt: "Stream hello.",
@@ -77,7 +77,9 @@ struct StreamTextV4Tests {
         )
 
         let parts = try await result.collectFullStream()
-        let finish = try await result.waitForFinish()
+        let finalStep = try await result.finalStep
+        let finishReason = try await result.finishReason
+        let totalUsage = try await result.totalUsage
         let options = try #require(await captured.recorded())
 
         #expect(options.reasoning == .medium)
@@ -86,11 +88,11 @@ struct StreamTextV4Tests {
         #expect(options.providerOptions?["mock"]?["mode"] == .string("stream"))
         #expect(options.prompt.count == 2)
 
-        #expect(finish.finalStep.text == "Hello")
-        #expect(finish.finishReason == .stop)
-        #expect(finish.finalStep.rawFinishReason == "stop")
-        #expect(finish.totalUsage.inputTokens == 3)
-        #expect(finish.totalUsage.outputTokens == 5)
+        #expect(finalStep.text == "Hello")
+        #expect(finishReason == .stop)
+        #expect(finalStep.rawFinishReason == "stop")
+        #expect(totalUsage.inputTokens == 3)
+        #expect(totalUsage.outputTokens == 5)
 
         #expect(parts.contains { part in
             if case .custom(let kind, _) = part {
@@ -104,20 +106,20 @@ struct StreamTextV4Tests {
             }
             return false
         })
-        #expect(finish.finalStep.content.contains { part in
+        #expect(finalStep.content.contains { part in
             if case .custom(let kind, _) = part {
                 return kind == "stream-custom"
             }
             return false
         })
-        #expect(finish.finalStep.content.contains { part in
+        #expect(finalStep.content.contains { part in
             if case .reasoningFile(let file, _) = part {
                 return file.mediaType == "text/plain" && file.base64 == "cmVhc29uaW5n"
             }
             return false
         })
 
-        let warning = try #require(finish.finalStep.warnings?.first)
+        let warning = try #require(finalStep.warnings?.first)
         if case .deprecated(let setting, let message) = warning {
             #expect(setting == "topK")
             #expect(message == "Use provider defaults.")

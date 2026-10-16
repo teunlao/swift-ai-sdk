@@ -66,10 +66,11 @@ struct StreamTextPrepareStepParityTests {
             ],
         ]
 
-        let initialContext: JSONValue = .object(["ctx": .string("initial")])
-        let step0Context: JSONValue = .object(["ctx": .string("step0")])
+        let initialContext: Context = ["ctx": .string("initial")]
+        let step0Context: Context = ["ctx": .string("step0")]
+        let step0ToolContext: Context = ["key": .string("step0")]
 
-        let prepareSnapshots = LockedValue(initial: [(step: Int, context: JSONValue?)]())
+        let prepareSnapshots = LockedValue(initial: [(step: Int, context: Context)]())
 
         let tools: ToolSet = [
             "tool1": Tool(
@@ -77,7 +78,7 @@ struct StreamTextPrepareStepParityTests {
                 inputSchema: FlexibleSchema(jsonSchema(.object([:]))),
                 needsApproval: .never,
                 execute: { _, options in
-                    #expect(options.context.map(JSONValue.object) == step0Context)
+                    #expect(options.context == step0ToolContext)
                     return .value(.string("ok"))
                 }
             )
@@ -123,31 +124,30 @@ struct StreamTextPrepareStepParityTests {
             ])
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "test",
             tools: tools,
+            prompt: "test",
+            stopWhen: [isStepCount(3)],
             providerOptions: baseProviderOptions,
             prepareStep: { options in
-                prepareSnapshots.withValue { $0.append((step: options.stepNumber, context: options.experimentalContext)) }
+                prepareSnapshots.withValue { $0.append((step: options.stepNumber, context: options.runtimeContext)) }
 
                 if options.stepNumber == 0 {
-                    #expect(options.experimentalContext == initialContext)
                     return PrepareStepResult(
-                        experimentalContext: step0Context,
+                        toolsContext: ["tool1": step0ToolContext],
+                        runtimeContext: step0Context,
                         providerOptions: step0ProviderOptions
                     )
                 }
 
                 if options.stepNumber == 1 {
-                    #expect(options.experimentalContext == step0Context)
                     return PrepareStepResult(providerOptions: step1ProviderOptions)
                 }
 
                 return nil
             },
-            experimentalContext: initialContext,
-            stopWhen: [stepCountIs(3)]
+            runtimeContext: initialContext
         )
 
         _ = try await convertReadableStreamToArray(result.fullStream)
@@ -158,5 +158,6 @@ struct StreamTextPrepareStepParityTests {
 
         let snapshots = prepareSnapshots.withValue { $0 }
         #expect(snapshots.map(\.step) == [0, 1])
+        #expect(snapshots.map(\.context) == [initialContext, step0Context])
     }
 }

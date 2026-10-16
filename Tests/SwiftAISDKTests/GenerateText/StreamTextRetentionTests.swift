@@ -37,7 +37,7 @@ struct StreamTextRetentionTests {
             )
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input"
         )
@@ -57,10 +57,10 @@ struct StreamTextRetentionTests {
             )
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
             prompt: "test-input",
-            experimentalInclude: StreamTextInclude(requestBody: false)
+            include: StreamTextInclude(requestBody: false)
         )
 
         let request = try await result.request

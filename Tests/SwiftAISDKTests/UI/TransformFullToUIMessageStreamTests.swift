@@ -28,6 +28,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -96,6 +97,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -160,6 +162,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -208,6 +211,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -256,6 +260,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -300,6 +305,7 @@ struct TransformFullToUIMessageStreamTests {
                     headers: nil
                 ),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -343,6 +349,7 @@ struct TransformFullToUIMessageStreamTests {
             .finishStep(
                 response: LanguageModelResponseMetadata(id: "resp-7", timestamp: Date(), modelId: "m", headers: nil),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil
@@ -395,6 +402,7 @@ struct TransformFullToUIMessageStreamTests {
             .finishStep(
                 response: LanguageModelResponseMetadata(id: "resp-8", timestamp: Date(), modelId: "m", headers: nil),
                 usage: LanguageModelUsage(),
+                performance: .empty,
                 finishReason: .stop,
                 rawFinishReason: nil,
                 providerMetadata: nil

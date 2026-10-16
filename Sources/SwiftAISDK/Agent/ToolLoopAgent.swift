@@ -34,7 +34,7 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
         var options = parameters.options
         if let schema = settings.callOptionsSchema, let value = options {
             options = try await validateTypes(ValidateTypesOptions(
-                value: value,
+                value: jsonCompatibleValue(value),
                 schema: schema,
                 context: TypeValidationContext(field: "options")
             ))
@@ -197,6 +197,16 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
         let result = try await stream(messages: modelMessages)
         return result.toUIMessageStreamResponse(options: options)
     }
+}
+
+/// Typed call options as the JSON value schemas validate; other values pass as they are.
+private func jsonCompatibleValue(_ value: Any) -> Any {
+    guard let encodable = value as? any Encodable,
+          let data = try? JSONEncoder().encode(encodable),
+          let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+        return value
+    }
+    return json
 }
 
 extension ToolLoopAgentCall {

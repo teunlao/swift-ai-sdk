@@ -761,7 +761,7 @@ struct OpenAIResponsesLanguageModelV4Tests {
         for try await part in streamResult.stream {
             switch part {
             case .error(let error):
-                errorValue = error
+                errorValue = error.jsonValue
             case .finish(let reason, let finalUsage, let metadata):
                 finishReason = reason
                 usage = finalUsage

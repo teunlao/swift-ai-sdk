@@ -103,10 +103,10 @@ struct StreamTextDeferredToolResultsTests {
             ])
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "test",
             tools: tools,
+            prompt: "test",
             stopWhen: [stepCountIs(3)]
         )
 
@@ -138,7 +138,7 @@ struct StreamTextDeferredToolResultsTests {
                 Issue.record("Expected tool-error content part.")
             }
 
-            if case .text(let text, _) = content[1] {
+            if case .text(let text, _, _) = content[1] {
                 #expect(text == "Final response")
             } else {
                 Issue.record("Expected text content part.")
@@ -187,10 +187,10 @@ struct StreamTextDeferredToolResultsTests {
             doStream: .singleValue(LanguageModelV3StreamResult(stream: makeAsyncStream(from: parts)))
         )
 
-        let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+        let result = try streamText(
             model: .v3(model),
-            prompt: "test",
             tools: tools,
+            prompt: "test",
             stopWhen: [stepCountIs(2)]
         )
 
@@ -229,7 +229,7 @@ struct StreamTextDeferredToolResultsTests {
                 Issue.record("Expected tool-error content part.")
             }
 
-            if case .text(let text, _) = content[2] {
+            if case .text(let text, _, _) = content[2] {
                 #expect(text == "Final response")
             } else {
                 Issue.record("Expected text content part.")
