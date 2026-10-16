@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let advancedTestPrompt: LanguageModelV3Prompt = [
+private let advancedTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -36,8 +36,8 @@ private func makeStream(from events: [String]) -> AsyncThrowingStream<Data, Erro
     }
 }
 
-private func collectParts(from stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-    var parts: [LanguageModelV3StreamPart] = []
+private func collectParts(from stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+    var parts: [LanguageModelV4StreamPart] = []
     for try await part in stream {
         parts.append(part)
     }
@@ -221,13 +221,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let result = try await model.doStream(options: .init(
             prompt: advancedTestPrompt,
             tools: [
-                .function(LanguageModelV3FunctionTool(name: "test-tool", inputSchema: toolSchema))
+                .function(LanguageModelV4FunctionTool(name: "test-tool", inputSchema: toolSchema))
             ]
         ))
 
         let parts = try await collectParts(from: result.stream)
         let toolInputStart = parts.first { part in
-            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _, _) = part {
                 return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool" && providerExecuted == false
             }
             return false
@@ -404,7 +404,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let result = try await model.doStream(options: .init(prompt: advancedTestPrompt))
         let parts = try await collectParts(from: result.stream)
 
-        let reasoningDeltas = parts.compactMap { part -> (String, String, SharedV3ProviderMetadata?)? in
+        let reasoningDeltas = parts.compactMap { part -> (String, String, SharedV4ProviderMetadata?)? in
             if case .reasoningDelta(let id, let delta, let metadata) = part {
                 return (id, delta, metadata)
             }
@@ -477,11 +477,9 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let errorPart = parts.first { if case .error = $0 { return true } else { return false } }
         #expect(errorPart != nil)
-        if case .error(let error) = errorPart,
-           case .object(let outer) = error,
-           case .object(let payload)? = outer["error"] {
-            #expect(payload["message"] == .string("test error"))
-            #expect(payload["type"] == .string("error"))
+        if case .error(.providerStreamError(let error)) = errorPart {
+            #expect(error.message == "test error")
+            #expect(error.type == "error")
         } else {
             Issue.record("Unexpected error payload")
         }
@@ -691,7 +689,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             prompt: advancedTestPrompt,
             tools: [
                 .provider(
-                    LanguageModelV3ProviderTool(
+                    LanguageModelV4ProviderTool(
                         id: "anthropic.web_fetch_20250910",
                         name: "web_fetch",
                         args: ["maxUses": .number(1)]
@@ -702,7 +700,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let parts = try await collectParts(from: result.stream)
         let toolInputStart = parts.first { part in
-            if case .toolInputStart(_, let toolName, _, let providerExecuted, _, _) = part {
+            if case .toolInputStart(_, let toolName, _, let providerExecuted, _, _, _) = part {
                 return toolName == "web_fetch" && providerExecuted == true
             }
             return false
@@ -740,7 +738,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             prompt: advancedTestPrompt,
             tools: [
                 .provider(
-                    LanguageModelV3ProviderTool(
+                    LanguageModelV4ProviderTool(
                         id: "anthropic.web_search_20250305",
                         name: "web_search",
                         args: [
@@ -806,13 +804,13 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
             prompt: advancedTestPrompt,
             tools: [
                 .provider(
-                    LanguageModelV3ProviderTool(
+                    LanguageModelV4ProviderTool(
                         id: "anthropic.code_execution_20250825",
                         name: "code_execution",
                         args: [:]
                     )
                 ),
-                .function(LanguageModelV3FunctionTool(name: "rollDie", inputSchema: rollDieSchema)),
+                .function(LanguageModelV4FunctionTool(name: "rollDie", inputSchema: rollDieSchema)),
             ]
         ))
 
@@ -822,7 +820,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
 
         let parts = try await collectParts(from: result.stream)
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }

@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let baseURLTestPrompt: LanguageModelV3Prompt = [
+private let baseURLTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -30,7 +30,7 @@ struct AnthropicProviderBaseURLTests {
         unsetenv("ANTHROPIC_BASE_URL")
 
         let capture = URLCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
@@ -56,7 +56,7 @@ struct AnthropicProviderBaseURLTests {
         setenv("ANTHROPIC_BASE_URL", "https://proxy.anthropic.example/v1/", 1)
 
         let capture = URLCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
@@ -82,7 +82,7 @@ struct AnthropicProviderBaseURLTests {
         setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/", 1)
 
         let capture = URLCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
@@ -97,7 +97,7 @@ struct AnthropicProviderBaseURLTests {
     @Test("normalizes bare Anthropic API URL from explicit option")
     func normalizesBareExplicitBaseURL() async throws {
         let capture = URLCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
@@ -124,7 +124,7 @@ struct AnthropicProviderBaseURLTests {
         setenv("ANTHROPIC_BASE_URL", "https://env.anthropic.example/v1", 1)
 
         let capture = URLCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://option.anthropic.example/v1/",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)

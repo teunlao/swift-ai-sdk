@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let metadataTestPrompt: LanguageModelV3Prompt = [
+private let metadataTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -63,8 +63,8 @@ private func events(from payloads: [String]) -> [String] {
     payloads.map { "data: \($0)\n\n" }
 }
 
-private func collectParts(from stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-    var parts: [LanguageModelV3StreamPart] = []
+private func collectParts(from stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+    var parts: [LanguageModelV4StreamPart] = []
     for try await part in stream {
         parts.append(part)
     }
@@ -421,7 +421,7 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
         #expect(result.providerMetadata?["anthropic"]?["iterations"] == .null)
     }
 
-    @Test("drops fallback content and preserves fallback iteration metadata")
+    @Test("preserves fallback content and iteration metadata")
     func mapsFallbackResponse() async throws {
         let responseJSON: [String: Any] = [
             "type": "message",
@@ -467,7 +467,18 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
 
         let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
 
-        #expect(result.content == [.text(.init(text: "Fallback answer"))])
+        #expect(result.content.count == 3)
+        if case .custom(let fallback) = result.content[1] {
+            #expect(fallback.kind == "anthropic.fallback")
+            #expect(fallback.providerMetadata == ["anthropic": [
+                "type": .string("fallback"),
+                "from": .object(["model": .string("claude-fable-5")]),
+                "to": .object(["model": .string("claude-opus-4-8")]),
+            ]])
+        } else {
+            Issue.record("Expected fallback metadata for the next turn")
+        }
+        #expect(result.content.last == .text(.init(text: "Fallback answer")))
         #expect(result.usage.inputTokens.noCache == 412)
         #expect(result.usage.outputTokens.total == 264)
         #expect(result.providerMetadata?["anthropic"]?["iterations"] == .array([
@@ -532,8 +543,8 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
 
         let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
 
-        #expect(result.content.count == 2)
-        if case .text(let compaction) = result.content[0] {
+        #expect(result.content.count == 3)
+        if case .text(let compaction) = result.content[1] {
             #expect(compaction.text == "Conversation summary")
             #expect(compaction.providerMetadata == [
                 "anthropic": ["type": .string("compaction")]
@@ -541,7 +552,7 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
         } else {
             Issue.record("Expected compaction text content")
         }
-        if case .text(let answer) = result.content[1] {
+        if case .text(let answer) = result.content[2] {
             #expect(answer.text == "Final answer")
         } else {
             Issue.record("Expected final text content")

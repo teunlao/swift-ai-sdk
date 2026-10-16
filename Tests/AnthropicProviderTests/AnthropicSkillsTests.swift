@@ -58,7 +58,7 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill sends files and display title as multipart form data")
     func uploadSkillSendsMultipartFormData() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
@@ -100,7 +100,7 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill maps response, version metadata, and provider metadata")
     func uploadSkillMapsResult() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
@@ -137,7 +137,7 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill accepts upstream data initializer and text file data")
     func uploadSkillAcceptsDataInitializerAndTextFileData() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)

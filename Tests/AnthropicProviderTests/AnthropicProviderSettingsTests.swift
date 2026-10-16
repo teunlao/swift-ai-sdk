@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let providerSettingsTestPrompt: LanguageModelV3Prompt = [
+private let providerSettingsTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -51,7 +51,7 @@ struct AnthropicProviderSettingsTests {
             return FetchResponse(body: .data(responseData), urlResponse: makeAnthropicTestHTTPResponse())
         }
 
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             authToken: "test-auth-token",
             fetch: fetch
         ))
@@ -74,7 +74,7 @@ struct AnthropicProviderSettingsTests {
 
     @Test("uses custom provider name when provided")
     func usesCustomProviderName() throws {
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             apiKey: "test-key",
             name: "custom-anthropic"
         ))
@@ -85,7 +85,7 @@ struct AnthropicProviderSettingsTests {
 
     @Test("defaults provider name to anthropic.messages")
     func defaultsProviderName() throws {
-        let provider = createAnthropicProvider(settings: .init(apiKey: "test-key"))
+        let provider = createAnthropic(settings: .init(apiKey: "test-key"))
         let model = provider.messages(modelId: .init(rawValue: "claude-3-opus-20240229"))
         #expect(model.provider == "anthropic.messages")
     }

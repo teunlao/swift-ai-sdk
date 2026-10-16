@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let testPrompt: LanguageModelV3Prompt = [
+private let testPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -71,8 +71,13 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         #expect(result.finishReason.raw == "end_turn")
         #expect(result.usage.inputTokens.total == 4)
         #expect(result.usage.outputTokens.total == 10)
-        #expect(result.content.count == 1)
-        if case .text(let text) = result.content.first {
+        #expect(result.content.count == 2)
+        if case .custom(let start) = result.content.first {
+            #expect(start.kind == "anthropic.message_start")
+        } else {
+            Issue.record("Expected message-start content before text")
+        }
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "Hello, World!")
         } else {
             Issue.record("Expected text content")
@@ -189,7 +194,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
 
-        let toolCalls = result.content.compactMap { item -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { item -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = item else { return nil }
             return call
         }
@@ -215,7 +220,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ]
         ])
 
-        let toolResults = result.content.compactMap { item -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { item -> LanguageModelV4ToolResult? in
             guard case .toolResult(let result) = item else { return nil }
             return result
         }
@@ -282,7 +287,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             config: makeConfig(fetch: fetch)
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: testPrompt,
             temperature: 0.5,
             topP: 0.9,
@@ -486,7 +491,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         _ = try await model.doGenerate(options: .init(
             prompt: testPrompt,
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object([
                         "type": .string("object"),
@@ -570,7 +575,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         _ = try await model.doGenerate(options: .init(
             prompt: testPrompt,
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object([
                         "type": .string("object"),
@@ -639,8 +644,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.content.count == 1)
-        if case .text(let textContent) = result.content.first {
+        #expect(result.content.count == 2)
+        if case .text(let textContent) = result.content[1] {
             #expect(textContent.text == "Hello, World!")
         } else {
             Issue.record("Expected text content")
@@ -689,7 +694,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         let result = try await model.doGenerate(options: .init(
             prompt: testPrompt,
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object([
                         "type": .string("object"),
@@ -704,24 +709,22 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ]
         ))
 
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 3)
         #expect(result.finishReason.unified == .toolCalls)
         #expect(result.finishReason.raw == "tool_use")
 
-        // First element: text
-        if case .text(let textContent) = result.content[0] {
+        if case .text(let textContent) = result.content[1] {
             #expect(textContent.text == "Some text\n\n")
         } else {
-            Issue.record("Expected text content at index 0")
+            Issue.record("Expected text content")
         }
 
-        // Second element: tool call
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[2] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "test-tool")
             #expect(toolCall.input == "{\"value\":\"example value\"}")
         } else {
-            Issue.record("Expected tool call at index 1")
+            Issue.record("Expected tool call")
         }
     }
 
@@ -912,10 +915,9 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 3)
 
-        // First content should be reasoning
-        if case .reasoning(let reasoning) = result.content[0] {
+        if case .reasoning(let reasoning) = result.content[1] {
             #expect(reasoning.text == "I am thinking...")
             if let providerMetadata = reasoning.providerMetadata,
                let anthropicMeta = providerMetadata["anthropic"],
@@ -926,11 +928,10 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
                 Issue.record("Expected signature in reasoning provider metadata")
             }
         } else {
-            Issue.record("Expected first content to be reasoning, got: \(result.content[0])")
+            Issue.record("Expected reasoning content, got: \(result.content[1])")
         }
 
-        // Second content should be text
-        if case .text(let text) = result.content[1] {
+        if case .text(let text) = result.content[2] {
             #expect(text.text == "Hello, World!")
         } else {
             Issue.record("Expected second content to be text")
@@ -994,8 +995,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         ))
 
         // JSON response format should return the tool input as text
-        #expect(result.content.count == 1)
-        if case .text(let text) = result.content[0] {
+        #expect(result.content.count == 2)
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "{\"name\":\"example value\"}")
         } else {
             Issue.record("Expected text content with JSON string")
@@ -1099,7 +1100,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             config: makeConfig(fetch: fetch)
         )
 
-        let pdfFile = LanguageModelV3FilePart(
+        let pdfFile = LanguageModelV4FilePart(
             data: .base64("base64PDFdata"),
             mediaType: "application/pdf",
             filename: "financial-report.pdf",
@@ -1113,18 +1114,15 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ], providerOptions: nil)
         ]))
 
-        // Should have 2 content items: text + source citation
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 3)
 
-        // First should be text
-        if case .text(let text) = result.content[0] {
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "Based on the document, the results show positive growth.")
         } else {
             Issue.record("Expected text content")
         }
 
-        // Second should be source citation
-        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[2] {
             #expect(title == "Financial Report 2023")
             #expect(mediaType == "application/pdf")
 
@@ -1193,7 +1191,7 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             config: makeConfig(fetch: fetch)
         )
 
-        let textFile = LanguageModelV3FilePart(
+        let textFile = LanguageModelV4FilePart(
             data: .base64("VGVzdCBkb2N1bWVudCBjb250ZW50"),
             mediaType: "text/plain",
             filename: "test.txt",
@@ -1207,18 +1205,15 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ], providerOptions: nil)
         ]))
 
-        // Should have 2 content items: text + source citation
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 3)
 
-        // First should be text
-        if case .text(let text) = result.content[0] {
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "The text shows important information.")
         } else {
             Issue.record("Expected text content")
         }
 
-        // Second should be source citation
-        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[2] {
             #expect(title == "Test Document")
             #expect(mediaType == "text/plain")
 
@@ -1705,8 +1700,8 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: testPrompt))
-        var parts: [LanguageModelV3StreamPart] = []
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: testPrompt))
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -1752,7 +1747,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(prompt: [
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(prompt: [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]))
 
@@ -1817,7 +1812,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: config
         )
 
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -1861,11 +1856,11 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: [
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2005,7 +2000,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2068,7 +2063,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             stopSequences: ["STOP"]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2131,7 +2126,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2198,7 +2193,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2266,7 +2261,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             config: config
         )
 
-        let pdfFile = LanguageModelV3FilePart(
+        let pdfFile = LanguageModelV4FilePart(
             data: .base64("base64PDFdata"),
             mediaType: "application/pdf",
             filename: "financial-report.pdf",
@@ -2282,7 +2277,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
             ]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2295,7 +2290,7 @@ struct AnthropicMessagesLanguageModelStreamTests {
         #expect(textDeltas == ["Based on the document", ", results show growth."])
 
         // Verify source (citation)
-        let sources = parts.compactMap { part -> LanguageModelV3Source? in
+        let sources = parts.compactMap { part -> LanguageModelV4Source? in
             if case .source(let source) = part { return source }
             return nil
         }
@@ -2403,7 +2398,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         )
 
         let schema = JSONValue.object([:])
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             responseFormat: .json(schema: schema, name: nil, description: nil)
         ))
@@ -2470,18 +2465,18 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         )
 
         let schema = JSONValue.object([:])
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             responseFormat: .json(schema: schema, name: nil, description: nil)
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
 
         // Verify response-metadata
-        #expect(parts.contains(where: { (part: LanguageModelV3StreamPart) -> Bool in
+        #expect(parts.contains(where: { (part: LanguageModelV4StreamPart) -> Bool in
             if case .responseMetadata(let id, let modelId, _) = part {
                 return id == "msg_01GouTqNCGXzrj5LQ5jEkw67" && modelId == "claude-3-haiku-20240307"
             }
@@ -2537,11 +2532,11 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2609,11 +2604,11 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2669,11 +2664,11 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2734,7 +2729,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             return FetchResponse(body: .stream(makeStream(events: events)), urlResponse: httpResponse)
         }
 
-        let testTool = LanguageModelV3FunctionTool(
+        let testTool = LanguageModelV4FunctionTool(
             name: "test-tool",
             inputSchema: .object([:]),
             description: nil,
@@ -2746,12 +2741,12 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [.function(testTool)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2764,15 +2759,15 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         #expect(textDeltas == ["Okay", "!"])
 
         // Verify tool-input-start
-        #expect(parts.contains(where: { (part: LanguageModelV3StreamPart) -> Bool in
-            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
+        #expect(parts.contains(where: { (part: LanguageModelV4StreamPart) -> Bool in
+            if case .toolInputStart(let id, let toolName, _, _, _, _, _) = part {
                 return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool"
             }
             return false
         }))
 
         // Verify tool-input-delta
-        let toolDeltas = parts.compactMap { (part: LanguageModelV3StreamPart) -> String? in
+        let toolDeltas = parts.compactMap { (part: LanguageModelV4StreamPart) -> String? in
             if case .toolInputDelta(_, let delta, _) = part { return delta }
             return nil
         }
@@ -2824,17 +2819,17 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
 
         // Verify response-metadata
-        #expect(parts.contains(where: { (part: LanguageModelV3StreamPart) -> Bool in
+        #expect(parts.contains(where: { (part: LanguageModelV4StreamPart) -> Bool in
             if case .responseMetadata(let id, _, _) = part {
                 return id == "msg_01KfpJoAEabmH2iHRRFjQMAG"
             }
@@ -2850,7 +2845,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify error chunk
         #expect(parts.contains(where: { part in
             if case .error(let error) = part {
-                return String(describing: error).contains("test error")
+                guard case .providerStreamError(let payload) = error else { return false }
+                return payload.message == "test error" && payload.type == "error"
             }
             return false
         }))
@@ -2881,7 +2877,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
@@ -2918,12 +2914,12 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             includeRawChunks: true
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -2976,12 +2972,12 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
             // includeRawChunks defaults to false
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -3016,7 +3012,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         )
 
         do {
-            _ = try await model.doStream(options: LanguageModelV3CallOptions(
+            _ = try await model.doStream(options: LanguageModelV4CallOptions(
                 prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
             ))
             Issue.record("Expected APICallError to be thrown")
@@ -3049,11 +3045,11 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -3068,7 +3064,8 @@ struct AnthropicMessagesLanguageModelStreamAdvancedBatch2Tests {
         // Verify error chunk with "Overloaded" message
         #expect(parts.contains(where: { part in
             if case .error(let error) = part {
-                return String(describing: error).contains("Overloaded")
+                guard case .providerStreamError(let payload) = error else { return false }
+                return payload.message == "Overloaded" && payload.statusCode == 529 && payload.isRetryable == true
             }
             return false
         }))
@@ -3123,7 +3120,7 @@ struct AnthropicMessagesLanguageModelThinkingAndErrorsTests {
             config: config
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             temperature: 0.5,
             topP: 0.7,
@@ -3209,7 +3206,7 @@ struct AnthropicMessagesLanguageModelThinkingAndErrorsTests {
         )
 
         do {
-            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+            _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
                 prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
             ))
             Issue.record("Expected APICallError to be thrown")
@@ -3268,10 +3265,10 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3348,10 +3345,10 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3428,10 +3425,10 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3518,10 +3515,10 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3607,10 +3604,10 @@ struct AnthropicMessagesLanguageModelWebSearchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: [
@@ -3701,10 +3698,10 @@ struct AnthropicMessagesLanguageModelWebFetchTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_fetch_20250910",
                     name: "web_fetch",
                     args: ["maxUses": .number(1)]
@@ -3782,10 +3779,10 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.memory_20250818",
                     name: "memory",
                     args: [:]
@@ -3860,10 +3857,10 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
             config: config
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.memory_20250818",
                     name: "memory",
                     args: [:]
@@ -3871,9 +3868,9 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
             ]
         ))
 
-        #expect(result.content.count == 1)
+        #expect(result.content.count == 2)
 
-        if case .toolCall(let toolCall) = result.content[0] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "toolu_01TvNvpwszD4hKeudmbfyWiV")
             #expect(toolCall.toolName == "memory")
             #expect(toolCall.providerExecuted == nil)
@@ -3882,7 +3879,7 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
             #expect(toolCall.input.contains("\"path\""))
             #expect(toolCall.input.contains("/memories"))
         } else {
-            Issue.record("Expected tool-call at index 0")
+            Issue.record("Expected tool-call")
         }
     }
 }
@@ -3948,7 +3945,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let rollDieTool = LanguageModelV3FunctionTool(
+        let rollDieTool = LanguageModelV4FunctionTool(
             name: "rollDie",
             inputSchema: .object([
                 "type": .string("object"),
@@ -3961,10 +3958,10 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             ])
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.code_execution_20250825",
                     name: "code_execution",
                     args: [:]
@@ -3978,15 +3975,15 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
 
-        #expect(result.content.count == 5)
+        #expect(result.content.count == 6)
 
-        if case .text(let text) = result.content[0] {
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "I'll run the game.")
         } else {
-            Issue.record("Expected text at index 0")
+            Issue.record("Expected text")
         }
 
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[2] {
             #expect(toolCall.toolCallId == "srvtoolu_1")
             #expect(toolCall.toolName == "code_execution")
             #expect(toolCall.providerExecuted == true)
@@ -3995,10 +3992,10 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
                 "type": .string("programmatic-tool-call"),
             ]))
         } else {
-            Issue.record("Expected tool-call at index 1")
+            Issue.record("Expected tool-call")
         }
 
-        if case .toolCall(let toolCall) = result.content[2] {
+        if case .toolCall(let toolCall) = result.content[3] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "rollDie")
             #expect(toolCall.providerExecuted == nil)
@@ -4014,10 +4011,10 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
                 ]
             ])
         } else {
-            Issue.record("Expected tool-call at index 2")
+            Issue.record("Expected tool-call")
         }
 
-	        if case .toolResult(let toolResult) = result.content[3] {
+	        if case .toolResult(let toolResult) = result.content[4] {
 	            #expect(toolResult.toolCallId == "srvtoolu_1")
 	            #expect(toolResult.toolName == "code_execution")
 	            #expect(toolResult.result == .object([
@@ -4028,13 +4025,13 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
                 "content": .array([]),
             ]))
         } else {
-            Issue.record("Expected tool-result at index 3")
+            Issue.record("Expected tool-result")
         }
 
-        if case .text(let text) = result.content[4] {
+        if case .text(let text) = result.content[5] {
             #expect(text.text == "done")
         } else {
-            Issue.record("Expected text at index 4")
+            Issue.record("Expected text")
         }
     }
 
@@ -4097,7 +4094,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let rollDieTool = LanguageModelV3FunctionTool(
+        let rollDieTool = LanguageModelV4FunctionTool(
             name: "rollDie",
             inputSchema: .object([
                 "type": .string("object"),
@@ -4110,10 +4107,10 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             ])
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.code_execution_20260120",
                     name: "code_execution",
                     args: [:]
@@ -4127,9 +4124,9 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
 
-        #expect(result.content.count == 5)
+        #expect(result.content.count == 6)
 
-        if case .toolCall(let toolCall) = result.content[2] {
+        if case .toolCall(let toolCall) = result.content[3] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "rollDie")
             #expect(decodeJSONValue(toolCall.input) == .object([
@@ -4144,10 +4141,10 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
                 ]
             ])
         } else {
-            Issue.record("Expected tool-call at index 2")
+            Issue.record("Expected tool-call")
         }
 
-        if case .toolResult(let toolResult) = result.content[3] {
+        if case .toolResult(let toolResult) = result.content[4] {
             #expect(toolResult.toolCallId == "srvtoolu_1")
             #expect(toolResult.toolName == "code_execution")
             #expect(toolResult.result == .object([
@@ -4158,7 +4155,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
                 "content": .array([]),
             ]))
         } else {
-            Issue.record("Expected tool-result at index 3")
+            Issue.record("Expected tool-result")
         }
     }
 }
@@ -4209,10 +4206,10 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
             config: config
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]
@@ -4305,10 +4302,10 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
             config: config
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]
@@ -4317,10 +4314,10 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         ))
 
         // Verify content structure
-        #expect(result.content.count == 3)
+        #expect(result.content.count == 4)
 
         // Verify tool call with providerExecuted=true
-        if case .toolCall(let toolCall) = result.content[0] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "code_execution")
             // Input should be stringified JSON: {"code":"print(\"Hello, World!\")"}
@@ -4328,11 +4325,11 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
             #expect(toolCall.input.contains("Hello, World!"))
             #expect(toolCall.providerExecuted == true)
         } else {
-            Issue.record("Expected tool-call at index 0")
+            Issue.record("Expected tool-call")
         }
 
 	        // Verify tool result with providerExecuted=true
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
 
@@ -4346,14 +4343,14 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 1")
+            Issue.record("Expected tool-result")
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[2] {
+        if case .text(let textContent) = result.content[3] {
             #expect(textContent.text == "The code executed successfully with output: Hello, World!")
         } else {
-            Issue.record("Expected text at index 2")
+            Issue.record("Expected text")
         }
     }
 }
@@ -4429,9 +4426,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(5)]
@@ -4439,19 +4436,19 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool call
-        if case .toolCall(let toolCall) = result.content[0] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "web_search")
             #expect(toolCall.providerExecuted == true)
 
-            let inputStr = toolCall.input as! String
+            let inputStr = toolCall.input
             #expect(inputStr.contains("\"query\":\"latest AI news\""))
         } else {
-            Issue.record("Expected tool-call at index 0")
+            Issue.record("Expected tool-call")
         }
 
-	        // Verify tool result with array (index 1)
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        // Verify tool result with array
+	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 
@@ -4472,11 +4469,11 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected array result")
             }
         } else {
-            Issue.record("Expected tool-result at index 1")
+            Issue.record("Expected tool-result")
         }
 
-        // Verify source citation content (index 2)
-        if case .source(let source) = result.content[2] {
+        // Verify source citation content
+        if case .source(let source) = result.content[3] {
             if case .url(let id, let url, let title, let providerMetadata) = source {
                 #expect(url == "https://example.com/ai-news")
                 #expect(title == "Latest AI Developments")
@@ -4491,14 +4488,14 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected url source")
             }
         } else {
-            Issue.record("Expected source at index 2")
+            Issue.record("Expected source")
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[3] {
+        if case .text(let textContent) = result.content[4] {
             #expect(textContent.text == "Based on recent articles, AI continues to advance rapidly.")
         } else {
-            Issue.record("Expected text at index 3")
+            Issue.record("Expected text")
         }
     }
 
@@ -4556,17 +4553,17 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(5)]
             ))]
         ))
 
-	        // Verify tool result with array (index 1)
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        // Verify tool result with array
+	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 
@@ -4586,11 +4583,11 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected array result")
             }
         } else {
-            Issue.record("Expected tool-result at index 1")
+            Issue.record("Expected tool-result")
         }
 
-        // Verify source citation content (index 2)
-        if case .source(let source) = result.content[2] {
+        // Verify source citation content
+        if case .source(let source) = result.content[3] {
             if case .url(_, let url, let title, let providerMetadata) = source {
                 #expect(url == "https://example.com/ai-news")
                 #expect(title == nil)
@@ -4604,7 +4601,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected url source")
             }
         } else {
-            Issue.record("Expected source at index 2")
+            Issue.record("Expected source")
         }
     }
 
@@ -4647,9 +4644,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "What is the latest news?"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(1)]
@@ -4657,7 +4654,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[0] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 	            #expect(toolResult.isError == true)
@@ -4670,14 +4667,14 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 0")
+            Issue.record("Expected tool-result")
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[1] {
+        if case .text(let textContent) = result.content[2] {
             #expect(textContent.text == "I cannot search further due to limits.")
         } else {
-            Issue.record("Expected text at index 1")
+            Issue.record("Expected text")
         }
     }
 
@@ -4736,9 +4733,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch the page"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: ["maxUses": .number(1)]
@@ -4746,16 +4743,16 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool call
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[2] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "web_fetch")
             #expect(toolCall.providerExecuted == true)
         } else {
-            Issue.record("Expected tool-call at index 1")
+            Issue.record("Expected tool-call")
         }
 
 	        // Verify tool result
-	        if case .toolResult(let toolResult) = result.content[2] {
+	        if case .toolResult(let toolResult) = result.content[3] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
 
@@ -4785,7 +4782,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 2")
+            Issue.record("Expected tool-result")
         }
     }
 
@@ -4840,9 +4837,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch the PDF"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: [:]
@@ -4850,7 +4847,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool result without title
-        if case .toolResult(let toolResult) = result.content[1] {
+        if case .toolResult(let toolResult) = result.content[2] {
             if case .object(let resultObj) = toolResult.result {
                 if case .object(let content) = resultObj["content"] {
                     // title should be null
@@ -4862,7 +4859,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 1")
+            Issue.record("Expected tool-result")
         }
     }
 
@@ -4911,9 +4908,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Fetch page"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.web_fetch_20250910",
                 name: "web_fetch",
                 args: [:]
@@ -4921,7 +4918,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
 	            #expect(toolResult.isError == true)
@@ -4934,7 +4931,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 1")
+            Issue.record("Expected tool-result")
         }
     }
 
@@ -4977,9 +4974,9 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Run code"))], providerOptions: nil)],
-            tools: [.provider(LanguageModelV3ProviderTool(
+            tools: [.provider(LanguageModelV4ProviderTool(
                 id: "anthropic.code_execution_20250522",
                 name: "code_execution",
                 args: [:]
@@ -4987,7 +4984,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[0] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
 	            #expect(toolResult.isError == true)
@@ -5000,14 +4997,14 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
                 Issue.record("Expected object result")
             }
         } else {
-            Issue.record("Expected tool-result at index 0")
+            Issue.record("Expected tool-result")
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[1] {
+        if case .text(let textContent) = result.content[2] {
             #expect(textContent.text == "The code execution service is currently unavailable.")
         } else {
-            Issue.record("Expected text at index 1")
+            Issue.record("Expected text")
         }
     }
 }
@@ -5071,7 +5068,7 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
@@ -5133,7 +5130,7 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
             config: config
         )
 
-        _ = try await model.doStream(options: LanguageModelV3CallOptions(
+        _ = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -5177,7 +5174,7 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)]
         ))
 
@@ -5232,16 +5229,16 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "calculator",
                     inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
                     description: "Calculate math",
                     providerOptions: nil
                 )),
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.web_search_20250305",
                     name: "web_search",
                     args: ["maxUses": .number(1)]
@@ -5298,16 +5295,16 @@ struct AnthropicMessagesLanguageModelBatch17Tests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: [.user(content: [.text(.init(text: "Hello"))], providerOptions: nil)],
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "calculator",
                     inputSchema: .object(["type": .string("object"), "properties": .object([:])]),
                     description: "Calculate math expressions",
                     providerOptions: nil
                 )),
-                .provider(LanguageModelV3ProviderTool(
+                .provider(LanguageModelV4ProviderTool(
                     id: "anthropic.code_execution_20250522",
                     name: "code_execution",
                     args: [:]
@@ -5482,7 +5479,7 @@ struct AnthropicMessagesLanguageModelCapabilitiesTests {
 @Suite("AnthropicMessagesLanguageModel compact_20260112")
 struct AnthropicMessagesLanguageModelCompactTests {
 
-    private let testPrompt: LanguageModelV3Prompt = [
+    private let testPrompt: LanguageModelV4Prompt = [
         .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
     ]
 

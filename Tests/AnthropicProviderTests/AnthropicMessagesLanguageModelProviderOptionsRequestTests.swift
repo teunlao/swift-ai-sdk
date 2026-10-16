@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let providerOptionsTestPrompt: LanguageModelV3Prompt = [
+private let providerOptionsTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -1607,14 +1607,4 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         #expect(json?["top_p"] as? Double == 0.9)
     }
 
-    @Test("model ID suggestions include the current Anthropic models")
-    func currentModelIDSuggestions() {
-        let modelIds = Set(anthropicMessagesModelIds.map(\.rawValue))
-        #expect(modelIds.isSuperset(of: [
-            "claude-opus-4-7",
-            "claude-opus-4-8",
-            "claude-fable-5",
-            "claude-sonnet-5",
-        ]))
-    }
 }

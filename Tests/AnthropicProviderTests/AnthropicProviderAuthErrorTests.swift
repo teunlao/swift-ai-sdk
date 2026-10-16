@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let authErrorTestPrompt: LanguageModelV3Prompt = [
+private let authErrorTestPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 
@@ -41,7 +41,7 @@ struct AnthropicProviderAuthErrorTests {
             return FetchResponse(body: .data(Data()), urlResponse: response)
         }
 
-        let provider = createAnthropicProvider(settings: .init(fetch: fetch))
+        let provider = createAnthropic(settings: .init(fetch: fetch))
         let model = provider.messages(modelId: .init(rawValue: "claude-3-haiku-20240307"))
 
         do {
@@ -70,7 +70,7 @@ struct AnthropicProviderAuthErrorTests {
             return FetchResponse(body: .data(Data()), urlResponse: response)
         }
 
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             apiKey: "test-api-key",
             authToken: "test-auth-token",
             fetch: fetch

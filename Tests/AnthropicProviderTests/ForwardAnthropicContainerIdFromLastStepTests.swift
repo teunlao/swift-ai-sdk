@@ -6,7 +6,7 @@ import AISDKProvider
 struct ForwardAnthropicContainerIdFromLastStepTests {
     @Test("returns providerOptions for the most recent container id")
     func returnsMostRecent() {
-        let older: SharedV3ProviderMetadata = [
+        let older: SharedV4ProviderMetadata = [
             "anthropic": [
                 "container": .object([
                     "id": .string("container-old"),
@@ -14,7 +14,7 @@ struct ForwardAnthropicContainerIdFromLastStepTests {
             ]
         ]
 
-        let newer: SharedV3ProviderMetadata = [
+        let newer: SharedV4ProviderMetadata = [
             "anthropic": [
                 "container": .object([
                     "id": .string("container-new"),
@@ -26,7 +26,7 @@ struct ForwardAnthropicContainerIdFromLastStepTests {
             steps: [older, nil, newer]
         )
 
-        let expected: SharedV3ProviderOptions = [
+        let expected: SharedV4ProviderOptions = [
             "anthropic": [
                 "container": .object([
                     "id": .string("container-new"),
@@ -39,7 +39,7 @@ struct ForwardAnthropicContainerIdFromLastStepTests {
 
     @Test("returns nil when no container id is present")
     func returnsNilWhenAbsent() {
-        let metadata: SharedV3ProviderMetadata = [
+        let metadata: SharedV4ProviderMetadata = [
             "anthropic": [
                 "container": .null
             ]

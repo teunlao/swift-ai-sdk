@@ -7,7 +7,7 @@ import AISDKProviderUtils
 @Suite("AnthropicMessages fixture scenarios")
 struct AnthropicMessagesFixtureTests {
     private let messagesURL = URL(string: "https://api.anthropic.com/v1/messages")!
-    private let samplePrompt: LanguageModelV3Prompt = [
+    private let samplePrompt: LanguageModelV4Prompt = [
         .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
     ]
 
@@ -132,16 +132,16 @@ struct AnthropicMessagesFixtureTests {
     }
 
     private func collectParts(
-        from stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>
-    ) async throws -> [LanguageModelV3StreamPart] {
-        var parts: [LanguageModelV3StreamPart] = []
+        from stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>
+    ) async throws -> [LanguageModelV4StreamPart] {
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream {
             parts.append(part)
         }
         return parts
     }
 
-    private var expectedMCPMetadata: SharedV3ProviderMetadata {
+    private var expectedMCPMetadata: SharedV4ProviderMetadata {
         [
             "anthropic": [
                 "type": .string("mcp-tool-use"),
@@ -159,7 +159,7 @@ struct AnthropicMessagesFixtureTests {
         ])
     }
 
-    private func makeMCPProviderOptions() -> SharedV3ProviderOptions {
+    private func makeMCPProviderOptions() -> SharedV4ProviderOptions {
         [
             "anthropic": [
                 "mcpServers": .array([
@@ -173,7 +173,7 @@ struct AnthropicMessagesFixtureTests {
         ]
     }
 
-    private func makeWebFetchTools() -> [LanguageModelV3Tool] {
+    private func makeWebFetchTools() -> [LanguageModelV4Tool] {
         [
             .provider(.init(
                 id: "anthropic.web_fetch_20260209",
@@ -216,11 +216,11 @@ struct AnthropicMessagesFixtureTests {
 
         #expect(result.response?.id == "msg_01P81KJc28LkYyoDAYG1bWVb")
         #expect(result.response?.modelId == "claude-sonnet-4-5-20250929")
-        #expect(result.finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
+        #expect(result.finishReason.unified == LanguageModelV4FinishReason.Unified.stop)
         #expect(result.usage.inputTokens.total == 1250)
         #expect(result.usage.outputTokens.total == 88)
 
-        let toolCalls = result.content.compactMap { item -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { item -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = item else { return nil }
             return call
         }
@@ -234,7 +234,7 @@ struct AnthropicMessagesFixtureTests {
         ]))
         #expect(toolCalls.first?.providerMetadata == expectedMCPMetadata)
 
-        let toolResults = result.content.compactMap { item -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { item -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = item else { return nil }
             return toolResult
         }
@@ -272,7 +272,7 @@ struct AnthropicMessagesFixtureTests {
             "mcp-client-2025-04-04"
         ]))
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = part else { return nil }
             return call
         }
@@ -286,7 +286,7 @@ struct AnthropicMessagesFixtureTests {
         ]))
         #expect(toolCalls.first?.providerMetadata == expectedMCPMetadata)
 
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = part else { return nil }
             return toolResult
         }
@@ -306,7 +306,7 @@ struct AnthropicMessagesFixtureTests {
 
         if let finishPart = parts.last(where: { if case .finish = $0 { return true } else { return false } }),
            case .finish(let finishReason, let usage, _) = finishPart {
-            #expect(finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
+            #expect(finishReason.unified == LanguageModelV4FinishReason.Unified.stop)
             #expect(usage.inputTokens.total == 1250)
             #expect(usage.outputTokens.total == 83)
         } else {
@@ -342,11 +342,11 @@ struct AnthropicMessagesFixtureTests {
 
         #expect(result.response?.id == "msg_012HMyuvZLN3vLPPuRYVnQff")
         #expect(result.response?.modelId == "claude-sonnet-4-6")
-        #expect(result.finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
+        #expect(result.finishReason.unified == LanguageModelV4FinishReason.Unified.stop)
         #expect(result.usage.inputTokens.total == 7204)
         #expect(result.usage.outputTokens.total == 162)
 
-        let codeExecutionCall = result.content.compactMap { item -> LanguageModelV3ToolCall? in
+        let codeExecutionCall = result.content.compactMap { item -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = item, call.toolCallId == "srvtoolu_015CSHH7X69AhdK9gNzotEeh" else { return nil }
             return call
         }.first
@@ -357,7 +357,7 @@ struct AnthropicMessagesFixtureTests {
             "type": .string("programmatic-tool-call")
         ]))
 
-        let webFetchCall = result.content.compactMap { item -> LanguageModelV3ToolCall? in
+        let webFetchCall = result.content.compactMap { item -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = item, call.toolCallId == "srvtoolu_0152eMmZnBDZc4C2miykFWW5" else { return nil }
             return call
         }.first
@@ -368,7 +368,7 @@ struct AnthropicMessagesFixtureTests {
         ]))
         #expect(webFetchCall?.providerMetadata == nil)
 
-        let toolResults = result.content.compactMap { item -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { item -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = item else { return nil }
             return toolResult
         }
@@ -446,7 +446,7 @@ struct AnthropicMessagesFixtureTests {
             "code-execution-web-tools-2026-02-09"
         ]))
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             guard case .toolCall(let call) = part else { return nil }
             return call
         }
@@ -468,7 +468,7 @@ struct AnthropicMessagesFixtureTests {
         ]))
         #expect(webFetchCall?.providerMetadata == nil)
 
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = part else { return nil }
             return toolResult
         }
@@ -509,7 +509,7 @@ struct AnthropicMessagesFixtureTests {
 
         if let finishPart = parts.last(where: { if case .finish = $0 { return true } else { return false } }),
            case .finish(let finishReason, let usage, let metadata) = finishPart {
-            #expect(finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
+            #expect(finishReason.unified == LanguageModelV4FinishReason.Unified.stop)
             #expect(usage.inputTokens.total == 7172)
             #expect(usage.outputTokens.total == 144)
             #expect(metadata?["anthropic"]?["container"] == .object([

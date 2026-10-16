@@ -11,7 +11,7 @@ private func regexMatches(_ regex: NSRegularExpression, _ string: String) -> Boo
 struct AnthropicProviderSupportedURLsTests {
     @Test("supports image/* URLs")
     func supportsImageURLs() async throws {
-        let provider = createAnthropicProvider(settings: .init(apiKey: "test-api-key"))
+        let provider = createAnthropic(settings: .init(apiKey: "test-api-key"))
         let model = provider.messages(modelId: .init(rawValue: "claude-3-haiku-20240307"))
         let supportedUrls = try await model.supportedUrls
 
@@ -25,7 +25,7 @@ struct AnthropicProviderSupportedURLsTests {
 
     @Test("supports application/pdf URLs")
     func supportsPDFURLs() async throws {
-        let provider = createAnthropicProvider(settings: .init(apiKey: "test-api-key"))
+        let provider = createAnthropic(settings: .init(apiKey: "test-api-key"))
         let model = provider.messages(modelId: .init(rawValue: "claude-3-haiku-20240307"))
         let supportedUrls = try await model.supportedUrls
 

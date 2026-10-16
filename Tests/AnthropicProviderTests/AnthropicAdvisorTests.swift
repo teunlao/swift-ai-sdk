@@ -4,7 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 
-private let advisorPrompt: LanguageModelV3Prompt = [
+private let advisorPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Review this design"))], providerOptions: nil)
 ]
 
@@ -34,7 +34,7 @@ private func advisorConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesC
     )
 }
 
-private func advisorTool() -> LanguageModelV3Tool {
+private func advisorTool() -> LanguageModelV4Tool {
     .provider(.init(
         id: "anthropic.advisor_20260301",
         name: "advisor",
@@ -158,7 +158,7 @@ struct AnthropicAdvisorTests {
         #expect(tools[0]["model"] as? String == "claude-opus-4-7")
         #expect(request.allHTTPHeaderFields?["anthropic-beta"] == "advisor-tool-2026-03-01")
 
-        let calls = result.content.compactMap { part -> LanguageModelV3ToolCall? in
+        let calls = result.content.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -167,7 +167,7 @@ struct AnthropicAdvisorTests {
             $0.toolName == "advisor" && $0.input == "{}" && $0.providerExecuted == true
         })
 
-        let results = result.content.compactMap { part -> LanguageModelV3ToolResult? in
+        let results = result.content.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = part { return result }
             return nil
         }
@@ -215,7 +215,7 @@ struct AnthropicAdvisorTests {
             prompt: advisorPrompt,
             tools: [advisorTool()]
         ))
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }

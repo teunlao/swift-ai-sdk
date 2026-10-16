@@ -34,7 +34,7 @@ struct AnthropicFilesTests {
 
     @Test("provider wires files and skills interfaces with upstream provider ids")
     func providerWiresInterfaces() {
-        let provider = createAnthropicProvider(settings: .init(apiKey: "test-api-key"))
+        let provider = createAnthropic(settings: .init(apiKey: "test-api-key"))
 
         #expect(provider.files().provider == "anthropic.messages")
         #expect(provider.files().specificationVersion == "v4")
@@ -45,7 +45,7 @@ struct AnthropicFilesTests {
     @Test("uploadFile sends multipart payload with anthropic files beta header")
     func uploadFileSendsMultipartPayload() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
@@ -90,7 +90,7 @@ struct AnthropicFilesTests {
     @Test("uploadFile maps anthropic provider metadata")
     func uploadFileMapsProviderMetadata() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
@@ -115,7 +115,7 @@ struct AnthropicFilesTests {
     @Test("uploadFile accepts upstream text data variant")
     func uploadFileAcceptsTextDataVariant() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropicProvider(settings: .init(
+        let provider = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)

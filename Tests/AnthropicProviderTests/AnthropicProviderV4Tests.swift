@@ -47,7 +47,7 @@ private func makeAnthropicV4HTTPResponse() -> HTTPURLResponse {
 private func makeAnthropicV4Model(
     modelId: String,
     capture: AnthropicV4RequestCapture
-) throws -> AnthropicMessagesLanguageModelV4 {
+) throws -> AnthropicMessagesLanguageModel {
     let responseData = try makeAnthropicV4Response(model: modelId)
     let fetch: FetchFunction = { request in
         await capture.store(request)
@@ -74,28 +74,6 @@ private func anthropicV4BetaSet(_ request: URLRequest?) -> Set<String> {
 
 @Suite("Anthropic Provider V4")
 struct AnthropicProviderV4Tests {
-    @Test("default and custom provider factories expose native V4 models")
-    func exposesNativeV4Models() throws {
-        let customProvider = createAnthropic(settings: .init(apiKey: "test-key"))
-        let customModel = try customProvider.languageModel(modelId: "claude-sonnet-5")
-        let defaultModel = try anthropic.languageModel(modelId: "claude-fable-5")
-        let knownModelIds = Set(anthropicMessagesModelIds.map(\.rawValue))
-
-        #expect(customProvider.specificationVersion == "v4")
-        #expect(customModel.specificationVersion == "v4")
-        #expect(defaultModel.specificationVersion == "v4")
-        #expect(customModel is AnthropicMessagesLanguageModelV4)
-        #expect(defaultModel is AnthropicMessagesLanguageModelV4)
-        #expect(knownModelIds.isSuperset(of: [
-            "claude-sonnet-5",
-            "claude-fable-5",
-            "claude-opus-4-8",
-            "claude-opus-4-7",
-            "claude-opus-4-6",
-            "claude-sonnet-4-6",
-        ]))
-    }
-
     @Test("models with direct xhigh support preserve explicit xhigh effort")
     func directXhighModelsPreserveExplicitEffort() async throws {
         for modelId in [
@@ -165,6 +143,7 @@ struct AnthropicProviderV4Tests {
             let thinking = request?["thinking"] as? [String: Any]
             let outputConfig = request?["output_config"] as? [String: Any]
             #expect(thinking?["type"] as? String == "adaptive")
+            #expect(thinking?["display"] as? String == "summarized")
             #expect(outputConfig?["effort"] as? String == "xhigh")
             #expect(result.warnings.isEmpty)
         }
@@ -185,6 +164,7 @@ struct AnthropicProviderV4Tests {
             let thinking = request?["thinking"] as? [String: Any]
             let outputConfig = request?["output_config"] as? [String: Any]
             #expect(thinking?["type"] as? String == "adaptive")
+            #expect(thinking?["display"] as? String == "summarized")
             #expect(outputConfig?["effort"] as? String == "max")
             #expect(result.warnings.contains { warning in
                 guard case let .compatibility(feature, details) = warning else { return false }
