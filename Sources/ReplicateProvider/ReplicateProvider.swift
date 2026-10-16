@@ -96,7 +96,7 @@ public func createReplicate(settings: ReplicateProviderSettings = .init()) -> Re
             for (k, v) in extra { headers[k] = v }
         }
 
-        let withUA = withUserAgentSuffix(headers, "ai-sdk-replicate/\(REPLICATE_PROVIDER_VERSION)")
+        let withUA = withUserAgentSuffix(headers, "ai-sdk-replicate/\(VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 
