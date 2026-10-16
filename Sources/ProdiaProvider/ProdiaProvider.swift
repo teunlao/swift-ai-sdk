@@ -35,6 +35,12 @@ public final class ProdiaProvider: ProviderV4 {
     }
     public func imageModel(_ modelId: ProdiaImageModelId) -> ProdiaImageModel { image(modelId) }
 
+    public func video(modelId: ProdiaVideoModelId) -> ProdiaVideoModel { video(modelId) }
+    public func video(_ modelId: ProdiaVideoModelId) -> ProdiaVideoModel {
+        ProdiaVideoModel(modelId: modelId, config: config(provider: "prodia.video"))
+    }
+    public func videoModel(modelId: String) -> ProdiaVideoModel { video(.init(rawValue: modelId)) }
+
     private func config(provider: String) -> ProdiaModelConfig {
         ProdiaModelConfig(provider: provider, baseURL: baseURL, headers: { try self.headers() }, fetch: settings.fetch)
     }
