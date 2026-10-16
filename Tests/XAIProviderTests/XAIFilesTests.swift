@@ -79,14 +79,18 @@ struct XAIFilesTests {
     func operations() async throws {
         let files = try files { request in
             #expect(request.url?.absoluteString.hasPrefix("https://api.x.ai/v1/files/%252E%252E") == true)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
             if request.httpMethod == "DELETE" { return response(request, #"{"id":"..","deleted":true}"#) }
-            if request.url?.path.hasSuffix("/content") == true { return response(request, "downloaded", type: "text/plain; charset=utf-8") }
+            if request.url?.path.hasSuffix("/content") == true {
+                #expect(request.value(forHTTPHeaderField: "X-Caller") == "files-client")
+                return response(request, "downloaded", type: "text/plain; charset=utf-8")
+            }
             return response(request, #"{"id":"..","filename":"notes.txt","bytes":10,"created_at":1,"expires_at":2}"#)
         }
         let metadata = try await files.getFileMetadata(options: .init(file: ["xai": ".."]))
         #expect(metadata.filename == "notes.txt")
         #expect(metadata.byteSize == 10)
-        let download = try await files.downloadFile(options: .init(file: ["xai": ".."]))
+        let download = try await files.downloadFile(options: .init(file: ["xai": ".."], headers: ["X-Caller": "files-client"]))
         var data = Data()
         for try await chunk in download.content { data.append(chunk) }
         #expect(data == Data("downloaded".utf8))

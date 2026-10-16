@@ -166,7 +166,7 @@ public final class XAIImageModel: ImageModelV4 {
         if response.value.data.allSatisfy({ $0.base64 != nil }) {
             images = .base64(response.value.data.compactMap(\.base64))
         } else {
-            images = .binary(try await downloadImages(response.value.data, abortSignal: options.abortSignal))
+            images = .binary(try await downloadImages(response.value.data, headers: headers, abortSignal: options.abortSignal))
         }
 
         let metadataImages = response.value.data.map { item -> JSONValue in
@@ -195,6 +195,7 @@ public final class XAIImageModel: ImageModelV4 {
 
     private func downloadImages(
         _ items: [XAIImageResponse.Item],
+        headers: [String: String],
         abortSignal: (@Sendable () -> Bool)?
     ) async throws -> [Data] {
         var storage = Array<Data?>(repeating: nil, count: items.count)
@@ -205,6 +206,7 @@ public final class XAIImageModel: ImageModelV4 {
                     guard let url = item.url else { throw InvalidResponseDataError(data: item.base64, message: "Generated image URL is missing") }
                     let data = try await getFromAPI(
                         url: url,
+                        headers: headers.filter { $0.key.lowercased() == "user-agent" },
                         failedResponseHandler: createStatusCodeErrorResponseHandler(),
                         successfulResponseHandler: createBinaryResponseHandler(),
                         isAborted: abortSignal,

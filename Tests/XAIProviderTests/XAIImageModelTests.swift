@@ -425,6 +425,67 @@ struct XAIImageModelTests {
         ]))
     }
 
+    private static let mediaDownloads: [(String, String)] = [
+        ("http://127.0.0.1:8080/v1", "http://127.0.0.1:8080/media/image.png"),
+        ("https://api.example.com/v1", "https://media.example.com/image.png"),
+        ("https://api.example.com/v1", "https://cdn.example.org/image.png")
+    ]
+
+    @Test("returned image URLs receive only User-Agent on configured, sibling and foreign origins", arguments: mediaDownloads)
+    func downloadHeaderIsolation(_ baseURL: String, _ imageURL: String) async throws {
+        let image = Data([137, 80, 78, 71])
+        let provider = createXai(settings: .init(baseURL: baseURL, apiKey: "secret", headers: ["Cookie": "provider-cookie", "X-Api-Key": "custom-secret", "X-Provider": "provider"], fetch: { request in
+            if request.httpMethod == "POST" {
+                #expect(request.url?.absoluteString == "\(baseURL)/images/generations")
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+                #expect(request.value(forHTTPHeaderField: "Cookie") == "caller-cookie")
+                #expect(request.value(forHTTPHeaderField: "X-Api-Key") == "custom-secret")
+                #expect(request.value(forHTTPHeaderField: "X-Caller") == "caller")
+                let data = try JSONEncoder().encode(JSONValue.object(["data": .array([.object(["url": .string(imageURL)])])]))
+                return FetchResponse(body: .data(data), urlResponse: self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"]))
+            }
+            #expect(request.url?.absoluteString == imageURL)
+            #expect(Set((request.allHTTPHeaderFields ?? [:]).keys.map { $0.lowercased() }) == Set(["user-agent"]))
+            #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("caller-agent") == true)
+            #expect(request.fetchRedirectMode == .manual)
+            return FetchResponse(body: .data(image), urlResponse: self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "image/png"]))
+        }))
+        let result = try await provider.image(modelId: "grok-imagine-image").doGenerate(options: .init(prompt: "otter", n: 1, headers: ["Cookie": "caller-cookie", "X-Caller": "caller", "uSeR-aGeNt": "caller-agent"]))
+        #expect(result.images == .binary([image]))
+    }
+
+    @Test("returned image redirects keep header isolation and validate every hop")
+    func downloadRedirectIsolation() async throws {
+        let provider = createXai(settings: .init(baseURL: "https://api.example.com/v1", apiKey: "secret", headers: ["Cookie": "secret", "X-Custom": "custom"], fetch: { request in
+            if request.httpMethod == "POST" {
+                return FetchResponse(body: .data(Data(#"{"data":[{"url":"https://api.example.com/image.png"}]}"#.utf8)), urlResponse: self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"]))
+            }
+            #expect(Set((request.allHTTPHeaderFields ?? [:]).keys.map { $0.lowercased() }) == Set(["user-agent"]))
+            #expect(request.fetchRedirectMode == .manual)
+            if request.url?.absoluteString == "https://api.example.com/image.png" {
+                return FetchResponse(body: .data(Data()), urlResponse: self.httpResponse(url: request.url!, statusCode: 302, headers: ["Location": "https://cdn.example.org/final.png"]))
+            }
+            #expect(request.url?.absoluteString == "https://cdn.example.org/final.png")
+            return FetchResponse(body: .data(Data([1, 2, 3])), urlResponse: self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "image/png"]))
+        }))
+        let result = try await provider.image(modelId: "grok-imagine-image").doGenerate(options: .init(prompt: "otter", n: 1))
+        #expect(result.images == .binary([Data([1, 2, 3])]))
+    }
+
+    @Test("returned image redirects cannot reach an untrusted private host")
+    func downloadPrivateRedirect() async throws {
+        let provider = createXai(settings: .init(baseURL: "https://api.example.com/v1", apiKey: "secret", fetch: { request in
+            if request.httpMethod == "POST" {
+                return FetchResponse(body: .data(Data(#"{"data":[{"url":"https://api.example.com/image.png"}]}"#.utf8)), urlResponse: self.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"]))
+            }
+            #expect(request.url?.absoluteString == "https://api.example.com/image.png")
+            return FetchResponse(body: .data(Data()), urlResponse: self.httpResponse(url: request.url!, statusCode: 302, headers: ["Location": "http://127.0.0.1:9090/private.png"]))
+        }))
+        await #expect(throws: DownloadError.self) {
+            _ = try await provider.image(modelId: "grok-imagine-image").doGenerate(options: .init(prompt: "otter", n: 1))
+        }
+    }
+
     @Test("base64 images preserve billing metadata and image capabilities")
     func base64Images() async throws {
         let capture = RequestCapture()
