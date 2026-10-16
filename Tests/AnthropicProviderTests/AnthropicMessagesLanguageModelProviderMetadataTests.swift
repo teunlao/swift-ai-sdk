@@ -467,8 +467,8 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
 
         let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
 
-        #expect(result.content.count == 3)
-        if case .custom(let fallback) = result.content[1] {
+        #expect(result.content.count == 2)
+        if case .custom(let fallback) = result.content[0] {
             #expect(fallback.kind == "anthropic.fallback")
             #expect(fallback.providerMetadata == ["anthropic": [
                 "type": .string("fallback"),
@@ -543,8 +543,8 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
 
         let result = try await model.doGenerate(options: .init(prompt: metadataTestPrompt))
 
-        #expect(result.content.count == 3)
-        if case .text(let compaction) = result.content[1] {
+        #expect(result.content.count == 2)
+        if case .text(let compaction) = result.content[0] {
             #expect(compaction.text == "Conversation summary")
             #expect(compaction.providerMetadata == [
                 "anthropic": ["type": .string("compaction")]
@@ -552,7 +552,7 @@ struct AnthropicMessagesLanguageModelProviderMetadataTests {
         } else {
             Issue.record("Expected compaction text content")
         }
-        if case .text(let answer) = result.content[2] {
+        if case .text(let answer) = result.content[1] {
             #expect(answer.text == "Final answer")
         } else {
             Issue.record("Expected final text content")

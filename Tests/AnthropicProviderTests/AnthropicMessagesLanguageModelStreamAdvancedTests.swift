@@ -228,7 +228,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         let parts = try await collectParts(from: result.stream)
         let toolInputStart = parts.first { part in
             if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _, _) = part {
-                return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool" && providerExecuted == false
+                return id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && toolName == "test-tool" && providerExecuted == nil
             }
             return false
         }
@@ -242,7 +242,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
 
         let toolCall = parts.first { part in
             if case .toolCall(let call) = part {
-                return call.toolCallId == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && call.toolName == "test-tool" && call.input == "{\"value\":\"Sparkle Day\"}" && call.providerExecuted == false
+                return call.toolCallId == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && call.toolName == "test-tool" && call.input == "{\"value\":\"Sparkle Day\"}" && call.providerExecuted == nil
             }
             return false
         }
@@ -839,7 +839,7 @@ struct AnthropicMessagesLanguageModelStreamAdvancedTests {
         }
 
         let rollDieCall = toolCalls.first { $0.toolName == "rollDie" }
-        #expect(rollDieCall?.providerExecuted == false)
+        #expect(rollDieCall?.providerExecuted == nil)
         #expect(rollDieCall?.providerMetadata == [
             "anthropic": [
                 "caller": .object([

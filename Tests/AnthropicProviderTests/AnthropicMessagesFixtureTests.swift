@@ -281,9 +281,7 @@ struct AnthropicMessagesFixtureTests {
         #expect(toolCalls.first?.toolName == "echo")
         #expect(toolCalls.first?.providerExecuted == true)
         #expect(toolCalls.first?.dynamic == true)
-        #expect(decodeJSONValue(toolCalls.first?.input ?? "") == .object([
-            "message": .string("hello world")
-        ]))
+        #expect(decodeJSONValue(toolCalls.first?.input ?? "") == .object([:]))
         #expect(toolCalls.first?.providerMetadata == expectedMCPMetadata)
 
         let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
@@ -366,7 +364,9 @@ struct AnthropicMessagesFixtureTests {
         #expect(decodeJSONValue(webFetchCall?.input ?? "") == .object([
             "url": .string("https://example.com")
         ]))
-        #expect(webFetchCall?.providerMetadata == nil)
+        #expect(webFetchCall?.providerMetadata == ["anthropic": ["caller": .object([
+            "type": .string("code_execution_20260120"), "toolId": .string("srvtoolu_015CSHH7X69AhdK9gNzotEeh"),
+        ])]])
 
         let toolResults = result.content.compactMap { item -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = item else { return nil }
@@ -466,7 +466,9 @@ struct AnthropicMessagesFixtureTests {
         #expect(decodeJSONValue(webFetchCall?.input ?? "") == .object([
             "url": .string("https://example.com")
         ]))
-        #expect(webFetchCall?.providerMetadata == nil)
+        #expect(webFetchCall?.providerMetadata == ["anthropic": ["caller": .object([
+            "type": .string("code_execution_20260120"), "toolId": .string("srvtoolu_01LKcA5qc1HwvLQSe3cLKmcK"),
+        ])]])
 
         let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             guard case .toolResult(let toolResult) = part else { return nil }

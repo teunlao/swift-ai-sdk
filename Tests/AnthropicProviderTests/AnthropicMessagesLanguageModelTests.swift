@@ -71,13 +71,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         #expect(result.finishReason.raw == "end_turn")
         #expect(result.usage.inputTokens.total == 4)
         #expect(result.usage.outputTokens.total == 10)
-        #expect(result.content.count == 2)
-        if case .custom(let start) = result.content.first {
-            #expect(start.kind == "anthropic.message_start")
-        } else {
-            Issue.record("Expected message-start content before text")
-        }
-        if case .text(let text) = result.content[1] {
+        #expect(result.content.count == 1)
+        if case .text(let text) = result.content[0] {
             #expect(text.text == "Hello, World!")
         } else {
             Issue.record("Expected text content")
@@ -644,8 +639,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.content.count == 2)
-        if case .text(let textContent) = result.content[1] {
+        #expect(result.content.count == 1)
+        if case .text(let textContent) = result.content[0] {
             #expect(textContent.text == "Hello, World!")
         } else {
             Issue.record("Expected text content")
@@ -709,17 +704,17 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ]
         ))
 
-        #expect(result.content.count == 3)
+        #expect(result.content.count == 2)
         #expect(result.finishReason.unified == .toolCalls)
         #expect(result.finishReason.raw == "tool_use")
 
-        if case .text(let textContent) = result.content[1] {
+        if case .text(let textContent) = result.content[0] {
             #expect(textContent.text == "Some text\n\n")
         } else {
             Issue.record("Expected text content")
         }
 
-        if case .toolCall(let toolCall) = result.content[2] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "test-tool")
             #expect(toolCall.input == "{\"value\":\"example value\"}")
@@ -915,9 +910,9 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt))
 
-        #expect(result.content.count == 3)
+        #expect(result.content.count == 2)
 
-        if case .reasoning(let reasoning) = result.content[1] {
+        if case .reasoning(let reasoning) = result.content[0] {
             #expect(reasoning.text == "I am thinking...")
             if let providerMetadata = reasoning.providerMetadata,
                let anthropicMeta = providerMetadata["anthropic"],
@@ -928,10 +923,10 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
                 Issue.record("Expected signature in reasoning provider metadata")
             }
         } else {
-            Issue.record("Expected reasoning content, got: \(result.content[1])")
+            Issue.record("Expected reasoning content, got: \(result.content[0])")
         }
 
-        if case .text(let text) = result.content[2] {
+        if case .text(let text) = result.content[1] {
             #expect(text.text == "Hello, World!")
         } else {
             Issue.record("Expected second content to be text")
@@ -995,8 +990,8 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
         ))
 
         // JSON response format should return the tool input as text
-        #expect(result.content.count == 2)
-        if case .text(let text) = result.content[1] {
+        #expect(result.content.count == 1)
+        if case .text(let text) = result.content[0] {
             #expect(text.text == "{\"name\":\"example value\"}")
         } else {
             Issue.record("Expected text content with JSON string")
@@ -1114,15 +1109,15 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ], providerOptions: nil)
         ]))
 
-        #expect(result.content.count == 3)
+        #expect(result.content.count == 2)
 
-        if case .text(let text) = result.content[1] {
+        if case .text(let text) = result.content[0] {
             #expect(text.text == "Based on the document, the results show positive growth.")
         } else {
             Issue.record("Expected text content")
         }
 
-        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[2] {
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
             #expect(title == "Financial Report 2023")
             #expect(mediaType == "application/pdf")
 
@@ -1205,15 +1200,15 @@ private func makeConfig(fetch: @escaping FetchFunction) -> AnthropicMessagesConf
             ], providerOptions: nil)
         ]))
 
-        #expect(result.content.count == 3)
+        #expect(result.content.count == 2)
 
-        if case .text(let text) = result.content[1] {
+        if case .text(let text) = result.content[0] {
             #expect(text.text == "The text shows important information.")
         } else {
             Issue.record("Expected text content")
         }
 
-        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[2] {
+        if case .source(.document(_, let mediaType, let title, _, let providerMetadata)) = result.content[1] {
             #expect(title == "Test Document")
             #expect(mediaType == "text/plain")
 
@@ -3868,9 +3863,9 @@ struct AnthropicMessagesLanguageModelMemory20250818Tests {
             ]
         ))
 
-        #expect(result.content.count == 2)
+        #expect(result.content.count == 1)
 
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[0] {
             #expect(toolCall.toolCallId == "toolu_01TvNvpwszD4hKeudmbfyWiV")
             #expect(toolCall.toolName == "memory")
             #expect(toolCall.providerExecuted == nil)
@@ -3975,15 +3970,15 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
 
-        #expect(result.content.count == 6)
+        #expect(result.content.count == 5)
 
-        if case .text(let text) = result.content[1] {
+        if case .text(let text) = result.content[0] {
             #expect(text.text == "I'll run the game.")
         } else {
             Issue.record("Expected text")
         }
 
-        if case .toolCall(let toolCall) = result.content[2] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "srvtoolu_1")
             #expect(toolCall.toolName == "code_execution")
             #expect(toolCall.providerExecuted == true)
@@ -3995,7 +3990,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected tool-call")
         }
 
-        if case .toolCall(let toolCall) = result.content[3] {
+        if case .toolCall(let toolCall) = result.content[2] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "rollDie")
             #expect(toolCall.providerExecuted == nil)
@@ -4014,7 +4009,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected tool-call")
         }
 
-	        if case .toolResult(let toolResult) = result.content[4] {
+	        if case .toolResult(let toolResult) = result.content[3] {
 	            #expect(toolResult.toolCallId == "srvtoolu_1")
 	            #expect(toolResult.toolName == "code_execution")
 	            #expect(toolResult.result == .object([
@@ -4028,7 +4023,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected tool-result")
         }
 
-        if case .text(let text) = result.content[5] {
+        if case .text(let text) = result.content[4] {
             #expect(text.text == "done")
         } else {
             Issue.record("Expected text")
@@ -4124,9 +4119,9 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
 
-        #expect(result.content.count == 6)
+        #expect(result.content.count == 5)
 
-        if case .toolCall(let toolCall) = result.content[3] {
+        if case .toolCall(let toolCall) = result.content[2] {
             #expect(toolCall.toolCallId == "toolu_1")
             #expect(toolCall.toolName == "rollDie")
             #expect(decodeJSONValue(toolCall.input) == .object([
@@ -4144,7 +4139,7 @@ struct AnthropicMessagesLanguageModelProgrammaticToolCallingTests {
             Issue.record("Expected tool-call")
         }
 
-        if case .toolResult(let toolResult) = result.content[4] {
+        if case .toolResult(let toolResult) = result.content[3] {
             #expect(toolResult.toolCallId == "srvtoolu_1")
             #expect(toolResult.toolName == "code_execution")
             #expect(toolResult.result == .object([
@@ -4314,10 +4309,10 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         ))
 
         // Verify content structure
-        #expect(result.content.count == 4)
+        #expect(result.content.count == 3)
 
         // Verify tool call with providerExecuted=true
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[0] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "code_execution")
             // Input should be stringified JSON: {"code":"print(\"Hello, World!\")"}
@@ -4329,7 +4324,7 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         }
 
 	        // Verify tool result with providerExecuted=true
-	        if case .toolResult(let toolResult) = result.content[2] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
 
@@ -4347,7 +4342,7 @@ struct AnthropicMessagesLanguageModelCodeExecutionTests {
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[3] {
+        if case .text(let textContent) = result.content[2] {
             #expect(textContent.text == "The code executed successfully with output: Hello, World!")
         } else {
             Issue.record("Expected text")
@@ -4436,7 +4431,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool call
-        if case .toolCall(let toolCall) = result.content[1] {
+        if case .toolCall(let toolCall) = result.content[0] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "web_search")
             #expect(toolCall.providerExecuted == true)
@@ -4448,7 +4443,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
 	        // Verify tool result with array
-	        if case .toolResult(let toolResult) = result.content[2] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 
@@ -4473,7 +4468,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
         // Verify source citation content
-        if case .source(let source) = result.content[3] {
+        if case .source(let source) = result.content[2] {
             if case .url(let id, let url, let title, let providerMetadata) = source {
                 #expect(url == "https://example.com/ai-news")
                 #expect(title == "Latest AI Developments")
@@ -4492,7 +4487,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[4] {
+        if case .text(let textContent) = result.content[3] {
             #expect(textContent.text == "Based on recent articles, AI continues to advance rapidly.")
         } else {
             Issue.record("Expected text")
@@ -4563,7 +4558,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify tool result with array
-	        if case .toolResult(let toolResult) = result.content[2] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 
@@ -4587,7 +4582,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
         // Verify source citation content
-        if case .source(let source) = result.content[3] {
+        if case .source(let source) = result.content[2] {
             if case .url(_, let url, let title, let providerMetadata) = source {
                 #expect(url == "https://example.com/ai-news")
                 #expect(title == nil)
@@ -4654,7 +4649,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        if case .toolResult(let toolResult) = result.content[0] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_search")
 	            #expect(toolResult.isError == true)
@@ -4671,7 +4666,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[2] {
+        if case .text(let textContent) = result.content[1] {
             #expect(textContent.text == "I cannot search further due to limits.")
         } else {
             Issue.record("Expected text")
@@ -4743,7 +4738,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool call
-        if case .toolCall(let toolCall) = result.content[2] {
+        if case .toolCall(let toolCall) = result.content[1] {
             #expect(toolCall.toolCallId == "tool_1")
             #expect(toolCall.toolName == "web_fetch")
             #expect(toolCall.providerExecuted == true)
@@ -4752,7 +4747,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
 	        // Verify tool result
-	        if case .toolResult(let toolResult) = result.content[3] {
+	        if case .toolResult(let toolResult) = result.content[2] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
 
@@ -4847,7 +4842,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
         // Verify tool result without title
-        if case .toolResult(let toolResult) = result.content[2] {
+        if case .toolResult(let toolResult) = result.content[1] {
             if case .object(let resultObj) = toolResult.result {
                 if case .object(let content) = resultObj["content"] {
                     // title should be null
@@ -4918,7 +4913,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[2] {
+	        if case .toolResult(let toolResult) = result.content[1] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "web_fetch")
 	            #expect(toolResult.isError == true)
@@ -4984,7 +4979,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         ))
 
 	        // Verify error tool result
-	        if case .toolResult(let toolResult) = result.content[1] {
+	        if case .toolResult(let toolResult) = result.content[0] {
 	            #expect(toolResult.toolCallId == "tool_1")
 	            #expect(toolResult.toolName == "code_execution")
 	            #expect(toolResult.isError == true)
@@ -5001,7 +4996,7 @@ struct AnthropicMessagesLanguageModelProviderToolResultsBatch16Tests {
         }
 
         // Verify text content
-        if case .text(let textContent) = result.content[2] {
+        if case .text(let textContent) = result.content[1] {
             #expect(textContent.text == "The code execution service is currently unavailable.")
         } else {
             Issue.record("Expected text")

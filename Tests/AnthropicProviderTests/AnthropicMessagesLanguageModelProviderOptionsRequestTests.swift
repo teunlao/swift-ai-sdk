@@ -480,8 +480,8 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         }
     }
 
-    @Test("sends thinking.display when set on enabled thinking")
-    func sendsEnabledThinkingWithDisplay() async throws {
+    @Test("omits thinking.display for enabled thinking")
+    func omitsEnabledThinkingDisplay() async throws {
         let capture = RequestCapture()
         let responseData = try makeProviderOptionsTestResponseData(model: "claude-sonnet-4-5-20250929")
 
@@ -512,7 +512,7 @@ struct AnthropicMessagesLanguageModelProviderOptionsRequestTests {
         if let thinking = json?["thinking"] as? [String: Any] {
             #expect(thinking["type"] as? String == "enabled")
             #expect(thinking["budget_tokens"] as? Double == 2048)
-            #expect(thinking["display"] as? String == "omitted")
+            #expect(thinking["display"] == nil)
         } else {
             Issue.record("Expected thinking payload")
         }
