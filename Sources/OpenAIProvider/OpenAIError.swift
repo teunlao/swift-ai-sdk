@@ -10,6 +10,12 @@ public struct OpenAIErrorData: Codable, Sendable, Equatable {
         public let type: String?
         public let param: JSONValue?
         public let code: OpenAIErrorCode?
+        // Stream classification distinguishes omitted keys from explicit nulls.
+        private let nullFields: Set<CodingKeys>
+
+        private enum CodingKeys: String, CodingKey, Hashable, Sendable {
+            case message, type, param, code
+        }
 
         public init(
             message: String,
@@ -21,6 +27,42 @@ public struct OpenAIErrorData: Codable, Sendable, Equatable {
             self.type = type
             self.param = param
             self.code = code
+            self.nullFields = []
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            message = try container.decode(String.self, forKey: .message)
+            type = try container.decodeIfPresent(String.self, forKey: .type)
+            code = try container.decodeIfPresent(OpenAIErrorCode.self, forKey: .code)
+            if container.contains(.param) {
+                param = try container.decode(JSONValue.self, forKey: .param)
+            } else {
+                param = Optional<JSONValue>.none
+            }
+            var nulls: Set<CodingKeys> = []
+            for key in [CodingKeys.type, .code] where container.contains(key) {
+                if try container.decodeNil(forKey: key) { nulls.insert(key) }
+            }
+            nullFields = nulls
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            try jsonValue.encode(to: encoder)
+        }
+
+        var jsonValue: JSONValue {
+            var result: [String: JSONValue] = ["message": .string(message)]
+            if let type { result["type"] = .string(type) }
+            else if nullFields.contains(.type) { result["type"] = .null }
+            if let param { result["param"] = param }
+            switch code {
+            case .string(let value): result["code"] = .string(value)
+            case .number(let value): result["code"] = .number(value)
+            case nil:
+                if nullFields.contains(.code) { result["code"] = .null }
+            }
+            return .object(result)
         }
     }
 
