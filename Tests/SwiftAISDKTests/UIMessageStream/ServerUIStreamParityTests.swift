@@ -138,6 +138,14 @@ struct ServerUIStreamParityTests {
         #expect(toUIMessageChunk(.toolError(error)) == .toolOutputError(toolCallId: "call", errorText: "An error occurred.", providerExecuted: nil, providerMetadata: nil, dynamic: false))
     }
 
+    @Test("generated files preserve their data URI and provider metadata")
+    func generatedFileMetadata() {
+        let metadata: ProviderMetadata = ["provider": ["id": .string("file")]]
+        let file = DefaultGeneratedFile(data: Data([1]), mediaType: "image/png", providerMetadata: metadata)
+        #expect(toUIMessageChunk(.file(file)) == .file(url: "data:image/png;base64,AQ==",
+                                                      mediaType: "image/png", providerMetadata: metadata))
+    }
+
     @Test("keep-alive sends opening and idle comments without replacing source data")
     func keepAlive() async throws {
         let source = AsyncThrowingStream<String, Error>.makeStream()

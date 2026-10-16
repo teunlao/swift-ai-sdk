@@ -48,7 +48,7 @@ public func toUIMessageChunk(
         return options.sendReasoning ? .reasoningEnd(id: id, providerMetadata: metadata) : nil
     case .custom(let kind, let metadata): return .custom(kind: kind, providerMetadata: metadata)
     case .file(let file):
-        return .file(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: nil)
+        return .file(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: file.providerMetadata)
     case .reasoningFile(let file, let metadata):
         return options.sendReasoning
             ? .reasoningFile(url: "data:\(file.mediaType);base64,\(file.base64)", mediaType: file.mediaType, providerMetadata: metadata)
