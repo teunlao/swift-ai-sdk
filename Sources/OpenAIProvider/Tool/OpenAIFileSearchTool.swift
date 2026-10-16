@@ -14,13 +14,13 @@ public struct OpenAIFileSearchArgs: Sendable, Equatable {
     }
 
     public let vectorStoreIds: [String]
-    public let maxNumResults: Int?
+    public let maxNumResults: Double?
     public let ranking: RankingOptions?
     public let filters: JSONValue?
 
     public init(
         vectorStoreIds: [String],
-        maxNumResults: Int? = nil,
+        maxNumResults: Double? = nil,
         ranking: RankingOptions? = nil,
         filters: JSONValue? = nil
     ) {
@@ -121,13 +121,13 @@ public let openaiFileSearchArgsSchema = FlexibleSchema<OpenAIFileSearchArgs>(
                     return id
                 }
 
-                let maxNumResults: Int?
+                let maxNumResults: Double?
                 if let maxValue = dict["maxNumResults"], maxValue != .null {
                     guard case .number(let number) = maxValue else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "maxNumResults must be a number")
                         return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                     }
-                    maxNumResults = Int(number)
+                    maxNumResults = number
                 } else {
                     maxNumResults = nil
                 }

@@ -691,7 +691,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             case "flex" where !modelCapabilities.supportsFlexProcessing:
                 addUnsupportedSetting("serviceTier", details: "flex processing is only available for o3, o4-mini, and gpt-5 models")
                 body.serviceTier = nil
-            case "priority" where !modelCapabilities.supportsPriorityProcessing:
+            case let tier where (tier == "priority" || tier == "fast") && !modelCapabilities.supportsPriorityProcessing:
                 addUnsupportedSetting("serviceTier", details: "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported")
                 body.serviceTier = nil
             default:

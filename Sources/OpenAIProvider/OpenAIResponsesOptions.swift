@@ -46,7 +46,11 @@ public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
     "gpt-5.6",
     "gpt-5.6-luna",
     "gpt-5.6-sol",
-    "gpt-5.6-terra"
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "gpt-6-luna",
+    "gpt-6-sol"
 ].map(OpenAIResponsesModelId.init(rawValue:))
 
 public let openAIResponsesModelIds: [OpenAIResponsesModelId] = (
@@ -278,12 +282,12 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "reasoningMode": .object([
-            "type": .array([.string("string"), .string("null")]),
-            "enum": .array([.string("standard"), .string("pro"), .null])
+            "type": .string("string"),
+            "enum": .array([.string("standard"), .string("pro")])
         ]),
         "reasoningContext": .object([
-            "type": .array([.string("string"), .string("null")]),
-            "enum": .array([.string("auto"), .string("current_turn"), .string("all_turns"), .null])
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("current_turn"), .string("all_turns")])
         ]),
         "reasoningSummary": .object([
             "type": .array([.string("string"), .string("null")])
@@ -420,13 +424,13 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         options.promptCacheRetention = retention
     }
     options.reasoningEffort = try parseOptionalString(dict, key: "reasoningEffort")
-    if let reasoningMode = try parseOptionalString(dict, key: "reasoningMode") {
+    if let reasoningMode = try parseOptionalString(dict, key: "reasoningMode", allowNull: false) {
         guard let value = OpenAIResponsesReasoningMode(rawValue: reasoningMode) else {
             throw TypeValidationError.wrap(value: reasoningMode, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid reasoningMode"))
         }
         options.reasoningMode = value
     }
-    if let reasoningContext = try parseOptionalString(dict, key: "reasoningContext") {
+    if let reasoningContext = try parseOptionalString(dict, key: "reasoningContext", allowNull: false) {
         guard let value = OpenAIResponsesReasoningContext(rawValue: reasoningContext) else {
             throw TypeValidationError.wrap(value: reasoningContext, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid reasoningContext"))
         }
@@ -438,7 +442,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         guard case .string(let serviceTier) = serviceTierValue else {
             throw TypeValidationError.wrap(value: serviceTierValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "serviceTier must be a string"))
         }
-        let allowedServiceTiers = ["auto", "flex", "priority", "default"]
+        let allowedServiceTiers = ["auto", "flex", "priority", "fast", "ultrafast", "default"]
         guard allowedServiceTiers.contains(serviceTier) else {
             throw TypeValidationError.wrap(value: serviceTierValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid serviceTier"))
         }
