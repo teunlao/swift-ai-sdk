@@ -58,13 +58,13 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill sends files and display title as multipart form data")
     func uploadSkillSendsMultipartFormData() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        _ = try await provider.skills().uploadSkill(
+        _ = try await #require(try provider.skills()).uploadSkill(
             options: SkillsV4UploadSkillCallOptions(
                 files: [
                     SkillsV4File(
@@ -100,13 +100,13 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill maps response, version metadata, and provider metadata")
     func uploadSkillMapsResult() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        let result = try await provider.skills().uploadSkill(
+        let result = try await #require(try provider.skills()).uploadSkill(
             options: SkillsV4UploadSkillCallOptions(
                 files: [
                     SkillsV4File(
@@ -150,7 +150,7 @@ struct AnthropicSkillsTests {
             "description": .string("Version metadata"),
         ]))
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+        let provider: any ProviderV4 = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
             await capture.append(request)
             return FetchResponse(
                 body: .data(request.httpMethod == "POST" ? createData : metadataData),
@@ -158,7 +158,7 @@ struct AnthropicSkillsTests {
             )
         }))
 
-        let result = try await provider.skills().uploadSkill(options: .init(files: [
+        let result = try await #require(try provider.skills()).uploadSkill(options: .init(files: [
             .init(path: "SKILL.md", data: .text("# Skill")),
         ]))
 
@@ -174,13 +174,13 @@ struct AnthropicSkillsTests {
     @Test("uploadSkill accepts upstream data initializer and text file data")
     func uploadSkillAcceptsDataInitializerAndTextFileData() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        _ = try await provider.skills().uploadSkill(
+        _ = try await #require(try provider.skills()).uploadSkill(
             options: SkillsV4UploadSkillCallOptions(
                 files: [
                     SkillsV4File(

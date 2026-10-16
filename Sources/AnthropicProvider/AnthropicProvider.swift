@@ -47,7 +47,7 @@ public struct AnthropicProviderSettings: Sendable {
     }
 }
 
-public final class AnthropicProvider: ProviderV4, FilesProvider, SkillsProvider {
+public final class AnthropicProvider: ProviderV4 {
     private let makeMessagesModel: @Sendable (AnthropicMessagesModelId) -> AnthropicMessagesLanguageModel
     private let makeFilesAPI: @Sendable () -> any FilesV4
     private let makeSkillsAPI: @Sendable () -> any SkillsV4
@@ -101,11 +101,11 @@ public final class AnthropicProvider: ProviderV4, FilesProvider, SkillsProvider 
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func files() -> any FilesV4 {
+    public func files() -> (any FilesV4)? {
         makeFilesAPI()
     }
 
-    public func skills() -> any SkillsV4 {
+    public func skills() -> (any SkillsV4)? {
         makeSkillsAPI()
     }
 }

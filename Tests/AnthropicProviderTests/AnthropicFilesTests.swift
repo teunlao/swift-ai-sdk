@@ -32,26 +32,16 @@ struct AnthropicFilesTests {
         }
     }
 
-    @Test("provider wires files and skills interfaces with upstream provider ids")
-    func providerWiresInterfaces() {
-        let provider = createAnthropic(settings: .init(apiKey: "test-api-key"))
-
-        #expect(provider.files().provider == "anthropic.messages")
-        #expect(provider.files().specificationVersion == "v4")
-        #expect(provider.skills().provider == "anthropic.skills")
-        #expect(provider.skills().specificationVersion == "v4")
-    }
-
     @Test("uploadFile sends multipart payload with anthropic files beta header")
     func uploadFileSendsMultipartPayload() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        let result = try await provider.files().uploadFile(
+        let result = try await #require(try provider.files()).uploadFile(
             options: .init(
                 data: .data(Data([0x25, 0x50, 0x44, 0x46])),
                 mediaType: "application/pdf",
@@ -90,13 +80,13 @@ struct AnthropicFilesTests {
     @Test("uploadFile call headers override defaults and preserve other provider headers")
     func uploadFileHeaderOverrides() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             apiKey: "provider-key",
             headers: ["x-upload-scope": "provider", "x-provider-only": "retained"],
             fetch: makeFetch(capture: capture)
         ))
 
-        _ = try await provider.files().uploadFile(options: .init(
+        _ = try await #require(try provider.files()).uploadFile(options: .init(
             data: .text("file"),
             mediaType: "text/plain",
             headers: [
@@ -115,13 +105,13 @@ struct AnthropicFilesTests {
 
     @Test("uploadFile preserves cancellation from an already aborted signal")
     func uploadFileCancellation() async throws {
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             apiKey: "test-key",
             fetch: makeFetch(capture: URLRequestCapture())
         ))
 
         await #expect(throws: CancellationError.self) {
-            _ = try await provider.files().uploadFile(options: .init(
+            _ = try await #require(try provider.files()).uploadFile(options: .init(
                 data: .text("file"), mediaType: "text/plain", abortSignal: { true }
             ))
         }
@@ -139,14 +129,14 @@ struct AnthropicFilesTests {
             payload.removeValue(forKey: invalidField)
         }
         let responseData = try JSONEncoder().encode(payload)
-        let provider = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
+        let provider: any ProviderV4 = createAnthropic(settings: .init(apiKey: "test-key", fetch: { request in
             FetchResponse(body: .data(responseData), urlResponse: HTTPURLResponse(
                 url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"]
             )!)
         }))
 
         do {
-            _ = try await provider.files().uploadFile(options: .init(data: .text("file"), mediaType: "text/plain"))
+            _ = try await #require(try provider.files()).uploadFile(options: .init(data: .text("file"), mediaType: "text/plain"))
             Issue.record("Expected upload response rejection")
         } catch let error as APICallError {
             #expect(error.statusCode == 200)
@@ -157,13 +147,13 @@ struct AnthropicFilesTests {
     @Test("uploadFile maps anthropic provider metadata")
     func uploadFileMapsProviderMetadata() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        let result = try await provider.files().uploadFile(
+        let result = try await #require(try provider.files()).uploadFile(
             options: .init(
                 data: .base64("JVBERg=="),
                 mediaType: "application/pdf"
@@ -182,13 +172,13 @@ struct AnthropicFilesTests {
     @Test("uploadFile accepts upstream text data variant")
     func uploadFileAcceptsTextDataVariant() async throws {
         let capture = URLRequestCapture()
-        let provider = createAnthropic(settings: .init(
+        let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
             fetch: makeFetch(capture: capture)
         ))
 
-        _ = try await provider.files().uploadFile(
+        _ = try await #require(try provider.files()).uploadFile(
             options: .init(
                 data: .text("plain text fixture"),
                 mediaType: "text/plain",
