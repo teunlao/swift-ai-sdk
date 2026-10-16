@@ -21,7 +21,10 @@ public struct FetchResponse: Sendable {
 public typealias FetchFunction = @Sendable (URLRequest) async throws -> FetchResponse
 
 /// Creates the default fetch implementation backed by `URLSession`.
-func defaultFetchFunction() -> FetchFunction {
+///
+/// The response body is a stream read by a task that is cancelled when the consumer terminates the
+/// stream, so an abandoned stream stops reading. Providers fall back to this when no custom fetch is given.
+public func defaultFetchFunction() -> FetchFunction {
     { request in
         let session = URLSession.shared
 

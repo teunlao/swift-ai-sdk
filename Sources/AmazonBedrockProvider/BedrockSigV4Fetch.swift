@@ -29,7 +29,7 @@ public func createSigV4FetchFunction(
     getCredentials: @escaping @Sendable () async throws -> BedrockCredentials,
     fetch: FetchFunction? = nil
 ) -> FetchFunction {
-    let underlyingFetch = fetch ?? makeDefaultFetchFunction()
+    let underlyingFetch = fetch ?? defaultFetchFunction()
 
     return { request in
         var mutableRequest = request
@@ -115,7 +115,7 @@ public func createApiKeyFetchFunction(
     apiKey: String,
     fetch: FetchFunction? = nil
 ) -> FetchFunction {
-    let underlyingFetch = fetch ?? makeDefaultFetchFunction()
+    let underlyingFetch = fetch ?? defaultFetchFunction()
 
     return { request in
         var mutableRequest = request
@@ -134,50 +134,6 @@ public func createApiKeyFetchFunction(
         mutableRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         return try await underlyingFetch(mutableRequest)
-    }
-}
-
-// MARK: - Fetch Helper
-
-private func makeDefaultFetchFunction() -> FetchFunction {
-    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, watchOS 8.0, *) {
-        return { request in
-            let session = URLSession.shared
-            let (bytes, response) = try await session.bytes(for: request)
-
-            let stream = AsyncThrowingStream<Data, Error> { continuation in
-                Task {
-                    var buffer = Data()
-                    buffer.reserveCapacity(16_384)
-
-                    do {
-                        for try await byte in bytes {
-                            buffer.append(byte)
-                            if buffer.count >= 16_384 {
-                                continuation.yield(buffer)
-                                buffer.removeAll(keepingCapacity: true)
-                            }
-                        }
-
-                        if !buffer.isEmpty {
-                            continuation.yield(buffer)
-                        }
-
-                        continuation.finish()
-                    } catch {
-                        continuation.finish(throwing: error)
-                    }
-                }
-            }
-
-            return FetchResponse(body: .stream(stream), urlResponse: response)
-        }
-    } else {
-        return { request in
-            let session = URLSession.shared
-            let (data, response) = try await session.data(for: request)
-            return FetchResponse(body: .data(data), urlResponse: response)
-        }
     }
 }
 
