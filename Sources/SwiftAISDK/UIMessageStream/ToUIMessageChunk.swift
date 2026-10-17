@@ -61,32 +61,42 @@ public func toUIMessageChunk(
         case .document(let id, let mediaType, let title, let filename, let metadata):
             return .sourceDocument(sourceId: id, mediaType: mediaType, title: title, filename: filename, providerMetadata: metadata)
         }
-    case .toolInputStart(let id, let name, let metadata, let executed, let isDynamic, let title, _, _):
+    case .toolInputStart(let id, let name, let metadata, let executed, let isDynamic, let title, let encoding, let toolMetadata):
         return .toolInputStart(toolCallId: id, toolName: name, providerExecuted: executed,
-                               providerMetadata: metadata, dynamic: dynamic(name, isDynamic), title: title)
+                               providerMetadata: metadata, dynamic: dynamic(name, isDynamic), title: title,
+                               toolMetadata: toolMetadata, inputEncoding: encoding)
     case .toolInputDelta(let id, let text, _): return .toolInputDelta(toolCallId: id, inputTextDelta: text)
     case .toolCall(let call):
         if call.invalid == true {
             return .toolInputError(toolCallId: call.toolCallId, toolName: call.toolName, input: call.input,
                 providerExecuted: call.providerExecuted, providerMetadata: call.providerMetadata,
                 dynamic: dynamic(call.toolName, call.isDynamic),
-                errorText: options.onError(call.error ?? StreamToolInputError()), title: call.title)
+                errorText: options.onError(call.error ?? StreamToolInputError()), title: call.title,
+                toolMetadata: call.toolMetadata)
         }
         return .toolInputAvailable(toolCallId: call.toolCallId, toolName: call.toolName, input: call.input,
             providerExecuted: call.providerExecuted, providerMetadata: call.providerMetadata,
-            dynamic: dynamic(call.toolName, call.isDynamic), title: call.title)
+            dynamic: dynamic(call.toolName, call.isDynamic), title: call.title, toolMetadata: call.toolMetadata)
     case .toolResult(let result):
         return .toolOutputAvailable(toolCallId: result.toolCallId, output: result.output,
             providerExecuted: result.providerExecuted, providerMetadata: result.providerMetadata,
-            dynamic: dynamic(result.toolName, result.isDynamic), preliminary: result.preliminary)
+            dynamic: dynamic(result.toolName, result.isDynamic), preliminary: result.preliminary,
+            toolMetadata: result.toolMetadata)
     case .toolError(let error):
         return .toolOutputError(toolCallId: error.toolCallId,
             errorText: error.providerExecuted == true ? AISDKProvider.getErrorMessage(error.error) : options.onError(error.error),
             providerExecuted: error.providerExecuted, providerMetadata: error.providerMetadata,
-            dynamic: dynamic(error.toolName, error.isDynamic))
+            dynamic: dynamic(error.toolName, error.isDynamic), toolMetadata: error.toolMetadata)
     case .toolOutputDenied(let denied): return .toolOutputDenied(toolCallId: denied.toolCallId)
     case .toolApprovalRequest(let request):
-        return .toolApprovalRequest(approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId)
+        let schemaInput = request.toolCall.inputSchemaInput
+        return .toolApprovalRequest(
+            approvalId: request.approvalId, toolCallId: request.toolCall.toolCallId,
+            inputSchemaInput: schemaInput != request.toolCall.input ? schemaInput : nil,
+            reason: request.reason, isAutomatic: request.isAutomatic, signature: request.signature)
+    case .toolApprovalResponse(let response):
+        return .toolApprovalResponse(approvalId: response.approvalId, approved: response.approved,
+                                     reason: response.reason, providerExecuted: response.providerExecuted)
     case .error(let error): return .error(errorText: options.onError(error))
     case .startStep: return .startStep
     case .finishStep: return .finishStep
@@ -95,7 +105,7 @@ public func toUIMessageChunk(
     case .finish(let reason, _, _):
         return options.sendFinish ? .finish(finishReason: reason, messageMetadata: options.messageMetadata) : nil
     case .abort(let reason): return .abort(reason: reason)
-    case .toolInputEnd, .raw, .toolApprovalResponse: return nil
+    case .toolInputEnd, .raw: return nil
     }
 }
 

@@ -50,7 +50,11 @@ private struct ToolCallNotFoundError: LocalizedError, Sendable {
 struct ProviderToolExecutionError: LocalizedError, CustomStringConvertible, Sendable {
     let value: JSONValue
     var errorDescription: String? { description }
-    var description: String { value.jsonString }
+    /// A string payload is the message itself; any other payload is its JSON.
+    var description: String {
+        if case .string(let message) = value { return message }
+        return value.jsonString
+    }
 }
 
 /**
