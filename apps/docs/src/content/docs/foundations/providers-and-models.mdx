@@ -30,11 +30,11 @@ A few common examples:
 
 - [OpenAI Provider](/providers/openai) — `import OpenAIProvider`, then call `openai("gpt-4o")` or `createOpenAI(settings:)`.
 - [Anthropic Provider](/providers/anthropic) — `import AnthropicProvider`, use `try anthropic("claude-sonnet-5")` or `createAnthropic(settings:)`.
-- [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogleGenerativeAI(settings:)`.
+- [Google Generative AI Provider](/providers/google-generative-ai) — `import GoogleProvider`, use `google("gemini-1.5-pro")` or `createGoogle(settings:)`.
 - [Alibaba Provider](/providers/alibaba) — `import AlibabaProvider`, then call `alibaba("qwen-plus")` or `createAlibaba(settings:)`.
-- TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAIProvider(settings:)`. _(Documentation coming soon)_
+- TogetherAI Provider — `import TogetherAIProvider`, then call `togetherai("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")` or `createTogetherAI(settings:)`. _(Documentation coming soon)_
 
-Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use model for the higher-level Swift AI SDK APIs. OpenAI and Anthropic use native Provider V4 facades by default; legacy provider modules may still expose V3-backed models that are adapted by the high-level APIs.
+Each shortcut performs lazy API-key loading (via environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`) and returns a ready-to-use model for the higher-level Swift AI SDK APIs. All provider modules expose native Provider V4 models.
 
 ## Self-hosted and upstream-compatible APIs
 

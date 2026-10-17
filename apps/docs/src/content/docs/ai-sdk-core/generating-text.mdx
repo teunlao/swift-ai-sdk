@@ -96,7 +96,6 @@ The result object of `generateText` contains several promises that resolve when 
 - `result.providerMetadata`: Additional provider-specific metadata.
 - `result.steps`: Details for all steps, useful for getting information about intermediate steps.
 - `result.output`: The generated structured output (configured via `output:`).
-- `result.experimentalOutputIfSpecified`: Convenience helper that returns `nil` when no output parser was configured (v0.5.4+).
 
 ### Inspecting the full result
 
@@ -129,19 +128,19 @@ print(String(describing: result.response.headers))
 print(String(describing: result.response.body))
 ```
 
-### `onFinish` callback
+### `onEnd` callback
 
-When using `generateText`, you can provide an `onFinish` callback that is triggered after the last step is finished.
+When using `generateText`, you can provide an `onEnd` callback that is triggered after the last step is finished.
 It contains the text, usage information, finish reason, messages, steps, total usage, and more:
 
 ```swift
 let _ = try await generateText(
   model: openai("gpt-4o"),
   prompt: "Invent a new holiday and describe its traditions.",
-  onFinish: { event in
+  onEnd: { event in
     let followUp = try await generateText(
       model: openai("gpt-4o"),
-      messages: event.response.messages + [.user("Summarize in 2 sentences.")]
+      messages: event.response.messages.asModelMessages() + [.user("Summarize in 2 sentences.")]
     )
     Logger.info(followUp.text)
   }
@@ -277,21 +276,19 @@ let _ = try streamText(
 )
 ```
 
-### `onFinish` callback
+### `onEnd` callback
 
-When using `streamText`, you can provide an `onFinish` callback that is triggered when the stream is finished (
-
-).
+When using `streamText`, you can provide an `onEnd` callback that is triggered when the stream is finished.
 It contains the text, usage information, finish reason, messages, steps, total usage, and more:
 
 ```swift
 let _ = try streamText(
   model: openai("gpt-4o"),
   prompt: "Invent a new holiday and describe its traditions.",
-  onFinish: { finalStep, steps, totalUsage, finishReason in
+  onEnd: { event in
     let followUp = try await generateText(
       model: openai("gpt-4o"),
-      messages: finalStep.response.messages + [.user("Summarize the plan in 2 sentences.")]
+      messages: event.response.messages.asModelMessages() + [.user("Summarize the plan in 2 sentences.")]
     )
     Logger.info(followUp.text)
   }
@@ -385,11 +382,11 @@ for try await part in result.fullStream {
 
 ### Stream transformation
 
-You can use the `experimental_transform` option to transform the stream.
+You can use the `transform` option to transform the stream.
 This is useful for e.g. filtering, changing, or smoothing the text stream.
 
 The transformations are applied before the callbacks are invoked and the promises are resolved.
-If you e.g. have a transformation that changes all text to uppercase, the `onFinish` callback will receive the transformed text.
+If you e.g. have a transformation that changes all text to uppercase, the `onEnd` callback will receive the transformed text.
 
 #### Smoothing streams
 
@@ -465,7 +462,7 @@ You can also provide multiple transformations. They are applied in the order the
 let result = try streamText(
   model: openai("gpt-4o"),
   prompt: "...",
-  experimentalTransform: [upperCaseTransform, stopWordTransform]
+  transform: [upperCaseTransform, stopWordTransform]
 )
 ```
 

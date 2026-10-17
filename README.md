@@ -36,8 +36,8 @@ Add the package to your `Package.swift`:
 ```swift
 // Package.swift
 dependencies: [
-  // Use the latest release tag (e.g. "0.19.0").
-  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.19.0")
+  // Use the latest release tag (e.g. "0.20.0").
+  .package(url: "https://github.com/teunlao/swift-ai-sdk.git", from: "0.20.0")
 ],
 targets: [
   .target(
@@ -122,7 +122,7 @@ let summary = try await generateObject(
   model: openai("gpt-5.6"),
   schema: Release.self,
   schemaName: "release_summary",
-  prompt: "Summarize Swift AI SDK 0.19.0: streaming + tools."
+  prompt: "Summarize Swift AI SDK 0.20.0: streaming + tools."
 ).object
 
 print("Release: \\(summary.name) (\\(summary.version))")

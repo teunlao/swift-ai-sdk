@@ -29,7 +29,7 @@ for try await chunk in stream.textStream {
 }
 ```
 
-You can also pass a full prompt with messages, enable tools, or attach callbacks (`onChunk`, `onFinish`) for side effects and telemetry.
+You can also pass a full prompt with messages, enable tools, or attach callbacks (`onChunk`, `onEnd`) for side effects and telemetry.
 
 ```swift
 import SwiftAISDK
@@ -43,7 +43,7 @@ let result = try streamText(
   onChunk: { part in
     // Observe low-level stream parts if needed (text, reasoning, tools, etc.)
   },
-  onFinish: { event in
+  onEnd: { event in
     // Access final usage, text, tool calls, and metadata
     print("finish reason: \(event.finishReason)")
   }

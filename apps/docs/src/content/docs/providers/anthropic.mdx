@@ -27,7 +27,7 @@ Add the package and both the high-level SDK and Anthropic products to your targe
 dependencies: [
   .package(
     url: "https://github.com/teunlao/swift-ai-sdk",
-    from: "0.19.0"
+    from: "0.20.0"
   )
 ],
 targets: [
@@ -80,10 +80,6 @@ The settings are:
 - `fetch`: custom `FetchFunction`, useful for proxies, recording, and tests.
 - `generateId`: request ID generator used by provider internals.
 - `name`: provider name override.
-
-The explicitly named `createAnthropicProvider(settings:)` factory remains
-available for code that must construct a legacy Provider V3 model. New code
-should use `anthropic` or `createAnthropic(settings:)`.
 
 ## Language Models
 

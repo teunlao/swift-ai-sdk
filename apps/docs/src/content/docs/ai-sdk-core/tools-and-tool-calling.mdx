@@ -125,9 +125,9 @@ let steps = rr.steps
 let allToolCalls = steps.flatMap { $0.toolCalls }
 ```
 
-### `onStepFinish` callback
+### `onStepEnd` callback
 
-When using `generateText` or `streamText`, you can provide an `onStepFinish` callback that
+When using `generateText` or `streamText`, you can provide an `onStepEnd` callback that
 is triggered when a step is finished,
 i.e. all text deltas, tool calls, and tool results for the step are available.
 When you have multiple steps, the callback is triggered for each step.
@@ -136,7 +136,7 @@ When you have multiple steps, the callback is triggered for each step.
 let _ = try await generateText(
   model: openai("gpt-4o"),
   prompt: "...",
-  onStepFinish: { step in
+  onStepEnd: { step in
     // your own logic, e.g., logging toolCalls/toolResults
     _ = (step.toolCalls, step.toolResults, step.finishReason, step.usage)
   }
@@ -247,7 +247,7 @@ let customTool = dynamicTool(
 
 ### Type-Safe Handling
 
-When combining static and dynamic tools, use the `dynamic` flag for narrowing and handle inputs accordingly in `onStepFinish`:
+When combining static and dynamic tools, use the `dynamic` flag for narrowing and handle inputs accordingly in `onStepEnd`:
 
 ```swift
 import SwiftAISDK
@@ -259,7 +259,7 @@ let result = try await generateText(
     "weather": weatherTool.tool,   // static tool (known schema/types)
     "custom": customTool                    // dynamic tool (runtime‑validated)
   ],
-  onStepFinish: { step in
+  onStepEnd: { step in
     for call in step.toolCalls {
       if call.dynamic == true {
         // Dynamic tool: input is JSONValue; validate at runtime
@@ -455,38 +455,32 @@ let _ = try await generateText(
 )
 ```
 
-### Context (experimental)
+### Tool Context
 
-You can pass in arbitrary context from `generateText` or `streamText` via the `experimental_context` setting.
-This context is available in the `experimental_context` tool execution option.
+Pass per-tool context through `toolsContext` in `generateText` or `streamText`.
+Each tool receives its own context dictionary as `ToolExecutionOptions.context`.
 
 ```swift
 import SwiftAISDK
 
 struct ContextAwareInput: Codable, Sendable {}
 struct ContextAwareResult: Codable, Sendable { let status: String }
-struct RequestContext: Codable, Sendable { let example: String }
 
 let someTool = tool(
   description: "Read context provided by generateText",
   inputSchema: ContextAwareInput.self
 ) { _, options in
-  guard let context = options.experimentalContext else {
+  guard case .string(let example) = options.context?["example"] else {
     return ContextAwareResult(status: "no context")
   }
-
-  let foundation = jsonValueToFoundation(context)
-  let data = try JSONSerialization.data(withJSONObject: foundation)
-  let decoded = try JSONDecoder().decode(RequestContext.self, from: data)
-  return ContextAwareResult(status: "context: \(decoded.example)")
+  return ContextAwareResult(status: "context: \(example)")
 }
-
-let experimentalContext: JSONValue = .object(["example": .string("123")])
 
 let result = try await generateText(
   model: openai("gpt-4o"),
   tools: ["someTool": someTool.tool],
-  experimentalContext: experimentalContext
+  prompt: "Use someTool to read the context.",
+  toolsContext: ["someTool": ["example": "123"]]
 )
 ```
 
@@ -641,8 +635,8 @@ in the next step to give it an opportunity to fix it.
 However, you may want to control how invalid tool calls are repaired without requiring
 additional steps that pollute the message history.
 
-You can use the `experimental_repairToolCall` function to attempt to repair the tool call
-with a custom function.
+Use the `repairToolCall` callback to attempt repair with a custom function.
+It receives `ToolCallRepairOptions` and returns a replacement `LanguageModelV4ToolCall` or `nil`.
 
 You can use different strategies to repair the tool call:
 
@@ -654,25 +648,29 @@ You can use different strategies to repair the tool call:
 
 ```swift
 
-let _ = try await generateText(
-  model,
-  tools,
-  prompt,
+import AISDKProvider
+import Foundation
 
-  experimentalRepairToolCall: { toolCall, tools, inputSchema, error in
-    if error is NoSuchToolError { return nil } // do not attempt to fix invalid tool names
-    // Use generateObject to repair inputs based on the tool's schema
-    let tool = tools[toolCall.toolName]
+let _ = try await generateText(
+  model: model,
+  tools: tools,
+  prompt: prompt,
+  repairToolCall: { options in
+    guard !(options.error is NoSuchToolError),
+          let tool = options.tools[options.toolCall.toolName] else { return nil }
     let repaired = try await generateObject(
       model: openai("gpt-4.1"),
-      schema: tool?.inputSchema ?? FlexibleSchema(jsonSchema(.object([:]))),
-      prompt: "Please fix the inputs for tool \(toolCall.toolName) given: \(String(describing: toolCall.input))"
+      schema: tool.inputSchema,
+      prompt: "Fix the inputs for tool \(options.toolCall.toolName): \(options.toolCall.input)"
     )
-    return ToolCallRepair(
-      toolCallType: .function,
-      toolCallId: toolCall.toolCallId,
-      toolName: toolCall.toolName,
-      input: jsonString(from: repaired.object) ?? "{}"
+    let input = try JSONEncoder().encode(repaired.object)
+    return LanguageModelV4ToolCall(
+      toolCallId: options.toolCall.toolCallId,
+      toolName: options.toolCall.toolName,
+      input: String(decoding: input, as: UTF8.self),
+      providerExecuted: options.toolCall.providerExecuted,
+      dynamic: options.toolCall.dynamic,
+      providerMetadata: options.toolCall.providerMetadata
     )
   }
 )
@@ -682,23 +680,34 @@ let _ = try await generateText(
 
 ```swift
 
-let _ = try await generateText(
-  model,
-  tools,
-  prompt,
+import AISDKProvider
+import Foundation
 
-  experimentalRepairToolCall: { toolCall, tools, error, messages, system in
-    let syntheticMessages = messages + [.assistant(AssistantModelMessage(content: .parts([.toolCall(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: toolCall.input))]))), .tool(ToolModelMessage(content: [.toolResult(.init(toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, output: .string(String(describing: error))))]))]
+let _ = try await generateText(
+  model: model,
+  tools: tools,
+  prompt: prompt,
+  repairToolCall: { options in
     let result = try await generateText(
       model: openai("gpt-4o"),
-      instructions: system,
-      messages: syntheticMessages,
-      tools: tools
+      tools: options.tools,
+      instructions: options.instructions,
+      messages: options.messages + [.user(
+        "Repair tool \(options.toolCall.toolName) with input \(options.toolCall.input). Error: \(options.error)"
+      )]
     )
-    if let newCall = result.toolCalls.first(where: { $0.toolName == toolCall.toolName }) {
-      return ToolCallRepair(toolCallType: .function, toolCallId: toolCall.toolCallId, toolName: toolCall.toolName, input: jsonString(from: newCall.input) ?? "{}")
-    }
-    return nil
+    guard let newCall = result.toolCalls.first(where: {
+      $0.toolName == options.toolCall.toolName
+    }) else { return nil }
+    let input = try JSONEncoder().encode(newCall.input)
+    return LanguageModelV4ToolCall(
+      toolCallId: options.toolCall.toolCallId,
+      toolName: newCall.toolName,
+      input: String(decoding: input, as: UTF8.self),
+      providerExecuted: options.toolCall.providerExecuted,
+      dynamic: options.toolCall.dynamic,
+      providerMetadata: options.toolCall.providerMetadata
+    )
   }
 )
 ```

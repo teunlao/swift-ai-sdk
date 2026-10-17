@@ -12,14 +12,14 @@ In this space, similar words are close to each other, and the distance between w
 
 The AI SDK provides the `embed` function to embed single values, which is useful for tasks such as finding similar words
 or phrases or clustering text.
-You can use it with embeddings models, e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
+You can use it with embeddings models, e.g. `openai.embedding("text-embedding-3-large")` or `mistral.embedding("mistral-embed")`.
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach"
 )
 
@@ -33,14 +33,14 @@ it is often useful to embed many values at once (batch embedding).
 
 The AI SDK provides the `embedMany` function for this purpose.
 Similar to `embed`, you can use it with embeddings models,
-e.g. `openai.textEmbeddingModel('text-embedding-3-large')` or `mistral.textEmbeddingModel('mistral-embed')`.
+e.g. `openai.embedding("text-embedding-3-large")` or `mistral.embedding("mistral-embed")`.
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embedMany(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   values: [
     "sunny day at the beach",
     "rainy afternoon in the city",
@@ -63,7 +63,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embedMany(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   values: ["sunny day at the beach", "rainy afternoon in the city"]
 )
 
@@ -84,7 +84,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach"
 )
 
@@ -102,7 +102,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach",
   providerOptions: ["openai": [
     "dimensions": 512
@@ -121,7 +121,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let parallelResult = try await embedMany(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   values: [
     "sunny day at the beach",
     "rainy afternoon in the city",
@@ -144,7 +144,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let noRetry = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach",
   maxRetries: 0
 )
@@ -162,7 +162,7 @@ import OpenAIProvider
 let timeout = Date().addingTimeInterval(1)
 
 let embedding = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach",
   abortSignal: { Date() >= timeout }
 )
@@ -178,7 +178,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let customHeader = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach",
   headers: ["X-Custom-Header": "custom-value"]
 )
@@ -193,7 +193,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let info = try await embed(
-  model: openai.textEmbedding("text-embedding-3-small"),
+  model: openai.embedding("text-embedding-3-small"),
   value: "sunny day at the beach"
 )
 

@@ -51,10 +51,10 @@ print(result.text)
 import SwiftAISDK
 import GoogleProvider
 
-let provider = createGoogleGenerativeAI()
-let model = provider.generativeAI(modelId: "gemini-1.5-pro")
+let provider = createGoogle()
+let model = provider.chat(modelId: "gemini-2.5-pro")
 
-let result = try await generateText(model: .v3(model), input: "What is love?")
+let result = try await generateText(model: model, prompt: "What is love?")
 print(result.text)
 ```
 

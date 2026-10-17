@@ -98,7 +98,7 @@ do {
 
 When streams are aborted (e.g., via chat stop button), you may want to perform cleanup operations like updating stored messages in your UI. Use the `onAbort` callback to handle these cases.
 
-The `onAbort` callback is called when a stream is aborted via abort signal, but `onFinish` is not called. This ensures you can still update your UI state appropriately.
+The `onAbort` callback is called when a stream is aborted via abort signal, but `onEnd` is not called. This ensures you can still update your UI state appropriately.
 
 ```swift highlight="5-9"
 import SwiftAISDK
@@ -107,11 +107,11 @@ import OpenAIProvider
 let result = try await streamText(
   model: openai("gpt-4o"),
   prompt: "Write a vegetarian lasagna recipe for 4 people.",
-  onAbort: { steps in
+  onAbort: { event in
     // Update stored messages or perform cleanup
-    print("Stream aborted after \(steps.count) steps")
+    print("Stream aborted after \(event.steps.count) steps")
   },
-  onFinish: { finishResult in
+  onEnd: { finishResult in
     // This is called on normal completion
     print("Stream completed normally")
   }
@@ -122,9 +122,7 @@ for try await textPart in result.textStream {
 }
 ```
 
-The `onAbort` callback receives:
-
-- `steps`: An array of all completed steps before the abort
+The `onAbort` callback receives a `GenerateTextAbortEvent` with `steps` (completed steps), `callId`, and the optional abort `reason`.
 
 You can also handle abort events directly in the stream:
 

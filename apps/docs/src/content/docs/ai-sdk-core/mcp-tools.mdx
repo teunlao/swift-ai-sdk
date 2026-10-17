@@ -76,7 +76,7 @@ After initialization, you should close the MCP client based on your usage patter
 - For short-lived usage (e.g., single requests), close the client when the response is finished
 - For long-running clients (e.g., command line apps), keep the client open but ensure it's closed when the application terminates
 
-When streaming responses, you can close the client when the LLM response has finished. For example, when using `streamText`, provide an `onFinish` callback that closes the client after the final step:
+When streaming responses, you can close the client when the LLM response has finished. For example, when using `streamText`, provide an `onEnd` callback that closes the client after the final step:
 
 ```swift
 import SwiftAISDK
@@ -92,8 +92,8 @@ let stream = try streamText(
   model: openai("gpt-4.1"),
   tools: tools,
   prompt: "What is the weather in Brooklyn, New York?",
-  onFinish: { _ in
-    Task { try? await client.close() }
+  onEnd: { _ in
+    try await client.close()
   }
 )
 

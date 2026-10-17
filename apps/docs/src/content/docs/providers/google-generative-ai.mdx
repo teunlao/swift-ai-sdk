@@ -17,7 +17,7 @@ The Google Generative AI provider is available in the `GoogleProvider` module. A
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.19.0")
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.20.0")
 ],
 targets: [
     .target(
@@ -37,15 +37,15 @@ You can import the default provider instance `google` from `GoogleProvider`:
 ```swift
 import GoogleProvider
 
-let google = Google()
+let model = try google("gemini-2.5-pro")
 ```
 
-If you need a customized setup, you can import `createGoogleGenerativeAI` and create a provider instance with your settings:
+If you need a customized setup, you can import `createGoogle` and create a provider instance with your settings:
 
 ```swift
 import GoogleProvider
 
-let google = createGoogleGenerativeAI(
+let google = createGoogle(
   // custom settings
 )
 ```
@@ -745,10 +745,10 @@ The system instruction is automatically formatted and included in the conversati
 ## Embedding Models
 
 You can create models that call the [Google Generative AI embeddings API](https://ai.google.dev/gemini-api/docs/embeddings)
-using the `.textEmbedding()` factory method.
+using the `embedding(modelId:)` factory method.
 
 ```swift
-let model = google.textEmbedding("gemini-embedding-001")
+let model = google.embedding(modelId: "gemini-embedding-001")
 ```
 
 The Google Generative AI provider sends API calls to the right endpoint based on the type of embedding:
@@ -762,7 +762,7 @@ Google Generative AI embedding models support aditional settings. You can pass t
 import SwiftAISDK
 import GoogleProvider
 
-let model = google.textEmbedding("gemini-embedding-001")
+let model = google.embedding(modelId: "gemini-embedding-001")
 
 let result = try await embed(
   model: model,

@@ -16,7 +16,7 @@ The OpenAI provider is available in the `OpenAIProvider` module. Add it to your 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.19.0")
+    .package(url: "https://github.com/teunlao/swift-ai-sdk", from: "0.20.0")
 ],
 targets: [
     .target(
@@ -57,8 +57,8 @@ let provider = try createOpenAI(
 let model = try provider("gpt-4o")
 ```
 
-The older `createOpenAIProvider(settings:)` factory remains available for
-legacy V3 model integrations.
+The explicitly named `createOpenAIProvider(settings:)` factory also creates
+native Provider V4 models.
 
 You can use the following optional settings to customize the OpenAI provider instance:
 
@@ -1532,10 +1532,10 @@ The following optional provider options are available for OpenAI completion mode
 ## Embedding Models
 
 You can create models that call the [OpenAI embeddings API](https://platform.openai.com/docs/api-reference/embeddings)
-using the `.textEmbedding()` factory method.
+using the `.embedding()` factory method.
 
 ```swift
-let model = openai.textEmbedding("text-embedding-3-large")
+let model = openai.embedding("text-embedding-3-large")
 ```
 
 OpenAI embedding models support several additional provider options.
@@ -1546,7 +1546,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await embed(
-  model: openai.textEmbedding("text-embedding-3-large"),
+  model: openai.embedding("text-embedding-3-large"),
   value: "sunny day at the beach",
   providerOptions: [
     "openai": [
