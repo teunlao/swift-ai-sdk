@@ -114,8 +114,7 @@ let recipeSchemaJSON: JSONValue = [
 let result = try await generateObject(
   model: openai("gpt-4o"),
   schema: FlexibleSchema<Response>.jsonSchema(recipeSchemaJSON),
-  prompt: "Generate a lasagna recipe.",
-  mode: .json
+  prompt: "Generate a lasagna recipe."
 )
 ```
 

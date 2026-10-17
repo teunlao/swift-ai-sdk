@@ -59,7 +59,6 @@ struct GenerateObjectOpenAIReasoningExample: Example {
         model: openai("gpt-5"),
         schema: FlexibleSchema<Response>.jsonSchema(recipeSchemaJSON),
         prompt: "Generate a lasagna recipe.",
-        mode: .json,
         providerOptions: [
           "openai": [
             "strictJsonSchema": .bool(true),

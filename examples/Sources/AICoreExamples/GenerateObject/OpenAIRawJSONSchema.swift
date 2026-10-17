@@ -58,8 +58,7 @@ struct GenerateObjectOpenAIRawJSONSchemaExample: Example {
       let result = try await generateObject(
         model: openai("gpt-4o"),
         schema: schema,
-        prompt: "Generate a lasagna recipe.",
-        mode: .json
+        prompt: "Generate a lasagna recipe."
       )
 
       Logger.section("Recipe")

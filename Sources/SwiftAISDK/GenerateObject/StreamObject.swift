@@ -15,6 +15,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -62,6 +63,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         result: result,
         callId: _internal.generateId()
     )
@@ -89,9 +91,9 @@ public func streamObject<ObjectResult: Codable & Sendable>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -110,9 +112,9 @@ public func streamObject<ObjectResult: Codable & Sendable>(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         schemaName: schemaName,
         schemaDescription: schemaDescription,
-        mode: mode,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -134,9 +136,9 @@ public func streamObject<ObjectResult>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -154,12 +156,12 @@ public func streamObject<ObjectResult>(
         output: GenerateObjectOutput.object(
             schema: schema,
             schemaName: schemaName,
-            schemaDescription: schemaDescription,
-            mode: mode
+            schemaDescription: schemaDescription
         ),
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -180,6 +182,7 @@ public func streamObjectNoSchema(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -198,6 +201,7 @@ public func streamObjectNoSchema(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -219,9 +223,9 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -240,9 +244,9 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         schemaName: schemaName,
         schemaDescription: schemaDescription,
-        mode: mode,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -264,9 +268,9 @@ public func streamObjectArray<ElementResult>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -284,12 +288,12 @@ public func streamObjectArray<ElementResult>(
         output: GenerateObjectOutput.array(
             schema: schema,
             schemaName: schemaName,
-            schemaDescription: schemaDescription,
-            mode: mode
+            schemaDescription: schemaDescription
         ),
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -311,6 +315,7 @@ public func streamObjectEnum(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -329,6 +334,7 @@ public func streamObjectEnum(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -364,6 +370,7 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
     let instructions: Instructions?
     let prompt: String?
     let messages: [ModelMessage]?
+    let allowSystemInMessages: Bool?
     let result: StreamObjectResult<PartialValue, ResultValue, ElementStream>
     let callId: String
 
@@ -418,12 +425,14 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
         let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
             instructions: instructions,
             prompt: prompt,
-            messages: messages
+            messages: messages,
+            allowSystemInMessages: allowSystemInMessages
         ))
         let promptMessages = try await convertToLanguageModelPrompt(
             prompt: standardizedPrompt,
             supportedUrls: try await model.supportedUrls,
-            download: download
+            download: download,
+            abortSignal: settings.abortSignal
         )
 
         let stepStartEvent = GenerateObjectStepStartEvent(

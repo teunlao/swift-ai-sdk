@@ -163,19 +163,30 @@ public func makeArrayOutputStrategy<ElementResult>(
     GenerateObjectOutputStrategy(
         type: .array,
         jsonSchema: {
-            let itemSchema = try await schema.resolve().jsonSchema()
-            return .object([
+            var itemSchema = try await schema.resolve().jsonSchema()
+            var root: [String: JSONValue] = [
                 "$schema": .string("http://json-schema.org/draft-07/schema#"),
                 "type": .string("object"),
-                "properties": .object([
-                    "elements": .object([
-                        "type": .string("array"),
-                        "items": itemSchema
-                    ])
-                ]),
                 "required": .array([.string("elements")]),
                 "additionalProperties": .bool(false)
+            ]
+            // Root-relative references in the item schema resolve against the wrapper's root.
+            if case .object(var item) = itemSchema {
+                item.removeValue(forKey: "$schema")
+                for key in ["definitions", "$defs"] {
+                    if let definitions = item.removeValue(forKey: key) {
+                        root[key] = definitions
+                    }
+                }
+                itemSchema = .object(item)
+            }
+            root["properties"] = .object([
+                "elements": .object([
+                    "type": .string("array"),
+                    "items": itemSchema
+                ])
             ])
+            return .object(root)
         },
         validatePartial: { value, _, isFirstDelta, isFinalDelta, latest in
             guard case let .object(object) = value,
@@ -187,15 +198,16 @@ public func makeArrayOutputStrategy<ElementResult>(
             parsed.reserveCapacity(elementsJSON.count)
 
             for (index, elementJSON) in elementsJSON.enumerated() {
-                let validation = await safeValidateTypes(
-                    ValidateTypesOptions(value: jsonValueToAny(elementJSON), schema: schema)
-                )
+                // The last element of an unfinished array may still grow, even when it already validates.
+                if index == elementsJSON.count - 1 && !isFinalDelta {
+                    continue
+                }
 
-                switch validation {
+                switch await safeValidateTypes(
+                    ValidateTypesOptions(value: jsonValueToAny(elementJSON), schema: schema)
+                ) {
                 case .success(let element, _):
                     parsed.append(element)
-                case .failure(let error, _) where index == elementsJSON.count - 1 && !isFinalDelta:
-                    continue
                 case .failure(let error, _):
                     return .failure(error)
                 }
@@ -208,14 +220,13 @@ public func makeArrayOutputStrategy<ElementResult>(
                 deltaText += "["
             }
 
-            if publishedCount > 0 && parsed.count > publishedCount {
-                deltaText += ","
-            }
-
             if parsed.count > publishedCount {
-                let newElements = elementsJSON.dropFirst(publishedCount)
-                let payload = newElements.compactMap { stringifyJSON($0) }.joined(separator: ",")
-                deltaText += payload
+                if publishedCount > 0 {
+                    deltaText += ","
+                }
+                deltaText += (publishedCount..<parsed.count)
+                    .map { stringifyElement(parsed[$0], json: elementsJSON[$0]) }
+                    .joined(separator: ",")
             }
 
             if isFinalDelta {
@@ -350,38 +361,14 @@ private func jsonValueToAny(_ value: JSONValue) -> Any {
     }
 }
 
-private func stringifyJSON(_ value: JSONValue) -> String? {
-    switch value {
-    case .null:
-        return "null"
-    case .bool(let bool):
-        return bool ? "true" : "false"
-    case .number(let number):
-        return number.isFinite ? trimTrailingZeros(number) : String(number)
-    case .string(let string):
-        guard let data = try? JSONSerialization.data(withJSONObject: [string], options: []) else {
-            return nil
-        }
-        guard let arrayEncoded = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        let start = arrayEncoded.index(after: arrayEncoded.startIndex)
-        let end = arrayEncoded.index(before: arrayEncoded.endIndex)
-        return String(arrayEncoded[start..<end])
-    case .array, .object:
-        let anyValue = jsonValueToAny(value)
-        guard let data = try? JSONSerialization.data(withJSONObject: anyValue, options: []) else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    }
-}
-
-private func trimTrailingZeros(_ number: Double) -> String {
-    if number.rounded(.towardZero) == number {
-        return String(Int(number))
-    }
-    return String(number)
+/// JSON text of a validated element, as upstream's `JSON.stringify(element)`; an element
+/// that is not `Encodable` is written as the JSON it was validated from.
+private func stringifyElement<Element>(_ element: Element, json: JSONValue) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let encodable: any Encodable = (element as? any Encodable) ?? json
+    guard let data = try? encoder.encode(encodable) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
 }
 
 

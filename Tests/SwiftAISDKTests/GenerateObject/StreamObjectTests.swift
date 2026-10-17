@@ -255,6 +255,114 @@ struct StreamObjectTests {
         ])
     }
 
+    private func streamedArray(
+        _ deltas: [String],
+        itemSchema: JSONValue
+    ) throws -> StreamObjectResult<[JSONValue], [JSONValue], AsyncIterableStream<JSONValue>> {
+        let parts: [LanguageModelV4StreamPart] = [.streamStart(warnings: [])]
+            + deltas.map { .textDelta(id: "1", delta: $0, providerMetadata: nil) }
+            + [.finish(finishReason: .stop, usage: defaultUsageV4, providerMetadata: nil)]
+        return try streamObjectArray(
+            model: MockStreamLanguageModel(parts: parts),
+            schema: FlexibleSchema(jsonSchema(itemSchema)),
+            prompt: "prompt"
+        )
+    }
+
+    private func decodeJSON(_ text: String) throws -> JSONValue {
+        try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+    }
+
+    @Test("array output publishes an element only once it is complete, and textStream is the result's JSON")
+    func arrayOutputWaitsForCompleteElements() async throws {
+        let result = try streamedArray(
+            [#"{"elements":["hel"#, #"lo","wor"#, #"ld"]}"#],
+            itemSchema: ["type": "string"]
+        )
+
+        let elements = try await convertAsyncIterableToArray(result.elementStream)
+        let text = try await convertAsyncIterableToArray(result.textStream).joined()
+        let object = try await result.object
+
+        #expect(elements == ["hello", "world"])
+        #expect(object == ["hello", "world"])
+        #expect(try decodeJSON(text) == .array(object))
+    }
+
+    @Test("array output streams an integral number beyond Int as JSON")
+    func arrayOutputStreamsLargeNumbers() async throws {
+        let result = try streamedArray(
+            [#"{"elements":[1e20,"#, #"2]}"#],
+            itemSchema: ["type": "number"]
+        )
+
+        let text = try await convertAsyncIterableToArray(result.textStream).joined()
+        let object = try await result.object
+
+        #expect(object == [.number(1e20), .number(2)])
+        #expect(try decodeJSON(text) == .array(object))
+    }
+
+    @Test("array output keeps item definitions at the schema root for root-relative references")
+    func arrayOutputHoistsDefinitions() async throws {
+        let model = MockStreamLanguageModel(parts: arrayParts())
+        let itemSchema: JSONValue = [
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "$ref": "#/$defs/Item",
+            "$defs": ["Item": ["type": "object"]],
+            "definitions": ["Legacy": ["type": "string"]]
+        ]
+
+        _ = try streamObjectArray(
+            model: model,
+            schema: FlexibleSchema(jsonSchema(itemSchema)),
+            prompt: "prompt"
+        )
+
+        let call = await model.waitForFirstCall()
+        guard case .json(let schema?, _, _)? = call.options.responseFormat else {
+            Issue.record("Expected a JSON response format with a schema")
+            return
+        }
+        #expect(schema == [
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "$defs": ["Item": ["type": "object"]],
+            "definitions": ["Legacy": ["type": "string"]],
+            "type": "object",
+            "properties": ["elements": ["type": "array", "items": ["$ref": "#/$defs/Item"]]],
+            "required": ["elements"],
+            "additionalProperties": false
+        ])
+    }
+
+    @Test("system messages in messages need allowSystemInMessages")
+    func systemMessagesNeedOptIn() async throws {
+        let messages: [ModelMessage] = [
+            .system(SystemModelMessage(content: "trusted")),
+            .user(UserModelMessage(content: .text("prompt")))
+        ]
+
+        let refused = try streamObject(
+            model: MockStreamLanguageModel(parts: defaultParts()),
+            schema: defaultObjectSchema(),
+            messages: messages,
+            onError: { _ in }
+        )
+        await #expect(throws: InvalidPromptError.self) { try await refused.object }
+
+        let model = MockStreamLanguageModel(parts: defaultParts())
+        let result = try streamObject(
+            model: model,
+            schema: defaultObjectSchema(),
+            messages: messages,
+            allowSystemInMessages: true
+        )
+
+        #expect(try await result.object == ["content": "Hello, world!"])
+        let call = await model.waitForFirstCall()
+        #expect(call.options.prompt.first == .system(content: "trusted", providerOptions: nil))
+    }
+
     // MARK: - Helpers
 
     private func defaultParts() -> [LanguageModelV4StreamPart] {

@@ -27,7 +27,6 @@ struct GenerateObjectOpenAIStoreGenerationFinalExample: Example {
         model: openai("gpt-4o-mini"),
         schema: Response.self,
         prompt: "Generate a lasagna recipe as JSON matching the schema.",
-        mode: .json,
         providerOptions: [
           "openai": [
             "store": .bool(true),

@@ -22,7 +22,6 @@ struct GenerateObjectOpenAIDateParsingExample: Example {
         model: openai("gpt-4o"),
         schema: Response.self,
         prompt: "List exactly 5 JSON objects with `date` (YYYY-MM-DD) and `event` for notable moments in the year 2000.",
-        mode: .json,
         settings: CallSettings(temperature: 0)
       )
 

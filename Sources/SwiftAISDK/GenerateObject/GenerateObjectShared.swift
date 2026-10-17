@@ -10,7 +10,8 @@ import AISDKProviderUtils
 func makeGenerateObjectPrompt(
     instructions: Instructions?,
     prompt: String?,
-    messages: [ModelMessage]?
+    messages: [ModelMessage]?,
+    allowSystemInMessages: Bool?
 ) throws -> Prompt {
     if prompt != nil, messages != nil {
         throw InvalidPromptError(
@@ -19,12 +20,13 @@ func makeGenerateObjectPrompt(
         )
     }
 
-    if let prompt {
-        return Prompt.text(prompt, instructions: instructions)
-    }
-
-    if let messages {
-        return Prompt.messages(messages, instructions: instructions)
+    if prompt != nil || messages != nil {
+        return Prompt(
+            instructions: instructions,
+            allowSystemInMessages: allowSystemInMessages,
+            prompt: prompt.map(PromptContent.text),
+            messages: messages
+        )
     }
 
     throw InvalidPromptError(

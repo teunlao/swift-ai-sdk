@@ -16,6 +16,7 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -95,13 +96,15 @@ public func generateObject<ResultValue, PartialValue, ElementStream>(
         let standardizedPrompt = try standardizePrompt(makeGenerateObjectPrompt(
             instructions: instructions,
             prompt: prompt,
-            messages: messages
+            messages: messages,
+            allowSystemInMessages: allowSystemInMessages
         ))
 
         let promptMessages = try await convertToLanguageModelPrompt(
             prompt: standardizedPrompt,
             supportedUrls: try await model.supportedUrls,
-            download: download
+            download: download,
+            abortSignal: settings.abortSignal
         )
 
         let stepStartEvent = GenerateObjectStepStartEvent(
@@ -245,9 +248,9 @@ public func generateObject<ObjectResult: Codable & Sendable>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -265,9 +268,9 @@ public func generateObject<ObjectResult: Codable & Sendable>(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         schemaName: schemaName,
         schemaDescription: schemaDescription,
-        mode: mode,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -288,9 +291,9 @@ public func generateObject<ObjectResult>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -307,12 +310,12 @@ public func generateObject<ObjectResult>(
         output: GenerateObjectOutput.object(
             schema: schema,
             schemaName: schemaName,
-            schemaDescription: schemaDescription,
-            mode: mode
+            schemaDescription: schemaDescription
         ),
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -332,6 +335,7 @@ public func generateObjectNoSchema(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -349,6 +353,7 @@ public func generateObjectNoSchema(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -369,9 +374,9 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -389,9 +394,9 @@ public func generateObjectArray<ElementResult: Codable & Sendable>(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         schemaName: schemaName,
         schemaDescription: schemaDescription,
-        mode: mode,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -412,9 +417,9 @@ public func generateObjectArray<ElementResult>(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     schemaName: String? = nil,
     schemaDescription: String? = nil,
-    mode: GenerateObjectJSONMode = .auto,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -431,12 +436,12 @@ public func generateObjectArray<ElementResult>(
         output: GenerateObjectOutput.array(
             schema: schema,
             schemaName: schemaName,
-            schemaDescription: schemaDescription,
-            mode: mode
+            schemaDescription: schemaDescription
         ),
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
@@ -457,6 +462,7 @@ public func generateObjectEnum(
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
+    allowSystemInMessages: Bool? = nil,
     repairText: RepairTextFunction? = nil,
     telemetry: TelemetryOptions? = nil,
     experimentalDownload download: DownloadFunction? = nil,
@@ -474,6 +480,7 @@ public func generateObjectEnum(
         instructions: instructions,
         prompt: prompt,
         messages: messages,
+        allowSystemInMessages: allowSystemInMessages,
         repairText: repairText,
         telemetry: telemetry,
         experimentalDownload: download,
