@@ -42,6 +42,16 @@ struct PerplexityEmbeddingModelTests {
         #expect(result.response?.headers?["x-response"] == "response")
     }
 
+    @Test("unrepresentable embedding usage preserves vectors, cost and raw response", arguments: [1.5, 1e100])
+    func numericUsage(tokens: Double) async throws {
+        let payload: JSONValue = ["data": [["embedding": "AA=="]], "usage": ["prompt_tokens": .number(tokens), "cost": ["total_cost": 0.5]]]
+        let result = try await model(response: payload).doEmbed(options: .init(values: ["text"]))
+        #expect(result.embeddings == [[0]])
+        #expect(result.usage == nil)
+        #expect(result.providerMetadata == ["perplexity": ["cost": ["inputCost": .null, "totalCost": 0.5, "currency": .null]]])
+        #expect(try jsonValue(from: #require(result.response?.body)) == payload)
+    }
+
     @Test("nullable usage is omitted while empty cost objects expose null metadata", arguments: [JSONValue.null, ["prompt_tokens": 0, "cost": [:]]])
     func nullableUsage(usage: JSONValue) async throws {
         let result = try await model(response: ["data": [["embedding": "AA=="]], "usage": usage]).doEmbed(options: .init(values: ["text"]))

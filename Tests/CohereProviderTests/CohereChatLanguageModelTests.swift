@@ -564,6 +564,28 @@ struct CohereChatLanguageModelTests {
         #expect(streamed == generated.usage)
     }
 
+    @Test("numeric usage preserves successful responses and independent projections", arguments: [1.5, 1e100, Double(Int.min)])
+    func numericUsage(input: Double) async throws {
+        let cached = input == 1.5 ? 0.5 : input == 1e100 ? input : 1
+        let usage: JSONValue = ["tokens": ["input_tokens": .number(input), "output_tokens": 1.5], "cached_tokens": .number(cached)]
+        let payload: JSONValue = ["message": ["role": "assistant"], "finish_reason": "COMPLETE", "usage": usage]
+        let expected = LanguageModelV4Usage(
+            inputTokens: .init(total: input == Double(Int.min) ? Int.min : nil, noCache: input == 1.5 ? 1 : input == 1e100 ? 0 : nil, cacheRead: cached == 1 ? 1 : nil),
+            outputTokens: .init(), raw: usage
+        )
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)))
+        let generated = try await model.doGenerate(options: .init(prompt: testPrompt))
+        #expect(generated.usage == expected)
+        let event: JSONValue = ["type": "message-end", "delta": ["finish_reason": "COMPLETE", "usage": usage]]
+        let json = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: ["data: \(json)\n\n"])
+        let parts = try await collectStream(model.doStream(options: .init(prompt: testPrompt)).stream)
+        guard case .finish(let reason, let streamed, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(streamed == expected)
+    }
+
     @Test("generation only replaces the exact null argument string", arguments: ["null", " null ", "", " { \"city\": \"Paris\" } "])
     func argumentPreservation(arguments: String) async throws {
         let (model, _, responseBox) = makeModel()
@@ -636,8 +658,7 @@ struct CohereChatLanguageModelTests {
         #"{"message":{"role":"assistant"},"usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#,
         #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":0,"output_tokens":0},"cached_tokens":"1"}}"#,
         #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":0,"output_tokens":0},"billed_units":{"input_tokens":"1","output_tokens":1}}}"#,
-        #"{"message":{"role":"assistant","tool_calls":[{"id":"call","type":"wrong","function":{"name":"tool","arguments":"{}"}}]},"finish_reason":"TOOL_CALL","usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#,
-        #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1e100,"output_tokens":0}}}"#
+        #"{"message":{"role":"assistant","tool_calls":[{"id":"call","type":"wrong","function":{"name":"tool","arguments":"{}"}}]},"finish_reason":"TOOL_CALL","usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#
     ])
     func responseValidation(payload: String) async throws {
         let (model, _, responseBox) = makeModel()

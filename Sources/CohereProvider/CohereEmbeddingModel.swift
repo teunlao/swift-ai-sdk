@@ -37,7 +37,7 @@ public final class CohereEmbeddingModel: EmbeddingModelV4 {
             successfulResponseHandler: createJsonResponseHandler(responseSchema: cohereEmbeddingResponseSchema(embeddingType)),
             isAborted: options.abortSignal, fetch: config.fetch
         )
-        return .init(embeddings: response.value.embeddings, usage: .init(tokens: response.value.tokens),
+        return .init(embeddings: response.value.embeddings, usage: Int(exactly: response.value.tokens).map { .init(tokens: $0) },
                      response: .init(headers: response.responseHeaders, body: response.rawValue))
     }
 }
@@ -47,7 +47,7 @@ private let cohereEmbeddingFormatKey = CodingUserInfoKey(rawValue: "cohere.embed
 private struct CohereEmbeddingResponse: Decodable, Sendable {
     private struct Meta: Decodable {
         struct BilledUnits: Decodable {
-            let inputTokens: Int
+            let inputTokens: Double
             enum CodingKeys: String, CodingKey { case inputTokens = "input_tokens" }
         }
         let billedUnits: BilledUnits
@@ -61,7 +61,7 @@ private struct CohereEmbeddingResponse: Decodable, Sendable {
     }
     private enum Keys: String, CodingKey { case embeddings, meta }
     let embeddings: [[Double]]
-    let tokens: Int
+    let tokens: Double
 
     init(from decoder: Decoder) throws {
         guard let format = decoder.userInfo[cohereEmbeddingFormatKey] as? CohereEmbeddingModelOptions.EmbeddingType else {

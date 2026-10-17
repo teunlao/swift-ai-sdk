@@ -41,13 +41,13 @@ struct PerplexityUsage: Decodable, Sendable {
         }
     }
     let raw: JSONObject
-    let input: Int
-    let output: Int
-    let cacheRead: Int
-    let cacheWrite: Int
-    let reasoning: Int
-    let noCache: Int
-    let text: Int
+    let input: Int?
+    let output: Int?
+    let cacheRead: Int?
+    let cacheWrite: Int?
+    let reasoning: Int?
+    let noCache: Int?
+    let text: Int?
     let toolCalls: [String: ToolCall]?
     let cost: Cost?
 
@@ -64,19 +64,27 @@ struct PerplexityUsage: Decodable, Sendable {
         let read = details?.read ?? details?.cached ?? 0
         let write = details?.creation ?? 0
         let reasoningValue = outputDetails?.reasoning ?? 0
-        func count(_ number: Double) throws -> Int {
-            guard let value = Int(exactly: number) else {
-                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Token count exceeds the supported integer range"))
+        func difference(_ total: Double, _ first: Double, _ second: Double = 0) -> Int? {
+            let rawDifference = total - first - second
+            if let total = Int(exactly: total), let first = Int(exactly: first), let second = Int(exactly: second) {
+                func subtract(_ first: Int, _ second: Int) -> Int? {
+                    let intermediate = total.subtractingReportingOverflow(first)
+                    guard !intermediate.overflow else { return nil }
+                    let result = intermediate.partialValue.subtractingReportingOverflow(second)
+                    return result.overflow ? nil : max(0, result.partialValue)
+                }
+                if let value = subtract(first, second) ?? subtract(second, first) { return value }
+                return rawDifference < 0 ? 0 : nil
             }
-            return value
+            return Int(exactly: max(0, rawDifference))
         }
-        input = try count(inputValue)
-        output = try count(outputValue)
-        cacheRead = try count(read)
-        cacheWrite = try count(write)
-        reasoning = try count(reasoningValue)
-        noCache = try count(max(0, inputValue - read - write))
-        text = try count(max(0, outputValue - reasoningValue))
+        input = Int(exactly: inputValue)
+        output = Int(exactly: outputValue)
+        cacheRead = Int(exactly: read)
+        cacheWrite = Int(exactly: write)
+        reasoning = Int(exactly: reasoningValue)
+        noCache = difference(inputValue, read, write)
+        text = difference(outputValue, reasoningValue)
     }
 }
 

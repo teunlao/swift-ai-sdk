@@ -77,6 +77,29 @@ struct PerplexityLanguageModelTests {
         #expect(raw == .object(payload))
     }
 
+    @Test("numeric usage preserves raw counts, clamping and independent projections", arguments: [1.5, 1e100, Double(Int.min)])
+    func numericUsage(input: Double) async throws {
+        let cached = input == 1.5 ? 0.5 : input == 1e100 ? input : 1
+        let usage: JSONValue = [
+            "input_tokens": .number(input), "output_tokens": .number(input), "total_tokens": .number(1e100),
+            "input_tokens_details": ["cache_read_input_tokens": .number(cached)],
+            "output_tokens_details": ["reasoning_tokens": .number(cached)], "cost": ["total_cost": 0.5]
+        ]
+        let total: Int? = input == Double(Int.min) ? Int.min : nil
+        let projectedCache: Int? = cached == 1 ? 1 : nil
+        let expected = LanguageModelV4Usage(
+            inputTokens: .init(total: total, noCache: input == 1.5 ? 1 : 0, cacheRead: projectedCache, cacheWrite: 0),
+            outputTokens: .init(total: total, text: input == 1.5 ? 1 : 0, reasoning: projectedCache), raw: usage
+        )
+        let generated = try await model(response: Self.response(usage: usage)).doGenerate(options: .init(prompt: prompt))
+        #expect(generated.usage == expected)
+        #expect(generated.providerMetadata?["perplexity"]?["cost"] == ["inputTokensCost": .null, "outputTokensCost": .null, "requestCost": .null, "totalCost": 0.5, "currency": .null, "cacheCreationCost": .null, "cacheReadCost": .null, "toolCallsCost": .null])
+        let parts = try await collect(model(events: [["type": "response.completed", "response": .object(Self.response(usage: usage))]]).doStream(options: .init(prompt: prompt)))
+        guard case .finish(let reason, let streamed, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(streamed == expected)
+    }
+
     @Test("presets and direct models route through Agent input", arguments: ["fast", "low", "medium", "high", "xhigh", "custom-model"])
     func modelSelection(id: String) async throws {
         let capture = Capture()

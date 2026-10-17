@@ -60,6 +60,31 @@ struct OpenResponsesTerminalTests {
         #expect(result.raw == usage)
     }
 
+    @Test("numeric usage preserves raw counts and independent projections", arguments: [1.5, 1e100, Double(Int.min)])
+    func numericUsage(input: Double) async throws {
+        let cached = input == 1.5 ? 0.5 : input == 1e100 ? input : 1
+        let usage: JSONValue = [
+            "input_tokens": .number(input), "output_tokens": .number(input),
+            "input_tokens_details": ["cached_tokens": .number(cached)], "output_tokens_details": ["reasoning_tokens": .number(cached)], "extra": true
+        ]
+        let total: Int? = input == Double(Int.min) ? Int.min : nil
+        let projectedCache: Int? = cached == 1 ? 1 : nil
+        let difference: Int? = input == 1.5 ? 1 : input == 1e100 ? 0 : nil
+        let expected = LanguageModelV4Usage(
+            inputTokens: .init(total: total, noCache: difference, cacheRead: projectedCache),
+            outputTokens: .init(total: total, text: difference, reasoning: projectedCache), raw: usage
+        )
+        let endpoint = OpenResponsesTestEndpoint(openResponsesTestResponse(usage: usage))
+        let provider = try openResponsesProvider(endpoint)
+        let generated = try await provider("model").doGenerate(options: .init(prompt: []))
+        #expect(generated.usage == expected)
+        try await endpoint.setEvents([["type": "response.completed", "response": ["usage": usage]]])
+        let parts = try await openResponsesCollect(provider("model").doStream(options: .init(prompt: [])))
+        guard case .finish(let reason, let streamed, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(streamed == expected)
+    }
+
     @Test("JSON null stream chunks fail at the native boundary instead of finishing successfully")
     func nullChunk() async throws {
         let endpoint = OpenResponsesTestEndpoint()

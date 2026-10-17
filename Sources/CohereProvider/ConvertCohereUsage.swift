@@ -3,10 +3,10 @@ import AISDKProvider
 
 struct CohereUsage: Decodable, Sendable {
     let raw: JSONValue
-    let input: Int
-    let output: Int
+    let input: Int?
+    let output: Int?
     let cached: Int?
-    let noCache: Int
+    let noCache: Int?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -20,14 +20,10 @@ struct CohereUsage: Decodable, Sendable {
             }
             return value
         }
-        func count(_ value: Double, name: String) throws -> Int {
-            guard let count = Int(exactly: value) else {
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expected representable integer for \(name)")
-            }
-            return count
-        }
-        input = try count(number(tokens["input_tokens"], name: "input_tokens"), name: "input_tokens")
-        output = try count(number(tokens["output_tokens"], name: "output_tokens"), name: "output_tokens")
+        let inputValue = try number(tokens["input_tokens"], name: "input_tokens")
+        let outputValue = try number(tokens["output_tokens"], name: "output_tokens")
+        input = Int(exactly: inputValue)
+        output = Int(exactly: outputValue)
         if let billed = fields["billed_units"], billed != .null {
             guard case .object(let units) = billed else {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expected billed_units object")
@@ -36,13 +32,16 @@ struct CohereUsage: Decodable, Sendable {
             _ = try number(units["output_tokens"], name: "billed_units.output_tokens")
         }
         if let value = fields["cached_tokens"], value != .null {
-            cached = try count(number(value, name: "cached_tokens"), name: "cached_tokens")
-        } else { cached = nil }
-        let subtraction = input.subtractingReportingOverflow(cached ?? 0)
-        guard !subtraction.overflow else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Uncached token count exceeds the supported integer range")
+            let cachedValue = try number(value, name: "cached_tokens")
+            cached = Int(exactly: cachedValue)
+            if let input, let cached {
+                let subtraction = input.subtractingReportingOverflow(cached)
+                noCache = subtraction.overflow ? nil : subtraction.partialValue
+            } else { noCache = Int(exactly: inputValue - cachedValue) }
+        } else {
+            cached = nil
+            noCache = input
         }
-        noCache = subtraction.partialValue
     }
 }
 

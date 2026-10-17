@@ -78,6 +78,17 @@ struct CohereEmbeddingModelTests {
         #expect(result.response?.body != nil)
     }
 
+    @Test("unrepresentable embedding usage preserves vectors and the raw response", arguments: [1.5, 1e100])
+    func numericUsage(tokens: Double) async throws {
+        let payload: JSONValue = ["embeddings": ["float": [[0.5]]], "meta": ["billed_units": ["input_tokens": .number(tokens)]]]
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.embeddingURL, body: try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)))
+        let result = try await model.doEmbed(options: .init(values: ["text"]))
+        #expect(result.embeddings == [[0.5]])
+        #expect(result.usage == nil)
+        #expect(try jsonValue(from: #require(result.response?.body)) == payload)
+    }
+
     @Test("doEmbed extracts usage")
     func extractsUsage() async throws {
         let (model, _, responseBox) = makeModel()

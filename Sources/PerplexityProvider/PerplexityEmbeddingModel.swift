@@ -46,7 +46,7 @@ public final class PerplexityEmbeddingModel: EmbeddingModelV4 {
             ]]]
         }
         return .init(embeddings: embeddings,
-                     usage: response.value.usage.map { .init(tokens: $0.promptTokens) }, providerMetadata: metadata,
+                     usage: response.value.usage.flatMap { Int(exactly: $0.promptTokens).map { .init(tokens: $0) } }, providerMetadata: metadata,
                      response: .init(headers: response.responseHeaders, body: response.rawValue))
     }
 }
@@ -60,7 +60,7 @@ private struct PerplexityEmbeddingResponse: Decodable {
             let currency: String?
             enum CodingKeys: String, CodingKey { case inputCost = "input_cost", totalCost = "total_cost", currency }
         }
-        let promptTokens: Int
+        let promptTokens: Double
         let cost: Cost?
         enum CodingKeys: String, CodingKey { case promptTokens = "prompt_tokens", cost }
     }
