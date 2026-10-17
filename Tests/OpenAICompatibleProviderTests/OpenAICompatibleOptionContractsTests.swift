@@ -31,6 +31,22 @@ struct OpenAICompatibleOptionContractsTests {
         let model = createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom", fetch: fetch))("model")
         await #expect(throws: APICallError.self) { _ = try await model.doGenerate(options: .init(prompt: [])) }
     }
+    @Test(arguments: [false, true])
+    func embeddingMetadataDistinguishesAbsentFromNull(explicitNull: Bool) async throws {
+        var response: [String: JSONValue] = ["data": [["embedding": [1]]], "usage": .null]
+        if explicitNull { response["providerMetadata"] = .null }
+        let bytes = try JSONEncoder().encode(JSONValue.object(response))
+        let fetch: FetchFunction = { request in FetchResponse(body: .data(bytes), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!) }
+        let model = try createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom", fetch: fetch)).embeddingModel(modelId: "model")
+        if explicitNull {
+            await #expect(throws: APICallError.self) { _ = try await model.doEmbed(options: .init(values: ["value"])) }
+        } else {
+            let result = try await model.doEmbed(options: .init(values: ["value"]))
+            #expect(result.embeddings == [[1]])
+            #expect(result.usage == nil)
+        }
+    }
+
     @Test func providerDimensionsAreForwardedWithoutIntegerCoercion() async throws {
         let fetch: FetchFunction = { request in
             let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))

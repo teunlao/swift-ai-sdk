@@ -105,7 +105,7 @@ struct DeepSeekProviderTests {
 
     @Test func customHeadersAndUserAgentReachHTTP() async throws {
         let capture = Capture()
-        let provider = createDeepSeek(settings: .init(apiKey: "key", baseURL: "https://custom.example/", headers: ["Authorization": "custom", "X-Custom": "value"], fetch: try Self.fetch(capture: capture)))
+        let provider = createDeepSeek(settings: .init(apiKey: "key", baseURL: "https://custom.example/", headers: ["authorization": "custom", "X-Custom": "value"], fetch: try Self.fetch(capture: capture)))
         _ = try await provider("deepseek-chat").doGenerate(options: .init(prompt: Self.prompt))
         let request = try #require(await capture.value())
         #expect(request.value(forHTTPHeaderField: "Authorization") == "custom")

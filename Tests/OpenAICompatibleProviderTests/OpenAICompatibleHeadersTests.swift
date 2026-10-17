@@ -9,7 +9,7 @@ struct OpenAICompatibleHeadersTests {
     actor Credentials {
         var token = "first"
         func update() { token = "second" }
-        func headers() -> [String: String] { ["Authorization": "Bearer \(token)", "X-Token": token] }
+        func headers() -> [String: String] { ["authorization": "Bearer \(token)", "X-Token": token] }
     }
     actor Requests {
         var authorizations: [String] = []
@@ -31,7 +31,7 @@ struct OpenAICompatibleHeadersTests {
             return FetchResponse(body: .data(Data(#"{"choices":[{"message":{"content":"Answer"},"finish_reason":"stop"}]}"#.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
         }
         let model = createOpenAICompatible(settings: .init(
-            baseURL: "https://api.example.com", name: "custom", headers: .resolve { await credentials.headers() }, fetch: fetch,
+            baseURL: "https://api.example.com", name: "custom", apiKey: "fallback", headers: .resolve { await credentials.headers() }, fetch: fetch,
             transformRequestBody: { body, warnings in
                 warnings.append(.compatibility(feature: "vendor-mode", details: "Enabled vendor mode."))
                 var body = body

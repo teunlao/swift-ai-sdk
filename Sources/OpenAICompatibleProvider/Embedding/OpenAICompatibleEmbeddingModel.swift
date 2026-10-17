@@ -74,5 +74,15 @@ private struct EmbeddingResponse: Decodable, Sendable {
     let data: [Item]
     let usage: Usage?
     let providerMetadata: SharedV4ProviderMetadata?
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Key.self)
+        data = try container.decode([Item].self, forKey: .data)
+        usage = try container.decodeIfPresent(Usage.self, forKey: .usage)
+        if container.contains(.providerMetadata), try container.decodeNil(forKey: .providerMetadata) {
+            throw DecodingError.dataCorruptedError(forKey: .providerMetadata, in: container, debugDescription: "providerMetadata must be an object")
+        }
+        providerMetadata = try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata)
+    }
+    private enum Key: String, CodingKey { case data, usage, providerMetadata }
 }
 private let embeddingResponseSchema = FlexibleSchema(Schema<EmbeddingResponse>.codable(EmbeddingResponse.self, jsonSchema: ["type": "object"]))

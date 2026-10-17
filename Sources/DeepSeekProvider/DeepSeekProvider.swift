@@ -44,9 +44,8 @@ public final class DeepSeekProvider: ProviderV4, FilesProvider {
     private func headerFactory() -> @Sendable () throws -> [String: String] {
         let settings = self.settings
         return {
-            var headers: [String: String?] = ["Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "DEEPSEEK_API_KEY", description: "DeepSeek API key"))"]
-            for (key, value) in settings.headers ?? [:] { headers[key] = value }
-            return withUserAgentSuffix(headers, "ai-sdk-deepseek/\(DEEPSEEK_PROVIDER_VERSION)")
+            let headers: [String: String?] = ["Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "DEEPSEEK_API_KEY", description: "DeepSeek API key"))"]
+            return withUserAgentSuffix(combineHeaders(headers, settings.headers?.mapValues(Optional.some)), "ai-sdk-deepseek/\(DEEPSEEK_PROVIDER_VERSION)")
         }
     }
 }

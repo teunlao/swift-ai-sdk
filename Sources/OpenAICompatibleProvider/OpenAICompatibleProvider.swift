@@ -125,8 +125,8 @@ private func makeOpenAICompatibleModelFactories(
     let headersClosure: @Sendable () async throws -> [String: String] = {
         var headers: [String: String?] = [:]
         if let key = settings.apiKey, !key.isEmpty { headers["Authorization"] = "Bearer \(key)" }
-        for (key, value) in try await settings.headers?.resolve() ?? [:] { headers[key] = value }
-        return withUserAgentSuffix(headers, "ai-sdk-openai-compatible/\(OPENAI_COMPATIBLE_VERSION)")
+        let custom = try await settings.headers?.resolve().mapValues(Optional.some)
+        return withUserAgentSuffix(combineHeaders(headers, custom), "ai-sdk-openai-compatible/\(OPENAI_COMPATIBLE_VERSION)")
     }
 
     let queryItems = settings.queryParams

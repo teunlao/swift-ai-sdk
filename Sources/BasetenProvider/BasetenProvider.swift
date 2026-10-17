@@ -76,9 +76,8 @@ public final class BasetenProvider: ProviderV4 {
         let settings = self.settings
         return {
             let key = try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BASETEN_API_KEY", description: "Baseten API key")
-            var headers: [String: String?] = ["Authorization": "Bearer \(key)"]
-            for (name, value) in settings.headers ?? [:] { headers[name] = value }
-            return withUserAgentSuffix(headers, "ai-sdk-baseten/\(BASETEN_PROVIDER_VERSION)")
+            let headers: [String: String?] = ["Authorization": "Bearer \(key)"]
+            return withUserAgentSuffix(combineHeaders(headers, settings.headers?.mapValues(Optional.some)), "ai-sdk-baseten/\(BASETEN_PROVIDER_VERSION)")
         }
     }
 }

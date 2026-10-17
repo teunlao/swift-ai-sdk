@@ -29,7 +29,7 @@ struct OpenAICompatibleChatContractsTests {
 
     @Test func missingFinishReasonFailsAndMetadataWaitsForIdentity() async throws {
         let chunks: [JSONValue] = [
-            ["choices": [["delta": ["content": "First"]]]],
+            ["id": "", "model": "", "created": 0, "choices": [["delta": ["content": "First"]]]],
             ["id": "response-1", "choices": [["delta": ["content": [["type": "thinking", "thinking": [["type": "text", "text": "Reason"]]], ["type": "text", "text": "Last"]]]]]]
         ]
         let data = Data(try chunks.map { "data: " + String(decoding: try JSONEncoder().encode($0), as: UTF8.self) + "\n\n" }.joined().utf8)
@@ -56,6 +56,27 @@ struct OpenAICompatibleChatContractsTests {
         }
         #expect(errors == 1)
         #expect(order == ["text-start", "metadata", "text-end", "reasoning-start", "reasoning-end", "text-start", "text-end"])
+    }
+
+    @Test func bufferedToolsKeepFirstExtraContentAndRealResponseIdentity() async throws {
+        let chunks: [JSONValue] = [
+            ["id": "", "model": "", "created": 0, "choices": [["delta": ["tool_calls": [["index": 5, "id": "call", "extra_content": .object([:]), "function": ["arguments": "{"]]]]]]],
+            ["id": "response", "choices": [["delta": ["tool_calls": [["index": 5, "extra_content": ["google": ["thought_signature": "later"]], "function": ["name": "lookup", "arguments": "}"]]]], "finish_reason": "tool_calls"]]]
+        ]
+        let bytes = Data(try chunks.map { "data: " + String(decoding: try JSONEncoder().encode($0), as: UTF8.self) + "\n\n" }.joined().utf8)
+        let fetch: FetchFunction = { request in FetchResponse(body: .data(bytes), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!) }
+        let model = createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom", fetch: fetch))("model")
+        let stream = try await model.doStream(options: .init(prompt: [])).stream
+        var calls: [LanguageModelV4ToolCall] = []
+        var identities: [String] = []
+        for try await part in stream {
+            if case .toolCall(let call) = part { calls.append(call) }
+            if case .responseMetadata(let id, _, _) = part, let id { identities.append(id) }
+        }
+        #expect(identities == ["response"])
+        #expect(calls.count == 1)
+        #expect(calls.first?.input == "{}")
+        #expect(calls.first?.providerMetadata == nil)
     }
 
     @Test func referencesVideoAndMultipartToolContentReachTransport() async throws {

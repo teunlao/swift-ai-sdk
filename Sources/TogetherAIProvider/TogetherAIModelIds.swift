@@ -40,6 +40,7 @@ public extension TogetherAIChatModelId {
     static let databricksDbrxInstruct: Self = "databricks/dbrx-instruct"
     static let deepseekAiDeepseekLlm67bChat: Self = "deepseek-ai/deepseek-llm-67b-chat"
     static let deepseekAiDeepSeekV3: Self = "deepseek-ai/DeepSeek-V3"
+    static let deepseekAiDeepSeekV4Flash0731: Self = "deepseek-ai/DeepSeek-V4-Flash-0731"
     static let googleGemma2bIt: Self = "google/gemma-2b-it"
     static let grypheMythoMaxL213b: Self = "Gryphe/MythoMax-L2-13b"
     static let metaLlamaLlama213bChatHf: Self = "meta-llama/Llama-2-13b-chat-hf"

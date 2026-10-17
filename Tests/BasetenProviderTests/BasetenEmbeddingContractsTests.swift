@@ -18,14 +18,14 @@ struct BasetenEmbeddingContractsTests {
             await capture.store(request)
             return FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
         }
-        let provider = createBaseten(settings: .init(apiKey: "key", modelURL: "https://deployment.example.com/sync", fetch: fetch))
+        let provider = createBaseten(settings: .init(apiKey: "key", modelURL: "https://deployment.example.com/sync", headers: ["authorization": "custom"], fetch: fetch))
         let model = try provider.embeddingModel(.init(rawValue: "custom-model"))
         let result = try await model.doEmbed(options: .init(values: ["hello"]))
         #expect(result.embeddings == [[1, 2]])
         #expect(result.usage?.tokens == 3)
         let request = try #require(await capture.value())
         #expect(request.url?.absoluteString == "https://deployment.example.com/sync/v1/embeddings")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "custom")
         let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
         #expect(body == ["model": "custom-model", "input": ["hello"], "encoding_format": "float"])
         await #expect(throws: TooManyEmbeddingValuesForCallError.self) {

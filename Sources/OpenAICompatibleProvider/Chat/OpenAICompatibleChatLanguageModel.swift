@@ -99,12 +99,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             for toolCall in toolCalls {
                 let function = toolCall.function
                 let toolCallId = toolCall.id.flatMap { $0.isEmpty ? nil : $0 } ?? generateID()
-                let thoughtSignature = toolCall.extraContent?.google?.thoughtSignature.flatMap {
-                    $0.isEmpty ? nil : $0
-                }
-                let toolMetadata = thoughtSignature.map {
-                        [prepared.metadataKey: ["thoughtSignature": JSONValue.string($0)]]
-                    }
+                let toolMetadata = toolProviderMetadata(toolCall.extraContent, metadataKey: prepared.metadataKey)
                 content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: function.name,
@@ -123,7 +118,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             unified: mapOpenAICompatibleFinishReason(rawFinishReason),
             raw: rawFinishReason
         )
-        let metadata = responseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
+        let metadata = openAICompatibleResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
         let extractedMetadata = try await config.metadataExtractor?.extractMetadata(parsedBody: rawJSON)
         let providerMetadata = makeProviderMetadata(
@@ -190,6 +185,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
                 var isActiveText = false
                 var isActiveReasoning = false
                 var pendingToolCalls: [Int: PendingToolCall] = [:]
+                var pendingOrder: [Int] = []
                 var forwardedToolCallIndices: Set<Int> = []
 
                 let toolCallTracker = StreamingToolCallTracker(
@@ -229,7 +225,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
 
                             case .data(let data):
                                 if isFirstChunk {
-                                    let meta = responseMetadata(id: data.id, model: data.model, created: data.created)
+                                    let meta = openAICompatibleResponseMetadata(id: data.id, model: data.model, created: data.created)
                                     if meta.id?.isEmpty == false || meta.modelId?.isEmpty == false || meta.timestamp != nil {
                                         isFirstChunk = false
                                         continuation.yield(.responseMetadata(id: meta.id, modelId: meta.modelId, timestamp: meta.timestamp))
@@ -292,6 +288,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
                                                 toolCallDelta,
                                                 metadataKey: metadataKey,
                                                 pending: &pendingToolCalls,
+                                                order: &pendingOrder,
                                                 forwardedIndices: &forwardedToolCallIndices,
                                                 tracker: toolCallTracker
                                             )
@@ -312,12 +309,11 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
                         ))
                     }
 
-                    for (index, pending) in pendingToolCalls.sorted(by: { $0.key < $1.key }) {
+                    for index in pendingOrder {
+                        guard let pending = pendingToolCalls[index] else { continue }
                         try toolCallTracker.processDelta(StreamingToolCallDelta(
-                            index: index,
-                            id: pending.id,
-                            function: StreamingToolCallFunctionDelta(arguments: pending.arguments),
-                            providerMetadata: pending.providerMetadata
+                            index: index, id: pending.id,
+                            function: StreamingToolCallFunctionDelta(arguments: pending.arguments)
                         ))
                     }
                     toolCallTracker.flush()
@@ -629,11 +625,6 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
         return metadata
     }
 
-    private func responseMetadata(id: String?, model: String?, created: Double?) -> (id: String?, modelId: String?, timestamp: Date?) {
-        let timestamp = created.map { Date(timeIntervalSince1970: $0) }
-        return (id, model, timestamp)
-    }
-
     private func decodeJSONValue(from raw: Any?) throws -> JSONValue {
         guard let raw else { return .null }
         return try jsonValue(from: raw)
@@ -642,22 +633,23 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
     private struct PendingToolCall {
         var id: String?
         var arguments: String
-        var providerMetadata: SharedV4ProviderMetadata?
+        var extraContent: OpenAICompatibleChatExtraContent?
+    }
+
+    private func toolProviderMetadata(_ content: OpenAICompatibleChatExtraContent?, metadataKey: String) -> SharedV4ProviderMetadata? {
+        guard let signature = content?.google?.thoughtSignature, !signature.isEmpty else { return nil }
+        return [metadataKey: ["thoughtSignature": .string(signature)]]
     }
 
     private func processToolCallDelta(
         _ delta: OpenAICompatibleChatChunkToolCallDelta,
         metadataKey: String,
         pending: inout [Int: PendingToolCall],
+        order: inout [Int],
         forwardedIndices: inout Set<Int>,
         tracker: StreamingToolCallTracker
     ) throws {
-        let thoughtSignature = delta.extraContent?.google?.thoughtSignature.flatMap {
-            $0.isEmpty ? nil : $0
-        }
-        let providerMetadata = thoughtSignature.map {
-                [metadataKey: ["thoughtSignature": JSONValue.string($0)]]
-            }
+        let providerMetadata = toolProviderMetadata(delta.extraContent, metadataKey: metadataKey)
 
         guard let index = delta.index else {
             try tracker.processDelta(StreamingToolCallDelta(
@@ -684,17 +676,14 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             return
         }
 
+        if pending[index] == nil { order.append(index) }
         var state = pending[index] ?? PendingToolCall(
-            id: delta.id,
-            arguments: "",
-            providerMetadata: providerMetadata
+            id: delta.id, arguments: "", extraContent: delta.extraContent
         )
         if state.id == nil {
             state.id = delta.id
         }
-        if state.providerMetadata == nil {
-            state.providerMetadata = providerMetadata
-        }
+        if state.extraContent == nil { state.extraContent = delta.extraContent }
         if let arguments = delta.function.arguments {
             state.arguments += arguments
         }
@@ -708,7 +697,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
             index: index,
             id: state.id,
             function: StreamingToolCallFunctionDelta(name: name, arguments: state.arguments),
-            providerMetadata: state.providerMetadata
+            providerMetadata: toolProviderMetadata(state.extraContent, metadataKey: metadataKey)
         ))
         pending.removeValue(forKey: index)
         forwardedIndices.insert(index)
