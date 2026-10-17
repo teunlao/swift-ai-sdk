@@ -35,9 +35,7 @@ func parseOpenAIPromptCacheOptions(
     _ value: JSONValue?,
     vendor: String = "openai"
 ) throws -> OpenAIPromptCacheOptions? {
-    guard let value, value != .null else {
-        return nil
-    }
+    guard let value else { return nil }
     guard case .object(let object) = value else {
         throw TypeValidationError.wrap(
             value: value,
@@ -74,9 +72,6 @@ func openAIPromptCacheBreakpoint(
     from providerOptions: SharedV4ProviderOptions?,
     providerOptionsName: String = "openai"
 ) -> JSONValue? {
-    guard case .object(let breakpoint)? = providerOptions?[providerOptionsName]?["promptCacheBreakpoint"],
-          breakpoint["mode"] == .string("explicit") else {
-        return nil
-    }
-    return .object(breakpoint)
+    guard let value = providerOptions?[providerOptionsName]?["promptCacheBreakpoint"], value != .null else { return nil }
+    return value
 }

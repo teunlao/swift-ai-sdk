@@ -507,13 +507,17 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             )
         }
 
-        if openAIOptions?.reasoningEffort == nil, isCustomReasoning(options.reasoning), let reasoning = options.reasoning {
-            if openAIOptions == nil { openAIOptions = OpenAIResponsesProviderOptions() }
-            openAIOptions?.reasoningEffort = reasoning.rawValue
+        let modelCapabilities = getOpenAILanguageModelCapabilities(for: modelIdentifier.rawValue)
+        var resolvedReasoningEffort = openAIOptions?.reasoningEffort
+            ?? (isCustomReasoning(options.reasoning) ? options.reasoning?.rawValue : nil)
+        if let effort = resolvedReasoningEffort, let supported = modelCapabilities.supportedReasoningEfforts,
+           !supported.contains(effort) {
+            addUnsupportedSetting("reasoningEffort", details: "\(modelId) only supports the following reasoning efforts: \(supported.joined(separator: ", "))")
+            resolvedReasoningEffort = nil
         }
-        if let effort = openAIOptions?.reasoningEffort, effort != "none", openAIOptions?.reasoningSummary == nil {
-            openAIOptions?.reasoningSummary = "detailed"
-        }
+        let resolvedReasoningSummary = openAIOptions?.reasoningSummary
+            ?? (openAIOptions?.nullFields.contains("reasoningSummary") != true
+                && resolvedReasoningEffort != nil && resolvedReasoningEffort != "none" ? "detailed" : nil)
 
         let storeOption = openAIOptions?.store
         let storeForInput = storeOption ?? true
@@ -521,7 +525,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         if openAIOptions?.conversation != nil, openAIOptions?.previousResponseId != nil {
             addUnsupportedSetting("conversation", details: "conversation and previousResponseId cannot be used together")
         }
-        let modelCapabilities = getOpenAIResponsesModelConfig(for: modelIdentifier)
         let isReasoningModel = openAIOptions?.forceReasoning ?? modelCapabilities.isReasoningModel
         let systemMessageMode = openAIOptions?.systemMessageMode
             ?? (isReasoningModel ? .developer : modelCapabilities.systemMessageMode)
@@ -546,7 +549,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             supportsAsyncToolCalling: modelCapabilities.supportsAsyncToolCalling
         )
 
-        let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
+        var (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
             providerOptionsName: providerOptionsName,
             toolNameMapping: toolNameMapping,
@@ -567,17 +570,15 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             toolSearchToolName: toolSearchToolName
         )
         warnings.append(contentsOf: inputWarnings)
+        if openAIOptions?.compactionTrigger == true { input.append(.object(["type": .string("compaction_trigger")])) }
 
         let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
         let webSearchToolName = findWebSearchToolName(options.tools)
 
-        var includeSet: Set<OpenAIResponsesIncludeValue> = []
-        if let includes = openAIOptions?.include {
-            includeSet.formUnion(includes.map(\.requestIncludeValue))
-        }
-
+        var include = openAIOptions?.include?.map(\.requestIncludeValue)
         func addInclude(_ value: OpenAIResponsesIncludeValue) {
-            includeSet.insert(value)
+            if include == nil { include = [value] }
+            else if !include!.contains(value) { include!.append(value) }
         }
 
         var topLogprobs: Double?
@@ -595,7 +596,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             addInclude(.messageOutputTextLogprobs)
         }
 
-        if webSearchToolName != nil && config.supportsWebSearchSourcesInclude != false {
+        if let webSearchToolName, !webSearchToolName.isEmpty,
+           config.supportsWebSearchSourcesInclude != false, openAIOptions?.includeWebSearchSources != false {
             addInclude(.webSearchCallActionSources)
         }
         if containsProviderTool(options.tools, id: "openai.code_interpreter") {
@@ -606,23 +608,24 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             addInclude(.reasoningEncryptedContent)
         }
 
-        let textOptions = makeTextOptions(
+        let textOptions = try makeTextOptions(
             responseFormat: options.responseFormat,
             textVerbosity: openAIOptions?.textVerbosity,
-            strictJsonSchema: strictJsonSchema
+            strictJsonSchema: strictJsonSchema,
+            warnings: &warnings
         )
 
         var reasoningValue: JSONValue?
         if isReasoningModel,
-           openAIOptions?.reasoningEffort != nil
-            || openAIOptions?.reasoningSummary != nil
+           resolvedReasoningEffort != nil
+            || resolvedReasoningSummary != nil
             || openAIOptions?.reasoningMode != nil
             || openAIOptions?.reasoningContext != nil {
             var payload: [String: JSONValue] = [:]
-            if let effort = openAIOptions?.reasoningEffort {
+            if let effort = resolvedReasoningEffort {
                 payload["effort"] = .string(effort)
             }
-            if let summary = openAIOptions?.reasoningSummary {
+            if let summary = resolvedReasoningSummary {
                 payload["summary"] = .string(summary)
             }
             if let mode = openAIOptions?.reasoningMode {
@@ -632,7 +635,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 payload["context"] = .string(context.rawValue)
             }
             reasoningValue = .object(payload)
-        } else {
+        } else if !isReasoningModel {
             if openAIOptions?.reasoningEffort != nil {
                 addUnsupportedSetting("reasoningEffort", details: "reasoningEffort is not supported for non-reasoning models")
             }
@@ -663,7 +666,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             user: openAIOptions?.user,
             instructions: openAIOptions?.instructions,
             serviceTier: openAIOptions?.serviceTier,
-            include: includeSet.isEmpty ? nil : includeSet.map { $0.rawValue },
+            include: include?.map(\.rawValue),
             promptCacheKey: openAIOptions?.promptCacheKey,
             promptCacheOptions: openAIOptions?.promptCacheOptions,
             promptCacheRetention: openAIOptions?.promptCacheRetention,
@@ -681,8 +684,23 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             toolChoice: preparedTools.toolChoice
         )
 
+        let nullableKeys: [String: OpenAIResponsesRequestBody.CodingKeys] = [
+            "conversation": .conversation, "maxToolCalls": .maxToolCalls,
+            "parallelToolCalls": .parallelToolCalls, "previousResponseId": .previousResponseId,
+            "store": .store, "user": .user, "instructions": .instructions, "serviceTier": .serviceTier,
+            "include": .include, "promptCacheKey": .promptCacheKey, "promptCacheRetention": .promptCacheRetention,
+            "safetyIdentifier": .safetyIdentifier, "truncation": .truncation
+        ]
+        body.nullFields = Set((openAIOptions?.nullFields ?? []).compactMap { key in
+            key == "include" && body.include != nil ? nil : nullableKeys[key]
+        })
+        if modelCapabilities.supportsConfigurationUpdate, body.promptCacheRetention != nil {
+            body.promptCacheRetention = nil
+            addUnsupportedSetting("promptCacheRetention", details: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead")
+        }
+
         if isReasoningModel {
-            let allowsNonReasoningParameters = openAIOptions?.reasoningEffort == "none"
+            let allowsNonReasoningParameters = resolvedReasoningEffort == "none"
                 && modelCapabilities.supportsNonReasoningParameters
 
             if !allowsNonReasoningParameters {
@@ -693,6 +711,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 if body.topP != nil {
                     addUnsupportedSetting("topP", details: "topP is not supported for reasoning models")
                     body.topP = nil
+                }
+                if modelCapabilities.supportedReasoningEfforts != nil,
+                   body.topLogprobs != nil || body.include?.contains(OpenAIResponsesIncludeValue.messageOutputTextLogprobs.rawValue) == true {
+                    body.topLogprobs = nil
+                    let filtered = body.include?.filter { $0 != OpenAIResponsesIncludeValue.messageOutputTextLogprobs.rawValue }
+                    body.include = filtered?.isEmpty == false ? filtered : nil
+                    body.nullFields.remove(.include)
+                    addUnsupportedSetting("logprobs", details: "logprobs is not supported for reasoning models")
                 }
             }
         }
@@ -749,8 +775,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     private func makeTextOptions(
         responseFormat: LanguageModelV4ResponseFormat?,
         textVerbosity: String?,
-        strictJsonSchema: Bool
-    ) -> JSONValue? {
+        strictJsonSchema: Bool,
+        warnings: inout [SharedV4Warning]
+    ) throws -> JSONValue? {
         var payload: [String: JSONValue] = [:]
 
         if let responseFormat {
@@ -767,7 +794,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                     if let description {
                         formatPayload["description"] = .string(description)
                     }
-                    formatPayload["schema"] = schema
+                    let normalized = try normalizeOpenAIJsonSchema(schema)
+                    formatPayload["schema"] = normalized.schema
+                    warnings.append(contentsOf: normalized.warnings)
                 }
                 payload["format"] = .object(formatPayload)
             }

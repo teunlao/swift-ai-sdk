@@ -268,7 +268,123 @@ struct OpenAIResponsesToolContractTests {
         #expect(object["service_tier"] == .string("ultrafast"))
     }
 
-    @Test("Reasoning mode and context reject explicit null", arguments: ["reasoningMode", "reasoningContext"])
+    @Test("Request schemas normalize unsupported response constraints")
+    func responseSchemaNormalization() async throws {
+        let capture = Capture()
+        let result = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(
+            prompt: [], responseFormat: .json(schema: .object([
+                "type": .string("string"), "pattern": .string("(?=x)x")
+            ]), name: nil, description: nil)
+        ))
+        guard case .object(let body)? = await capture.value(), case .object(let text)? = body["text"],
+              case .object(let format)? = text["format"] else { Issue.record("Missing response format"); return }
+        #expect(format["schema"] == .object(["type": .string("string")]))
+        #expect(result.warnings.contains { if case .compatibility = $0 { return true }; return false })
+    }
+
+    @Test("Reasoning capabilities resolve portable effort before sampling and logprobs", arguments: ["gpt-6-astra", "gpt-6-sol", "gpt-5.6"])
+    func requestReasoningCapabilities(modelId: String) async throws {
+        let capture = Capture()
+        let result = try await provider(capture).responses(modelId).doGenerate(options: .init(
+            prompt: [], temperature: 0.5, topP: 0.8, reasoning: LanguageModelV4ReasoningEffort.none,
+            providerOptions: ["openai": [
+                "reasoningEffort": modelId == "gpt-5.6" ? .string("high") : .null,
+                "reasoningSummary": .null, "logprobs": .bool(true)
+            ]]
+        ))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        let expectedEffort: JSONValue? = modelId == "gpt-6-astra" ? nil : .string(modelId == "gpt-6-sol" ? "none" : "high")
+        let reasoning: [String: JSONValue]
+        if case .object(let value)? = body["reasoning"] { reasoning = value } else { reasoning = [:] }
+        #expect(reasoning["effort"] == expectedEffort)
+        #expect(reasoning["summary"] == nil)
+        #expect(body["temperature"] == (modelId == "gpt-6-sol" ? .number(0.5) : nil))
+        #expect(body["top_p"] == (modelId == "gpt-6-sol" ? .number(0.8) : nil))
+        #expect(body["top_logprobs"] == (modelId == "gpt-6-astra" ? nil : .number(20)))
+        #expect(body["include"] == (modelId == "gpt-6-astra" ? nil : .array([.string("message.output_text.logprobs")])))
+        let features = Set(result.warnings.compactMap { warning -> String? in
+            if case .unsupported(let feature, _) = warning { return feature }; return nil
+        })
+        #expect(features == (modelId == "gpt-6-astra" ? ["reasoningEffort", "temperature", "topP", "logprobs"] : modelId == "gpt-6-sol" ? [] : ["temperature", "topP"]))
+    }
+
+    @Test("Explicit include order and duplicates survive automatic additions", arguments: [false, true])
+    func requestIncludes(webSources: Bool) async throws {
+        let capture = Capture()
+        let initial = ["file_search_call.results", "reasoning.encrypted_content", "file_search_call.results"]
+        _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(
+            prompt: [], tools: [
+                .provider(.init(id: "openai.web_search", name: "browse", args: [:])),
+                .provider(.init(id: "openai.code_interpreter", name: "python", args: [:]))
+            ], providerOptions: ["openai": [
+                "include": .array(initial.map(JSONValue.string)), "includeWebSearchSources": .bool(webSources)
+            ]]
+        ))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        let expected = initial + (webSources ? ["web_search_call.action.sources"] : []) + ["code_interpreter_call.outputs"]
+        #expect(body["include"] == .array(expected.map(JSONValue.string)))
+    }
+
+    @Test("Compaction appends its trigger after history and rejects obsolete cache retention")
+    func requestCompactionAndCache() async throws {
+        let capture = Capture()
+        let result = try await provider(capture).responses("gpt-6-astra").doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "Compact this history"))], providerOptions: nil)],
+            providerOptions: ["openai": [
+                "compactionTrigger": .bool(true), "contextManagement": .array([.object([
+                    "type": .string("compaction"), "compactThreshold": .number(2.5), "extra": .bool(true)
+                ])]), "promptCacheRetention": .string("24h"), "promptCacheOptions": .object(["ttl": .string("30m")]),
+                "maxToolCalls": .number(3.5)
+            ]]
+        ))
+        guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"] else {
+            Issue.record("Missing input"); return
+        }
+        #expect(input.count == 2)
+        #expect(input.last == .object(["type": .string("compaction_trigger")]))
+        #expect(body["context_management"] == .array([.object(["type": .string("compaction"), "compact_threshold": .number(2.5)])]))
+        #expect(body["prompt_cache_options"] == .object(["ttl": .string("30m")]))
+        #expect(body["prompt_cache_retention"] == nil)
+        #expect(body["max_tool_calls"] == .number(3.5))
+        #expect(result.warnings.contains { if case .unsupported("promptCacheRetention", _) = $0 { return true }; return false })
+    }
+
+    @Test("Null request fields remain distinct from absent options")
+    func requestNullFields() async throws {
+        let capture = Capture()
+        let fields = ["conversation", "include", "maxToolCalls", "metadata", "parallelToolCalls", "previousResponseId", "promptCacheKey", "promptCacheRetention", "store", "user", "instructions", "safetyIdentifier", "serviceTier", "truncation"]
+        _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(
+            prompt: [], providerOptions: ["openai": Dictionary(uniqueKeysWithValues: fields.map { ($0, JSONValue.null) })]
+        ))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        for key in ["conversation", "include", "max_tool_calls", "metadata", "parallel_tool_calls", "previous_response_id", "prompt_cache_key", "prompt_cache_retention", "store", "user", "instructions", "safety_identifier", "service_tier", "truncation"] {
+            #expect(body[key] == .null)
+        }
+    }
+
+    @Test("Raw prompt cache directives retain false and unprojected fields", arguments: [
+        JSONValue.bool(false), .object(["mode": .string("future"), "extra": .array([.number(1)])])
+    ])
+    func requestRawCacheDirectives(directive: JSONValue) async throws {
+        let capture = Capture()
+        let options: SharedV4ProviderOptions = ["openai": ["promptCacheBreakpoint": directive]]
+        _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(prompt: [
+            .system(content: "System", providerOptions: options),
+            .user(content: [.text(.init(text: "User", providerOptions: options))], providerOptions: nil),
+            .tool(content: [.toolResult(.init(toolCallId: "call", toolName: "lookup", output: .text(value: "Result", providerOptions: options),
+                providerOptions: ["openai": ["promptCacheBreakpoint": .object(["mode": .string("explicit")])]]))], providerOptions: nil)
+        ]))
+        guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"], input.count == 3 else {
+            Issue.record("Missing input"); return
+        }
+        for (index, key) in [(0, "content"), (1, "content"), (2, "output")] {
+            guard case .object(let item) = input[index], case .array(let parts)? = item[key],
+                  case .object(let part)? = parts.first else { Issue.record("Missing cache directive content"); continue }
+            #expect(part["prompt_cache_breakpoint"] == directive)
+        }
+    }
+
+    @Test("Optional request configuration rejects explicit null", arguments: ["reasoningMode", "reasoningContext", "includeWebSearchSources", "compactionTrigger", "promptCacheOptions"])
     func reasoningOptionsRejectNull(key: String) async throws {
         let provider = try createOpenAI(settings: .init(apiKey: "test", fetch: { _ in throw URLError(.badServerResponse) }))
         await #expect(throws: InvalidArgumentError.self) {

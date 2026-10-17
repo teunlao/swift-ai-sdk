@@ -150,6 +150,7 @@ public struct OpenAIResponsesAllowedTools: Sendable, Equatable {
 public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var conversation: String?
     public var include: [OpenAIResponsesProviderOptionsIncludeValue]?
+    public var includeWebSearchSources: Bool?
     public var instructions: String?
     public var logprobs: OpenAIResponsesLogprobsOption?
     public var maxToolCalls: Double?
@@ -174,11 +175,14 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
     public var systemMessageMode: OpenAIResponsesSystemMessageMode?
     public var forceReasoning: Bool?
     public var contextManagement: [OpenAIResponsesContextManagement]?
+    public var compactionTrigger: Bool?
     public var allowedTools: OpenAIResponsesAllowedTools?
+    var nullFields: Set<String> = []
 
     public init(
         conversation: String? = nil,
         include: [OpenAIResponsesProviderOptionsIncludeValue]? = nil,
+        includeWebSearchSources: Bool? = nil,
         instructions: String? = nil,
         logprobs: OpenAIResponsesLogprobsOption? = nil,
         maxToolCalls: Double? = nil,
@@ -203,10 +207,12 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         systemMessageMode: OpenAIResponsesSystemMessageMode? = nil,
         forceReasoning: Bool? = nil,
         contextManagement: [OpenAIResponsesContextManagement]? = nil,
+        compactionTrigger: Bool? = nil,
         allowedTools: OpenAIResponsesAllowedTools? = nil
     ) {
         self.conversation = conversation
         self.include = include
+        self.includeWebSearchSources = includeWebSearchSources
         self.instructions = instructions
         self.logprobs = logprobs
         self.maxToolCalls = maxToolCalls
@@ -231,6 +237,7 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.systemMessageMode = systemMessageMode
         self.forceReasoning = forceReasoning
         self.contextManagement = contextManagement
+        self.compactionTrigger = compactionTrigger
         self.allowedTools = allowedTools
     }
 }
@@ -251,11 +258,16 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
                 "enum": .array(openAIResponsesProviderOptionIncludeValues.map { JSONValue.string($0.rawValue) })
             ])
         ]),
+        "includeWebSearchSources": .object(["type": .string("boolean")]),
+        "compactionTrigger": .object(["type": .string("boolean")]),
         "instructions": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "logprobs": .object([
-            "type": .array([.string("boolean"), .string("number")])
+            "anyOf": .array([
+                .object(["type": .string("boolean")]),
+                .object(["type": .string("number"), "minimum": .number(1), "maximum": .number(Double(TOP_LOGPROBS_MAX))])
+            ])
         ]),
         "maxToolCalls": .object([
             "type": .array([.string("number"), .string("null")])
@@ -273,7 +285,11 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
             "type": .array([.string("string"), .string("null")])
         ]),
         "promptCacheOptions": .object([
-            "type": .array([.string("object"), .string("null")])
+            "type": .string("object"),
+            "properties": .object([
+                "mode": .object(["enum": .array([.string("implicit"), .string("explicit")])]),
+                "ttl": .object(["const": .string("30m")])
+            ])
         ]),
         "promptCacheRetention": .object([
             "type": .array([.string("string"), .string("null")])
@@ -383,6 +399,9 @@ public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponses
 
 private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) throws -> OpenAIResponsesProviderOptions {
     var options = OpenAIResponsesProviderOptions()
+    options.nullFields = Set(dict.compactMap { $0.value == .null ? $0.key : nil })
+    options.includeWebSearchSources = try parseOptionalBool(dict, key: "includeWebSearchSources", allowNull: false)
+    options.compactionTrigger = try parseOptionalBool(dict, key: "compactionTrigger", allowNull: false)
 
     options.conversation = try parseOptionalString(dict, key: "conversation")
 
@@ -406,9 +425,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
 
     options.instructions = try parseOptionalString(dict, key: "instructions")
     options.maxToolCalls = try parseOptionalNumber(dict, key: "maxToolCalls")
-    if let metadataValue = dict["metadata"], metadataValue != .null {
-        options.metadata = metadataValue
-    }
+    options.metadata = dict["metadata"]
     options.parallelToolCalls = try parseOptionalBool(dict, key: "parallelToolCalls")
     options.previousResponseId = try parseOptionalString(dict, key: "previousResponseId")
     options.promptCacheKey = try parseOptionalString(dict, key: "promptCacheKey")
@@ -504,7 +521,7 @@ private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) thro
         case .bool(let value):
             options.logprobs = .bool(value)
         case .number(let number):
-            if number < 1 || number > Double(TOP_LOGPROBS_MAX) {
+            if !number.isFinite || number < 1 || number > Double(TOP_LOGPROBS_MAX) {
                 throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be between 1 and 20"))
             }
             options.logprobs = .number(number)
@@ -530,7 +547,7 @@ private func parseContextManagement(_ value: JSONValue?) throws -> [OpenAIRespon
         guard case .string("compaction")? = object["type"] else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.type must be compaction"))
         }
-        guard case .number(let threshold)? = object["compactThreshold"] else {
+        guard case .number(let threshold)? = object["compactThreshold"], threshold.isFinite else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.compactThreshold must be a number"))
         }
         return OpenAIResponsesContextManagement(compactThreshold: threshold)
@@ -604,7 +621,7 @@ private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allow
         }
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
     }
-    guard case .number(let number) = value else {
+    guard case .number(let number) = value, number.isFinite else {
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
     }
     return number

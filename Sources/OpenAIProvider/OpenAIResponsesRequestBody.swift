@@ -30,8 +30,9 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var tools: [JSONValue]?
     var toolChoice: JSONValue?
     var stream: Bool?
+    var nullFields: Set<CodingKeys> = []
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, Sendable {
         case model
         case input
         case temperature
@@ -90,5 +91,8 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(tools, forKey: .tools)
         try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
         try container.encodeIfPresent(stream, forKey: .stream)
+        for key in nullFields {
+            try container.encodeNil(forKey: key)
+        }
     }
 }
