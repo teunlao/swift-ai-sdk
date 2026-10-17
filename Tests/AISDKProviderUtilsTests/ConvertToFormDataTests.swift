@@ -106,16 +106,16 @@ struct ConvertToFormDataTests {
 
 @Suite("MultipartFormDataBuilder")
 struct MultipartFormDataBuilderTests {
-    @Test("unnamed files retain file semantics and binary bytes")
-    func unnamedFile() {
+    @Test("scalar fields normalize line endings without changing file bytes")
+    func scalarAndFileLineEndings() {
         var builder = MultipartFormDataBuilder(boundary: "test-boundary")
-        builder.appendField(name: "field", value: "value")
-        let bytes = Data([0x00, 0xFF, 0x0D, 0x0A])
+        builder.appendField(name: "field", value: "a\rb\nc\r\nd")
+        let bytes = Data([0x61, 0x0D, 0x62, 0x0A, 0x63, 0x0D, 0x0A, 0x64, 0x00, 0xFF])
         builder.appendFile(name: "file", filename: nil, data: bytes)
 
         let multipart = builder.build()
         var expected = Data((
-            "--test-boundary\r\nContent-Disposition: form-data; name=\"field\"\r\n\r\nvalue\r\n" +
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"field\"\r\n\r\na\r\nb\r\nc\r\nd\r\n" +
             "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"blob\"\r\n" +
             "Content-Type: application/octet-stream\r\n\r\n"
         ).utf8)
@@ -124,6 +124,22 @@ struct MultipartFormDataBuilderTests {
 
         #expect(multipart.contentType == "multipart/form-data; boundary=test-boundary")
         #expect(multipart.data == expected)
+    }
+
+    @Test("an explicit empty filename omits the disposition filename parameter")
+    func emptyFilename() {
+        var builder = MultipartFormDataBuilder(boundary: "test-boundary")
+        let bytes = Data([0x00, 0x0D, 0x0A, 0xFF])
+        builder.appendFile(name: "file", filename: "", data: bytes)
+
+        var expected = Data((
+            "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).utf8)
+        expected.append(bytes)
+        expected.append(Data("\r\n--test-boundary--\r\n".utf8))
+
+        #expect(builder.build().data == expected)
     }
 
     @Test("disposition parameters use native FormData escaping")

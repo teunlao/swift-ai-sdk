@@ -21,7 +21,7 @@ public struct MultipartFormDataBuilder: Sendable {
 
     /// Appends a simple text field to the multipart payload.
     public mutating func appendField(name: String, value: String) {
-        guard let data = value.data(using: .utf8) else { return }
+        guard let data = Self.normalizeLineBreaks(value).data(using: .utf8) else { return }
         parts.append(Part(name: name, filename: nil, contentType: nil, data: data))
     }
 
@@ -32,7 +32,8 @@ public struct MultipartFormDataBuilder: Sendable {
                 ? type.lowercased()
                 : nil
         } ?? "application/octet-stream"
-        parts.append(Part(name: name, filename: filename ?? "blob", contentType: mediaType, data: data))
+        let partFilename: String? = filename == "" ? nil : (filename ?? "blob")
+        parts.append(Part(name: name, filename: partFilename, contentType: mediaType, data: data))
     }
 
     /// Builds the multipart body data and returns it together with the Content-Type header value.
@@ -70,7 +71,7 @@ public struct MultipartFormDataBuilder: Sendable {
         "----ai-sdk-boundary-\(UUID().uuidString)"
     }
 
-    // Native FormData normalizes names to CRLF, but preserves filename line endings.
+    // FormData normalizes names and scalar values, but preserves filenames and file bytes.
     private static func normalizeLineBreaks(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\r\n", with: "\n")
