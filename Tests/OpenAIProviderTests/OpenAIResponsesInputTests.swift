@@ -1259,19 +1259,16 @@ struct OpenAIResponsesInputTests {
         #expect(result.warnings.isEmpty)
     }
 
-    @Test("store=false reconstructs custom compaction input")
-    func storeFalseReconstructsCustomCompactionInput() async throws {
+    @Test("store=false reconstructs custom compaction input", arguments: [false, true])
+    func storeFalseReconstructsCustomCompactionInput(encrypted: Bool) async throws {
+        var metadata: [String: JSONValue] = ["itemId": .string("cmp-1")]
+        if encrypted { metadata["encryptedContent"] = .string("encrypted-compaction") }
         let result = try await requestInput(
             prompt: [
                 .assistant(content: [
                     .custom(LanguageModelV4CustomPart(
                         kind: "openai.compaction",
-                        providerOptions: [
-                            "openai": [
-                                "itemId": .string("cmp-1"),
-                                "encryptedContent": .string("encrypted-compaction")
-                            ]
-                        ]
+                        providerOptions: ["openai": metadata]
                     ))
                 ], providerOptions: nil)
             ],
@@ -1279,13 +1276,9 @@ struct OpenAIResponsesInputTests {
             store: false
         )
 
-        #expect(result.input == [
-            .object([
-                "type": .string("compaction"),
-                "id": .string("cmp-1"),
-                "encrypted_content": .string("encrypted-compaction")
-            ])
-        ])
+        var expected: [String: JSONValue] = ["type": .string("compaction"), "id": .string("cmp-1")]
+        if encrypted { expected["encrypted_content"] = .string("encrypted-compaction") }
+        #expect(result.input == [.object(expected)])
     }
 
     @Test("execution-denied tool results are skipped")

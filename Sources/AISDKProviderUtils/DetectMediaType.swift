@@ -124,7 +124,7 @@ public func detectMediaType(
  Returns the top-level segment of a media type.
  */
 public func getTopLevelMediaType(_ mediaType: String) -> String {
-    guard let slashIndex = mediaType.firstIndex(of: "/") else {
+    guard let slashIndex = mediaType.unicodeScalars.firstIndex(of: "/") else {
         return mediaType
     }
 
@@ -135,11 +135,11 @@ public func getTopLevelMediaType(_ mediaType: String) -> String {
  Returns true only when the given media type has a non-empty, non-wildcard subtype.
  */
 public func isFullMediaType(_ mediaType: String) -> Bool {
-    guard let slashIndex = mediaType.firstIndex(of: "/") else {
+    guard let slashIndex = mediaType.unicodeScalars.firstIndex(of: "/") else {
         return false
     }
 
-    let subtypeStart = mediaType.index(after: slashIndex)
+    let subtypeStart = mediaType.unicodeScalars.index(after: slashIndex)
     let subtype = mediaType[subtypeStart...]
     return !subtype.isEmpty && subtype != "*"
 }

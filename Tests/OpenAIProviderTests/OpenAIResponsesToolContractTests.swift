@@ -162,6 +162,25 @@ struct OpenAIResponsesToolContractTests {
         #expect(result.warnings.count == 4)
     }
 
+    @Test("Tool search SDK names use literal byte identity")
+    func requestLiteralToolSearch() async throws {
+        let capture = Capture()
+        _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(prompt: [
+            .assistant(content: [.toolCall(.init(toolCallId: "call", toolName: "e\u{0301}", input: .object(["value": .string("ok")])))], providerOptions: nil),
+            .tool(content: [.toolResult(.init(toolCallId: "call", toolName: "e\u{0301}", output: .json(value: .number(7))))], providerOptions: nil)
+        ], tools: [
+            .provider(.init(id: "openai.tool_search", name: "é", args: [:])),
+            .function(.init(name: "e\u{0301}", inputSchema: .object(["type": .string("object")])))
+        ]))
+        guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"] else {
+            Issue.record("Missing input"); return
+        }
+        #expect(input == [
+            .object(["type": .string("function_call"), "call_id": .string("call"), "name": .string("e\u{0301}"), "arguments": .string("{\"value\":\"ok\"}")]),
+            .object(["type": .string("function_call_output"), "call_id": .string("call"), "output": .string("7")])
+        ])
+    }
+
     @Test("Tool-name mapping keeps literal Unicode identities", arguments: [false, true])
     func literalToolNames(decomposed: Bool) async throws {
         let capture = Capture()
@@ -266,6 +285,34 @@ struct OpenAIResponsesToolContractTests {
         let body = try #require(await capture.value())
         guard case .object(let object) = body else { Issue.record("Missing request object"); return }
         #expect(object["service_tier"] == .string("ultrafast"))
+    }
+
+    @Test("Media type separators retain scalar semantics before URL and inline conversion")
+    func requestMediaTypeSeparators() async throws {
+        let capture = Capture()
+        let mediaType = "image/\u{0301}*"
+        _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(prompt: [
+            .user(content: [
+                .file(.init(data: .url(URL(string: "https://example.com/image")!), mediaType: mediaType)),
+                .file(.init(data: .data(Data([0x78])), mediaType: mediaType))
+            ], providerOptions: nil)
+        ]))
+        guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"],
+              case .object(let message)? = input.first else { Issue.record("Missing input"); return }
+        #expect(message["content"] == .array([
+            .object(["type": .string("input_image"), "image_url": .string("https://example.com/image")]),
+            .object(["type": .string("input_image"), "image_url": .string("data:\(mediaType);base64,eA==")])
+        ]))
+    }
+
+    @Test("Native media routing follows the declared HTTP URL capability", arguments: [
+        ("https://example.com/a", true), ("HTTPS://example.com/a", false),
+        ("https://example.com/a\n", false), ("https://example.com/\u{85}", true)
+    ])
+    func requestMediaRouting(url: String, supported: Bool) async throws {
+        let model = try createOpenAI().responses("gpt-4.1")
+        let urls = try await model.supportedUrls
+        #expect(isUrlSupported(mediaType: "application/pdf", url: url, supportedUrls: urls) == supported)
     }
 
     @Test("Request schemas normalize unsupported response constraints")

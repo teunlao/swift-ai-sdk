@@ -111,6 +111,7 @@ struct OpenAIResponsesStreamContractTests {
             if failed {
                 var response: [String: JSONValue] = ["error": .object(["code": .string("server_error"), "message": .string("Late failure")])]
                 if withNull { response["incomplete_details"] = .null; response["service_tier"] = .null }
+                else { response["incomplete_details"] = .object(["reason": .string("")]) }
                 projected = ["type": .string("response.failed"), "sequence_number": .number(2), "response": .object(response)]
             } else {
                 projected = ["type": .string("error"), "sequence_number": .number(2), "code": .string("server_error"), "message": .string("Late failure")]
@@ -130,7 +131,7 @@ struct OpenAIResponsesStreamContractTests {
             #expect(parts.contains { if case .raw(let value) = $0 { return value == .object(raw) }; return false })
             guard case .finish(let reason, _, let metadata)? = parts.last else { Issue.record("Missing finish"); return }
             #expect(reason.unified == .error)
-            #expect(reason.raw == "error")
+            #expect(reason.raw == (failed && !withNull ? "" : "error"))
             #expect(metadata?["openai"]?["serviceTier"] == nil)
         }
     }
@@ -171,6 +172,23 @@ struct OpenAIResponsesStreamContractTests {
         #expect(toolResult.toolName == "web_search")
         #expect(toolResult.isError == true)
         #expect(toolResult.result == .object(["status": .string(status)]))
+    }
+
+    @Test("Streamed tool search preserves missing versus null arguments", arguments: [false, true])
+    func toolSearchArgumentPresence(withNull: Bool) async throws {
+        var item: [String: JSONValue] = [
+            "type": .string("tool_search_call"), "id": .string("search"), "execution": .string("server"),
+            "call_id": .null, "status": .string("completed")
+        ]
+        if withNull { item["arguments"] = .null }
+        let parts = try await collect([
+            .object(["type": .string("response.output_item.added"), "output_index": .number(0), "item": .object(item)]),
+            .object(["type": .string("response.output_item.done"), "output_index": .number(0), "item": .object(item)]), completed
+        ])
+        let call = try #require(parts.compactMap { if case .toolCall(let value) = $0 { return value }; return nil }.first)
+        var expected: [String: JSONValue] = ["call_id": .null]
+        if withNull { expected["arguments"] = .null }
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(call.input.utf8)) == .object(expected))
     }
 
     @Test("Numeric tool indices remain independent without truncation or caps")

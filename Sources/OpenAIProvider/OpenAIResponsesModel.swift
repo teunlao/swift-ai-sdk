@@ -2,10 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private let openAIHTTPSURLRegex: NSRegularExpression = {
-    // Safe to use try! for a static, well-formed pattern
-    try! NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
-}()
+private let httpURLRegex = try! NSRegularExpression(pattern: #"^https?://[^\n\r\u2028\u2029]*\z"#)
 
 public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sendable {
     public let specificationVersion: String = "v4"
@@ -39,8 +36,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     public var supportedUrls: [String: [NSRegularExpression]] {
         get async throws {
             [
-                "image/*": [openAIHTTPSURLRegex],
-                "application/pdf": [openAIHTTPSURLRegex]
+                "image/*": [httpURLRegex],
+                "application/pdf": [httpURLRegex]
             ]
         }
     }
@@ -72,8 +69,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 statusCode: 400,
                 responseHeaders: response.responseHeaders,
                 responseBody: try response.rawValue.map { try openAIJSONStringify(jsonValue(from: $0)) },
-                isRetryable: false,
-                data: ["code": errorPayload.code]
+                isRetryable: false
             )
         }
 
@@ -263,13 +259,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                                     continuation: continuation
                                 )
                             case "response.apply_patch_call_operation_diff.delta":
-                                handleApplyPatchCallOperationDiffDelta(
+                                try handleApplyPatchCallOperationDiffDelta(
                                     chunkObject,
                                     ongoingToolCalls: ongoingToolCalls,
                                     continuation: continuation
                                 )
                             case "response.apply_patch_call_operation_diff.done":
-                                handleApplyPatchCallOperationDiffDone(
+                                try handleApplyPatchCallOperationDiffDone(
                                     chunkObject,
                                     ongoingToolCalls: ongoingToolCalls,
                                     continuation: continuation
@@ -281,7 +277,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                                     continuation: continuation
                                 )
                             case "response.code_interpreter_call_code.delta":
-                                handleCodeInterpreterDelta(
+                                try handleCodeInterpreterDelta(
                                     chunkObject,
                                     ongoingToolCalls: ongoingToolCalls,
                                     continuation: continuation
@@ -996,14 +992,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                     hostedToolSearchCallIds.append(toolCallId)
                 }
 
-                let inputValue: JSONValue = .object([
-                    "arguments": object["arguments"] ?? .null,
-                    "call_id": object["call_id"] ?? .null
-                ])
+                var inputValue: [String: JSONValue] = ["call_id": object["call_id"]!]
+                inputValue["arguments"] = object["arguments"]
                 content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("tool_search"),
-                    input: try openAIJSONStringify(inputValue),
+                    input: try openAIJSONStringify(.object(inputValue)),
                     providerExecuted: isHosted ? true : nil,
                     providerMetadata: openAIProviderMetadata(["itemId": .string(itemId)])
                 )))
@@ -1515,7 +1509,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                          title: filename, filename: filename, providerMetadata: openAIProviderMetadata(metadata))
     }
 
-    private func citations(_ annotations: [JSONValue]) -> [LanguageModelV4Citation]? {
+    private func citations(_ annotations: [JSONValue]) -> [LanguageModelV4Citation] {
         let values = annotations.compactMap { annotation -> LanguageModelV4Citation? in
             let value = annotation.objectValue!
             let type = value["type"]!.stringValue!
@@ -1524,7 +1518,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             return LanguageModelV4Citation(source: annotationSource(annotation, id: id),
                                           startIndex: value["start_index"]?.numberValue, endIndex: value["end_index"]?.numberValue)
         }
-        return values.isEmpty ? nil : values
+        return values
     }
 
     private final class SourceState {
@@ -1760,9 +1754,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 continuation.yield(.toolInputDelta(id: callId, delta: inputString, providerMetadata: nil))
                 continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
             } else {
-                let escapedCallId = escapeJSONString(callId)
-                let escapedOperationType = escapeJSONString(operationType)
-                let escapedPath = escapeJSONString(path)
+                let escapedCallId = try escapeJSONDelta(callId)
+                let escapedOperationType = try escapeJSONDelta(operationType)
+                let escapedPath = try escapeJSONDelta(path)
                 let prefix = "{\"callId\":\"\(escapedCallId)\",\"operation\":{\"type\":\"\(escapedOperationType)\",\"path\":\"\(escapedPath)\",\"diff\":\""
                 continuation.yield(.toolInputDelta(id: callId, delta: prefix, providerMetadata: nil))
             }
@@ -2133,14 +2127,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 ))
             }
             continuation.yield(.toolInputEnd(id: toolCallId, providerMetadata: nil))
-            let inputValue: JSONValue = .object([
-                "arguments": item["arguments"] ?? .null,
-                "call_id": isHosted ? .null : .string(toolCallId)
-            ])
+            var inputValue: [String: JSONValue] = ["call_id": isHosted ? .null : .string(toolCallId)]
+            inputValue["arguments"] = item["arguments"]
             continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: toolCallId,
                 toolName: state.toolName,
-                input: try openAIJSONStringify(inputValue),
+                input: try openAIJSONStringify(.object(inputValue)),
                 providerExecuted: isHosted ? true : nil,
                 providerMetadata: openAIProviderMetadata(["itemId": .string(itemId)])
             )))
@@ -2173,7 +2165,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                operationType != "delete_file" {
                 if applyPatch.hasDiff == false,
                    let diff = operation.objectValue?["diff"]?.stringValue {
-                    continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(diff), providerMetadata: nil))
+                    continuation.yield(.toolInputDelta(id: state.toolCallId, delta: try escapeJSONDelta(diff), providerMetadata: nil))
                     applyPatch.hasDiff = true
                 }
 
@@ -2370,7 +2362,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         _ chunk: [String: JSONValue],
         ongoingToolCalls: IndexMap<ToolCallState>,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
-    ) {
+    ) throws {
         guard let outputIndex = chunk["output_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue,
               var state = ongoingToolCalls[outputIndex],
@@ -2378,7 +2370,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             return
         }
 
-        continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(delta), providerMetadata: nil))
+        continuation.yield(.toolInputDelta(id: state.toolCallId, delta: try escapeJSONDelta(delta), providerMetadata: nil))
         applyPatch.hasDiff = true
         state.applyPatch = applyPatch
         ongoingToolCalls[outputIndex] = state
@@ -2388,7 +2380,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         _ chunk: [String: JSONValue],
         ongoingToolCalls: IndexMap<ToolCallState>,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
-    ) {
+    ) throws {
         guard let outputIndex = chunk["output_index"]?.numberValue,
               let diff = chunk["diff"]?.stringValue,
               var state = ongoingToolCalls[outputIndex],
@@ -2398,7 +2390,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         }
 
         if applyPatch.hasDiff == false {
-            continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escapeJSONString(diff), providerMetadata: nil))
+            continuation.yield(.toolInputDelta(id: state.toolCallId, delta: try escapeJSONDelta(diff), providerMetadata: nil))
             applyPatch.hasDiff = true
         }
 
@@ -2433,7 +2425,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         _ chunk: [String: JSONValue],
         ongoingToolCalls: IndexMap<ToolCallState>,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
-    ) {
+    ) throws {
         guard let outputIndex = chunk["output_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue,
               let state = ongoingToolCalls[outputIndex],
@@ -2441,7 +2433,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             return
         }
 
-        let escaped = escapeJSONString(delta)
+        let escaped = try escapeJSONDelta(delta)
         continuation.yield(.toolInputDelta(id: state.toolCallId, delta: escaped, providerMetadata: nil))
     }
 
@@ -2476,8 +2468,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         } catch {
             continuation.yield(.error(error: .error(error)))
         }
-
-        ongoingToolCalls[outputIndex] = nil
     }
 
     private func resolveOutputItemId(_ id: String, outputIndex: Double?, activeOutputItemIds: IndexMap<String>) -> String {
@@ -2587,7 +2577,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         }
 
         let incompleteReason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
-        if let incompleteReason {
+        if let incompleteReason, !incompleteReason.isEmpty {
             finishReason = LanguageModelV4FinishReason(
                 unified: mapOpenAIResponsesFinishReason(
                     finishReason: incompleteReason,
@@ -2596,7 +2586,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 raw: incompleteReason
             )
         } else {
-            finishReason = .init(unified: .error, raw: "error")
+            finishReason = .init(unified: .error, raw: incompleteReason ?? "error")
         }
 
         usage = convertOpenAIResponsesUsage(parsedUsage)
@@ -2641,14 +2631,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         return ResponseMetadata(id: id, modelId: modelId, timestamp: timestamp)
     }
 
-    private func escapeJSONString(_ value: String) -> String {
-        if let data = try? JSONEncoder().encode(JSONValue.string(value)),
-           var string = String(data: data, encoding: .utf8) {
-            string.removeFirst()
-            string.removeLast()
-            return string
-        }
-        return value
+    private func escapeJSONDelta(_ value: String) throws -> String {
+        String(try openAIJSONStringify(.string(value)).dropFirst().dropLast())
     }
 }
 

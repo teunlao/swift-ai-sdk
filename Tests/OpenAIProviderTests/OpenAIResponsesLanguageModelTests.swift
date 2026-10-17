@@ -2838,13 +2838,13 @@ struct OpenAIResponsesLanguageModelTests {
                 "type": "response.code_interpreter_call_code.delta",
                 "item_id": "code_call",
                 "output_index": 0,
-                "delta": "print(\"Hi\")"
+                "delta": "print(\"https://example.com\")"
             ]),
             chunk([
                 "type": "response.code_interpreter_call_code.done",
                 "item_id": "code_call",
                 "output_index": 0,
-                "code": "print(\"Hi\")"
+                "code": "print(\"https://example.com\")"
             ]),
             chunk([
                 "type": "response.output_item.done",
@@ -2853,7 +2853,7 @@ struct OpenAIResponsesLanguageModelTests {
                     "id": "code_call",
                     "type": "code_interpreter_call",
                     "status": "completed",
-                    "code": "print(\"Hi\")",
+                    "code": "print(\"https://example.com\")",
                     "container_id": "container-7",
                     "outputs": [
                         ["type": "logs", "logs": "Hi"]
@@ -2920,12 +2920,10 @@ struct OpenAIResponsesLanguageModelTests {
             return false
         })
 
-        #expect(parts.contains { part in
-            if case .toolInputDelta(let id, let delta, _) = part {
-                return id == "code_call" && delta.hasPrefix("{\"containerId\":\"container-7\",\"code\":\"")
-            }
-            return false
-        })
+        let streamedInput = parts.compactMap { part -> String? in
+            if case .toolInputDelta(let id, let delta, _) = part, id == "code_call" { return delta }; return nil
+        }.joined()
+        #expect(streamedInput == #"{"containerId":"container-7","code":"print(\"https://example.com\")"}"#)
 
         #expect(parts.contains { part in
             if case .toolInputEnd(let id, _) = part { return id == "code_call" }

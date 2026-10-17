@@ -27,6 +27,7 @@ struct OpenAIResponsesInputBuilder {
         var warnings: [SharedV4Warning] = []
         var processedApprovalIds: Set<Data> = []
         var programmaticToolCallIds: Set<Data> = []
+        let toolSearchKey = toolSearchToolName.map { Data($0.utf8) }
         let parallelGroups = hasConversation || hasPreviousResponseId ? OpenAIParallelCalls.completeGroups(prompt, namespace: providerOptionsName) : [:]
         var emittedParallelCalls: Set<Data> = []
         var emittedParallelResults: Set<Data> = []
@@ -119,7 +120,7 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         let resolvedToolName = toolNameMapping.toProviderToolName(callPart.toolName)
-                        if callPart.toolName == toolSearchToolName {
+                        if Data(callPart.toolName.utf8) == toolSearchKey {
                             if store, let itemId {
                                 items.append(.object([
                                     "type": .string("item_reference"),
@@ -349,7 +350,7 @@ struct OpenAIResponsesInputBuilder {
                             }
                         }
 
-                        if resultPart.toolName == toolSearchToolName {
+                        if Data(resultPart.toolName.utf8) == toolSearchKey {
                             let itemId =
                                 extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
                                 ?? resultPart.toolCallId
@@ -488,7 +489,7 @@ struct OpenAIResponsesInputBuilder {
                                 ]))
                             } else if !isFirstPart {
                                 // Only warn when appending empty text to existing sequence
-                                let partDescription = stringifyReasoningPart(reasoningPart)
+                                let partDescription = try stringifyReasoningPart(reasoningPart)
                                 warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
                             }
 
@@ -512,7 +513,7 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        let partDescription = stringifyReasoningPart(reasoningPart)
+                        let partDescription = try stringifyReasoningPart(reasoningPart)
                         warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
 
                     case .custom(let customPart):
@@ -532,13 +533,10 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if let itemId,
-                           let encryptedContent = providerOptions?["encryptedContent"]?.stringValue {
-                            items.append(.object([
-                                "type": .string("compaction"),
-                                "id": .string(itemId),
-                                "encrypted_content": .string(encryptedContent)
-                            ]))
+                        if let itemId {
+                            var item: [String: JSONValue] = ["type": .string("compaction"), "id": .string(itemId)]
+                            item["encrypted_content"] = providerOptions?["encryptedContent"]
+                            items.append(.object(item))
                         }
 
                     case .file, .reasoningFile:
@@ -602,7 +600,7 @@ struct OpenAIResponsesInputBuilder {
 
                         let resolvedToolName = toolNameMapping.toProviderToolName(toolResult.toolName)
 
-                        if toolResult.toolName == toolSearchToolName,
+                        if Data(toolResult.toolName.utf8) == toolSearchKey,
                            case .json(let value, _) = toolResult.output {
                             let parsedOutput = try await validateTypes(
                                 ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiToolSearchOutputSchema)
@@ -983,31 +981,10 @@ struct OpenAIResponsesInputBuilder {
         return stringValue
     }
 
-    private static func stringifyReasoningPart(_ part: LanguageModelV4ReasoningPart) -> String {
-        let encoder = JSONEncoder()
-        var segments: [String] = []
-
-        if let typeData = try? encoder.encode("reasoning"),
-           let typeJSON = String(data: typeData, encoding: .utf8) {
-            segments.append("\"type\":\(typeJSON)")
-        }
-
-        if let textData = try? encoder.encode(part.text),
-           let textJSON = String(data: textData, encoding: .utf8) {
-            segments.append("\"text\":\(textJSON)")
-        }
-
-        if let providerOptions = part.providerOptions,
-           let providerData = try? encoder.encode(providerOptions),
-           let providerJSON = String(data: providerData, encoding: .utf8) {
-            segments.append("\"providerOptions\":\(providerJSON)")
-        }
-
-        if segments.isEmpty {
-            return part.text
-        }
-
-        return "{\(segments.joined(separator: ","))}"
+    private static func stringifyReasoningPart(_ part: LanguageModelV4ReasoningPart) throws -> String {
+        var value: [String: JSONValue] = ["type": .string("reasoning"), "text": .string(part.text)]
+        if let options = part.providerOptions { value["providerOptions"] = .object(options.mapValues(JSONValue.object)) }
+        return try openAIJSONStringify(.object(value))
     }
 
     private static func extractOpenAIItemId(from options: ProviderOptions?, providerOptionsName: String) -> String? {

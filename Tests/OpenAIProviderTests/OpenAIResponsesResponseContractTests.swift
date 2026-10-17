@@ -61,6 +61,20 @@ struct OpenAIResponsesResponseContractTests {
         #expect(try jsonValue(from: #require(result.response?.body)) == response)
     }
 
+    @Test("Generated tool search preserves missing versus null arguments", arguments: [false, true])
+    func toolSearchArgumentPresence(withNull: Bool) async throws {
+        var item: [String: JSONValue] = [
+            "type": .string("tool_search_call"), "id": .string("search"), "execution": .string("server"),
+            "call_id": .null, "status": .string("completed")
+        ]
+        if withNull { item["arguments"] = .null }
+        let result = try await generate(.object(["output": .array([.object(item)])]))
+        let call = try #require(result.content.compactMap { if case .toolCall(let value) = $0 { return value }; return nil }.first)
+        var expected: [String: JSONValue] = ["call_id": .null]
+        if withNull { expected["arguments"] = .null }
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(call.input.utf8)) == .object(expected))
+    }
+
     @Test("Fallback call options preserve namespace-specific metadata policy", arguments: [false, true])
     func namespaceMetadata(streaming: Bool) async throws {
         let logprobs = JSONValue.array([])
@@ -106,11 +120,14 @@ struct OpenAIResponsesResponseContractTests {
             for try await part in result.stream {
                 if case .finish(_, _, let value) = part { metadata = value }
                 if case .toolResult(let value) = part { results.append(value) }
+                if case .textEnd(_, _, let citations) = part { #expect(citations?.isEmpty == true) }
             }
         } else {
             let result = try await model.doGenerate(options: options)
             metadata = result.providerMetadata
             results = result.content.compactMap { if case .toolResult(let value) = $0 { return value }; return nil }
+            let text = try #require(result.content.compactMap { if case .text(let value) = $0 { return value }; return nil }.first)
+            #expect(text.citations?.isEmpty == true)
         }
         #expect(metadata?["azure"] == (streaming ? ["responseId": .null] : [:]))
         #expect(results.first?.toolCallId == "mcp-wire")
@@ -175,6 +192,7 @@ struct OpenAIResponsesResponseContractTests {
         } catch let error as APICallError {
             #expect(error.statusCode == (providerError ? 400 : 500))
             #expect(error.isRetryable == false)
+            #expect(error.data == nil)
             #expect(error.responseHeaders?["x-request-id"] == "response-contract")
             let body = try #require(error.responseBody)
             #expect(try JSONDecoder().decode(JSONValue.self, from: Data(body.utf8)) == .object(response))
