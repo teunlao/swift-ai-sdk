@@ -94,8 +94,9 @@ let mistralEmbeddingModelOptions = FlexibleSchema(
         validator: { value in
             do {
                 let options = try JSONDecoder().decode(MistralEmbeddingModelOptions.self, from: JSONEncoder().encode(jsonValue(from: value)))
-                if let dimension = options.outputDimension, dimension <= 0 {
-                    throw InvalidArgumentError(argument: "outputDimension", message: "Must be a positive integer.")
+                // Upstream z.number().int() accepts JavaScript safe integers only.
+                if let dimension = options.outputDimension, dimension <= 0 || dimension > 9_007_199_254_740_991 {
+                    throw InvalidArgumentError(argument: "outputDimension", message: "Must be a positive safe integer.")
                 }
                 return .success(value: options)
             } catch {

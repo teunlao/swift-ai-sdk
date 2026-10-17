@@ -73,7 +73,7 @@ public final class MistralTranscriptionModel: TranscriptionModelV4 {
             appendField("language", language)
         }
         if let temperature = mistralOptions?.temperature {
-            appendField("temperature", String(decoding: try JSONEncoder().encode(temperature), as: UTF8.self))
+            appendField("temperature", temperature == 0 ? "0" : String(decoding: try JSONEncoder().encode(temperature), as: UTF8.self))
         }
         for granularity in mistralOptions?.timestampGranularities ?? [] {
             appendField("timestamp_granularities", granularity.rawValue)

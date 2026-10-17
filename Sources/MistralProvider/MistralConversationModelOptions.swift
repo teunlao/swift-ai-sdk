@@ -1,0 +1,6 @@
+import AISDKProviderUtils
+
+public typealias MistralConversationModelId = MistralChatModelId
+public typealias MistralLanguageModelConversationOptions = MistralLanguageModelChatOptions
+
+public let mistralLanguageModelConversationOptions = mistralLanguageModelChatOptions

@@ -87,7 +87,7 @@ struct MistralTranscriptionModelTests {
             let temperature = try fieldValues("temperature", request: request)
             #expect(language == ["en"])
             #expect(temperature == ["0"])
-        }.doGenerate(options: .init(audio: .base64("AQ=="), mediaType: "audio/wav", providerOptions: ["mistral": ["language": .string("en"), "temperature": .number(0)]]))
+        }.doGenerate(options: .init(audio: .base64("AQ=="), mediaType: "audio/wav", providerOptions: ["mistral": ["language": .string("en"), "temperature": .number(-0.0)]]))
     }
 
     @Test("invalid options are rejected before HTTP", arguments: [

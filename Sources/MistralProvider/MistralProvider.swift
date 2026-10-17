@@ -23,6 +23,7 @@ public final class MistralProvider: ProviderV4 {
     private let settings: MistralProviderSettings
     private let baseURL: String
     private let headers: @Sendable () throws -> [String: String?]
+    public let tools = MistralTools()
 
     init(settings: MistralProviderSettings) {
         self.settings = settings
@@ -40,6 +41,11 @@ public final class MistralProvider: ProviderV4 {
 
     public func chat(modelId: MistralChatModelId) -> MistralChatLanguageModel {
         .init(modelId: modelId, config: .init(provider: "mistral.chat", baseURL: baseURL,
+                                            headers: headers, fetch: settings.fetch, generateId: settings.generateId ?? generateID))
+    }
+
+    public func conversation(modelId: MistralConversationModelId) -> MistralConversationLanguageModel {
+        .init(modelId: modelId, config: .init(provider: "mistral.conversation", baseURL: baseURL,
                                             headers: headers, fetch: settings.fetch, generateId: settings.generateId ?? generateID))
     }
 

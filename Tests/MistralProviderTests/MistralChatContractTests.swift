@@ -39,6 +39,23 @@ struct MistralChatContractTests {
         #expect(raw["service_tier"] == "auto")
     }
 
+    @Test("non-reasoning models omit unsupported reasoning configuration")
+    func unsupportedReasoning() async throws {
+        let recorder = RequestRecorder()
+        let fetch: FetchFunction = { request in
+            await recorder.record(request)
+            let body = #"{"object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
+            return FetchResponse(body: .data(Data(body.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }
+        let model = createMistral(settings: .init(apiKey: "key", fetch: fetch)).chat(modelId: .mistralLargeLatest)
+        let result = try await model.doGenerate(options: .init(prompt: prompt, reasoning: .high, providerOptions: ["mistral": ["reasoningEffort": "high"]]))
+        let request = try #require(await recorder.first())
+        let body = try decodeJSONBody(request)
+        #expect(body["reasoning_effort"] == nil)
+        #expect(result.content == [.text(.init(text: "ok"))])
+        #expect(result.warnings == [.unsupported(feature: "reasoning", details: "This model does not support reasoning configuration.")])
+    }
+
     @Test("joins incremental tool calls and reports cached stream usage")
     func incrementalTools() async throws {
         let fetch: FetchFunction = { request in
@@ -80,8 +97,10 @@ struct MistralChatContractTests {
         #expect(body["output_dtype"] as? String == "int8")
         #expect(body["metadata"] as? [String: String] == ["purpose": "search"])
         #expect(result.embeddings == [[1, 2]])
-        await #expect(throws: InvalidArgumentError.self) {
-            try await model.doEmbed(options: .init(values: ["code"], providerOptions: ["mistral": ["outputDimension": 0]]))
+        for dimension in [JSONValue.number(0), .number(9_007_199_254_740_992)] {
+            await #expect(throws: InvalidArgumentError.self) {
+                try await model.doEmbed(options: .init(values: ["code"], providerOptions: ["mistral": ["outputDimension": dimension]]))
+            }
         }
     }
 
