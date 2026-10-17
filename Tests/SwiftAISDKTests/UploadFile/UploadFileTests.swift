@@ -3,6 +3,7 @@ import Testing
 @testable import SwiftAISDK
 import AISDKProvider
 import AISDKProviderUtils
+import OpenAIProvider
 
 private actor UploadFileOptionsCapture {
     private var options: [FilesV4UploadFileCallOptions] = []
@@ -127,15 +128,22 @@ struct UploadFileTests {
         }
     }
 
-    @Test("upload retention metadata reaches the public result")
-    func uploadRetentionMetadata() async throws {
+    @Test("provider byte sizes and retention metadata reach the public result", arguments: [4.5, 1e20])
+    func uploadRetentionMetadata(_ bytes: Double) async throws {
         let date = Date(timeIntervalSince1970: 1234)
-        let api = MockFilesAPI(capture: UploadFileOptionsCapture(), result: .init(
-            providerReference: ["test": "file-1"], byteSize: 4,
-            createdAt: date, expiresAt: date.addingTimeInterval(60)
+        let api: any ProviderV4 = try createOpenAIProvider(settings: .init(
+            apiKey: "test-key",
+            fetch: { request in
+                FetchResponse(
+                    body: .data(Data("{\"id\":\"file-1\",\"bytes\":\(bytes),\"created_at\":1234,\"expires_at\":1294}".utf8)),
+                    urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"])!
+                )
+            }
         ))
-        let result = try await uploadFile(api: api, data: .text("data"))
-        #expect(result.byteSize == 4)
+        let result: any UploadFileResult = try await uploadFile(api: api, data: FilesV4UploadFileData.text("data"))
+        #expect(result.byteSize == bytes)
+        #expect(result.providerMetadata?["openai"]?["bytes"] == .number(bytes))
         #expect(result.createdAt == date)
         #expect(result.expiresAt == date.addingTimeInterval(60))
     }

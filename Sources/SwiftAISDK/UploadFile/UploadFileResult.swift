@@ -10,7 +10,7 @@ public protocol UploadFileResult: Sendable {
     var providerReference: ProviderReference { get }
     var mediaType: String? { get }
     var filename: String? { get }
-    var byteSize: Int? { get }
+    var byteSize: Double? { get }
     var createdAt: Date? { get }
     var expiresAt: Date? { get }
     var providerMetadata: ProviderMetadata? { get }
@@ -21,7 +21,7 @@ public struct DefaultUploadFileResult: UploadFileResult, Equatable {
     public let providerReference: ProviderReference
     public let mediaType: String?
     public let filename: String?
-    public let byteSize: Int?
+    public let byteSize: Double?
     public let createdAt: Date?
     public let expiresAt: Date?
     public let providerMetadata: ProviderMetadata?
@@ -31,7 +31,7 @@ public struct DefaultUploadFileResult: UploadFileResult, Equatable {
         providerReference: ProviderReference,
         mediaType: String? = nil,
         filename: String? = nil,
-        byteSize: Int? = nil,
+        byteSize: Double? = nil,
         createdAt: Date? = nil,
         expiresAt: Date? = nil,
         providerMetadata: ProviderMetadata? = nil,

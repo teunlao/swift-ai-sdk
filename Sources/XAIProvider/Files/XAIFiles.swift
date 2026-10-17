@@ -30,7 +30,7 @@ struct XAIFilesConfig: Sendable {
 private struct FileResponse: Codable, Sendable {
     let id: String
     let object: String?
-    let bytes: Int?
+    let bytes: Double?
     let createdAt: Double?
     let expiresAt: Double?
     let filename: String?
@@ -41,7 +41,7 @@ private struct FileResponse: Codable, Sendable {
         var fields: [String: JSONValue] = [:]
         if let filename { fields["filename"] = .string(filename) }
         if let purpose { fields["purpose"] = .string(purpose) }
-        if let bytes { fields["bytes"] = .number(Double(bytes)) }
+        if let bytes { fields["bytes"] = .number(bytes) }
         if let createdAt { fields["createdAt"] = .number(createdAt) }
         if let expiresAt { fields["expiresAt"] = .number(expiresAt) }
         if let status { fields["status"] = .string(status) }

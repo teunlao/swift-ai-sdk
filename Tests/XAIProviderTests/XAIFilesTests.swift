@@ -24,13 +24,14 @@ struct XAIFilesTests {
             #expect(expiry.lowerBound < file.lowerBound)
             #expect(body.contains("filename=\"notes.txt\""))
             #expect(body.contains("hello"))
-            return response(request, #"{"id":"file-1","filename":"stored.txt","bytes":5,"created_at":1000,"expires_at":4600,"purpose":"assistant","status":"ready"}"#)
+            return response(request, #"{"id":"file-1","filename":"stored.txt","bytes":5.5,"created_at":1000,"expires_at":4600,"purpose":"assistant","status":"ready"}"#)
         }
         let result = try await files.uploadFile(options: .init(data: .text("hello"), mediaType: "text/plain", filename: "notes.txt", providerOptions: ["xai": ["teamId": .string("team"), "expiresAfter": .number(3600)]]))
         #expect(result.providerReference == ["xai": "file-1"])
         #expect(result.filename == "stored.txt")
         #expect(result.mediaType == "text/plain")
-        #expect(result.byteSize == 5)
+        #expect(result.byteSize == 5.5)
+        #expect(result.providerMetadata?["xai"]?["bytes"] == .number(5.5))
         #expect(result.createdAt == Date(timeIntervalSince1970: 1000))
         #expect(result.expiresAt == Date(timeIntervalSince1970: 4600))
         #expect(result.providerMetadata?["xai"]?["purpose"] == .string("assistant"))
@@ -85,11 +86,12 @@ struct XAIFilesTests {
                 #expect(request.value(forHTTPHeaderField: "X-Caller") == "files-client")
                 return response(request, "downloaded", type: "text/plain; charset=utf-8")
             }
-            return response(request, #"{"id":"..","filename":"notes.txt","bytes":10,"created_at":1,"expires_at":2}"#)
+            return response(request, #"{"id":"..","filename":"notes.txt","bytes":1e20,"created_at":1,"expires_at":2}"#)
         }
         let metadata = try await files.getFileMetadata(options: .init(file: ["xai": ".."]))
         #expect(metadata.filename == "notes.txt")
-        #expect(metadata.byteSize == 10)
+        #expect(metadata.byteSize == 1e20)
+        #expect(metadata.providerMetadata?["xai"]?["bytes"] == .number(1e20))
         let download = try await files.downloadFile(options: .init(file: ["xai": ".."], headers: ["X-Caller": "files-client"]))
         var data = Data()
         for try await chunk in download.content { data.append(chunk) }

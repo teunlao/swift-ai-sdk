@@ -12,7 +12,7 @@ public struct FilesV4UploadFileResult: Sendable, Equatable {
     public let mediaType: String?
     public let filename: String?
     /// Size of the uploaded file in bytes, if reported.
-    public let byteSize: Int?
+    public let byteSize: Double?
     /// When the file was created, if reported.
     public let createdAt: Date?
     /// When the provider will delete the file (retention expiry), if reported.
@@ -24,7 +24,7 @@ public struct FilesV4UploadFileResult: Sendable, Equatable {
         providerReference: SharedV4ProviderReference,
         mediaType: String? = nil,
         filename: String? = nil,
-        byteSize: Int? = nil,
+        byteSize: Double? = nil,
         createdAt: Date? = nil,
         expiresAt: Date? = nil,
         providerMetadata: SharedV4ProviderMetadata? = nil,

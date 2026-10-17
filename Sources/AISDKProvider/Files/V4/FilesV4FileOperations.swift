@@ -42,7 +42,7 @@ public struct FilesV4GetFileMetadataResult: Sendable, Equatable {
     public let providerReference: SharedV4ProviderReference
     public let filename: String?
     public let mediaType: String?
-    public let byteSize: Int?
+    public let byteSize: Double?
     public let createdAt: Date?
     public let expiresAt: Date?
     public let providerMetadata: SharedV4ProviderMetadata?
@@ -52,7 +52,7 @@ public struct FilesV4GetFileMetadataResult: Sendable, Equatable {
         providerReference: SharedV4ProviderReference,
         filename: String? = nil,
         mediaType: String? = nil,
-        byteSize: Int? = nil,
+        byteSize: Double? = nil,
         createdAt: Date? = nil,
         expiresAt: Date? = nil,
         providerMetadata: SharedV4ProviderMetadata? = nil,

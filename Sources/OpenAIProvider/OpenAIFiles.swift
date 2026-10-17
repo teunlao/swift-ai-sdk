@@ -66,7 +66,7 @@ let openAIFilesOptionsSchema = FlexibleSchema<OpenAIFilesOptions>(
 private struct OpenAIFileResponse: Codable, Sendable {
     let id: String
     let object: String?
-    let bytes: Int?
+    let bytes: Double?
     let createdAt: Double?
     let filename: String?
     let purpose: String?
@@ -253,7 +253,7 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
         var value: JSONObject = [:]
         if let filename = response.filename { value["filename"] = .string(filename) }
         if let purpose = response.purpose { value["purpose"] = .string(purpose) }
-        if let bytes = response.bytes { value["bytes"] = .number(Double(bytes)) }
+        if let bytes = response.bytes { value["bytes"] = .number(bytes) }
         if let createdAt = response.createdAt { value["createdAt"] = .number(createdAt) }
         if let status = response.status { value["status"] = .string(status) }
         if let expiresAt = response.expiresAt { value["expiresAt"] = .number(expiresAt) }

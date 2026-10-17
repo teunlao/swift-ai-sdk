@@ -175,7 +175,7 @@ struct OpenAIFilesSkillsTests {
                 [
                     "id": "file-xyz789",
                     "object": "file",
-                    "bytes": 1024,
+                    "bytes": 1024.5,
                     "created_at": 1_700_000_000.5,
                     "filename": "test.csv",
                     "purpose": "assistants",
@@ -237,8 +237,8 @@ struct OpenAIFilesSkillsTests {
         #expect(result.mediaType == "application/octet-stream")
         #expect(result.providerMetadata?["openai"]?["filename"] == .string("test.csv"))
         #expect(result.providerMetadata?["openai"]?["purpose"] == .string("assistants"))
-        #expect(result.providerMetadata?["openai"]?["bytes"] == .number(1024))
-        #expect(result.byteSize == 1024)
+        #expect(result.providerMetadata?["openai"]?["bytes"] == .number(1024.5))
+        #expect(result.byteSize == 1024.5)
         #expect(result.createdAt == Date(timeIntervalSince1970: 1_700_000_000.5))
         #expect(result.expiresAt == Date(timeIntervalSince1970: 1_700_003_600))
         #expect(result.providerMetadata?["openai"]?["createdAt"] == .number(1_700_000_000.5))
@@ -426,7 +426,7 @@ struct OpenAIFilesSkillsTests {
             baseURL: "https://files.example.test/v1", apiKey: "test-api-key",
             headers: ["X-File": "configured"],
             fetch: openAIFetch(capture: capture) { _ in
-                ["id": fileId, "filename": "", "bytes": 0, "created_at": 1.5, "expires_at": NSNull()]
+                ["id": fileId, "filename": "", "bytes": 1e20, "created_at": 1.5, "expires_at": NSNull()]
             }
         ))
         let files = try #require(try provider.files())
@@ -440,7 +440,8 @@ struct OpenAIFilesSkillsTests {
         #expect(request.value(forHTTPHeaderField: "X-File") == "per-call")
         #expect(result.providerReference == ["openai": fileId])
         #expect(result.filename == "")
-        #expect(result.byteSize == 0)
+        #expect(result.byteSize == 1e20)
+        #expect(result.providerMetadata?["openai"]?["bytes"] == .number(1e20))
         #expect(result.createdAt == Date(timeIntervalSince1970: 1.5))
         #expect(result.expiresAt == nil)
         #expect(result.providerMetadata?["openai"]?["createdAt"] == .number(1.5))
