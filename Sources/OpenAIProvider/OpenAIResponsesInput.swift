@@ -18,6 +18,7 @@ struct OpenAIResponsesInputBuilder {
         hasLocalShellTool: Bool = false,
         hasShellTool: Bool = false,
         hasApplyPatchTool: Bool = false,
+        hasComputerTool: Bool = false,
         explicitMessageItemType: Bool = false,
         isReasoningModel: Bool = false,
         toolSearchToolName: String? = nil
@@ -149,6 +150,7 @@ struct OpenAIResponsesInputBuilder {
                         }
                         let isProviderDefined = (hasLocalShellTool && resolvedToolName == "local_shell")
                             || (hasShellTool && resolvedToolName == "shell") || (hasApplyPatchTool && resolvedToolName == "apply_patch")
+                            || (hasComputerTool && resolvedToolName == "computer")
                             || customProviderToolNames.contains(Data(resolvedToolName.utf8))
                         if hasPreviousResponseId && store && itemId != nil && isProviderDefined { continue }
                         if store, let itemId, isProviderDefined {
@@ -259,6 +261,12 @@ struct OpenAIResponsesInputBuilder {
                             }
 
                             items.append(.object(payload))
+                            continue
+                        }
+
+                        if hasComputerTool, resolvedToolName == "computer" {
+                            let input = try await validateTypes(ValidateTypesOptions(value: callPart.input, schema: openaiComputerInputSchema))
+                            items.append(input.wireCall(id: itemId, callId: callPart.toolCallId))
                             continue
                         }
 
@@ -577,6 +585,11 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         if case .json(let value, _) = toolResult.output {
+                            if hasComputerTool, resolvedToolName == "computer" {
+                                let parsed = try await validateTypes(ValidateTypesOptions(value: value, schema: openaiComputerOutputSchema))
+                                items.append(computerOutputPayload(parsed, callId: toolResult.toolCallId))
+                                continue
+                            }
                             if hasLocalShellTool, resolvedToolName == "local_shell" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)

@@ -14,6 +14,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     private let providerOptionsName: String
     private static let providerToolNames: [String: String] = [
         "openai.code_interpreter": "code_interpreter",
+        "openai.computer": "computer",
         "openai.file_search": "file_search",
         "openai.image_generation": "image_generation",
         "openai.local_shell": "local_shell",
@@ -528,6 +529,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             hasLocalShellTool: hasLocalShellTool,
             hasShellTool: hasShellTool,
             hasApplyPatchTool: hasApplyPatchTool,
+            hasComputerTool: containsProviderTool(options.tools, id: "openai.computer"),
             explicitMessageItemType: config.explicitMessageItemType ?? false,
             isReasoningModel: isReasoningModel,
             toolSearchToolName: toolSearchToolName
@@ -1131,6 +1133,16 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 )))
 
             case "computer_call":
+                if let callId = object["call_id"]?.stringValue {
+                    hasFunctionCall = true
+                    content.append(.toolCall(LanguageModelV4ToolCall(
+                        toolCallId: callId,
+                        toolName: toolNameMapping.toCustomToolName("computer"),
+                        input: try openAIJSONStringify(mapOpenAIComputerCallInput(object)),
+                        providerMetadata: openAIProviderMetadata(["itemId": object["id"]!])
+                    )))
+                    continue
+                }
                 guard let toolCallId = object["id"]?.stringValue else { continue }
                 let status = object["status"]?.stringValue ?? "completed"
 
@@ -1695,12 +1707,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 providerMetadata: nil
             )))
         case "computer_call":
-            guard let callId = item["id"]?.stringValue else { return }
-            let toolName = toolNameMapping.toCustomToolName("computer_use")
+            guard let callId = item["call_id"]?.stringValue ?? item["id"]?.stringValue else { return }
+            let toolName = toolNameMapping.toCustomToolName("computer")
             ongoingToolCalls[outputIndex] = ToolCallState(
                 toolName: toolName,
                 toolCallId: callId,
-                providerExecuted: true,
+                providerExecuted: false,
                 codeInterpreter: nil,
                 applyPatch: nil
             )
@@ -1708,7 +1720,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 id: callId,
                 toolName: toolName,
                 providerMetadata: nil,
-                providerExecuted: true,
+                providerExecuted: nil,
                 dynamic: nil,
                 title: nil
             ))
@@ -2016,8 +2028,19 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 providerMetadata: nil
             )))
         case "computer_call":
-            guard let callId = item["id"]?.stringValue else { return }
             ongoingToolCalls[outputIndex] = nil
+            if let callId = item["call_id"]?.stringValue {
+                hasFunctionCall = true
+                let input = try openAIJSONStringify(mapOpenAIComputerCallInput(item))
+                continuation.yield(.toolInputDelta(id: callId, delta: input, providerMetadata: nil))
+                continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
+                continuation.yield(.toolCall(LanguageModelV4ToolCall(
+                    toolCallId: callId, toolName: toolNameMapping.toCustomToolName("computer"), input: input,
+                    providerMetadata: openAIProviderMetadata(["itemId": item["id"]!])
+                )))
+                return
+            }
+            guard let callId = item["id"]?.stringValue else { return }
             continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
             let toolName = toolNameMapping.toCustomToolName("computer_use")
             continuation.yield(.toolCall(LanguageModelV4ToolCall(

@@ -3399,7 +3399,8 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV4Tool.provider(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
+        let definition = openaiTools.computer()
+        let tool = LanguageModelV4Tool.provider(.init(id: definition.id!, name: definition.name!, args: definition.args ?? [:]))
 
         let streamResult = try await model.doStream(
             options: LanguageModelV4CallOptions(
@@ -3415,7 +3416,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(parts.contains { part in
             if case .toolInputStart(let id, let name, _, let executed, _, _, _) = part {
-                return id == "computer_call" && name == "computer_use" && executed == true
+                return id == "computer_call" && name == "computer" && executed == nil
             }
             return false
         })
@@ -8322,12 +8323,9 @@ struct OpenAIResponsesLanguageModelTests {
             )
         ]
 
+        let definition = openaiTools.computer()
         let tools: [LanguageModelV4Tool] = [
-            .provider(LanguageModelV4ProviderTool(
-                id: "openai.computer_use",
-                name: "computer_use",
-                args: [:]
-            ))
+            .provider(.init(id: definition.id!, name: definition.name!, args: definition.args ?? [:]))
         ]
 
         let result = try await model.doGenerate(

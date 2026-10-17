@@ -149,6 +149,9 @@ func prepareOpenAIResponsesTools(
                     "type": .string("apply_patch")
                 ]))
 
+            case "openai.computer":
+                openAITools.append(.object(["type": .string("computer")]))
+
             case "openai.web_search_preview":
                 let parsed = try await validateTypes(
                     ValidateTypesOptions(value: providerTool.args, schema: openaiWebSearchPreviewArgsSchema)
@@ -474,7 +477,7 @@ private func allowedToolResolution(_ tool: JSONValue) -> AllowedToolResolution {
     switch type {
     case "custom": return .supported(type: type, identity: object["name"]?.stringValue)
     case "mcp": return .supported(type: type, identity: object["server_label"]?.stringValue)
-    case "file_search", "web_search", "web_search_preview", "image_generation", "code_interpreter", "apply_patch", "shell", "local_shell":
+    case "file_search", "web_search", "web_search_preview", "image_generation", "code_interpreter", "apply_patch", "shell", "local_shell", "computer":
         return .supported(type: type)
     default: return .unsupported("OpenAI does not support \(type) tools in tool_choice.allowed_tools")
     }
@@ -712,7 +715,7 @@ private func mapToolChoice(
         return .string("required")
     case .tool(let toolName):
         let resolvedToolName = toolNameMapping.toProviderToolName(toolName)
-        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"].contains(resolvedToolName) {
+        if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch", "computer"].contains(resolvedToolName) {
             return .object(["type": .string(resolvedToolName)])
         }
         if customProviderToolNames.contains(Data(resolvedToolName.utf8)) {

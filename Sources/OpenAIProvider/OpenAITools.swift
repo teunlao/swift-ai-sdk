@@ -6,6 +6,11 @@ public struct OpenAITools: Sendable {
     public init() {}
 
     @discardableResult
+    public func computer(_ options: ProviderDefinedToolFactoryWithOutputSchemaOptions = .init()) -> Tool {
+        openaiComputerTool(options)
+    }
+
+    @discardableResult
     public func codeInterpreter(_ args: OpenAICodeInterpreterArgs = .init()) -> Tool {
         openaiCodeInterpreterToolFactory(args)
     }
