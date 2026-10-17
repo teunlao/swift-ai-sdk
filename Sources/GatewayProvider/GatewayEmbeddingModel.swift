@@ -2,16 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/gateway/src/gateway-embedding-model.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
-public final class GatewayEmbeddingModel: EmbeddingModelV3 {
-    public typealias VALUE = String
-
+public final class GatewayEmbeddingModel: EmbeddingModelV4 {
     private let modelIdentifier: GatewayEmbeddingModelId
     private let config: GatewayEmbeddingModelConfig
 
@@ -20,123 +11,51 @@ public final class GatewayEmbeddingModel: EmbeddingModelV3 {
         self.config = config
     }
 
-    public var specificationVersion: String { "v3" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
+    public var maxEmbeddingsPerCall: Int? { get async throws { 2048 } }
+    public var supportsParallelCalls: Bool { get async throws { true } }
 
-    public var maxEmbeddingsPerCall: Int? {
-        get async throws { 2048 }
-    }
-
-    public var supportsParallelCalls: Bool {
-        get async throws { true }
-    }
-
-    public func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
-        let values = options.values
-
-        let resolvedHeaders = try await resolve(config.headers)
-        let authMethod = parseAuthMethod(from: resolvedHeaders.compactMapValues { $0 })
-        let o11yHeaders = try await resolve(config.o11yHeaders)
-        let requestHeaders = combineHeaders(
-            resolvedHeaders,
-            options.headers?.mapValues { Optional($0) },
-            getModelConfigHeaders(),
-            o11yHeaders
-        ).compactMapValues { $0 }
-
-        var body: [String: JSONValue] = [
-            "values": .array(values.map { .string($0) })
-        ]
-
-        if let providerOptions = options.providerOptions {
-            body["providerOptions"] = .object(providerOptions.mapValues { .object($0) })
-        }
-
+    public func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
+        let headers = try await config.headers()
         do {
+            let body = GatewayEmbeddingRequest(values: options.values, dimensions: options.dimensions, providerOptions: options.providerOptions)
             let response = try await postJsonToAPI(
-                url: getUrl(),
-                headers: requestHeaders,
-                body: JSONValue.object(body),
+                url: "\(config.baseURL)/embedding-model",
+                headers: combineHeaders(
+                    headers,
+                    options.headers?.mapValues { Optional($0) },
+                    ["ai-embedding-model-specification-version": "4", "ai-model-id": modelId],
+                    try await config.o11yHeaders()
+                ).compactMapValues { $0 },
+                body: try gatewayJSON(body),
                 failedResponseHandler: makeGatewayFailedResponseHandler(),
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewayEmbeddingResponseSchema),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewaySchema(GatewayEmbeddingResponse.self)),
                 isAborted: options.abortSignal,
                 fetch: config.fetch
             )
-
-            let responseInfo = EmbeddingModelV3ResponseInfo(
-                headers: response.responseHeaders,
-                body: response.rawValue
-            )
-
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: response.value.embeddings,
                 usage: response.value.usage,
                 providerMetadata: response.value.providerMetadata,
-                response: responseInfo
+                response: .init(headers: response.responseHeaders, body: response.rawValue),
+                warnings: response.value.warnings ?? []
             )
         } catch {
-            throw asGatewayError(error, authMethod: authMethod)
+            throw asGatewayError(error, authMethod: parseAuthMethod(from: headers.compactMapValues { $0 }))
         }
     }
+}
 
-    private func getUrl() -> String {
-        "\(config.baseURL)/embedding-model"
-    }
-
-    private func getModelConfigHeaders() -> [String: String?] {
-        [
-            "ai-embedding-model-specification-version": "3",
-            "ai-model-id": modelIdentifier.rawValue
-        ]
-    }
+private struct GatewayEmbeddingRequest: Encodable {
+    let values: [String]
+    let dimensions: Int?
+    let providerOptions: SharedV4ProviderOptions?
 }
 
 private struct GatewayEmbeddingResponse: Decodable, Sendable {
     let embeddings: [[Double]]
-    let usage: EmbeddingModelV3Usage?
-    let providerMetadata: SharedV3ProviderMetadata?
-
-    private enum CodingKeys: String, CodingKey {
-        case embeddings
-        case usage
-        case providerMetadata
-    }
-
-    private enum UsageCodingKeys: String, CodingKey {
-        case tokens
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        embeddings = try container.decode([[Double]].self, forKey: .embeddings)
-
-        if container.contains(.usage) {
-            if try container.decodeNil(forKey: .usage) {
-                usage = nil
-            } else if let usageContainer = try? container.nestedContainer(keyedBy: UsageCodingKeys.self, forKey: .usage) {
-                let tokens = try usageContainer.decode(Int.self, forKey: .tokens)
-                usage = EmbeddingModelV3Usage(tokens: tokens)
-            } else if let tokens = try? container.decode(Int.self, forKey: .usage) {
-                usage = EmbeddingModelV3Usage(tokens: tokens)
-            } else {
-                usage = nil
-            }
-        } else {
-            usage = nil
-        }
-
-        providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
-    }
+    let usage: EmbeddingModelV4Usage?
+    let providerMetadata: SharedV4ProviderMetadata?
+    let warnings: [SharedV4Warning]?
 }
-
-private let gatewayEmbeddingResponseSchema = FlexibleSchema(
-    Schema<GatewayEmbeddingResponse>.codable(
-        GatewayEmbeddingResponse.self,
-        jsonSchema: .object(["type": .string("object")]),
-        configureDecoder: { decoder in
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return decoder
-        }
-    )
-)

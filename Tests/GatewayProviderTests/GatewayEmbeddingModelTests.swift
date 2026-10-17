@@ -98,7 +98,7 @@ struct GatewayEmbeddingModelTests {
         let headers = normalizedHeaders(request)
         #expect(headers["authorization"] == "Bearer test-token")
         #expect(headers["custom-header"] == "test-value")
-        #expect(headers["ai-embedding-model-specification-version"] == "3")
+        #expect(headers["ai-embedding-model-specification-version"] == "4")
         #expect(headers["ai-model-id"] == "openai/text-embedding-3-small")
         for (key, value) in o11yHeaders {
             #expect(headers[key] == value)

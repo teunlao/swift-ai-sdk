@@ -2,13 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/gateway/src/gateway-provider.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
 private let AI_GATEWAY_PROTOCOL_VERSION = "0.0.1"
 
 public struct GatewayProviderSettings: Sendable {
@@ -22,6 +15,7 @@ public struct GatewayProviderSettings: Sendable {
 
     public var baseURL: String?
     public var apiKey: String?
+    public var teamIdOrSlug: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
     public var metadataCacheRefreshMillis: Int?
@@ -30,6 +24,7 @@ public struct GatewayProviderSettings: Sendable {
     public init(
         baseURL: String? = nil,
         apiKey: String? = nil,
+        teamIdOrSlug: String? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
         metadataCacheRefreshMillis: Int? = nil,
@@ -37,6 +32,7 @@ public struct GatewayProviderSettings: Sendable {
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.teamIdOrSlug = teamIdOrSlug
         self.headers = headers
         self.fetch = fetch
         self.metadataCacheRefreshMillis = metadataCacheRefreshMillis
@@ -69,34 +65,20 @@ actor GatewayMetadataCache {
         currentDate: Date,
         fetcher: @escaping @Sendable () async throws -> GatewayFetchMetadataResponse
     ) async throws -> GatewayFetchMetadataResponse {
-        if refreshInterval > 0,
-           let cached,
-           let lastFetch,
-           currentDate.timeIntervalSince(lastFetch) <= refreshInterval {
-            return cached
-        }
-
-        if let task = pendingTask {
-            return try await task.value
-        }
-
-        let task = Task { try await fetcher() }
-        pendingTask = task
-
-        do {
-            let result = try await task.value
-            cached = result
+        if pendingTask == nil || currentDate.timeIntervalSince(lastFetch ?? .distantPast) > refreshInterval {
             lastFetch = currentDate
-            pendingTask = nil
-            return result
-        } catch {
-            pendingTask = nil
-            throw error
+            pendingTask = Task {
+                let result = try await fetcher()
+                self.cached = result
+                return result
+            }
         }
+        if let cached { return cached }
+        return try await pendingTask!.value
     }
 }
 
-public final class GatewayProvider: ProviderV3 {
+public final class GatewayProvider: ProviderV4 {
     private let languageFactory: @Sendable (GatewayModelId) -> GatewayLanguageModel
     private let embeddingFactory: @Sendable (GatewayEmbeddingModelId) -> GatewayEmbeddingModel
     private let imageFactory: @Sendable (GatewayImageModelId) -> GatewayImageModel
@@ -105,6 +87,8 @@ public final class GatewayProvider: ProviderV3 {
     private let metadataCache: GatewayMetadataCache
     private let metadataRefreshInterval: TimeInterval
     private let currentDate: @Sendable () -> Date
+    private let modelConfig: GatewayModelConfig
+    private let metadataConfig: GatewayConfig
     public let tools: GatewayTools
 
     init(
@@ -116,7 +100,9 @@ public final class GatewayProvider: ProviderV3 {
         metadataFetcher: GatewayFetchMetadata,
         metadataCache: GatewayMetadataCache,
         metadataRefreshInterval: TimeInterval,
-        currentDate: @escaping @Sendable () -> Date
+        currentDate: @escaping @Sendable () -> Date,
+        modelConfig: GatewayModelConfig,
+        metadataConfig: GatewayConfig
     ) {
         self.languageFactory = languageFactory
         self.embeddingFactory = embeddingFactory
@@ -127,25 +113,27 @@ public final class GatewayProvider: ProviderV3 {
         self.metadataCache = metadataCache
         self.metadataRefreshInterval = metadataRefreshInterval
         self.currentDate = currentDate
+        self.modelConfig = modelConfig
+        self.metadataConfig = metadataConfig
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
         languageFactory(GatewayModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         embeddingFactory(GatewayEmbeddingModelId(rawValue: modelId))
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         imageFactory(GatewayImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV3)? {
+    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
         videoFactory(GatewayVideoModelId(rawValue: modelId))
     }
 
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
+    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
         try languageModel(modelId: modelId)
     }
 
@@ -155,7 +143,7 @@ public final class GatewayProvider: ProviderV3 {
         languageFactory(modelId)
     }
 
-    public func textEmbedding(modelId: GatewayEmbeddingModelId) -> GatewayEmbeddingModel {
+    public func embeddingModel(modelId: GatewayEmbeddingModelId) -> GatewayEmbeddingModel {
         embeddingFactory(modelId)
     }
 
@@ -165,6 +153,46 @@ public final class GatewayProvider: ProviderV3 {
 
     public func videoModel(modelId: GatewayVideoModelId) -> GatewayVideoModel {
         videoFactory(modelId)
+    }
+
+    public func chat(modelId: String) -> GatewayLanguageModel {
+        languageFactory(.init(rawValue: modelId))
+    }
+
+    public func embedding(modelId: String) -> GatewayEmbeddingModel {
+        embeddingFactory(.init(rawValue: modelId))
+    }
+
+    public func image(modelId: String) -> GatewayImageModel {
+        imageFactory(.init(rawValue: modelId))
+    }
+
+    public func video(modelId: String) -> GatewayVideoModel {
+        videoFactory(.init(rawValue: modelId))
+    }
+
+    public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
+        speech(modelId: modelId)
+    }
+
+    public func speechModel(modelId: GatewaySpeechModelId) -> GatewaySpeechModel {
+        speech(modelId: modelId.rawValue)
+    }
+
+    public func speech(modelId: String) -> GatewaySpeechModel {
+        GatewaySpeechModel(modelId: modelId, config: modelConfig)
+    }
+
+    public func rerankingModel(modelId: String) throws -> (any RerankingModelV4)? {
+        reranking(modelId: modelId)
+    }
+
+    public func rerankingModel(modelId: GatewayRerankingModelId) -> GatewayRerankingModel {
+        reranking(modelId: modelId.rawValue)
+    }
+
+    public func reranking(modelId: String) -> GatewayRerankingModel {
+        GatewayRerankingModel(modelId: modelId, config: modelConfig)
     }
 
     // MARK: - Metadata
@@ -180,10 +208,18 @@ public final class GatewayProvider: ProviderV3 {
     public func getCredits() async throws -> GatewayCreditsResponse {
         try await metadataFetcher.getCredits()
     }
+
+    public func getSpendReport(_ params: GatewaySpendReportParams) async throws -> GatewaySpendReportResponse {
+        try await GatewaySpendReport(config: metadataConfig).getSpendReport(params)
+    }
+
+    public func getGenerationInfo(_ params: GatewayGenerationInfoParams) async throws -> GatewayGenerationInfo {
+        try await GatewayGenerationInfoFetcher(config: metadataConfig).getGenerationInfo(params)
+    }
 }
 
-public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -> GatewayProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://ai-gateway.vercel.sh/v3/ai"
+public func createGateway(settings: GatewayProviderSettings = .init()) -> GatewayProvider {
+    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://ai-gateway.vercel.sh/v4/ai"
     let fetch = settings.fetch
     let currentDateClosure: @Sendable () -> Date
     if let custom = settings._internal?.currentDate {
@@ -205,6 +241,9 @@ public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -
         }
         if let region = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_REGION") {
             headers["ai-o11y-region"] = region
+        }
+        if let projectId = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_PROJECT_ID") {
+            headers["ai-o11y-project-id"] = projectId
         }
         if let requestId = await getVercelRequestId() {
             headers["ai-o11y-request-id"] = requestId
@@ -278,16 +317,13 @@ public func createGatewayProvider(settings: GatewayProviderSettings = .init()) -
         metadataFetcher: metadataFetcher,
         metadataCache: metadataCache,
         metadataRefreshInterval: refreshInterval,
-        currentDate: currentDateClosure
+        currentDate: currentDateClosure,
+        modelConfig: GatewayModelConfig(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders, currentDate: currentDateClosure),
+        metadataConfig: metadataConfig
     )
 }
 
-/// Alias matching the upstream naming (`createGateway`).
-public func createGateway(settings: GatewayProviderSettings = .init()) -> GatewayProvider {
-    createGatewayProvider(settings: settings)
-}
-
-public let gateway = createGatewayProvider()
+public let gateway = createGateway()
 
 /// Resolves the Gateway auth token using the same precedence as upstream:
 /// 1) `settings.apiKey` / `AI_GATEWAY_API_KEY`
@@ -322,13 +358,17 @@ private func makeHeaderClosure(settings: GatewayProviderSettings) -> (@Sendable 
             GATEWAY_AUTH_METHOD_HEADER: authToken.authMethod.rawValue
         ]
 
+        if let teamIdOrSlug = settings.teamIdOrSlug {
+            headerMap["x-vercel-ai-gateway-team"] = teamIdOrSlug
+        }
+
         if let customHeaders = settings.headers {
             for (key, value) in customHeaders {
                 headerMap[key] = value
             }
         }
 
-        let withUA = withUserAgentSuffix(headerMap, "ai-sdk/gateway/\(GATEWAY_VERSION)")
+        let withUA = withUserAgentSuffix(headerMap, "ai-sdk-gateway/\(GATEWAY_VERSION)")
         return withUA.mapValues { Optional($0) }
     }
 

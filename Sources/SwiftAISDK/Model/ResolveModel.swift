@@ -23,8 +23,7 @@ import GatewayProvider
  Swift adaptation: Uses a nonisolated(unsafe) static property instead of JavaScript's `globalThis`.
  In TypeScript, this is `globalThis.AI_SDK_DEFAULT_PROVIDER`.
 
- If no custom provider is set, a default gateway provider should be used
- (gateway functionality is not included in this port, so it must be set explicitly).
+ V4 string model references use the native Gateway provider when no custom provider is set.
 
  Thread safety: This is marked `nonisolated(unsafe)` to match the JavaScript behavior
  where globalThis can be mutated from any context. Users should ensure proper synchronization
@@ -115,7 +114,7 @@ func _resolveGlobalProviderV4(modelId: String, modelType: NoSuchModelError.Model
         if let provider = globalDefaultProvider {
             return asProviderV4(provider)
         }
-        return asProviderV4(gateway)
+        return gateway
     }
 
     throw NoSuchProviderError(

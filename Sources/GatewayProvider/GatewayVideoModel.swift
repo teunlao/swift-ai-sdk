@@ -2,14 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/gateway/src/gateway-video-model.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
-public final class GatewayVideoModel: VideoModelV3 {
+public final class GatewayVideoModel: VideoModelV4Generator, VideoModelV4Operations, VideoModelV4WebhookHandler {
     private let modelIdentifier: GatewayVideoModelId
     private let config: GatewayVideoModelConfig
 
@@ -18,14 +11,14 @@ public final class GatewayVideoModel: VideoModelV3 {
         self.config = config
     }
 
-    public var specificationVersion: String { "v3" }
+    public var specificationVersion: String { "v4" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
     // Set a very large number to prevent client-side splitting of requests
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(Int.max) }
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(Int.max) }
 
-    public func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
+    public func doGenerate(options: VideoModelV4CallOptions) async throws -> VideoModelV4GenerateResult {
         let resolvedHeaders = try await resolve(config.headers)
         let authMethod = parseAuthMethod(from: resolvedHeaders.compactMapValues { $0 })
 
@@ -38,41 +31,7 @@ public final class GatewayVideoModel: VideoModelV3 {
             ["accept": "text/event-stream"]
         ).compactMapValues { $0 }
 
-        var body: [String: JSONValue] = [
-            "n": .number(Double(options.n))
-        ]
-
-        if let prompt = options.prompt {
-            body["prompt"] = .string(prompt)
-        }
-
-        if let aspectRatio = options.aspectRatio {
-            body["aspectRatio"] = .string(aspectRatio)
-        }
-
-        if let resolution = options.resolution {
-            body["resolution"] = .string(resolution)
-        }
-
-        if let duration = options.duration {
-            body["duration"] = .number(Double(duration))
-        }
-
-        if let fps = options.fps {
-            body["fps"] = .number(Double(fps))
-        }
-
-        if let seed = options.seed {
-            body["seed"] = .number(Double(seed))
-        }
-
-        if let providerOptions = options.providerOptions {
-            body["providerOptions"] = .object(providerOptions.mapValues { .object($0) })
-        }
-
-        if let image = options.image {
-            body["image"] = encodeVideoFile(image)
-        }
+        let body = try buildRequestBody(options)
 
         do {
             let response = try await postJsonToAPI(
@@ -85,11 +44,11 @@ public final class GatewayVideoModel: VideoModelV3 {
                 fetch: config.fetch
             )
 
-            return VideoModelV3GenerateResult(
+            return VideoModelV4GenerateResult(
                 videos: response.value.videos.map { $0.asVideoData() },
                 warnings: response.value.warnings ?? [],
                 providerMetadata: response.value.providerMetadata,
-                response: VideoModelV3ResponseInfo(
+                response: VideoModelV4ResponseInfo(
                     timestamp: Date(),
                     modelId: modelIdentifier.rawValue,
                     headers: response.responseHeaders
@@ -100,22 +59,130 @@ public final class GatewayVideoModel: VideoModelV3 {
         }
     }
 
+    public func handleWebhookOption(
+        webhook: @escaping @Sendable () async throws -> VideoModelV4Webhook
+    ) async throws -> VideoModelV4WebhookRegistration {
+        let value = try await webhook()
+        return .init(webhookUrl: value.url, received: value.received)
+    }
+
+    public func doStart(options: VideoModelV4CallOptions, webhookUrl: String? = nil) async throws -> VideoModelV4OperationStartResult {
+        var body = try buildRequestBody(options)
+        if let webhookUrl, !webhookUrl.isEmpty { body["callbackUrl"] = .string(webhookUrl) }
+        let headers = try await config.headers()
+        do {
+            let result = try await postJsonToAPI(
+                url: "\(getUrl())/start",
+                headers: combineHeaders(headers, options.headers?.mapValues { Optional($0) }, getModelConfigHeaders(), try await config.o11yHeaders()).compactMapValues { $0 },
+                body: JSONValue.object(body),
+                failedResponseHandler: makeGatewayFailedResponseHandler(),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewaySchema(GatewayVideoStartResponse.self)),
+                isAborted: options.abortSignal,
+                fetch: config.fetch
+            )
+            return .init(
+                operation: result.value.operation,
+                warnings: result.value.warnings ?? [],
+                providerMetadata: result.value.providerMetadata,
+                response: .init(timestamp: Date(), modelId: modelId, headers: result.responseHeaders)
+            )
+        } catch {
+            throw asGatewayError(error, authMethod: parseAuthMethod(from: headers.compactMapValues { $0 }))
+        }
+    }
+
+    public func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+        let headers = try await config.headers()
+        do {
+            let result = try await postJsonToAPI(
+                url: "\(getUrl())/status",
+                headers: combineHeaders(headers, options.headers?.mapValues { Optional($0) }, getModelConfigHeaders(), try await config.o11yHeaders()).compactMapValues { $0 },
+                body: JSONValue.object(["operation": options.operation]),
+                failedResponseHandler: makeGatewayFailedResponseHandler(),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewaySchema(GatewayVideoStatusResponse.self)),
+                isAborted: options.abortSignal,
+                fetch: config.fetch
+            )
+            let response = VideoModelV4ResponseInfo(timestamp: Date(), modelId: modelId, headers: result.responseHeaders)
+            switch result.value {
+            case .pending(let warnings, let metadata):
+                return .pending(warnings: warnings ?? [], providerMetadata: metadata, response: response)
+            case .completed(let videos, let warnings, let metadata):
+                return .completed(videos: videos.map { $0.asVideoData() }, warnings: warnings ?? [], providerMetadata: metadata, response: response)
+            case .error(let error, let metadata):
+                return .error(error: error, providerMetadata: metadata, response: response)
+            case .cancelled(let metadata):
+                return .error(error: "Video generation was cancelled.", providerMetadata: metadata, response: response)
+            }
+        } catch {
+            throw asGatewayError(error, authMethod: parseAuthMethod(from: headers.compactMapValues { $0 }))
+        }
+    }
+
+    private func buildRequestBody(_ options: VideoModelV4CallOptions) throws -> [String: JSONValue] {
+        var body: [String: JSONValue] = ["n": .number(Double(options.n))]
+        if let prompt = options.prompt { body["prompt"] = .string(prompt) }
+        if let value = options.aspectRatio, !value.isEmpty { body["aspectRatio"] = .string(value) }
+        if let value = options.resolution, !value.isEmpty { body["resolution"] = .string(value) }
+        if let value = options.duration, value != 0 { body["duration"] = .number(Double(value)) }
+        if let value = options.fps, value != 0 { body["fps"] = .number(Double(value)) }
+        if let value = options.seed, value != 0 { body["seed"] = .number(Double(value)) }
+        if let value = options.generateAudio { body["generateAudio"] = .bool(value) }
+        if let value = options.providerOptions { body["providerOptions"] = try gatewayJSON(value) }
+        if let value = options.image { body["image"] = try gatewayJSON(value) }
+        if let value = options.frameImages { body["frameImages"] = try gatewayJSON(value) }
+        if let value = options.inputReferences { body["inputReferences"] = try gatewayJSON(value) }
+        return body
+    }
+
     private func getUrl() -> String {
         "\(config.baseURL)/video-model"
     }
 
     private func getModelConfigHeaders() -> [String: String?] {
         [
-            "ai-video-model-specification-version": "3",
+            "ai-video-model-specification-version": "4",
             "ai-model-id": modelIdentifier.rawValue
         ]
     }
 }
 
+private struct GatewayVideoStartResponse: Decodable, Sendable {
+    let operation: JSONValue
+    let warnings: [SharedV4Warning]?
+    let providerMetadata: SharedV4ProviderMetadata?
+}
+
+private enum GatewayVideoStatusResponse: Decodable, Sendable {
+    case pending([SharedV4Warning]?, SharedV4ProviderMetadata?)
+    case completed([GatewayVideoData], [SharedV4Warning]?, SharedV4ProviderMetadata?)
+    case error(String, SharedV4ProviderMetadata?)
+    case cancelled(SharedV4ProviderMetadata?)
+
+    private enum CodingKeys: String, CodingKey { case status, warnings, providerMetadata, videos, error }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let metadata = try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata)
+        switch try container.decode(String.self, forKey: .status) {
+        case "pending":
+            self = .pending(try container.decodeIfPresent([SharedV4Warning].self, forKey: .warnings), metadata)
+        case "completed":
+            self = .completed(try container.decode([GatewayVideoData].self, forKey: .videos), try container.decodeIfPresent([SharedV4Warning].self, forKey: .warnings), metadata)
+        case "error":
+            self = .error(try container.decode(String.self, forKey: .error), metadata)
+        case "cancelled":
+            self = .cancelled(metadata)
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .status, in: container, debugDescription: "Unknown Gateway video status")
+        }
+    }
+}
+
 private struct GatewayVideoSuccessValue: Sendable {
     let videos: [GatewayVideoData]
-    let warnings: [SharedV3Warning]?
-    let providerMetadata: SharedV3ProviderMetadata?
+    let warnings: [SharedV4Warning]?
+    let providerMetadata: SharedV4ProviderMetadata?
 }
 
 private let gatewayVideoSuccessHandler: ResponseHandler<GatewayVideoSuccessValue> = { input in
@@ -191,7 +258,7 @@ private let gatewayVideoSuccessHandler: ResponseHandler<GatewayVideoSuccessValue
 }
 
 private enum GatewayVideoEvent: Decodable, Sendable {
-    case result(videos: [GatewayVideoData], warnings: [SharedV3Warning]?, providerMetadata: SharedV3ProviderMetadata?)
+    case result(videos: [GatewayVideoData], warnings: [SharedV4Warning]?, providerMetadata: SharedV4ProviderMetadata?)
     case error(message: String, errorType: String, statusCode: Int, param: JSONValue?)
 
     private enum CodingKeys: String, CodingKey {
@@ -212,8 +279,8 @@ private enum GatewayVideoEvent: Decodable, Sendable {
         switch type {
         case "result":
             let videos = try container.decode([GatewayVideoData].self, forKey: .videos)
-            let warnings = try container.decodeIfPresent([SharedV3Warning].self, forKey: .warnings)
-            let providerMetadata = try container.decodeIfPresent(SharedV3ProviderMetadata.self, forKey: .providerMetadata)
+            let warnings = try container.decodeIfPresent([SharedV4Warning].self, forKey: .warnings)
+            let providerMetadata = try container.decodeIfPresent(SharedV4ProviderMetadata.self, forKey: .providerMetadata)
             self = .result(videos: videos, warnings: warnings, providerMetadata: providerMetadata)
 
         case "error":
@@ -265,7 +332,7 @@ private enum GatewayVideoData: Decodable, Sendable, Equatable {
         }
     }
 
-    func asVideoData() -> VideoModelV3VideoData {
+    func asVideoData() -> VideoModelV4VideoData {
         switch self {
         case .url(let url, let mediaType):
             return .url(url: url, mediaType: mediaType)
@@ -275,54 +342,7 @@ private enum GatewayVideoData: Decodable, Sendable, Equatable {
     }
 }
 
-private let gatewayVideoEventSchema = FlexibleSchema(
-    Schema<GatewayVideoEvent>.codable(
-        GatewayVideoEvent.self,
-        jsonSchema: .object(["type": .string("object")]),
-        configureDecoder: { decoder in
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return decoder
-        }
-    )
-)
-
-private func encodeVideoFile(_ file: VideoModelV3File) -> JSONValue {
-    switch file {
-    case let .file(mediaType, data, providerOptions):
-        var payload: [String: JSONValue] = [
-            "type": .string("file"),
-            "mediaType": .string(mediaType),
-            "data": .string(encodedVideoFileData(data))
-        ]
-
-        if let providerOptions {
-            payload["providerOptions"] = .object(providerOptions.mapValues { .object($0) })
-        }
-
-        return .object(payload)
-
-    case let .url(url, providerOptions):
-        var payload: [String: JSONValue] = [
-            "type": .string("url"),
-            "url": .string(url)
-        ]
-
-        if let providerOptions {
-            payload["providerOptions"] = .object(providerOptions.mapValues { .object($0) })
-        }
-
-        return .object(payload)
-    }
-}
-
-private func encodedVideoFileData(_ data: VideoModelV3FileData) -> String {
-    switch data {
-    case .base64(let string):
-        return string
-    case .binary(let binary):
-        return binary.base64EncodedString()
-    }
-}
+private let gatewayVideoEventSchema = gatewaySchema(GatewayVideoEvent.self)
 
 private func jsonStringForVideoEventError(
     message: String,

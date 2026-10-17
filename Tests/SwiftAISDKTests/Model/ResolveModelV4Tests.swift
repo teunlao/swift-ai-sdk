@@ -52,6 +52,10 @@ struct ResolveModelV4Tests {
         let model = try resolveEmbeddingModelV4(.string("openai/text-embedding-3-small"))
         #expect(model.provider == "gateway")
         #expect(model.modelId == "openai/text-embedding-3-small")
+        #expect(model is GatewayEmbeddingModel)
+        let language = try resolveLanguageModelV4(.string("anthropic/claude-sonnet-4.6"))
+        #expect(language is GatewayLanguageModel)
+        #expect(language.modelId == "anthropic/claude-sonnet-4.6")
     }
 
     @Test("adapts a ProviderV3 through the ProviderV4 surface")

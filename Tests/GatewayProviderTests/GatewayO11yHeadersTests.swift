@@ -60,9 +60,9 @@ struct GatewayO11yHeadersTests {
         let capture = RequestCapture()
 
         let responseBody: [String: Any] = [
-            "content": ["type": "text", "text": "ok"],
-            "finish_reason": "stop",
-            "usage": ["prompt_tokens": 1, "completion_tokens": 1],
+            "content": [["type": "text", "text": "ok"]],
+            "finishReason": ["unified": "stop"],
+            "usage": ["inputTokens": ["total": 1], "outputTokens": ["total": 1]],
         ]
         let responseData = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
 
@@ -78,10 +78,10 @@ struct GatewayO11yHeadersTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let provider = createGatewayProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
+        let provider = createGateway(settings: .init(apiKey: "test-api-key", fetch: fetch))
         let model = provider.languageModel(modelId: GatewayModelId(rawValue: "test-model"))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
         ]
 

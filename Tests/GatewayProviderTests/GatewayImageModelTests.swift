@@ -65,7 +65,7 @@ struct GatewayImageModelTests {
         let model = makeModel(fetch: fetch)
         #expect(model.modelId == "google/imagen-4.0-generate-001")
         #expect(model.provider == "gateway")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
 
         guard case .value(let max) = model.maxImagesPerCall else {
             Issue.record("Expected fixed maxImagesPerCall")
@@ -126,7 +126,7 @@ struct GatewayImageModelTests {
         let headers = normalizedHeaders(request)
         #expect(headers["authorization"] == "Bearer test-token")
         #expect(headers["custom-header"] == "test-value")
-        #expect(headers["ai-image-model-specification-version"] == "3")
+        #expect(headers["ai-image-model-specification-version"] == "4")
         #expect(headers["ai-model-id"] == "google/imagen-4.0-generate-001")
         for (key, value) in o11yHeaders {
             #expect(headers[key] == value)
@@ -157,7 +157,7 @@ struct GatewayImageModelTests {
         #expect(result.response.headers?["content-type"] == "application/json")
         #expect(result.response.headers?["x-test"] == "1")
 
-        #expect(result.usage == ImageModelV3Usage(inputTokens: 27, outputTokens: 6240, totalTokens: 6267))
+        #expect(result.usage == ImageModelV4Usage(inputTokens: 27, outputTokens: 6240, totalTokens: 6267))
     }
 
     @Test("doGenerate omits optional parameters when not provided (but includes empty providerOptions)")
@@ -196,7 +196,7 @@ struct GatewayImageModelTests {
         #expect(json["mask"] == nil)
     }
 
-    @Test("doGenerate encodes ImageModelV3File binary data to base64 strings and preserves providerOptions")
+    @Test("doGenerate encodes ImageModelV4File binary data to base64 strings and preserves providerOptions")
     func doGenerateEncodesFiles() async throws {
         let capture = RequestCapture()
 
@@ -213,7 +213,6 @@ struct GatewayImageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: "Test prompt",
             n: 1,
-            providerOptions: [:],
             files: [
                 .file(
                     mediaType: "image/png",
@@ -227,7 +226,8 @@ struct GatewayImageModelTests {
                 ),
                 .url(url: "https://example.com/image.png", providerOptions: nil),
             ],
-            mask: .file(mediaType: "image/png", data: .binary(binary), providerOptions: nil)
+            mask: .file(mediaType: "image/png", data: .binary(binary), providerOptions: nil),
+            providerOptions: [:]
         ))
 
         guard let request = await capture.current(),
@@ -261,7 +261,7 @@ struct GatewayImageModelTests {
         #expect(mask["data"] as? String == expectedBase64)
     }
 
-    @Test("doGenerate converts gateway providerMetadata into ImageModelV3ProviderMetadataValue")
+    @Test("doGenerate converts gateway providerMetadata into ImageModelV4ProviderMetadataValue")
     func doGenerateProviderMetadataConversion() async throws {
         let responseBody: [String: Any] = [
             "images": ["base64-1"],

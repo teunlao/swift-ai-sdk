@@ -78,12 +78,13 @@ struct GatewayLanguageModelTests {
             "id": "test-id",
             "created": 1_711_115_037,
             "model": "test-model",
-            "content": ["type": "text", "text": "Hello, World!"],
-            "finish_reason": "stop",
+            "content": [["type": "text", "text": "Hello, World!"]],
+            "finishReason": ["unified": "stop", "raw": "stop"],
             "usage": [
-                "prompt_tokens": 4,
-                "completion_tokens": 30,
+                "inputTokens": ["total": 4, "noCache": 4],
+                "outputTokens": ["total": 30, "text": 30],
             ],
+            "warnings": [["type": "compatibility", "feature": "reasoning", "details": "provider default"]],
         ]
 
         let responseData = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
@@ -104,8 +105,8 @@ struct GatewayLanguageModelTests {
 
         let controller = AbortController()
 
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
         ]
 
         let result = try await model.doGenerate(options: .init(
@@ -127,7 +128,7 @@ struct GatewayLanguageModelTests {
         let headers = normalizedHeaders(request)
         #expect(headers["authorization"] == "Bearer test-token")
         #expect(headers["custom-header"] == "test-value")
-        #expect(headers["ai-language-model-specification-version"] == "3")
+        #expect(headers["ai-language-model-specification-version"] == "4")
         #expect(headers["ai-language-model-id"] == "test-model")
         #expect(headers["ai-language-model-streaming"] == "false")
         for (key, value) in o11yHeaders {
@@ -143,6 +144,7 @@ struct GatewayLanguageModelTests {
             Issue.record("Expected text content")
         }
 
+        #expect(result.warnings == [.compatibility(feature: "reasoning", details: "provider default")])
         #expect(result.finishReason.unified == .stop)
         #expect(result.finishReason.raw == "stop")
         #expect(result.usage.inputTokens.total == 4)
@@ -151,17 +153,14 @@ struct GatewayLanguageModelTests {
         #expect(result.usage.outputTokens.text == 30)
     }
 
-    @Test("doGenerate encodes binary file parts as base64 data URLs")
+    @Test("doGenerate encodes binary file parts as tagged base64 data")
     func doGenerateEncodesFileParts() async throws {
         let capture = RequestCapture()
 
         let responseBody: [String: Any] = [
-            "content": ["type": "text", "text": "ok"],
-            "finish_reason": "stop",
-            "usage": [
-                "prompt_tokens": 1,
-                "completion_tokens": 1,
-            ],
+            "content": [["type": "text", "text": "ok"]],
+            "finishReason": ["unified": "stop"],
+            "usage": ["inputTokens": ["total": 1], "outputTokens": ["total": 1]],
         ]
         let responseData = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
 
@@ -176,11 +175,11 @@ struct GatewayLanguageModelTests {
         let bytes = Data([1, 2, 3, 4])
         let expectedBase64 = bytes.base64EncodedString()
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Describe:")),
-                    .file(LanguageModelV3FilePart(data: .data(bytes), mediaType: "image/jpeg")),
+                    .text(LanguageModelV4TextPart(text: "Describe:")),
+                    .file(LanguageModelV4FilePart(data: .data(bytes), mediaType: "image/jpeg")),
                 ],
                 providerOptions: nil
             )
@@ -203,7 +202,8 @@ struct GatewayLanguageModelTests {
         let file = content[1]
         #expect(file["type"] as? String == "file")
         #expect(file["mediaType"] as? String == "image/jpeg")
-        #expect(file["data"] as? String == "data:image/jpeg;base64,\(expectedBase64)")
+        let data = try #require(file["data"] as? [String: String])
+        #expect(data == ["type": "data", "data": expectedBase64])
     }
 
     @Test("doStream filters gateway raw chunks based on includeRawChunks")
@@ -213,10 +213,10 @@ struct GatewayLanguageModelTests {
         let sseChunks: [String] = [
             #"data: {"type":"stream-start","warnings":[]}"# + "\n\n",
             #"data: {"type":"raw","rawValue":{"id":"test-chunk","object":"chat.completion.chunk"}}"# + "\n\n",
-            #"data: {"type":"text-delta","textDelta":"Hello"}"# + "\n\n",
+            #"data: {"type":"text-delta","id":"text","delta":"Hello"}"# + "\n\n",
             #"data: {"type":"raw","rawValue":{"id":"test-chunk-2","object":"chat.completion.chunk"}}"# + "\n\n",
-            #"data: {"type":"text-delta","textDelta":" world"}"# + "\n\n",
-            #"data: {"type":"finish","finishReason":"stop","usage":{"prompt_tokens":10,"completion_tokens":5}}"# + "\n\n",
+            #"data: {"type":"text-delta","id":"text","delta":" world"}"# + "\n\n",
+            #"data: {"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":5}}}"# + "\n\n",
         ]
 
         let sseData = Data(sseChunks.joined().utf8)
@@ -229,13 +229,13 @@ struct GatewayLanguageModelTests {
         }
 
         let model = makeModel(fetch: fetch)
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
         ]
 
         // includeRawChunks = false
         let result = try await model.doStream(options: .init(prompt: prompt, includeRawChunks: false))
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
@@ -262,7 +262,7 @@ struct GatewayLanguageModelTests {
 
         // includeRawChunks = true
         let resultRaw = try await model.doStream(options: .init(prompt: prompt, includeRawChunks: true))
-        var partsRaw: [LanguageModelV3StreamPart] = []
+        var partsRaw: [LanguageModelV4StreamPart] = []
         for try await part in resultRaw.stream {
             partsRaw.append(part)
         }
@@ -277,7 +277,7 @@ struct GatewayLanguageModelTests {
         let sseChunks: [String] = [
             #"data: {"type":"stream-start","warnings":[]}"# + "\n\n",
             #"data: {"type":"response-metadata","id":"test-id","modelId":"test-model","timestamp":"\#(timestampString)"}"# + "\n\n",
-            #"data: {"type":"finish","finishReason":"stop","usage":{"prompt_tokens":1,"completion_tokens":1}}"# + "\n\n",
+            #"data: {"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":1},"outputTokens":{"total":1}}}"# + "\n\n",
         ]
         let sseData = Data(sseChunks.joined().utf8)
 
@@ -287,12 +287,12 @@ struct GatewayLanguageModelTests {
         }
 
         let model = makeModel(fetch: fetch)
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
         ]
 
         let result = try await model.doStream(options: .init(prompt: prompt, includeRawChunks: false))
-        var responseMetadata: LanguageModelV3StreamPart?
+        var responseMetadata: LanguageModelV4StreamPart?
         for try await part in result.stream {
             if case .responseMetadata = part {
                 responseMetadata = part

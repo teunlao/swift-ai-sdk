@@ -4,7 +4,7 @@ import AISDKProvider
 import AISDKProviderUtils
 @testable import GatewayProvider
 
-@Suite("GatewayProvider (createGatewayProvider)")
+@Suite("GatewayProvider (createGateway)")
 struct GatewayProviderCreationTests {
     actor RequestCapture {
         private(set) var requests: [URLRequest] = []
@@ -22,14 +22,14 @@ struct GatewayProviderCreationTests {
         ))
     }
 
-    @Test("default baseURL uses https://ai-gateway.vercel.sh/v3/ai")
-    func defaultBaseURLIsV3() async throws {
+    @Test("default baseURL uses https://ai-gateway.vercel.sh/v4/ai")
+    func defaultBaseURLIsV4() async throws {
         let capture = RequestCapture()
 
         let responseBody: [String: Any] = [
-            "content": ["type": "text", "text": "ok"],
-            "finish_reason": "stop",
-            "usage": ["prompt_tokens": 1, "completion_tokens": 1],
+            "content": [["type": "text", "text": "ok"]],
+            "finishReason": ["unified": "stop"],
+            "usage": ["inputTokens": ["total": 1], "outputTokens": ["total": 1]],
         ]
         let responseData = try JSONSerialization.data(withJSONObject: responseBody, options: [.sortedKeys])
 
@@ -39,11 +39,11 @@ struct GatewayProviderCreationTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let provider = createGatewayProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
+        let provider = createGateway(settings: .init(apiKey: "test-api-key", fetch: fetch))
         let model = try provider.languageModel(modelId: "test-model")
 
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil),
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil),
         ]
 
         _ = try await model.doGenerate(options: .init(prompt: prompt))
@@ -53,7 +53,7 @@ struct GatewayProviderCreationTests {
             return
         }
 
-        #expect(request.url?.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/language-model")
+        #expect(request.url?.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/language-model")
     }
 }
 

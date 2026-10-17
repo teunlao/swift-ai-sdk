@@ -69,7 +69,7 @@ struct GatewayVideoModelTests {
         let model = makeModel(fetch: fetch)
         #expect(model.modelId == "google/veo-3.1-generate-001")
         #expect(model.provider == "gateway")
-        #expect(model.specificationVersion == "v3")
+        #expect(model.specificationVersion == "v4")
 
         guard case .value(let max) = model.maxVideosPerCall else {
             Issue.record("Expected fixed maxVideosPerCall")
@@ -123,7 +123,7 @@ struct GatewayVideoModelTests {
         let headers = normalizedHeaders(request)
         #expect(headers["authorization"] == "Bearer test-token")
         #expect(headers["x-custom-header"] == "custom-value")
-        #expect(headers["ai-video-model-specification-version"] == "3")
+        #expect(headers["ai-video-model-specification-version"] == "4")
         #expect(headers["ai-model-id"] == "google/veo-3.1-generate-001")
         #expect(headers["accept"] == "text/event-stream")
         for (key, value) in o11yHeaders {
@@ -353,6 +353,64 @@ struct GatewayVideoModelTests {
         }
         #expect(image3["type"] as? String == "url")
         #expect(image3["url"] as? String == "https://example.com/image.png")
+    }
+
+    @Test("video operations preserve the operation token, frame inputs, and terminal status")
+    func operationLifecycle() async throws {
+        let capture = RequestCapture()
+        let operation: JSONValue = .object(["jobId": .string("job-1"), "token": .string("opaque")])
+        let model = makeModel(fetch: { request in
+            await capture.store(request)
+            let path = try #require(request.url?.path)
+            let requestBody = try #require(request.httpBody)
+            let json = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+            let result: String
+            if path.hasSuffix("/start") {
+                #expect(json["callbackUrl"] as? String == "https://client.test/video")
+                #expect(json["generateAudio"] as? Bool == false)
+                let frames = try #require(json["frameImages"] as? [[String: Any]])
+                #expect(frames.first?["frameType"] as? String == "first_frame")
+                let image = try #require(frames.first?["image"] as? [String: Any])
+                #expect(image["data"] as? String == "AQID")
+                let references = try #require(json["inputReferences"] as? [[String: Any]])
+                #expect(references.first?["mediaType"] as? String == "video/mp4")
+                result = #"{"operation":{"jobId":"job-1","token":"opaque"},"warnings":null}"#
+            } else {
+                #expect(path == "/video-model/status")
+                let token = try #require(json["operation"] as? [String: String])
+                #expect(token == ["jobId": "job-1", "token": "opaque"])
+                result = #"{"status":"completed","videos":[{"type":"url","url":"https://cdn.test/video","mediaType":"video/mp4"}],"warnings":null}"#
+            }
+            return FetchResponse(body: .data(Data(result.utf8)), urlResponse: try httpResponse(for: request, headers: ["Content-Type": "application/json"]))
+        })
+        let started = try await model.doStart(options: .init(
+            prompt: "Animate", n: 1,
+            frameImages: [.init(image: .file(mediaType: "image/png", data: .binary(Data([1, 2, 3])), providerOptions: nil), frameType: .firstFrame)],
+            inputReferences: [.url(url: "https://cdn.test/source", mediaType: "video/mp4", providerOptions: nil)],
+            generateAudio: false
+        ), webhookUrl: "https://client.test/video")
+        #expect(started.operation == operation)
+        let status = try await model.doStatus(options: .init(operation: started.operation))
+        guard case .completed(let videos, let warnings, _, _) = status else {
+            Issue.record("Expected completed video operation")
+            return
+        }
+        #expect(videos == [.url(url: "https://cdn.test/video", mediaType: "video/mp4")])
+        #expect(warnings.isEmpty)
+    }
+
+    @Test("a cancelled video job is terminal instead of pending")
+    func cancelledOperation() async throws {
+        let model = makeModel(fetch: { request in
+            FetchResponse(body: .data(Data(#"{"status":"cancelled","providerMetadata":{"gateway":{"cost":"0"}}}"#.utf8)), urlResponse: try httpResponse(for: request))
+        })
+        let result = try await model.doStatus(options: .init(operation: .string("job")))
+        guard case .error(let error, let metadata, _) = result else {
+            Issue.record("Expected terminal cancellation error")
+            return
+        }
+        #expect(!error.isEmpty)
+        #expect(metadata?["gateway"]?["cost"] == .string("0"))
     }
 
     @Test("doGenerate includes providerOptions object (including empty) in the request body")

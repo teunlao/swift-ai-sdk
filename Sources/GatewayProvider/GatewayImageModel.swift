@@ -2,14 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/gateway/src/gateway-image-model.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
-public final class GatewayImageModel: ImageModelV3 {
+public final class GatewayImageModel: ImageModelV4 {
     private let modelIdentifier: GatewayImageModelId
     private let config: GatewayImageModelConfig
 
@@ -18,14 +11,14 @@ public final class GatewayImageModel: ImageModelV3 {
         self.config = config
     }
 
-    public var specificationVersion: String { "v3" }
+    public var specificationVersion: String { "v4" }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
     // Set a very large number to prevent client-side splitting of requests
-    public var maxImagesPerCall: ImageModelV3MaxImagesPerCall { .value(Int.max) }
+    public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(Int.max) }
 
-    public func doGenerate(options: ImageModelV3CallOptions) async throws -> ImageModelV3GenerateResult {
+    public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
         let resolvedHeaders = try await resolve(config.headers)
         let authMethod = parseAuthMethod(from: resolvedHeaders.compactMapValues { $0 })
 
@@ -53,7 +46,7 @@ public final class GatewayImageModel: ImageModelV3 {
             body["aspectRatio"] = .string(aspectRatio)
         }
 
-        if let seed = options.seed {
+        if let seed = options.seed, seed != 0 {
             body["seed"] = .number(Double(seed))
         }
 
@@ -80,11 +73,12 @@ public final class GatewayImageModel: ImageModelV3 {
                 fetch: config.fetch
             )
 
-            return ImageModelV3GenerateResult(
+            return ImageModelV4GenerateResult(
                 images: .base64(response.value.images),
+                isRetryable: response.value.isRetryable,
                 warnings: response.value.warnings ?? [],
                 providerMetadata: convertProviderMetadata(response.value.providerMetadata),
-                response: ImageModelV3ResponseInfo(
+                response: ImageModelV4ResponseInfo(
                     timestamp: Date(),
                     modelId: modelIdentifier.rawValue,
                     headers: response.responseHeaders
@@ -102,7 +96,7 @@ public final class GatewayImageModel: ImageModelV3 {
 
     private func getModelConfigHeaders() -> [String: String?] {
         [
-            "ai-image-model-specification-version": "3",
+            "ai-image-model-specification-version": "4",
             "ai-model-id": modelIdentifier.rawValue
         ]
     }
@@ -110,30 +104,23 @@ public final class GatewayImageModel: ImageModelV3 {
 
 private struct GatewayImageResponse: Decodable, Sendable {
     let images: [String]
-    let warnings: [SharedV3Warning]?
+    let isRetryable: Bool?
+    let warnings: [SharedV4Warning]?
     let providerMetadata: [String: [String: JSONValue]]?
-    let usage: ImageModelV3Usage?
+    let usage: ImageModelV4Usage?
 
     private enum CodingKeys: String, CodingKey {
         case images
+        case isRetryable
         case warnings
         case providerMetadata
         case usage
     }
 }
 
-private let gatewayImageResponseSchema = FlexibleSchema(
-    Schema<GatewayImageResponse>.codable(
-        GatewayImageResponse.self,
-        jsonSchema: .object(["type": .string("object")]),
-        configureDecoder: { decoder in
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return decoder
-        }
-    )
-)
+private let gatewayImageResponseSchema = gatewaySchema(GatewayImageResponse.self)
 
-private func encodeImageFile(_ file: ImageModelV3File) -> JSONValue {
+private func encodeImageFile(_ file: ImageModelV4File) -> JSONValue {
     switch file {
     case let .file(mediaType, data, providerOptions):
         var payload: [String: JSONValue] = [
@@ -162,7 +149,7 @@ private func encodeImageFile(_ file: ImageModelV3File) -> JSONValue {
     }
 }
 
-private func encodedFileData(_ data: ImageModelV3FileData) -> String {
+private func encodedFileData(_ data: ImageModelV4FileData) -> String {
     switch data {
     case .base64(let string):
         return string
@@ -171,10 +158,10 @@ private func encodedFileData(_ data: ImageModelV3FileData) -> String {
     }
 }
 
-private func convertProviderMetadata(_ providerMetadata: [String: [String: JSONValue]]?) -> ImageModelV3ProviderMetadata? {
+private func convertProviderMetadata(_ providerMetadata: [String: [String: JSONValue]]?) -> ImageModelV4ProviderMetadata? {
     guard let providerMetadata else { return nil }
 
-    var result: ImageModelV3ProviderMetadata = [:]
+    var result: ImageModelV4ProviderMetadata = [:]
     result.reserveCapacity(providerMetadata.count)
 
     for (provider, entry) in providerMetadata {
@@ -189,7 +176,7 @@ private func convertProviderMetadata(_ providerMetadata: [String: [String: JSONV
         additional.removeValue(forKey: "images")
         let additionalData: JSONValue? = additional.isEmpty ? nil : .object(additional)
 
-        result[provider] = ImageModelV3ProviderMetadataValue(
+        result[provider] = ImageModelV4ProviderMetadataValue(
             images: images,
             additionalData: additionalData
         )
