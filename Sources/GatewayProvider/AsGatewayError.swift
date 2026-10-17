@@ -6,7 +6,7 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/errors/as-gateway-error.ts
-// Upstream commit: 73d5c5920
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 /// Upstream `GatewayErrorResponse` shape.
@@ -32,6 +32,23 @@ public struct GatewayErrorBody: Decodable, Sendable {
         self.type = type
         self.param = param
         self.code = code
+    }
+
+    private enum CodingKeys: String, CodingKey { case message, type, param, code }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        message = try container.decode(String.self, forKey: .message)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        param = try container.decodeIfPresent(JSONValue.self, forKey: .param)
+        code = try container.decodeIfPresent(JSONValue.self, forKey: .code)
+        if let code {
+            switch code {
+            case .string, .number: break
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .code, in: container, debugDescription: "Expected string or number")
+            }
+        }
     }
 }
 
@@ -172,6 +189,20 @@ func createGatewayErrorFromResponse(
                 modelId: modelId,
                 cause: cause,
                 generationId: generationId
+            )
+        case "not_found":
+            return GatewayNotFoundError(message: message, statusCode: statusCode, cause: cause, generationId: generationId)
+        case "failed_dependency":
+            return GatewayFailedDependencyError(message: message, statusCode: statusCode, cause: cause, generationId: generationId)
+        case "forbidden":
+            let ruleId: String?
+            if case .object(let param) = decoded.error.param, case .string(let value)? = param["ruleId"] {
+                ruleId = value
+            } else {
+                ruleId = nil
+            }
+            return GatewayForbiddenError(
+                message: message, statusCode: statusCode, cause: cause, generationId: generationId, ruleId: ruleId
             )
         case "internal_server_error":
             fallthrough

@@ -30,6 +30,26 @@ struct GatewayFetchMetadataTests {
         return FetchResponse(body: .data(data), urlResponse: httpResponse)
     }
 
+    @Test("Credits route team identity through the endpoint query", arguments: [" team_123 ", "workspace-name", "  "])
+    func creditsTeamRouting(team: String) async throws {
+        let metadata = GatewayFetchMetadata(config: GatewayConfig(
+            baseURL: "https://api.example.com/some/path?old=value",
+            headers: { ["X-Vercel-AI-Gateway-Team": team] },
+            fetch: { request in
+                let url = try #require(request.url)
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                switch team {
+                case " team_123 ": #expect(query == [.init(name: "teamId", value: "team_123")])
+                case "workspace-name": #expect(query == [.init(name: "slug", value: "workspace-name")])
+                default: #expect(query.isEmpty)
+                }
+                return try okJSONResponse(for: request, data: Data(#"{"balance":"1","total_used":"2"}"#.utf8))
+            }
+        ))
+        let result = try await metadata.getCredits()
+        #expect(result.balance == "1")
+    }
+
     @Test("getAvailableModels hits /config and maps cache pricing fields")
     func getAvailableModelsMapsCachePricing() async throws {
         let capture = RequestCapture()
@@ -47,7 +67,7 @@ struct GatewayFetchMetadataTests {
                         "input_cache_write": "0.00000375",
                     ],
                     "specification": [
-                        "specificationVersion": "v3",
+                        "specificationVersion": "v4",
                         "provider": "test-provider",
                         "modelId": "model-1",
                     ],
@@ -96,20 +116,30 @@ struct GatewayFetchMetadataTests {
         #expect(pricing.cacheCreationInputTokens == "0.00000375")
     }
 
-    @Test("getAvailableModels rejects invalid modelType values")
-    func getAvailableModelsRejectsInvalidModelType() async throws {
+    @Test("getAvailableModels filters unknown model types")
+    func getAvailableModelsFiltersUnknownModelTypes() async throws {
         let responseBody: [String: Any] = [
             "models": [
                 [
                     "id": "model-invalid-type",
                     "name": "Invalid Type Model",
                     "specification": [
-                        "specificationVersion": "v3",
+                        "specificationVersion": "v4",
                         "provider": "test-provider",
                         "modelId": "model-invalid-type",
                     ],
                     "modelType": "text",
-                ]
+                ],
+                [
+                    "id": "speech-model", "name": "Speech",
+                    "specification": ["specificationVersion": "v4", "provider": "test", "modelId": "speech-model"],
+                    "modelType": "speech",
+                ],
+                [
+                    "id": "untyped-model", "name": "Untyped",
+                    "specification": ["specificationVersion": "v4", "provider": "test", "modelId": "untyped-model"],
+                    "modelType": NSNull(),
+                ],
             ]
         ]
 
@@ -127,9 +157,9 @@ struct GatewayFetchMetadataTests {
             fetch: fetch
         ))
 
-        await #expect(throws: GatewayResponseError.self) {
-            _ = try await metadata.getAvailableModels()
-        }
+        let result = try await metadata.getAvailableModels()
+        #expect(result.models.map(\.id) == ["speech-model", "untyped-model"])
+        #expect(result.models.first?.specification.specificationVersion == "v4")
     }
 
     @Test("getCredits uses baseURL origin and maps total_used")

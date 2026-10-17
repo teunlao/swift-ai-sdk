@@ -23,6 +23,17 @@ struct AsGatewayErrorTests {
         var errorDescription: String? { message }
     }
 
+    @Test("Response parsing and transport failures preserve retryability", arguments: [nil, 200, 403, 429, 503] as [Int?])
+    func apiErrorRetryability(status: Int?) throws {
+        let apiError = APICallError(
+            message: "Truncated response", url: "https://example.com", requestBodyValues: nil,
+            statusCode: status, responseBody: "{}", isRetryable: true
+        )
+        let result = try #require(asGatewayError(apiError) as? GatewayResponseError)
+        #expect(result.statusCode == (status ?? 500))
+        #expect(result.isRetryable == (status != 403))
+    }
+
     @Test("timeout error detection: UND_ERR_* codes map to GatewayTimeoutError")
     func detectsUndiciTimeoutCodes() async throws {
         let error1 = MockCodeError(message: "Request timeout", code: "UND_ERR_HEADERS_TIMEOUT")

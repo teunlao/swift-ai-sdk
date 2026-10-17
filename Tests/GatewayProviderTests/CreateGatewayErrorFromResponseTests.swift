@@ -5,6 +5,41 @@ import AISDKProvider
 
 @Suite("createGatewayErrorFromResponse")
 struct CreateGatewayErrorFromResponseTests {
+    @Test("Policy and resource failures retain their typed context and retry verdict")
+    func policyResourceFailures() throws {
+        let forbidden = createGatewayErrorFromResponse(response: [
+            "error": ["message": "Blocked by rule", "type": "forbidden", "param": ["ruleId": "rule_1"]],
+            "generationId": "gen_policy",
+        ], statusCode: 403)
+        let policy = try #require(forbidden as? GatewayForbiddenError)
+        #expect(policy.ruleId == "rule_1")
+        #expect(policy.generationId == "gen_policy")
+        #expect(!policy.isRetryable)
+
+        let dependency = createGatewayErrorFromResponse(response: [
+            "error": ["message": "Unavailable credential capability", "type": "failed_dependency"],
+        ], statusCode: 424)
+        #expect(dependency is GatewayFailedDependencyError)
+        #expect(!dependency.isRetryable)
+
+        let missing = createGatewayErrorFromResponse(response: [
+            "error": ["message": "Unknown job", "type": "not_found"],
+        ], statusCode: 404)
+        #expect(missing is GatewayNotFoundError)
+        #expect(!missing.isRetryable)
+    }
+
+    @Test("Invalid response codes remain parsing failures and retain the generation")
+    func invalidErrorCode() throws {
+        let error = createGatewayErrorFromResponse(response: [
+            "error": ["message": "Invalid", "code": ["bad": true]], "generationId": "gen_invalid_code",
+        ], statusCode: 502)
+        let response = try #require(error as? GatewayResponseError)
+        #expect(response.generationId == "gen_invalid_code")
+        #expect(response.validationError != nil)
+        #expect(response.isRetryable)
+    }
+
     @Test("authentication_error maps to GatewayAuthenticationError with contextual message")
     func authenticationError() async throws {
         let response: [String: Any] = [

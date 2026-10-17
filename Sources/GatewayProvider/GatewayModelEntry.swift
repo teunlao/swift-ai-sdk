@@ -1,13 +1,28 @@
 import Foundation
-import AISDKProvider
-import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/gateway/src/gateway-model-entry.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
+public struct GatewayLanguageModelSpecification: Sendable, Decodable {
+    public let specificationVersion = "v4"
+    public let provider: String
+    public let modelId: String
+
+    public init(provider: String, modelId: String) {
+        self.provider = provider
+        self.modelId = modelId
+    }
+
+    private enum CodingKeys: String, CodingKey { case specificationVersion, provider, modelId }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard try container.decode(String.self, forKey: .specificationVersion) == "v4" else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .specificationVersion, in: container, debugDescription: "Expected v4 specification"
+            )
+        }
+        provider = try container.decode(String.self, forKey: .provider)
+        modelId = try container.decode(String.self, forKey: .modelId)
+    }
+}
 
 public struct GatewayLanguageModelEntry: Sendable, Decodable {
     public struct Pricing: Sendable, Decodable {
@@ -17,11 +32,7 @@ public struct GatewayLanguageModelEntry: Sendable, Decodable {
         public let cacheCreationInputTokens: String?
 
         private enum CodingKeys: String, CodingKey {
-            case input
-            case output
-            // Decoded via JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase upstream parity.
-            case inputCacheRead
-            case inputCacheWrite
+            case input, output, inputCacheRead, inputCacheWrite
         }
 
         public init(input: String, output: String, cachedInputTokens: String? = nil, cacheCreationInputTokens: String? = nil) {
@@ -35,39 +46,24 @@ public struct GatewayLanguageModelEntry: Sendable, Decodable {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             input = try container.decode(String.self, forKey: .input)
             output = try container.decode(String.self, forKey: .output)
-            cachedInputTokens = try container.decodeIfPresent(String.self, forKey: .inputCacheRead)
-            cacheCreationInputTokens = try container.decodeIfPresent(String.self, forKey: .inputCacheWrite)
+            cachedInputTokens = try container.decodeIfPresent(String.self, forKey: .inputCacheRead).flatMap { $0.isEmpty ? nil : $0 }
+            cacheCreationInputTokens = try container.decodeIfPresent(String.self, forKey: .inputCacheWrite).flatMap { $0.isEmpty ? nil : $0 }
         }
-    }
-
-    public struct Specification: Sendable, Decodable {
-        public let specificationVersion: String
-        public let provider: String
-        public let modelId: String
     }
 
     public let id: String
     public let name: String
     public let description: String?
     public let pricing: Pricing?
-    public let specification: Specification
+    public let specification: GatewayLanguageModelSpecification
     public let modelType: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case description
-        case pricing
-        case specification
-        case modelType
-    }
 
     public init(
         id: String,
         name: String,
         description: String? = nil,
         pricing: Pricing? = nil,
-        specification: Specification,
+        specification: GatewayLanguageModelSpecification,
         modelType: String? = nil
     ) {
         self.id = id
@@ -76,29 +72,5 @@ public struct GatewayLanguageModelEntry: Sendable, Decodable {
         self.pricing = pricing
         self.specification = specification
         self.modelType = modelType
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        description = try container.decodeIfPresent(String.self, forKey: .description)
-        pricing = try container.decodeIfPresent(Pricing.self, forKey: .pricing)
-        specification = try container.decode(Specification.self, forKey: .specification)
-
-        if let rawModelType = try container.decodeIfPresent(String.self, forKey: .modelType) {
-            switch rawModelType {
-            case "language", "embedding", "image", "video":
-                modelType = rawModelType
-            default:
-                throw DecodingError.dataCorruptedError(
-                    forKey: .modelType,
-                    in: container,
-                    debugDescription: "Invalid modelType value: \(rawModelType)"
-                )
-            }
-        } else {
-            modelType = nil
-        }
     }
 }

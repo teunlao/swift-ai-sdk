@@ -6,11 +6,24 @@ import AISDKProviderUtils
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/gateway/src/gateway-fetch-metadata.ts
-// Upstream commit: 73d5c5920
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct GatewayFetchMetadataResponse: Sendable, Decodable {
     public let models: [GatewayLanguageModelEntry]
+
+    private enum CodingKeys: String, CodingKey { case models }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let knownTypes: Set<String> = [
+            "embedding", "decision", "evaluation", "image", "language", "realtime",
+            "reranking", "speech", "transcription", "video",
+        ]
+        models = try container.decode([GatewayLanguageModelEntry].self, forKey: .models).filter {
+            $0.modelType.map(knownTypes.contains) ?? true
+        }
+    }
 }
 
 public struct GatewayCreditsResponse: Sendable, Decodable {
@@ -43,28 +56,17 @@ struct GatewayFetchMetadata {
 
     func getCredits() async throws -> GatewayCreditsResponse {
         do {
-            guard let baseUrl = URL(string: config.baseURL) else {
-                throw APICallError(
-                    message: "Invalid base URL",
-                    url: config.baseURL,
-                    requestBodyValues: nil
-                )
-            }
-
-            let origin: String
-            if let scheme = baseUrl.scheme, let host = baseUrl.host {
-                if let port = baseUrl.port {
-                    origin = "\(scheme)://\(host):\(port)"
-                } else {
-                    origin = "\(scheme)://\(host)"
-                }
-            } else {
-                origin = baseUrl.absoluteString
-            }
-
             let headers = try await resolve(config.headers)
+            let team = headers.first { $0.key.lowercased() == "x-vercel-ai-gateway-team" }?
+                .value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let queryItems: [URLQueryItem]
+            if let team, !team.isEmpty {
+                queryItems = [.init(name: team.hasPrefix("team_") ? "teamId" : "slug", value: team)]
+            } else {
+                queryItems = []
+            }
             let result = try await getFromAPI(
-                url: "\(origin)/v1/credits",
+                url: gatewayAPIURL(baseURL: config.baseURL, path: "/v1/credits", queryItems: queryItems),
                 headers: headers.compactMapValues { $0 },
                 failedResponseHandler: makeGatewayFailedResponseHandler(),
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: gatewayCreditsSchema),
@@ -76,6 +78,30 @@ struct GatewayFetchMetadata {
             throw asGatewayError(error)
         }
     }
+}
+
+func gatewayAPIURL(baseURL: String, path: String, queryItems: [URLQueryItem] = [], formEncoding: Bool = true) throws -> String {
+    guard var components = URLComponents(string: baseURL), components.scheme != nil, components.host != nil else {
+        throw APICallError(message: "Invalid base URL", url: baseURL, requestBodyValues: nil)
+    }
+    components.user = nil
+    components.password = nil
+    components.path = path
+    components.fragment = nil
+    let allowed = CharacterSet(charactersIn: formEncoding
+        ? "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789*-._"
+        : "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+    func encode(_ value: String) -> String {
+        let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+        return formEncoding ? encoded.replacingOccurrences(of: "%20", with: "+") : encoded
+    }
+    components.percentEncodedQuery = queryItems.isEmpty ? nil : queryItems.map {
+        "\(encode($0.name))=\(encode($0.value ?? ""))"
+    }.joined(separator: "&")
+    guard let url = components.string else {
+        throw APICallError(message: "Invalid base URL", url: baseURL, requestBodyValues: nil)
+    }
+    return url
 }
 
 private let gatewayAvailableModelsSchema = FlexibleSchema(
