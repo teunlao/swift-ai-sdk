@@ -679,7 +679,12 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
             let stepToolsContext = prepareStepResult?.toolsContext ?? toolsContext
             let stepModel = try prepareStepResult?.model.map(resolveLanguageModelV4) ?? configuration.model
             let stepActiveTools = prepareStepResult?.activeTools ?? configuration.activeTools
-            let stepExecutionTools = filterActiveTools(configuration.tools, activeTools: stepActiveTools)
+            let callerTools = prepareCallerTools(
+                tools: filterActiveTools(configuration.tools, activeTools: stepActiveTools),
+                callers: configuration.experimentalToolCallers
+            )
+            let stepExecutionTools = callerTools.executionTools
+            let stepModelTools = callerTools.modelTools
             let stepToolOrder = prepareStepResult?.toolOrder ?? configuration.toolOrder
             let stepToolChoice = prepareStepResult?.toolChoice ?? configuration.toolChoice
             let stepMessages = prepareStepResult?.messages ?? stepInputMessages
@@ -705,6 +710,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
                     try await streamLanguageModelCall(
                         model: stepModel,
                         tools: stepExecutionTools,
+                        modelTools: stepModelTools,
                         toolOrder: stepToolOrder,
                         responseFormat: responseFormat,
                         toolChoice: stepToolChoice,

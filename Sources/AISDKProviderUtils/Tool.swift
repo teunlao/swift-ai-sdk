@@ -175,6 +175,14 @@ public struct ToolModelOutputOptions: Sendable {
     }
 }
 
+public struct ProviderToolCaller: Sendable {
+    public let prepareProviderOptions: @Sendable (JSONObject?) -> JSONObject
+
+    public init(prepareProviderOptions: @escaping @Sendable (JSONObject?) -> JSONObject) {
+        self.prepareProviderOptions = prepareProviderOptions
+    }
+}
+
 /**
  A tool contains the description and the schema of the input that the tool expects.
  This enables the language model to generate the input.
@@ -198,7 +206,7 @@ public struct Tool: Sendable {
     public let title: String?
 
     /// Additional provider-specific metadata, passed through to the provider.
-    public let providerOptions: [String: JSONValue]?
+    public private(set) var providerOptions: [String: JSONValue]?
 
     /// Optional metadata for the tool (used by some adapters like MCP).
     public let _meta: [String: JSONValue]?
@@ -263,6 +271,7 @@ public struct Tool: Sendable {
     /// For provider-executed tools: whether the tool result may arrive in a later turn
     /// than the tool call.
     public let supportsDeferredResults: Bool?
+    public private(set) var providerToolCaller: ProviderToolCaller?
 
     public init(
         deferLoading: Bool? = nil,
@@ -287,7 +296,8 @@ public struct Tool: Sendable {
         name: String? = nil,
         args: [String: JSONValue]? = nil,
         isProviderExecuted: Bool? = nil,
-        supportsDeferredResults: Bool? = nil
+        supportsDeferredResults: Bool? = nil,
+        providerToolCaller: ProviderToolCaller? = nil
     ) {
         self.deferLoading = deferLoading
         self.description = description
@@ -312,6 +322,19 @@ public struct Tool: Sendable {
         self.args = args
         self.isProviderExecuted = isProviderExecuted
         self.supportsDeferredResults = supportsDeferredResults
+        self.providerToolCaller = providerToolCaller
+    }
+
+    public func withProviderToolCaller(_ caller: ProviderToolCaller) -> Tool {
+        var tool = self
+        tool.providerToolCaller = caller
+        return tool
+    }
+
+    public func withProviderOptions(_ options: JSONObject?) -> Tool {
+        var tool = self
+        tool.providerOptions = options
+        return tool
     }
 }
 

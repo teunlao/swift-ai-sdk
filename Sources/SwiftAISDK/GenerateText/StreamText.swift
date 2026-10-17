@@ -129,6 +129,7 @@ struct StreamTextConfiguration<OutputValue: Sendable, PartialOutput: Sendable>: 
     var modelArgument: LanguageModel
     var tools: ToolSet?
     var toolChoice: ToolChoice?
+    var experimentalToolCallers: ToolCallers?
     var instructions: Instructions?
     var prompt: String?
     var messages: [ModelMessage]?
@@ -181,6 +182,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
     model modelArg: LanguageModel,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
+    experimentalToolCallers: ToolCallers? = nil,
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
@@ -222,6 +224,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
         modelArgument: modelArg,
         tools: tools,
         toolChoice: toolChoice,
+        experimentalToolCallers: try resolveToolCallers(tools: tools, callers: experimentalToolCallers),
         instructions: instructions,
         prompt: prompt,
         messages: messages,
@@ -274,6 +277,7 @@ public func streamText(
     model modelArg: LanguageModel,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
+    experimentalToolCallers: ToolCallers? = nil,
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
@@ -314,6 +318,7 @@ public func streamText(
         modelArgument: modelArg,
         tools: tools,
         toolChoice: toolChoice,
+        experimentalToolCallers: try resolveToolCallers(tools: tools, callers: experimentalToolCallers),
         instructions: instructions,
         prompt: prompt,
         messages: messages,

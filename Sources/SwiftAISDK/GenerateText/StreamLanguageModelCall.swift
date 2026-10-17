@@ -67,6 +67,7 @@ struct LanguageModelCallStream: Sendable {
 func streamLanguageModelCall(
     model: any LanguageModelV4,
     tools: ToolSet?,
+    modelTools: ToolSet?,
     toolOrder: [String]?,
     responseFormat: LanguageModelV4ResponseFormat?,
     toolChoice: ToolChoice?,
@@ -95,7 +96,7 @@ func streamLanguageModelCall(
         download: download
     )
 
-    let stepTools = try await prepareTools(tools: tools, toolOrder: toolOrder, toolsContext: toolsContext)
+    let stepTools = try await prepareTools(tools: modelTools, toolOrder: toolOrder, toolsContext: toolsContext)
     let stepToolChoice = prepareToolChoice(toolChoice)
 
     await onStart(promptMessages, stepTools, stepToolChoice)

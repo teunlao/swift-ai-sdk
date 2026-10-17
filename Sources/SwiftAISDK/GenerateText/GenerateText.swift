@@ -117,6 +117,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
     model modelArg: LanguageModel,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
+    experimentalToolCallers: ToolCallers? = nil,
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
@@ -154,6 +155,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
 
     let resolvedToolCallConcurrency = try prepareToolCallConcurrency(toolCallConcurrency)
     let model = try resolveLanguageModelV4(modelArg)
+    let resolvedToolCallers = try resolveToolCallers(tools: tools, callers: experimentalToolCallers)
     let now = _internal.now
 
     var unsupportedTimeoutWarnings: [Warning] = []
@@ -355,10 +357,13 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             toolsContext = prepareStepResult?.toolsContext ?? toolsContext
 
             let stepActiveTools = prepareStepResult?.activeTools ?? activeTools
-            let stepExecutionTools = filterActiveTools(tools, activeTools: stepActiveTools)
+            let callerTools = prepareCallerTools(
+                tools: filterActiveTools(tools, activeTools: stepActiveTools), callers: resolvedToolCallers
+            )
+            let stepExecutionTools = callerTools.executionTools
             let stepToolOrder = prepareStepResult?.toolOrder ?? toolOrder
             let stepTools = try await prepareTools(
-                tools: stepExecutionTools,
+                tools: callerTools.modelTools,
                 toolOrder: stepToolOrder,
                 toolsContext: toolsContext
             )
@@ -793,6 +798,7 @@ public func generateText(
     model: LanguageModel,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
+    experimentalToolCallers: ToolCallers? = nil,
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
@@ -827,6 +833,7 @@ public func generateText(
         model: model,
         tools: tools,
         toolChoice: toolChoice,
+        experimentalToolCallers: experimentalToolCallers,
         instructions: instructions,
         prompt: prompt,
         messages: messages,
