@@ -48,7 +48,7 @@ let openAIFilesOptionsSchema = FlexibleSchema<OpenAIFilesOptions>(
                 }
                 if let expiresAfterValue = dict["expiresAfter"] {
                     guard case .number(let number) = expiresAfterValue, let expiresAfter = Int(exactly: number) else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "expiresAfter must be a finite number")
+                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "expiresAfter must be a representable integer number of seconds")
                         return .failure(error: TypeValidationError.wrap(value: expiresAfterValue, cause: error))
                     }
                     options.expiresAfter = expiresAfter

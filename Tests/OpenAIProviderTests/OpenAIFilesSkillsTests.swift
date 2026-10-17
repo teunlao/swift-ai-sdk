@@ -385,25 +385,31 @@ struct OpenAIFilesSkillsTests {
         #expect(lifetime.isCancelled)
     }
 
-    @Test("expiry uses the finite JavaScript numeric form", arguments: [
-        (1e20, "100000000000000000000"), (1e-7, "1e-7"), (-0.0, "0"),
-        (1e-6, "0.000001"), (1e21, "1e+21"), (9_223_372_036_854_775_808.0, "9223372036854776000")
-    ])
-    func uploadExpiryFormatting(_ value: Double, _ expected: String) async throws {
+    @Test("expiry sends whole seconds in the multipart request", arguments: [3600, 2_592_000])
+    func uploadExpiryFormatting(_ value: Int) async throws {
         let capture = OpenAIUploadRequestCapture()
         let provider = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key", fetch: openAIFetch(capture: capture) { _ in ["id": "file-1"] }
         ))
         let files = try #require(try provider.files())
         _ = try await files.uploadFile(options: .init(
-            data: .text("x"), mediaType: "text/plain", providerOptions: ["openai": ["expiresAfter": .number(value)]]
+            data: .text("x"), mediaType: "text/plain", providerOptions: ["openai": ["expiresAfter": .number(Double(value))]]
         ))
         let request = try #require(await capture.first())
         let contentType = try #require(request.value(forHTTPHeaderField: "Content-Type"))
         let boundary = try #require(openAIExtractBoundary(from: contentType))
         let parts = openAIParseMultipart(try #require(request.httpBody), boundary: boundary)
         let expiry = try #require(parts.first { openAIMultipartName($0) == "expires_after[seconds]" })
-        #expect(String(decoding: expiry.body, as: UTF8.self) == expected)
+        #expect(String(decoding: expiry.body, as: UTF8.self) == String(value))
+    }
+
+    @Test("expiry rejects fractional and unrepresentable seconds", arguments: [1e-7, 1e20])
+    func invalidExpirySeconds(_ value: Double) async throws {
+        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key", fetch: openAIFetch(capture: OpenAIUploadRequestCapture()) { _ in ["id": "file-1"] }))
+        let files = try #require(try provider.files())
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await files.uploadFile(options: .init(data: .text("x"), mediaType: "text/plain", providerOptions: ["openai": ["expiresAfter": .number(value)]]))
+        }
     }
 
     @Test("upload omits an empty response filename instead of falling back")

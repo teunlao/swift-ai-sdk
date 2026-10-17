@@ -371,7 +371,7 @@ struct OpenAIResponsesToolContractTests {
             prompt: [.user(content: [.text(.init(text: "Compact this history"))], providerOptions: nil)],
             providerOptions: OpenAIProvider.responsesOptions(.init(
                 maxToolCalls: 3, promptCacheOptions: .init(ttl: .thirtyMinutes), promptCacheRetention: "24h",
-                contextManagement: [.init(compactThreshold: 2)], compactionTrigger: true
+                contextManagement: [.init(compactThreshold: 0.8)], compactionTrigger: true
             ))
         ))
         guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"] else {
@@ -379,7 +379,7 @@ struct OpenAIResponsesToolContractTests {
         }
         #expect(input.count == 2)
         #expect(input.last == .object(["type": .string("compaction_trigger")]))
-        #expect(body["context_management"] == .array([.object(["type": .string("compaction"), "compact_threshold": .number(2)])]))
+        #expect(body["context_management"] == .array([.object(["type": .string("compaction"), "compact_threshold": .number(0.8)])]))
         #expect(body["prompt_cache_options"] == .object(["ttl": .string("30m")]))
         #expect(body["prompt_cache_retention"] == nil)
         #expect(body["max_tool_calls"] == .number(3))

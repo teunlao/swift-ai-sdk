@@ -23,10 +23,10 @@ struct OpenAIOptionsContractTests {
         }
     }
 
-    @Test("Request token and call limits require integers", arguments: ["chat", "completion", "responses", "maxCompletionTokens", "maxToolCalls", "compaction"])
+    @Test("Request token and call limits require integers", arguments: ["chat", "completion", "responses", "maxCompletionTokens", "maxToolCalls"])
     func integerRequestLimits(_ kind: String) async throws {
         let provider = try createOpenAI(settings: .init(apiKey: "key"))
-        let options: JSONObject = kind == "compaction" ? ["contextManagement": .array([.object(["type": .string("compaction"), "compactThreshold": .number(1.5)])])] : [(kind == "maxCompletionTokens" || kind == "maxToolCalls") ? kind : "logprobs": .number(1.5)]
+        let options: JSONObject = [(kind == "maxCompletionTokens" || kind == "maxToolCalls") ? kind : "logprobs": .number(1.5)]
         await #expect(throws: InvalidArgumentError.self) {
             let call = LanguageModelV4CallOptions(prompt: [], providerOptions: ["openai": options])
             switch kind {

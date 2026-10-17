@@ -135,9 +135,9 @@ public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
 
 public struct OpenAIResponsesContextManagement: Sendable, Equatable {
     public var type: String
-    public var compactThreshold: Int
+    public var compactThreshold: Double
 
-    public init(type: String = "compaction", compactThreshold: Int) {
+    public init(type: String = "compaction", compactThreshold: Double) {
         self.type = type
         self.compactThreshold = compactThreshold
     }
@@ -382,7 +382,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
                 "type": .string("object"),
                 "properties": .object([
                     "type": .object(["const": .string("compaction")]),
-                    "compactThreshold": .object(["type": .string("integer")])
+                    "compactThreshold": .object(["type": .string("number")])
                 ]),
                 "required": .array([.string("type"), .string("compactThreshold")])
             ])
@@ -586,7 +586,7 @@ private func parseContextManagement(_ value: JSONValue?) throws -> [OpenAIRespon
         guard case .string("compaction")? = object["type"] else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.type must be compaction"))
         }
-        guard case .number(let number)? = object["compactThreshold"], let threshold = Int(exactly: number) else {
+        guard case .number(let threshold)? = object["compactThreshold"], threshold.isFinite else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.compactThreshold must be a number"))
         }
         return OpenAIResponsesContextManagement(compactThreshold: threshold)

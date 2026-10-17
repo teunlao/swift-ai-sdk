@@ -55,7 +55,7 @@ public struct OpenAIOptions: Sendable {
         if let field = options.forceReasoning { value["forceReasoning"] = .bool(field) }
         if let field = options.contextManagement {
             value["contextManagement"] = .array(field.map {
-                .object(["type": .string($0.type), "compactThreshold": .number(Double($0.compactThreshold))])
+                .object(["type": .string($0.type), "compactThreshold": .number($0.compactThreshold)])
             })
         }
         if let field = options.compactionTrigger { value["compactionTrigger"] = .bool(field) }

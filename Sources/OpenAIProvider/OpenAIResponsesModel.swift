@@ -684,7 +684,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             contextManagement: openAIOptions?.contextManagement?.map { item in
                 .object([
                     "type": .string(item.type),
-                    "compact_threshold": .number(Double(item.compactThreshold))
+                    "compact_threshold": .number(item.compactThreshold)
                 ])
             },
             tools: preparedTools.tools,

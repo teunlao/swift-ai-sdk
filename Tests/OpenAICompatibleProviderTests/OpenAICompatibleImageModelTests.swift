@@ -74,12 +74,14 @@ struct OpenAICompatibleImageModelTests {
             )
         )
 
+        let imageOptions = OpenAICompatibleImageModelOptions(quality: "hd", output_compression: 62.5)
+        let providerOptions = try JSONDecoder().decode(JSONObject.self, from: JSONEncoder().encode(imageOptions))
         _ = try await model.doGenerate(
             options: ImageModelV4CallOptions(
                 prompt: prompt,
                 n: 2,
                 size: "1024x1024",
-                providerOptions: ["openaiCompatible": ["quality": .string("hd")]]
+                providerOptions: ["openaiCompatible": providerOptions]
             )
         )
 
@@ -95,6 +97,7 @@ struct OpenAICompatibleImageModelTests {
         #expect(json["n"] as? Double == 2)
         #expect(json["size"] as? String == "1024x1024")
         #expect(json["quality"] as? String == "hd")
+        #expect(json["output_compression"] as? Double == 62.5)
         #expect(json["response_format"] == nil)
     }
 
