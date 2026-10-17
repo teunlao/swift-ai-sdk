@@ -2,7 +2,7 @@ import Foundation
 import AISDKProviderUtils
 
 /**
- Handles the finalisation of a UI message stream, wiring `onFinish` callbacks and
+ Handles the finalisation of a UI message stream, wiring `onEnd` callbacks and
  injecting message identifiers when necessary.
 
  Port of `@ai-sdk/ai/src/ui-message-stream/handle-ui-message-stream-finish.ts`.
@@ -11,15 +11,11 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
     stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
     messageId: String?,
     originalMessages: [Message] = [],
-    onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil,
-    onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
-    onError: @escaping ErrorHandler,
     onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
     onEnd: UIMessageStreamOnEndCallback<Message>? = nil,
+    onError: @escaping ErrorHandler,
     getOutcome: (@Sendable () -> UIMessageStreamOutcome)? = nil
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
-    let onStepFinish = onStepEnd ?? onStepFinish
-    let onFinish = onEnd ?? onFinish
     let lifecycle = UIMessageStreamLifecycle(getOutcome: getOutcome)
     var mutableMessageId = messageId
 
@@ -35,37 +31,18 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
 
     let messageIdForInjection = mutableMessageId
 
-    let idInjectedStream = AsyncThrowingStream<AnyUIMessageChunk, Error> { continuation in
-        let task = Task {
-            do {
-                for try await chunk in stream {
-                    var adjustedChunk = chunk
-
-                    if case .start(let chunkMessageId, let metadata) = chunk {
-                        if chunkMessageId == nil, let messageIdForInjection {
-                            adjustedChunk = .start(messageId: messageIdForInjection, messageMetadata: metadata)
-                        }
-                    }
-
-                    if case .abort = chunk {
-                        lifecycle.markAborted()
-                    }
-
-                    continuation.yield(adjustedChunk)
-                }
-
-                continuation.finish()
-            } catch {
-                if !Task.isCancelled { lifecycle.fail(error) }
-                continuation.finish(throwing: error)
-            }
+    // Every stage is pull-based, so the source is read only as fast as the consumer reads.
+    let idInjectedStream = pullTransform(stream) { chunk -> [AnyUIMessageChunk] in
+        if case .abort = chunk {
+            lifecycle.markAborted()
         }
-        continuation.onTermination = { termination in
-            if case .cancelled = termination { task.cancel() }
+        if case .start(nil, let metadata) = chunk, let messageIdForInjection {
+            return [.start(messageId: messageIdForInjection, messageMetadata: metadata)]
         }
+        return [chunk]
     }
 
-    if onFinish == nil && onStepFinish == nil {
+    if onEnd == nil && onStepEnd == nil {
         return idInjectedStream
     }
 
@@ -79,9 +56,9 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         catch { lifecycle.fail(error); throw error }
     }
 
-    let finishInvoker: FinishInvoker<Message>? = onFinish.map { callback in
+    let finishInvoker: FinishInvoker<Message>? = onEnd.map { callback in
         FinishInvoker(
-            onFinish: callback,
+            onEnd: callback,
             state: state,
             originalMessages: originalMessages.map { $0.clone() },
             lastAssistantMessage: lastAssistantMessage,
@@ -89,9 +66,9 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         )
     }
 
-    let stepFinishInvoker: StepFinishInvoker<Message>? = onStepFinish.map { callback in
+    let stepFinishInvoker: StepFinishInvoker<Message>? = onStepEnd.map { callback in
         StepFinishInvoker(
-            onStepFinish: callback,
+            onStepEnd: callback,
             state: state,
             originalMessages: originalMessages.map { $0.clone() },
             lastAssistantMessage: lastAssistantMessage,
@@ -104,35 +81,60 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
         runUpdateMessageJob: runUpdateMessageJob,
         onError: onError,
         onChunk: { chunk in
-            // Mirror upstream: `onStepFinish` runs as the stream processes a `finish-step` chunk.
+            // Mirror upstream: `onStepEnd` runs as the stream processes a `finish-step` chunk.
             if case .finishStep = chunk {
                 await stepFinishInvoker?.call()
             }
         }
     )
 
-    return AsyncThrowingStream { continuation in
-        let task = Task {
-            do {
-                for try await chunk in processedStream {
-                    continuation.yield(chunk)
-                }
-                try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled)
-                continuation.finish()
-            } catch {
-                if !Task.isCancelled { lifecycle.fail(error) }
-                do { try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled) }
-                catch { continuation.finish(throwing: error); return }
-                continuation.finish(throwing: error)
-            }
-        }
+    let ending = UIMessageStreamEnding(
+        stream: processedStream, finishInvoker: finishInvoker, lifecycle: lifecycle
+    )
+    return AsyncThrowingStream(unfolding: { try await ending.next() })
+}
 
-        continuation.onTermination = { _ in
-            // Mirror upstream TransformStream semantics: cancellation should trigger
-            // `onFinish` promptly. Cancelling the forward task ensures it hits the
-            // `catch` path and invokes `finishInvoker` deterministically.
-            task.cancel()
+/**
+ The last stage of a finish-handled stream: it calls `onEnd` once when the source ends,
+ fails, or the consumer cancels or abandons the stream before the end.
+ */
+private final class UIMessageStreamEnding<Message: UIMessageConvertible>: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<AnyUIMessageChunk, Error>.AsyncIterator
+    private let finishInvoker: FinishInvoker<Message>?
+    private let lifecycle: UIMessageStreamLifecycle
+    private var ended = false
+
+    init(
+        stream: AsyncThrowingStream<AnyUIMessageChunk, Error>,
+        finishInvoker: FinishInvoker<Message>?,
+        lifecycle: UIMessageStreamLifecycle
+    ) {
+        self.iterator = stream.makeAsyncIterator()
+        self.finishInvoker = finishInvoker
+        self.lifecycle = lifecycle
+    }
+
+    func next() async throws -> AnyUIMessageChunk? {
+        if ended { return nil }
+        do {
+            if let chunk = try await iterator.next() { return chunk }
+            ended = true
+            try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled)
+            return nil
+        } catch {
+            if ended { throw error }
+            ended = true
+            if !Task.isCancelled { lifecycle.fail(error) }
+            try await finishInvoker?.callIfNeeded(isCancelled: Task.isCancelled)
+            throw error
         }
+    }
+
+    // The unfolding stream releases this stage when its consumer is cancelled or the
+    // stream is dropped; an end that has not happened yet is a consumer cancellation.
+    deinit {
+        guard !ended, let finishInvoker else { return }
+        Task { try? await finishInvoker.callIfNeeded(isCancelled: true) }
     }
 }
 
@@ -140,20 +142,20 @@ public func handleUIMessageStreamFinish<Message: UIMessageConvertible>(
 
 private actor FinishInvoker<Message: UIMessageConvertible> {
     private var called = false
-    private let onFinish: UIMessageStreamOnFinishCallback<Message>
+    private let onEnd: UIMessageStreamOnEndCallback<Message>
     private let state: StreamingUIMessageState<Message>
     private let originalMessages: [Message]
     private let lastAssistantMessage: Message?
     private let lifecycle: UIMessageStreamLifecycle
 
     init(
-        onFinish: @escaping UIMessageStreamOnFinishCallback<Message>,
+        onEnd: @escaping UIMessageStreamOnEndCallback<Message>,
         state: StreamingUIMessageState<Message>,
         originalMessages: [Message],
         lastAssistantMessage: Message?,
         lifecycle: UIMessageStreamLifecycle
     ) {
-        self.onFinish = onFinish
+        self.onEnd = onEnd
         self.state = state
         self.originalMessages = originalMessages
         self.lastAssistantMessage = lastAssistantMessage
@@ -179,8 +181,8 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
         }
 
         let ending = lifecycle.ending(isCancelled: isCancelled)
-        try await onFinish(
-            UIMessageStreamFinishEvent(
+        try await onEnd(
+            UIMessageStreamEndEvent(
                 messages: messages,
                 isContinuation: isContinuation,
                 isAborted: ending.isAborted,
@@ -194,20 +196,20 @@ private actor FinishInvoker<Message: UIMessageConvertible> {
 }
 
 private actor StepFinishInvoker<Message: UIMessageConvertible> {
-    private let onStepFinish: UIMessageStreamOnStepFinishCallback<Message>
+    private let onStepEnd: UIMessageStreamOnStepEndCallback<Message>
     private let state: StreamingUIMessageState<Message>
     private let originalMessages: [Message]
     private let lastAssistantMessage: Message?
     private let onError: ErrorHandler
 
     init(
-        onStepFinish: @escaping UIMessageStreamOnStepFinishCallback<Message>,
+        onStepEnd: @escaping UIMessageStreamOnStepEndCallback<Message>,
         state: StreamingUIMessageState<Message>,
         originalMessages: [Message],
         lastAssistantMessage: Message?,
         onError: @escaping ErrorHandler
     ) {
-        self.onStepFinish = onStepFinish
+        self.onStepEnd = onStepEnd
         self.state = state
         self.originalMessages = originalMessages
         self.lastAssistantMessage = lastAssistantMessage
@@ -230,8 +232,8 @@ private actor StepFinishInvoker<Message: UIMessageConvertible> {
         }
 
         do {
-            try await onStepFinish(
-                UIMessageStreamStepFinishEvent(
+            try await onStepEnd(
+                UIMessageStreamStepEndEvent(
                     messages: messages,
                     isContinuation: isContinuation,
                     responseMessage: responseMessage

@@ -1,12 +1,12 @@
 import Foundation
 
 /**
- Completion callback invoked when a UI message stream finishes.
+ Callback invoked when a UI message stream ends.
 
- Port of `@ai-sdk/ai/src/ui-message-stream/ui-message-stream-on-finish-callback.ts`.
+ Port of `@ai-sdk/ai/src/ui-message-stream/ui-message-stream-on-end-callback.ts`.
  */
-public typealias UIMessageStreamOnFinishCallback<Message: UIMessageConvertible> =
-    @Sendable (UIMessageStreamFinishEvent<Message>) async throws -> Void
+public typealias UIMessageStreamOnEndCallback<Message: UIMessageConvertible> =
+    @Sendable (UIMessageStreamEndEvent<Message>) async throws -> Void
 
 public enum UIMessageStreamOutcome: Sendable {
     case completed
@@ -24,10 +24,7 @@ public enum UIMessageStreamOutcome: Sendable {
     }
 }
 
-public typealias UIMessageStreamOnEndCallback<Message: UIMessageConvertible> = UIMessageStreamOnFinishCallback<Message>
-public typealias UIMessageStreamEndEvent<Message: UIMessageConvertible> = UIMessageStreamFinishEvent<Message>
-
-public struct UIMessageStreamFinishEvent<Message: UIMessageConvertible>: Sendable {
+public struct UIMessageStreamEndEvent<Message: UIMessageConvertible>: Sendable {
     public let messages: [Message]
     public let isContinuation: Bool
     public let isAborted: Bool

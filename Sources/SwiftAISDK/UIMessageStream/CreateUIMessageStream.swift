@@ -11,11 +11,9 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
     execute: @escaping @Sendable (_ writer: DefaultUIMessageStreamWriter<Message>) async throws -> Void,
     onError mapError: @escaping @Sendable (Error) -> String = { _ in "An error occurred." },
     originalMessages: [Message]? = nil,
-    onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil,
-    onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
-    generateId: @escaping IDGenerator = generateID,
     onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
-    onEnd: UIMessageStreamOnEndCallback<Message>? = nil
+    onEnd: UIMessageStreamOnEndCallback<Message>? = nil,
+    generateId: @escaping IDGenerator = generateID
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     let state = UIMessageStreamState(errorMapper: mapError)
     let rawStream = state.makeStream()
@@ -41,11 +39,9 @@ public func createUIMessageStream<Message: UIMessageConvertible>(
         stream: rawStream,
         messageId: generateId(),
         originalMessages: originalMessages ?? [],
-        onStepFinish: onStepFinish,
-        onFinish: onFinish,
-        onError: finishHandler,
         onStepEnd: onStepEnd,
         onEnd: onEnd,
+        onError: finishHandler,
         getOutcome: { state.getOutcome() }
     )
 

@@ -183,10 +183,8 @@ public typealias UIMessageStreamChunk<Message: UIMessageConvertible> = InferUIMe
 public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
     public var originalMessages: [Message]?
     public var generateMessageId: (@Sendable () -> String)?
-    public var onFinish: UIMessageStreamOnFinishCallback<Message>?
     public var onEnd: UIMessageStreamOnEndCallback<Message>?
     public var onStepEnd: UIMessageStreamOnStepEndCallback<Message>?
-    public var onStepFinish: UIMessageStreamOnStepFinishCallback<Message>?
     public var messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)?
     public var sendReasoning: Bool
     public var sendSources: Bool
@@ -197,7 +195,6 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
     public init(
         originalMessages: [Message]? = nil,
         generateMessageId: (@Sendable () -> String)? = nil,
-        onFinish: UIMessageStreamOnFinishCallback<Message>? = nil,
         messageMetadata: (@Sendable (TextStreamPart) -> JSONValue?)? = nil,
         sendReasoning: Bool = true,
         sendSources: Bool = false,
@@ -205,15 +202,12 @@ public struct UIMessageStreamOptions<Message: UIMessageConvertible>: Sendable {
         sendStart: Bool = true,
         onError: (@Sendable (Error) -> String)? = nil,
         onEnd: UIMessageStreamOnEndCallback<Message>? = nil,
-        onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil,
-        onStepFinish: UIMessageStreamOnStepFinishCallback<Message>? = nil
+        onStepEnd: UIMessageStreamOnStepEndCallback<Message>? = nil
     ) {
         self.originalMessages = originalMessages
         self.generateMessageId = generateMessageId
-        self.onFinish = onFinish
         self.onEnd = onEnd
         self.onStepEnd = onStepEnd
-        self.onStepFinish = onStepFinish
         self.messageMetadata = messageMetadata
         self.sendReasoning = sendReasoning
         self.sendSources = sendSources

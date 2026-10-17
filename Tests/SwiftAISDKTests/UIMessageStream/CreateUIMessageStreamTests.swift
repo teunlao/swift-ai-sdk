@@ -124,7 +124,7 @@ struct CreateUIMessageStreamTests {
 
     @Test("onFinish receives generated response message without original messages")
     func onFinishWithoutOriginalMessages() async throws {
-        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = FinishEventProbe<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeStream(
             execute: { writer in
@@ -132,7 +132,7 @@ struct CreateUIMessageStreamTests {
                 writer.write(AnyUIMessageChunk.textDelta(id: "1", delta: "1a", providerMetadata: nil))
                 writer.write(AnyUIMessageChunk.textEnd(id: "1", providerMetadata: nil))
             },
-            onFinish: { event in
+            onEnd: { event in
                 await finishEvents.append(event)
             },
             generateId: { "response-message-id" }
@@ -163,7 +163,7 @@ struct CreateUIMessageStreamTests {
 
     @Test("onFinish continues the last assistant message when original messages exist")
     func onFinishWithOriginalMessagesContinuation() async throws {
-        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = FinishEventProbe<UIMessageStreamEndEvent<UIMessage>>()
         let originalMessages = [
             UIMessage(
                 id: "0",
@@ -186,7 +186,7 @@ struct CreateUIMessageStreamTests {
                 writer.write(AnyUIMessageChunk.textEnd(id: "1", providerMetadata: nil))
             },
             originalMessages: originalMessages,
-            onFinish: { event in
+            onEnd: { event in
                 await finishEvents.append(event)
             }
         )
@@ -222,7 +222,7 @@ struct CreateUIMessageStreamTests {
 
     @Test("injects generated messageId into start chunks when persistence is enabled")
     func injectsGeneratedMessageIdForPersistence() async throws {
-        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = FinishEventProbe<UIMessageStreamEndEvent<UIMessage>>()
         let originalMessages = [
             UIMessage(
                 id: "0",
@@ -237,7 +237,7 @@ struct CreateUIMessageStreamTests {
                 writer.write(AnyUIMessageChunk.start(messageId: nil, messageMetadata: nil))
             },
             originalMessages: originalMessages,
-            onFinish: { event in
+            onEnd: { event in
                 await finishEvents.append(event)
             },
             generateId: { "response-message-id" }
@@ -272,7 +272,7 @@ struct CreateUIMessageStreamTests {
 
     @Test("keeps existing messageId from start chunks when persistence is enabled")
     func keepsExistingMessageIdForPersistence() async throws {
-        let finishEvents = FinishEventProbe<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = FinishEventProbe<UIMessageStreamEndEvent<UIMessage>>()
         let originalMessages = [
             UIMessage(
                 id: "0",
@@ -287,7 +287,7 @@ struct CreateUIMessageStreamTests {
                 writer.write(AnyUIMessageChunk.start(messageId: "existing-message-id", messageMetadata: nil))
             },
             originalMessages: originalMessages,
-            onFinish: { event in
+            onEnd: { event in
                 await finishEvents.append(event)
             },
             generateId: { "response-message-id" }
@@ -322,7 +322,7 @@ struct CreateUIMessageStreamTests {
 
     @Test("forwards onStepFinish through createUIMessageStream")
     func forwardsOnStepFinish() async throws {
-        let stepEvents = FinishEventProbe<UIMessageStreamStepFinishEvent<UIMessage>>()
+        let stepEvents = FinishEventProbe<UIMessageStreamStepEndEvent<UIMessage>>()
 
         let stream = makeStream(
             execute: { writer in
@@ -331,7 +331,7 @@ struct CreateUIMessageStreamTests {
                 writer.write(AnyUIMessageChunk.textEnd(id: "1", providerMetadata: nil))
                 writer.write(AnyUIMessageChunk.finishStep)
             },
-            onStepFinish: { event in
+            onStepEnd: { event in
                 await stepEvents.append(event)
             },
             generateId: { "response-message-id" }
@@ -364,16 +364,16 @@ private func makeStream(
     execute: @escaping @Sendable (DefaultUIMessageStreamWriter<UIMessage>) async throws -> Void,
     onError: @escaping @Sendable (Error) -> String = { $0.localizedDescription },
     originalMessages: [UIMessage]? = nil,
-    onStepFinish: UIMessageStreamOnStepFinishCallback<UIMessage>? = nil,
-    onFinish: UIMessageStreamOnFinishCallback<UIMessage>? = nil,
+    onStepEnd: UIMessageStreamOnStepEndCallback<UIMessage>? = nil,
+    onEnd: UIMessageStreamOnEndCallback<UIMessage>? = nil,
     generateId: @escaping IDGenerator = generateID
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
     createUIMessageStream(
         execute: execute,
         onError: onError,
         originalMessages: originalMessages,
-        onStepFinish: onStepFinish,
-        onFinish: onFinish,
+        onStepEnd: onStepEnd,
+        onEnd: onEnd,
         generateId: generateId
     )
 }

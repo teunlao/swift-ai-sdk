@@ -93,7 +93,7 @@ struct ServerUIStreamParityTests {
         catch { #expect(error is ServerFailure) }
     }
 
-    @Test("step metadata is applied before end snapshots and new callbacks win")
+    @Test("step metadata is applied before step and end snapshots")
     func callbackOrdering() async throws {
         let events = UIEndEvents()
         let steps = UIStepEvents()
@@ -111,14 +111,12 @@ struct ServerUIStreamParityTests {
             continuation.finish()
         }
         let stream = toUIMessageStream(stream: input, options: UIMessageStreamOptions<UIMessage>(
-            onFinish: { _ in Issue.record("Deprecated callback took precedence") },
             messageMetadata: { part in
                 if case .finishStep = part { return .object(["step": .number(1)]) }
                 return nil
             },
             onEnd: { await events.append($0) },
-            onStepEnd: { await steps.append($0) },
-            onStepFinish: { _ in Issue.record("Deprecated step callback took precedence") }
+            onStepEnd: { await steps.append($0) }
         ))
         let chunks = try await collect(stream)
         let boundary = try #require(chunks.firstIndex(of: .finishStep))

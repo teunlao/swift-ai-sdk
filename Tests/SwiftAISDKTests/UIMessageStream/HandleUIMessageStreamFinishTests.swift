@@ -52,7 +52,7 @@ struct HandleUIMessageStreamFinishTests {
             stream: stream,
             messageId: "msg-123",
             originalMessages: [UIMessage](),
-            onFinish: nil,
+            onEnd: nil,
             onError: { capturedErrors.append($0.localizedDescription) }
         )
 
@@ -77,7 +77,7 @@ struct HandleUIMessageStreamFinishTests {
             stream: stream,
             messageId: "injected-123",
             originalMessages: [UIMessage](),
-            onFinish: nil,
+            onEnd: nil,
             onError: { _ in }
         )
 
@@ -111,14 +111,14 @@ struct HandleUIMessageStreamFinishTests {
             )
         ]
 
-        let finishEvents = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let resultStream = handleUIMessageStreamFinish(
             stream: stream,
             messageId: "msg-456",
             originalMessages: originalMessages,
-            onFinish: { event in finishEvents.append(event) },
+            onEnd: { event in finishEvents.append(event) },
             onError: { _ in }
         )
 
@@ -147,7 +147,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let finishEvents = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let finishEvents = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -155,7 +155,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-789",
                 originalMessages: [UIMessage](),
-                onFinish: { event in finishEvents.append(event) },
+                onEnd: { event in finishEvents.append(event) },
                 onError: { _ in }
             )
         )
@@ -193,7 +193,7 @@ struct HandleUIMessageStreamFinishTests {
             )
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -201,7 +201,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-ignored",
                 originalMessages: originalMessages,
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -237,7 +237,7 @@ struct HandleUIMessageStreamFinishTests {
             )
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -245,7 +245,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-001",
                 originalMessages: originalMessages,
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -268,7 +268,7 @@ struct HandleUIMessageStreamFinishTests {
         ]
 
         let stream = makeAsyncStream(from: inputChunks)
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let result = try await collectStream(
             handleUIMessageStreamFinish(
@@ -281,7 +281,7 @@ struct HandleUIMessageStreamFinishTests {
                         parts: [.text(TextUIPart(text: "Test request", state: .done))]
                     )
                 ],
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -303,7 +303,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -317,7 +317,7 @@ struct HandleUIMessageStreamFinishTests {
                         parts: [.text(TextUIPart(text: "Test request", state: .done))]
                     )
                 ],
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -338,7 +338,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let result = try await collectStream(
@@ -346,7 +346,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-multiple-abort",
                 originalMessages: [UIMessage](),
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -374,7 +374,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-abort-passthrough",
                 originalMessages: [UIMessage](),
-                onFinish: nil,
+                onEnd: nil,
                 onError: { capturedErrors.append($0.localizedDescription) }
             )
         )
@@ -383,47 +383,57 @@ struct HandleUIMessageStreamFinishTests {
         #expect(capturedErrors.values().isEmpty)
     }
 
-    @Test("triggers onFinish when reader is cancelled")
-    func readerCancellationTriggersFinish() async throws {
-        let inputChunks: [AnyUIMessageChunk] = [
-            .start(messageId: "msg-1", messageMetadata: nil),
-            .textStart(id: "text-1", providerMetadata: nil),
-            textChunk(id: "text-1", delta: "Hello")
-        ]
+    @Test("triggers onEnd when the reader is cancelled while waiting")
+    func readerCancellationTriggersEnd() async throws {
+        let source = AsyncThrowingStream<AnyUIMessageChunk, Error>.makeStream()
+        source.continuation.yield(.start(messageId: "msg-1", messageMetadata: nil))
+        source.continuation.yield(.textStart(id: "text-1", providerMetadata: nil))
+        source.continuation.yield(textChunk(id: "text-1", delta: "Hello"))
+        defer { source.continuation.finish() }
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
-
-        let stream = makeAsyncStream(from: inputChunks)
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
+        let read = ThreadSafeArray<AnyUIMessageChunk>()
         let resultStream = handleUIMessageStreamFinish(
-            stream: stream,
+            stream: source.stream,
             messageId: "msg-1",
             originalMessages: [UIMessage](),
-            onFinish: { event in events.append(event) },
+            onEnd: { event in events.append(event) },
             onError: { _ in }
         )
 
         let task = Task {
-            var iterator = resultStream.makeAsyncIterator()
-            _ = try await iterator.next()
-            try await Task.sleep(nanoseconds: 50_000)
+            for try await chunk in resultStream { read.append(chunk) }
         }
-
-        try await Task.sleep(nanoseconds: 100_000)
+        while read.values().count < 3 { await Task.yield() }
         task.cancel()
         _ = await task.result
+        // A cancellation between reads ends the stream from its release, off the consumer task.
+        for _ in 0..<1_000 where events.values().isEmpty { try await Task.sleep(nanoseconds: 1_000_000) }
 
-        // Wait for onFinish to be invoked
-        for _ in 0..<10 where events.values().isEmpty {
-            await Task.yield()
-        }
-
-        guard let event = events.values().first else {
-            Issue.record("Expected finish event after cancellation")
-            return
-        }
-
+        let event = try #require(events.values().first)
+        #expect(event.isCancelled == true)
         #expect(event.isAborted == false)
         #expect(event.responseMessage.id == "msg-1")
+    }
+
+    @Test("reads the source only as fast as the consumer reads")
+    func readsOnDemand() async throws {
+        let reads = ThreadSafeArray<Int>()
+        let parts: [TextStreamPart] = [.start, .textStart(id: "t", providerMetadata: nil)]
+            + Array(repeating: .textDelta(id: "t", text: "x", providerMetadata: nil), count: 1_000)
+        let source = AsyncThrowingStream<TextStreamPart, Error>(unfolding: {
+            let index = reads.values().count
+            guard index < parts.count else { return nil }
+            reads.append(index)
+            return parts[index]
+        })
+        let stream = toUIMessageStream(stream: source, options: UIMessageStreamOptions<UIMessage>(onEnd: { _ in }))
+
+        var iterator = stream.makeAsyncIterator()
+        for _ in 0..<3 { _ = try await iterator.next() }
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        #expect(reads.values().count == 3)
     }
 
     @Test("passes abort reason through")
@@ -436,7 +446,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let result = try await collectStream(
@@ -444,7 +454,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-abort-reason",
                 originalMessages: [UIMessage](),
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -464,7 +474,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: .stop, messageMetadata: nil)
         ]
 
-        let events = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let events = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let result = try await collectStream(
@@ -472,7 +482,7 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-finish-reason",
                 originalMessages: [UIMessage](),
-                onFinish: { events.append($0) },
+                onEnd: { events.append($0) },
                 onError: { _ in }
             )
         )
@@ -503,7 +513,7 @@ struct HandleUIMessageStreamFinishTests {
             )
         ]
 
-        let stepEvents = ThreadSafeArray<UIMessageStreamStepFinishEvent<UIMessage>>()
+        let stepEvents = ThreadSafeArray<UIMessageStreamStepEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let result = try await collectStream(
@@ -511,8 +521,8 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-step-1",
                 originalMessages: originalMessages,
-                onStepFinish: { stepEvents.append($0) },
-                onFinish: nil,
+                onStepEnd: { stepEvents.append($0) },
+                onEnd: nil,
                 onError: { _ in }
             )
         )
@@ -553,7 +563,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let stepEvents = ThreadSafeArray<UIMessageStreamStepFinishEvent<UIMessage>>()
+        let stepEvents = ThreadSafeArray<UIMessageStreamStepEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -561,8 +571,8 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-multi-step",
                 originalMessages: [UIMessage](),
-                onStepFinish: { stepEvents.append($0) },
-                onFinish: nil,
+                onStepEnd: { stepEvents.append($0) },
+                onEnd: nil,
                 onError: { _ in }
             )
         )
@@ -585,8 +595,8 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let stepEvents = ThreadSafeArray<UIMessageStreamStepFinishEvent<UIMessage>>()
-        let finishEvents = ThreadSafeArray<UIMessageStreamFinishEvent<UIMessage>>()
+        let stepEvents = ThreadSafeArray<UIMessageStreamStepEndEvent<UIMessage>>()
+        let finishEvents = ThreadSafeArray<UIMessageStreamEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -594,8 +604,8 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-both",
                 originalMessages: [UIMessage](),
-                onStepFinish: { stepEvents.append($0) },
-                onFinish: { finishEvents.append($0) },
+                onStepEnd: { stepEvents.append($0) },
+                onEnd: { finishEvents.append($0) },
                 onError: { _ in }
             )
         )
@@ -623,7 +633,7 @@ struct HandleUIMessageStreamFinishTests {
         ]
 
         let onErrorCalls = ThreadSafeArray<String>()
-        let stepEvents = ThreadSafeArray<UIMessageStreamStepFinishEvent<UIMessage>>()
+        let stepEvents = ThreadSafeArray<UIMessageStreamStepEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         let result = try await collectStream(
@@ -631,11 +641,11 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-error",
                 originalMessages: [UIMessage](),
-                onStepFinish: { event in
+                onStepEnd: { event in
                     stepEvents.append(event)
                     throw StepError()
                 },
-                onFinish: nil,
+                onEnd: nil,
                 onError: { onErrorCalls.append($0.localizedDescription) }
             )
         )
@@ -669,7 +679,7 @@ struct HandleUIMessageStreamFinishTests {
             )
         ]
 
-        let stepEvents = ThreadSafeArray<UIMessageStreamStepFinishEvent<UIMessage>>()
+        let stepEvents = ThreadSafeArray<UIMessageStreamStepEndEvent<UIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -677,8 +687,8 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-ignored",
                 originalMessages: originalMessages,
-                onStepFinish: { stepEvents.append($0) },
-                onFinish: nil,
+                onStepEnd: { stepEvents.append($0) },
+                onEnd: nil,
                 onError: { _ in }
             )
         )
@@ -702,7 +712,7 @@ struct HandleUIMessageStreamFinishTests {
             .finish(finishReason: nil, messageMetadata: nil)
         ]
 
-        let finishEvents = ThreadSafeArray<UIMessageStreamFinishEvent<RefUIMessage>>()
+        let finishEvents = ThreadSafeArray<UIMessageStreamEndEvent<RefUIMessage>>()
 
         let stream = makeAsyncStream(from: inputChunks)
         _ = try await collectStream(
@@ -710,13 +720,13 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-clone",
                 originalMessages: [RefUIMessage](),
-                onStepFinish: { event in
+                onStepEnd: { event in
                     // Mutate the message we received in onStepFinish
                     event.responseMessage.parts.append(
                         .text(TextUIPart(text: "MUTATION!", state: .done))
                     )
                 },
-                onFinish: { finishEvents.append($0) },
+                onEnd: { finishEvents.append($0) },
                 onError: { _ in }
             )
         )
@@ -749,8 +759,8 @@ struct HandleUIMessageStreamFinishTests {
                 stream: stream,
                 messageId: "msg-passthrough",
                 originalMessages: [UIMessage](),
-                onStepFinish: nil,
-                onFinish: nil,
+                onStepEnd: nil,
+                onEnd: nil,
                 onError: { capturedErrors.append($0.localizedDescription) }
             )
         )

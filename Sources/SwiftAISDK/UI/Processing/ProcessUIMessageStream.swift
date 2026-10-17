@@ -183,43 +183,27 @@ private func processUIMessageStreamImpl<Message: UIMessageConvertible>(
     resetStateOnFirstMessageStart: Bool,
     onChunk: (@Sendable (AnyUIMessageChunk) async -> Void)?
 ) -> AsyncThrowingStream<AnyUIMessageChunk, Error> {
-    return AsyncThrowingStream { continuation in
-        let task = Task {
-            do {
-                for try await chunk in stream {
-                    try await runUpdateMessageJob { context in
-                        try await handleChunk(
-                            chunk,
-                            context: context,
-                            onError: onError,
-                            messageMetadataSchema: messageMetadataSchema,
-                            dataPartSchemas: dataPartSchemas,
-                            onToolCall: onToolCall,
-                            onData: onData,
-                            resetStateOnMessageIdChange: resetStateOnMessageIdChange,
-                            resetStateOnFirstMessageStart: resetStateOnFirstMessageStart
-                        )
-                    }
-
-                    if let onChunk {
-                        await onChunk(chunk)
-                    }
-
-                    continuation.yield(chunk)
-                }
-
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
+    // Pull-based like upstream's TransformStream: a chunk is processed when the consumer reads it.
+    pullTransform(stream) { chunk in
+        try await runUpdateMessageJob { context in
+            try await handleChunk(
+                chunk,
+                context: context,
+                onError: onError,
+                messageMetadataSchema: messageMetadataSchema,
+                dataPartSchemas: dataPartSchemas,
+                onToolCall: onToolCall,
+                onData: onData,
+                resetStateOnMessageIdChange: resetStateOnMessageIdChange,
+                resetStateOnFirstMessageStart: resetStateOnFirstMessageStart
+            )
         }
 
-        // Ensure upstream processing halts promptly when the consumer cancels.
-        continuation.onTermination = { termination in
-            if case .cancelled = termination {
-                task.cancel()
-            }
+        if let onChunk {
+            await onChunk(chunk)
         }
+
+        return [chunk]
     }
 }
 
