@@ -1,16 +1,16 @@
 import AISDKProvider
 import AISDKProviderUtils
 
-public enum OpenAIPromptCacheMode: String, Sendable, Equatable {
+public enum OpenAIPromptCacheMode: String, Sendable, Equatable, Encodable {
     case implicit
     case explicit
 }
 
-public enum OpenAIPromptCacheTTL: String, Sendable, Equatable {
+public enum OpenAIPromptCacheTTL: String, Sendable, Equatable, Encodable {
     case thirtyMinutes = "30m"
 }
 
-public struct OpenAIPromptCacheOptions: Sendable, Equatable {
+public struct OpenAIPromptCacheOptions: Sendable, Equatable, Encodable {
     public var mode: OpenAIPromptCacheMode?
     public var ttl: OpenAIPromptCacheTTL?
 

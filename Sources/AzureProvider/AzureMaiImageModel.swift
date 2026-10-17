@@ -72,7 +72,7 @@ public final class AzureMaiImageModel: ImageModelV4 {
         if let images {
             var builder = MultipartFormDataBuilder()
             for (key, value) in fields {
-                builder.appendField(name: key, value: try value.formValue())
+                builder.appendField(name: key, value: value.formValue())
             }
             for (index, image) in images.enumerated() {
                 builder.appendFile(name: "image", filename: "image-\(index + 1).\(image.mediaType?.lowercased() == "image/jpeg" ? "jpg" : "png")",
@@ -137,16 +137,11 @@ public final class AzureMaiImageModel: ImageModelV4 {
             }
         }
 
-        func formValue() throws -> String {
+        func formValue() -> String {
             switch self {
             case .string(let value): return value
             case .bool(let value): return String(value)
-            case .number(let value):
-                if value.isNaN { return "NaN" }
-                if value == .infinity { return "Infinity" }
-                if value == -.infinity { return "-Infinity" }
-                if value == 0 { return "0" }
-                return String(decoding: try JSONEncoder().encode(JSONValue.number(value)), as: UTF8.self)
+            case .number(let value): return jsNumberString(value)
             }
         }
     }

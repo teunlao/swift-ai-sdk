@@ -283,14 +283,13 @@ func testStreamTextBasic() async throws {
 // MARK: - Embedding Models Tests
 
 func testTextEmbeddingModelCreation() async throws {
-    // From docs: let model = openai.textEmbedding("text-embedding-3-large")
+    // From docs: let model = openai.embedding("text-embedding-3-large")
 
-    let model = openai.textEmbedding("text-embedding-3-large")
+    let model = openai.embedding("text-embedding-3-large")
     let modelType = String(describing: type(of: model))
     print("   Created embedding model: \(modelType)")
 
-    // Type is guaranteed to be EmbeddingModelV3
-    print("   ✓ Model conforms to EmbeddingModelV3")
+    print("   Model conforms to EmbeddingModelV4")
 }
 
 func testEmbeddingProviderOptions() async throws {

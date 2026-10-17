@@ -21,6 +21,16 @@ public struct AzureProviderTools: Sendable {
     public func imageGeneration(_ args: OpenAIImageGenerationArgs = .init()) -> Tool {
         openaiImageGenerationToolFactory(args)
     }
+
+    @discardableResult
+    public func webSearch(_ args: OpenAIWebSearchArgs = .init()) -> Tool {
+        openaiWebSearchToolFactory(args)
+    }
+
+    @discardableResult
+    public func webSearchPreview(_ args: OpenAIWebSearchPreviewArgs = .init()) -> Tool {
+        openaiWebSearchPreviewToolFactory(args)
+    }
 }
 
 /// Default Azure tool facade (parity with TS export).

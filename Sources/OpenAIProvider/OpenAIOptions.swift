@@ -1,5 +1,11 @@
 import AISDKProvider
 
+extension OpenAILanguageModelResponsesOptions: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        try OpenAIOptions().responses(self)["openai"]!.encode(to: encoder)
+    }
+}
+
 public struct OpenAIOptions: Sendable {
     public init() {}
 

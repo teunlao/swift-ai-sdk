@@ -110,7 +110,7 @@ struct OpenAIProviderTests {
             )
 
             do {
-                _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
+                _ = try await provider.embeddingModel(modelId: "text-embedding-3-small").doEmbed(
                     options: EmbeddingModelV4CallOptions(values: ["hello"])
                 )
                 Issue.record("Expected missing API key error")
@@ -140,7 +140,7 @@ struct OpenAIProviderTests {
             let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
-            _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
+            _ = try await provider.embeddingModel(modelId: "text-embedding-3-small").doEmbed(
                 options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
@@ -164,7 +164,7 @@ struct OpenAIProviderTests {
             let provider = try createOpenAIProvider(
                 settings: OpenAIProviderSettings(apiKey: "test-api-key", fetch: makeFetch(capture: capture))
             )
-            _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
+            _ = try await provider.embeddingModel(modelId: "text-embedding-3-small").doEmbed(
                 options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
@@ -191,7 +191,7 @@ struct OpenAIProviderTests {
                     apiKey: "test-api-key",
                     fetch: makeFetch(capture: capture))
             )
-            _ = try await provider.textEmbeddingModel(modelId: "text-embedding-3-small").doEmbed(
+            _ = try await provider.embeddingModel(modelId: "text-embedding-3-small").doEmbed(
                 options: EmbeddingModelV4CallOptions(values: ["hello"])
             )
             let url = await capture.current()
@@ -212,69 +212,6 @@ struct OpenAIProviderTests {
                 return FetchResponse(body: .data(data), urlResponse: response)
             }
         }
-    }
-
-    @Test("embeddingModel String alias creates embedding model")
-    func embeddingModelStringAliasCreatesEmbeddingModel() throws {
-        let provider = try createOpenAIProvider(
-            settings: OpenAIProviderSettings(apiKey: "test-api-key")
-        )
-
-        let model = try provider.embeddingModel(modelId: "text-embedding-3-small")
-
-        #expect(model.provider == "openai.embedding")
-        #expect(model.modelId == "text-embedding-3-small")
-    }
-
-    @Test("typed embeddingModel alias matches embedding alias")
-    func typedEmbeddingModelAliasMatchesEmbeddingAlias() throws {
-        let provider = try createOpenAIProvider(
-            settings: OpenAIProviderSettings(apiKey: "test-api-key")
-        )
-
-        let typedModel = provider.embeddingModel(OpenAIEmbeddingModelId(rawValue: "text-embedding-3-small"))
-        let embeddingAliasModel = provider.embedding(OpenAIEmbeddingModelId(rawValue: "text-embedding-3-small"))
-
-        #expect(typedModel.provider == "openai.embedding")
-        #expect(typedModel.modelId == "text-embedding-3-small")
-        #expect(embeddingAliasModel.provider == "openai.embedding")
-        #expect(embeddingAliasModel.modelId == "text-embedding-3-small")
-    }
-
-    @Test("createOpenAI exposes upstream V4 provider surface")
-    func createOpenAIExposesV4ProviderSurface() throws {
-        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
-
-        #expect(provider.specificationVersion == "v4")
-
-        let languageModel = try provider.languageModel(modelId: "gpt-5")
-        #expect(languageModel.specificationVersion == "v4")
-        #expect(languageModel.provider == "custom-openai.responses")
-        #expect(languageModel.modelId == "gpt-5")
-
-        #expect(provider.responses("gpt-5").provider == "custom-openai.responses")
-        #expect(provider.chat("gpt-5").provider == "custom-openai.chat")
-        let completionModel: OpenAICompletionLanguageModel = provider.completion("gpt-3.5-turbo-instruct")
-        #expect(completionModel.specificationVersion == "v4")
-        #expect(completionModel.provider == "custom-openai.completion")
-        #expect(provider.embedding("text-embedding-3-small").provider == "custom-openai.embedding")
-        #expect(provider.textEmbedding("text-embedding-3-small").provider == "custom-openai.embedding")
-        let imageModel = provider.image("gpt-image-1")
-        #expect(imageModel.specificationVersion == "v4")
-        #expect(imageModel.provider == "custom-openai.image")
-        #expect(provider.transcription("whisper-1").provider == "custom-openai.transcription")
-        let speechModel = provider.speech("tts-1")
-        #expect(speechModel.specificationVersion == "v4")
-        #expect(speechModel.provider == "custom-openai.speech")
-
-        let files = try #require(try provider.files())
-        let skills = try #require(try provider.skills())
-        #expect(files.specificationVersion == "v4")
-        #expect(files.provider == "custom-openai.files")
-        #expect(skills.specificationVersion == "v4")
-        #expect(skills.provider == "custom-openai.skills")
-
-        #expect(try provider.experimental_realtime("gpt-realtime").provider == "custom-openai.realtime")
     }
 
     @Test("createOpenAI V4 routes default, chat, and embedding calls like upstream")

@@ -147,26 +147,6 @@ public final class OpenAIProvider: ProviderV4 {
         embedding(modelId: modelId)
     }
 
-    public func textEmbedding(modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
-        embedding(modelId: modelId)
-    }
-
-    public func textEmbedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
-        embedding(modelId: modelId)
-    }
-
-    public func textEmbedding(_ modelId: String) -> OpenAIEmbeddingModel {
-        embedding(modelId)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        embedding(modelId)
-    }
-
-    public func textEmbeddingModel(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
-        embedding(modelId: modelId)
-    }
-
     public func image(modelId: OpenAIImageModelId) -> OpenAIImageModel {
         imageFactory(modelId)
     }

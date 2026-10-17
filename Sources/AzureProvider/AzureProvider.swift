@@ -2,6 +2,8 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 import OpenAIProvider
+@_exported import struct OpenAIProvider.OpenAILanguageModelChatOptions
+@_exported import struct OpenAIProvider.OpenAILanguageModelResponsesOptions
 import DeepSeekProvider
 
 /// Settings for configuring the Azure OpenAI provider.
@@ -97,10 +99,6 @@ public final class AzureProvider: ProviderV4 {
         embeddingFactory(OpenAIEmbeddingModelId(rawValue: modelId))
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        try embeddingModel(modelId: modelId)
-    }
-
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
         imageFactory(modelId)
     }
@@ -138,10 +136,6 @@ public final class AzureProvider: ProviderV4 {
     }
 
     public func embeddingModel(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
-        embeddingFactory(modelId)
-    }
-
-    public func textEmbedding(_ modelId: OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel {
         embeddingFactory(modelId)
     }
 

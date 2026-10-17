@@ -614,7 +614,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(values: ["sunny day at the beach", "rainy day in the city"]))
+        _ = try await provider.embedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(values: ["sunny day at the beach", "rainy day in the city"]))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -678,7 +678,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.textEmbedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(
+        _ = try await provider.embedding(.init(rawValue: "my-embedding")).doEmbed(options: EmbeddingModelV4CallOptions(
             values: ["sunny day at the beach", "rainy day in the city"],
             headers: ["Custom-Request-Header": "request-header-value"]
         ))

@@ -2,9 +2,11 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public enum OpenAIChatLogprobsOption: Sendable, Equatable {
+public enum OpenAIChatLogprobsOption: Sendable, Equatable, Encodable {
     case bool(Bool)
     case number(Double)
+
+    public func encode(to encoder: Encoder) throws { try jsonValue.encode(to: encoder) }
 
     var jsonValue: JSONValue {
         switch self {
@@ -16,7 +18,7 @@ public enum OpenAIChatLogprobsOption: Sendable, Equatable {
     }
 }
 
-public enum OpenAIChatReasoningEffort: String, Sendable {
+public enum OpenAIChatReasoningEffort: String, Sendable, Encodable {
     case none
     case minimal
     case low
@@ -26,7 +28,7 @@ public enum OpenAIChatReasoningEffort: String, Sendable {
     case max
 }
 
-public enum OpenAIChatServiceTier: String, Sendable {
+public enum OpenAIChatServiceTier: String, Sendable, Encodable {
     case auto
     case flex
     case priority
@@ -35,24 +37,24 @@ public enum OpenAIChatServiceTier: String, Sendable {
     case `default`
 }
 
-public enum OpenAIChatTextVerbosity: String, Sendable {
+public enum OpenAIChatTextVerbosity: String, Sendable, Encodable {
     case low
     case medium
     case high
 }
 
-public enum OpenAIChatSystemMessageMode: Sendable, Equatable {
+public enum OpenAIChatSystemMessageMode: String, Sendable, Equatable, Encodable {
     case system
     case developer
     case remove
 }
 
-public enum OpenAIChatPromptCacheRetention: String, Sendable {
+public enum OpenAIChatPromptCacheRetention: String, Sendable, Encodable {
     case inMemory = "in_memory"
     case twentyFourHours = "24h"
 }
 
-public struct OpenAIChatLanguageModelOptions: Sendable, Equatable {
+public struct OpenAILanguageModelChatOptions: Sendable, Equatable, Encodable {
     public var logitBias: [String: Double]?
     public var logprobs: OpenAIChatLogprobsOption?
     public var parallelToolCalls: Bool?
@@ -141,21 +143,7 @@ private func tokenId(_ key: String) -> String? {
         number = value
     }
     guard number.isFinite else { return nil }
-    if number == 0 { return "0" }
-    let sign = number < 0 ? "-" : ""
-    let parts = String(abs(number)).lowercased().split(separator: "e")
-    var mantissa = String(parts[0])
-    if mantissa.hasSuffix(".0") { mantissa.removeLast(2) }
-    guard parts.count == 2, let exponent = Int(parts[1]) else { return sign + mantissa }
-    if abs(number) >= 1e21 || abs(number) < 1e-6 {
-        return sign + mantissa + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
-    }
-    let point = (mantissa.firstIndex(of: ".").map { mantissa.distance(from: mantissa.startIndex, to: $0) } ?? mantissa.count) + exponent
-    let digits = mantissa.replacingOccurrences(of: ".", with: "")
-    if point <= 0 { return sign + "0." + String(repeating: "0", count: -point) + digits }
-    if point >= digits.count { return sign + digits + String(repeating: "0", count: point - digits.count) }
-    let index = digits.index(digits.startIndex, offsetBy: point)
-    return sign + String(digits[..<index]) + "." + String(digits[index...])
+    return jsNumberString(number)
 }
 
 private let openAIChatProviderOptionsJSONSchema: JSONValue = .object([
@@ -163,7 +151,7 @@ private let openAIChatProviderOptionsJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(true)
 ])
 
-let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatLanguageModelOptions>(
+let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAILanguageModelChatOptions>(
     Schema(
         jsonSchemaResolver: { openAIChatProviderOptionsJSONSchema },
         validator: { value in
@@ -174,7 +162,7 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAIChatLanguageModelOpti
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var result = OpenAIChatLanguageModelOptions()
+                var result = OpenAILanguageModelChatOptions()
                 func field(_ key: String, message: String) throws -> JSONValue? {
                     guard let value = dict[key] else { return nil }
                     guard value != .null else {

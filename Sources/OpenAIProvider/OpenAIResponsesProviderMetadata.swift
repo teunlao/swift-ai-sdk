@@ -1,6 +1,6 @@
 import AISDKProvider
 
-public struct ResponsesProviderMetadata: Sendable, Equatable {
+public struct ResponsesProviderMetadata: Sendable, Equatable, Decodable {
     public var responseId: String?
     public var logprobs: [JSONValue]?
     public var serviceTier: String?
@@ -14,12 +14,12 @@ public struct ResponsesProviderMetadata: Sendable, Equatable {
     }
 }
 
-public struct OpenaiResponsesProviderMetadata: Sendable, Equatable {
+public struct OpenaiResponsesProviderMetadata: Sendable, Equatable, Decodable {
     public var openai: ResponsesProviderMetadata
     public init(openai: ResponsesProviderMetadata) { self.openai = openai }
 }
 
-public struct ResponsesReasoningProviderMetadata: Sendable, Equatable {
+public struct ResponsesReasoningProviderMetadata: Sendable, Equatable, Decodable {
     public var itemId: String
     public var reasoningEncryptedContent: String?
 
@@ -29,7 +29,7 @@ public struct ResponsesReasoningProviderMetadata: Sendable, Equatable {
     }
 }
 
-public struct OpenaiResponsesReasoningProviderMetadata: Sendable, Equatable {
+public struct OpenaiResponsesReasoningProviderMetadata: Sendable, Equatable, Decodable {
     public var openai: ResponsesReasoningProviderMetadata
     public init(openai: ResponsesReasoningProviderMetadata) { self.openai = openai }
 }
@@ -74,12 +74,12 @@ public struct OpenaiResponsesCompactionProviderMetadata: Sendable, Equatable {
     public init(openai: ResponsesCompactionProviderMetadata) { self.openai = openai }
 }
 
-public enum OpenAIResponsesTextPhase: String, Sendable, Equatable {
+public enum OpenAIResponsesTextPhase: String, Sendable, Equatable, Decodable {
     case commentary
     case finalAnswer = "final_answer"
 }
 
-public struct ResponsesTextProviderMetadata: Sendable, Equatable {
+public struct ResponsesTextProviderMetadata: Sendable, Equatable, Decodable {
     public var itemId: String
     public var phase: OpenAIResponsesTextPhase?
     public var annotations: [JSONValue]?
@@ -91,16 +91,29 @@ public struct ResponsesTextProviderMetadata: Sendable, Equatable {
     }
 }
 
-public struct OpenaiResponsesTextProviderMetadata: Sendable, Equatable {
+public struct OpenaiResponsesTextProviderMetadata: Sendable, Equatable, Decodable {
     public var openai: ResponsesTextProviderMetadata
     public init(openai: ResponsesTextProviderMetadata) { self.openai = openai }
 }
 
-public enum ResponsesSourceDocumentProviderMetadata: Sendable, Equatable {
+public enum ResponsesSourceDocumentProviderMetadata: Sendable, Equatable, Decodable {
     case fileSearch(fileId: String)
     case fileCitation(fileId: String, index: Double)
     case containerFileCitation(fileId: String, containerId: String)
     case filePath(fileId: String, index: Double)
+
+    private enum Keys: String, CodingKey { case type, fileId, index, containerId }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Keys.self)
+        switch try fields.decode(String.self, forKey: .type) {
+        case "file_search": self = .fileSearch(fileId: try fields.decode(String.self, forKey: .fileId))
+        case "file_citation": self = .fileCitation(fileId: try fields.decode(String.self, forKey: .fileId), index: try fields.decode(Double.self, forKey: .index))
+        case "container_file_citation": self = .containerFileCitation(fileId: try fields.decode(String.self, forKey: .fileId), containerId: try fields.decode(String.self, forKey: .containerId))
+        case "file_path": self = .filePath(fileId: try fields.decode(String.self, forKey: .fileId), index: try fields.decode(Double.self, forKey: .index))
+        default: throw DecodingError.dataCorruptedError(forKey: .type, in: fields, debugDescription: "Unknown Responses document source")
+        }
+    }
 
     public var type: String {
         switch self {
@@ -112,7 +125,7 @@ public enum ResponsesSourceDocumentProviderMetadata: Sendable, Equatable {
     }
 }
 
-public struct OpenaiResponsesSourceDocumentProviderMetadata: Sendable, Equatable {
+public struct OpenaiResponsesSourceDocumentProviderMetadata: Sendable, Equatable, Decodable {
     public var openai: ResponsesSourceDocumentProviderMetadata
     public init(openai: ResponsesSourceDocumentProviderMetadata) { self.openai = openai }
 }
