@@ -1,12 +1,7 @@
 import Foundation
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/revai/src/revai-config.ts
-// Upstream commit: f3a72bc2a
-//===----------------------------------------------------------------------===//
+// Port of packages/revai/src/revai-config.ts.
 
 struct RevAIConfig: Sendable {
     struct RequestOptions: Sendable {
@@ -16,14 +11,14 @@ struct RevAIConfig: Sendable {
 
     let provider: String
     let url: @Sendable (RequestOptions) -> String
-    let headers: @Sendable () -> [String: String?]
+    let headers: @Sendable () throws -> [String: String?]
     let fetch: FetchFunction?
     let currentDate: @Sendable () -> Date
 
     init(
         provider: String,
         url: @escaping @Sendable (RequestOptions) -> String,
-        headers: @escaping @Sendable () -> [String: String?],
+        headers: @escaping @Sendable () throws -> [String: String?],
         fetch: FetchFunction?,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {

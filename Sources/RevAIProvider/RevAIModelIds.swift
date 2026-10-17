@@ -1,11 +1,6 @@
 import Foundation
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/revai/src/revai-transcription-options.ts
-// Upstream commit: f3a72bc2a
-//===----------------------------------------------------------------------===//
+// Port of packages/revai/src/revai-transcription-options.ts.
 
 public struct RevAITranscriptionModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
     public let rawValue: String

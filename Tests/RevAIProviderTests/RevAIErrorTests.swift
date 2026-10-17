@@ -1,50 +1,32 @@
 import Foundation
 import Testing
-@testable import AISDKProviderUtils
-@testable import RevAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import RevAIProvider
 
-@Suite("RevAIError")
+@Suite("RevAI HTTP errors")
 struct RevAIErrorTests {
-    @Test("revaiErrorDataSchema parses resource exhausted error")
-    func parsesResourceExhaustedError() async throws {
-        let error = #"""
-
-{"error":{"message":"{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Resource has been exhausted (e.g. check quota).\",\n    \"status\": \"RESOURCE_EXHAUSTED\"\n  }\n}\n","code":429}}
-
-"""#
-
-        let result = await safeParseJSON(
-            ParseJSONWithSchemaOptions(text: error, schema: revaiErrorDataSchema)
-        )
-
-        switch result {
-        case .success(let value, let rawValue):
-            let expectedMessage = """
-            {
-              "error": {
-                "code": 429,
-                "message": "Resource has been exhausted (e.g. check quota).",
-                "status": "RESOURCE_EXHAUSTED"
-              }
-            }
-
-            """
-
-            #expect(value == RevAIErrorData(
-                error: .init(message: expectedMessage, code: 429)
+    @Test("Preserves structured API errors with source-valid fractional and huge codes", arguments: [0.25, 1e100])
+    func apiFailure(code: Double) async throws {
+        let body = "{\"error\":{\"message\":\"Quota exhausted\",\"code\":\(code)}}"
+        let fetch: FetchFunction = { request in
+            FetchResponse(body: .data(Data(body.utf8)), urlResponse: HTTPURLResponse(
+                url: request.url!, statusCode: 429, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json", "x-request-id": "failure"]
+            )!)
+        }
+        do {
+            _ = try await createRevAI(settings: .init(apiKey: "key", fetch: fetch)).transcription(modelId: .machine).doGenerate(options: .init(
+                audio: .binary(Data()), mediaType: "audio/wav"
             ))
-
-            if let dict = rawValue as? [String: Any],
-               let errorDict = dict["error"] as? [String: Any] {
-                let message = errorDict["message"] as? String
-                let code = (errorDict["code"] as? NSNumber)?.intValue
-                #expect(message == expectedMessage)
-                #expect(code == 429)
-            } else {
-                Issue.record("rawValue is not a dictionary")
-            }
-        case .failure(let error, _):
-            Issue.record("Expected success, got error: \(error)")
+            Issue.record("Expected API failure")
+        } catch let error as APICallError {
+            #expect(error.message == "Quota exhausted")
+            #expect(error.statusCode == 429)
+            #expect(error.isRetryable)
+            #expect(error.responseHeaders?["x-request-id"] == "failure")
+            #expect(error.responseBody == body)
+            #expect(error.url == "https://api.rev.ai/speechtotext/v1/jobs")
         }
     }
 }

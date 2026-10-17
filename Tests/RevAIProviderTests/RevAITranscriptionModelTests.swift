@@ -1,509 +1,267 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import RevAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import RevAIProvider
 
-@Suite("RevAITranscriptionModel")
+private func response(_ request: URLRequest, _ body: String, status: Int = 200) -> FetchResponse {
+    FetchResponse(
+        body: .data(Data(body.utf8)),
+        urlResponse: HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json", "x-request-id": "transcript-request"]
+        )!
+    )
+}
+
+private func configPayload(_ request: URLRequest) throws -> JSONObject {
+    let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+    let marker = "name=\"config\"\r\n\r\n"
+    let start = try #require(body.range(of: marker)).upperBound
+    let end = try #require(body.range(of: "\r\n--", range: start..<body.endIndex)).lowerBound
+    return try JSONDecoder().decode(JSONObject.self, from: Data(body[start..<end].utf8))
+}
+
+@Suite("RevAI file transcription")
 struct RevAITranscriptionModelTests {
-    private actor RequestCapture {
-        var requests: [URLRequest] = []
-        func append(_ request: URLRequest) { requests.append(request) }
-        func first() -> URLRequest? { requests.first }
-        func all() -> [URLRequest] { requests }
+    @Test("Uploads audio, polls the job and returns timed text with raw metadata", arguments: [false, true])
+    func transcribesFile(base64: Bool) async throws {
+        let audio = Data("AUDIO".utf8)
+        let fetch: FetchFunction = { request in
+            #expect(request.url?.host == "api.rev.ai")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer request")
+            #expect(request.value(forHTTPHeaderField: "X-Trace") == "request")
+            #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-revai/") == true)
+            switch request.url?.path {
+            case "/speechtotext/v1/jobs":
+                #expect(request.httpMethod == "POST")
+                #expect(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+                let config = try configPayload(request)
+                #expect(config == ["transcriber": "low_cost"])
+                let body = try #require(request.httpBody)
+                #expect(body.range(of: audio) != nil)
+                #expect(String(decoding: body, as: UTF8.self).contains("filename=\"audio.wav\""))
+                return response(request, #"{"id":"job","status":"in_progress","language":"en"}"#)
+            case "/speechtotext/v1/jobs/job":
+                #expect(request.httpMethod == "GET")
+                return response(request, #"{"id":"job","status":"transcribed","language":"fr"}"#)
+            case "/speechtotext/v1/jobs/job/transcript":
+                #expect(request.httpMethod == "GET")
+                return response(request, #"{"extra":1e100,"monologues":[{"elements":[{"type":"text","value":"Hello","ts":0.5,"end_ts":1.5},{"type":"punct","value":" "},{"type":"text","value":"World","ts":1.75,"end_ts":2.85},{"type":"punct","value":"."}]},{"elements":[{"type":"text","value":"Tail","ts":3}]}]}"#)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        let provider: any ProviderV4 = createRevAI(settings: .init(
+            apiKey: "key", headers: ["Authorization": "Bearer provider", "X-Trace": "provider"], fetch: fetch
+        ))
+        let resolved = try provider.transcriptionModel(modelId: "low_cost")
+        let model = try #require(resolved)
+        let start = Date()
+        let result = try await model.doGenerate(options: .init(
+            audio: base64 ? .base64(audio.base64EncodedString()) : .binary(audio), mediaType: "audio/wav",
+            headers: ["authorization": "Bearer request", "x-trace": "request"]
+        ))
+        #expect(result.text == "Hello World. Tail")
+        #expect(result.segments == [
+            .init(text: "Hello", startSecond: 0.5, endSecond: 1.5),
+            .init(text: "World", startSecond: 1.75, endSecond: 2.85),
+            .init(text: "Tail", startSecond: 3, endSecond: 4)
+        ])
+        #expect(result.language == "en")
+        #expect(result.durationInSeconds == 2.85)
+        #expect(result.warnings.isEmpty)
+        #expect(result.usage == nil)
+        #expect(result.request == nil)
+        #expect(result.providerMetadata == nil)
+        #expect(result.response.modelId == "low_cost")
+        #expect(result.response.timestamp >= start && result.response.timestamp <= Date())
+        #expect(result.response.headers?["x-request-id"] == "transcript-request")
+        let raw = try #require(result.response.body as? [String: Any])
+        #expect(raw["extra"] as? Double == 1e100)
+        #expect((raw["monologues"] as? [Any])?.count == 2)
     }
 
-    private struct MultipartPart {
-        let headers: [String: String]
-        let body: Data
-    }
+    enum Defaults: Sendable { case empty, nullish }
 
-    private func extractBoundary(from contentType: String) -> String? {
-        guard let range = contentType.range(of: "boundary=") else { return nil }
-        let tail = contentType[range.upperBound...]
-        return tail.split(whereSeparator: { $0 == ";" || $0 == " " || $0 == "\t" }).first.map(String.init)
-    }
-
-    private func parseMultipart(_ data: Data, boundary: String) -> [MultipartPart] {
-        let bytes = [UInt8](data)
-        let boundaryBytes = Array("--\(boundary)".utf8)
-
-        guard !boundaryBytes.isEmpty, bytes.count >= boundaryBytes.count else { return [] }
-
-        var positions: [Int] = []
-        var i = 0
-        while i <= bytes.count - boundaryBytes.count {
-            var match = true
-            for j in 0..<boundaryBytes.count {
-                if bytes[i + j] != boundaryBytes[j] {
-                    match = false
-                    break
+    @Test("Distinguishes absent fields from explicit null and applies nested defaults", arguments: [Defaults.empty, .nullish])
+    func optionDefaults(mode: Defaults) async throws {
+        let nullish = mode == .nullish
+        let providerOptions: JSONObject = nullish ? [
+            "rush": .null, "language": .null, "skip_diarization": .null,
+            "summarization_config": ["model": .null, "prompt": .null],
+            "notification_config": ["url": "https://callback.example", "auth_headers": .null]
+        ] : [:]
+        let fetch: FetchFunction = { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+            if request.httpMethod == "POST" {
+                let config = try configPayload(request)
+                #expect(config["transcriber"] == "fusion")
+                #expect(config["rush"] == (nullish ? nil : .bool(false)))
+                #expect(config["language"] == (nullish ? nil : .string("en")))
+                #expect(config["skip_diarization"] == (nullish ? nil : .bool(false)))
+                #expect(config["test_mode"] == false)
+                #expect(config["skip_postprocessing"] == false)
+                #expect(config["skip_punctuation"] == false)
+                #expect(config["remove_disfluencies"] == false)
+                #expect(config["remove_atmospherics"] == false)
+                #expect(config["filter_profanity"] == false)
+                #expect(config["forced_alignment"] == false)
+                #expect(config["diarization_type"] == "standard")
+                if nullish {
+                    #expect(config["summarization_config"] == ["model": .null, "type": "paragraph", "prompt": .null])
+                    #expect(config["notification_config"] == ["url": "https://callback.example", "auth_headers": .null])
                 }
+                return response(request, #"{"id":"job","status":"transcribed"}"#)
             }
-            if match {
-                positions.append(i)
-                i += boundaryBytes.count
-            } else {
-                i += 1
-            }
+            return response(request, #"{"monologues":null}"#)
         }
-
-        guard positions.count >= 2 else { return [] }
-
-        var parts: [MultipartPart] = []
-
-        for index in 0..<(positions.count - 1) {
-            let start = positions[index] + boundaryBytes.count
-            let end = positions[index + 1]
-            if start >= end { continue }
-
-            var partStart = start
-            if partStart + 1 < end, bytes[partStart] == 0x0d, bytes[partStart + 1] == 0x0a {
-                partStart += 2
-            }
-            var partEnd = end
-            if partEnd - 2 >= partStart, bytes[partEnd - 2] == 0x0d, bytes[partEnd - 1] == 0x0a {
-                partEnd -= 2
-            }
-            if partStart >= partEnd { continue }
-
-            let partBytes = Array(bytes[partStart..<partEnd])
-            let partData = Data(partBytes)
-
-            // Split headers/body on CRLFCRLF.
-            let delimiter = Data([0x0d, 0x0a, 0x0d, 0x0a])
-            guard let delimiterRange = partData.range(of: delimiter) else { continue }
-            let headerData = partData.subdata(in: partData.startIndex..<delimiterRange.lowerBound)
-            let bodyData = partData.subdata(in: delimiterRange.upperBound..<partData.endIndex)
-
-            let headerString = String(data: headerData, encoding: .utf8) ?? ""
-            var headers: [String: String] = [:]
-            for rawLine in headerString.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
-                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let colonIndex = line.firstIndex(of: ":") else { continue }
-                let key = line[..<colonIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let value = line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
-                headers[key] = value
-            }
-
-            parts.append(MultipartPart(headers: headers, body: bodyData))
-        }
-
-        return parts
-    }
-
-    private func partName(_ part: MultipartPart) -> String? {
-        guard let contentDisposition = part.headers["content-disposition"] else { return nil }
-        guard let nameRange = contentDisposition.range(of: "name=\"") else { return nil }
-        let tail = contentDisposition[nameRange.upperBound...]
-        guard let endQuote = tail.firstIndex(of: "\"") else { return nil }
-        return String(tail[..<endQuote])
-    }
-
-    private func parseJSONObject(_ text: String) -> [String: Any]? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any]
-    }
-
-    private func makeFetch(
-        capture: RequestCapture,
-        transcriptHeaders: [String: String]? = nil
-    ) -> FetchFunction {
-        let submitJSON = """
-        {"id":"test-id","status":"in_progress","language":"en","created_on":"2018-05-05T23:23:22.29Z","transcriber":"machine"}
-        """
-
-        let pollJSON = """
-        {"id":"test-id","status":"transcribed","language":"en","created_on":"2018-05-05T23:23:22.29Z","transcriber":"machine"}
-        """
-
-        let transcriptJSON = """
-        {"monologues":[{"speaker":1,"elements":[{"type":"text","value":"Hello","ts":0.5,"end_ts":1.5,"confidence":1},{"type":"punct","value":" "},{"type":"text","value":"World","ts":1.75,"end_ts":2.85,"confidence":0.8},{"type":"punct","value":"."}]},{"speaker":2,"elements":[{"type":"text","value":"monologues","ts":3,"end_ts":3.5,"confidence":1},{"type":"punct","value":" "},{"type":"text","value":"are","ts":3.6,"end_ts":3.9,"confidence":1},{"type":"punct","value":" "},{"type":"text","value":"a","ts":4,"end_ts":4.3,"confidence":1},{"type":"punct","value":" "},{"type":"text","value":"block","ts":4.5,"end_ts":5.5,"confidence":1},{"type":"punct","value":" "},{"type":"text","value":"of","ts":5.75,"end_ts":6.14,"confidence":1},{"type":"punct","value":" "},{"type":"unknown","value":"<inaudible>"},{"type":"punct","value":" "},{"type":"text","value":"text","ts":6.5,"end_ts":7.78,"confidence":1},{"type":"punct","value":"."}]}]}
-        """
-
-        let makeResponse: @Sendable (_ url: String, _ statusCode: Int, _ headers: [String: String]?, _ body: Data) -> FetchResponse = { url, statusCode, headers, body in
-            let httpResponse = HTTPURLResponse(
-                url: URL(string: url)!,
-                statusCode: statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: headers ?? ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(body), urlResponse: httpResponse)
-        }
-
-        let submitData = Data(submitJSON.utf8)
-        let pollData = Data(pollJSON.utf8)
-        let transcriptData = Data(transcriptJSON.utf8)
-
-        return { request in
-            await capture.append(request)
-
-            let url = request.url?.absoluteString ?? ""
-
-            switch url {
-            case "https://api.rev.ai/speechtotext/v1/jobs":
-                return makeResponse(url, 200, nil, submitData)
-            case "https://api.rev.ai/speechtotext/v1/jobs/test-id":
-                return makeResponse(url, 200, nil, pollData)
-            case "https://api.rev.ai/speechtotext/v1/jobs/test-id/transcript":
-                return makeResponse(url, 200, transcriptHeaders ?? ["Content-Type": "application/json"], transcriptData)
-            default:
-                return makeResponse(url, 404, nil, Data("{\"error\":{\"message\":\"Not Found\",\"code\":404}}".utf8))
-            }
-        }
-    }
-
-    @Test("should pass the model")
-    func passesModelInMultipart() async throws {
-        let capture = RequestCapture()
-        let fetch = makeFetch(capture: capture)
-
-        let provider = createRevai(settings: .init(apiKey: "test-api-key", fetch: fetch))
-        let model = provider.transcription(.machine)
-
-        _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01, 0x02])), mediaType: "audio/wav"))
-
-        guard let request = await capture.first(),
-              let body = request.httpBody,
-              let contentType = request.value(forHTTPHeaderField: "Content-Type"),
-              let boundary = extractBoundary(from: contentType)
-        else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let parts = parseMultipart(body, boundary: boundary)
-        let byName = Dictionary(uniqueKeysWithValues: parts.compactMap { part in
-            partName(part).map { ($0, part) }
-        })
-
-        guard let configPart = byName["config"] else {
-            Issue.record("Missing config part")
-            return
-        }
-
-        let configText = String(data: configPart.body, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        #expect(configText == #"{"transcriber":"machine"}"#)
-
-        guard let mediaPart = byName["media"] else {
-            Issue.record("Missing media part")
-            return
-        }
-
-        #expect(!mediaPart.body.isEmpty)
-    }
-
-    @Test("should pass provider options through to the config payload")
-    func passesProviderOptionsInConfig() async throws {
-        let capture = RequestCapture()
-        let fetch = makeFetch(capture: capture)
-
-        let provider = createRevAIProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
-        let model = provider.transcription(.machine)
-
-        _ = try await model.doGenerate(options: .init(
-            audio: .binary(Data([0x01])),
-            mediaType: "audio/wav",
-            providerOptions: [
-                "revai": [
-                    "notification_config": .object([
-                        "url": .string(""),
-                        "auth_headers": .object([
-                            "Authorization": .string(""),
-                        ]),
-                    ]),
-                    "custom_vocabularies": .array([
-                        .object([
-                            "should_be_stripped": .string("yes"),
-                        ]),
-                    ]),
-                ],
-            ]
+        let result = try await createRevAI(settings: .init(apiKey: "key", fetch: fetch))(.fusion).transcription.doGenerate(options: .init(
+            audio: .binary(Data()), mediaType: "audio/wav", providerOptions: ["revai": providerOptions]
         ))
-
-        guard let request = await capture.first(),
-              let body = request.httpBody,
-              let contentType = request.value(forHTTPHeaderField: "Content-Type"),
-              let boundary = extractBoundary(from: contentType)
-        else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let parts = parseMultipart(body, boundary: boundary)
-        let byName = Dictionary(uniqueKeysWithValues: parts.compactMap { part in
-            partName(part).map { ($0, part) }
-        })
-
-        guard let configPart = byName["config"] else {
-            Issue.record("Missing config part")
-            return
-        }
-
-        guard let configText = String(data: configPart.body, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              let config = parseJSONObject(configText)
-        else {
-            Issue.record("Failed to parse config JSON")
-            return
-        }
-
-        #expect(config["transcriber"] as? String == "machine")
-
-        let notification = config["notification_config"] as? [String: Any]
-        #expect(notification?["url"] as? String == "")
-
-        let authHeaders = (notification?["auth_headers"] as? [String: Any])
-        #expect(authHeaders?["Authorization"] as? String == "")
-
-        let vocabularies = config["custom_vocabularies"] as? [Any]
-        let first = vocabularies?.first as? [String: Any]
-        #expect(first?.isEmpty == true)
+        #expect(result.text == "")
+        #expect(result.segments.isEmpty)
+        #expect(result.language == nil)
+        #expect(result.durationInSeconds == 0)
     }
 
-    @Test("should pass headers")
-    func passesHeaders() async throws {
-        let capture = RequestCapture()
-        let fetch = makeFetch(capture: capture)
-
-        let provider = createRevAIProvider(settings: .init(
-            apiKey: "test-api-key",
-            headers: ["Custom-Provider-Header": "provider-header-value"],
-            fetch: fetch
-        ))
-
-        _ = try await provider.transcription(modelId: .machine).doGenerate(
-            options: .init(
-                audio: .binary(Data([0x01])),
-                mediaType: "audio/wav",
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        guard let request = await capture.first() else {
-            Issue.record("Missing request capture")
-            return
-        }
-
-        let normalized = Dictionary(uniqueKeysWithValues: (request.allHTTPHeaderFields ?? [:]).map { ($0.key.lowercased(), $0.value) })
-
-        #expect(normalized["authorization"] == "Bearer test-api-key")
-        #expect((normalized["content-type"] ?? "").hasPrefix("multipart/form-data; boundary="))
-        #expect(normalized["custom-provider-header"] == "provider-header-value")
-        #expect(normalized["custom-request-header"] == "request-header-value")
-
-        #expect((normalized["user-agent"] ?? "").contains("ai-sdk/revai/"))
-    }
-
-    @Test("should extract the transcription text")
-    func extractsTranscriptionText() async throws {
-        let capture = RequestCapture()
-        let fetch = makeFetch(capture: capture)
-
-        let provider = createRevAIProvider(settings: .init(apiKey: "test-api-key", fetch: fetch))
-        let model = provider.transcription("machine")
-
-        let result = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
-
-        #expect(result.text == "Hello World. monologues are a block of <inaudible> text.")
-    }
-
-    @Test("should include response data with timestamp, modelId and headers")
-    func includesResponseMetadata() async throws {
-        let capture = RequestCapture()
-        let headers = [
-            "Content-Type": "application/json",
-            "x-request-id": "test-request-id",
-            "x-ratelimit-remaining": "123",
+    @Test("Serializes all file transcription options without narrowing source numbers")
+    func transcriptionOptions() async throws {
+        var options = RevAITranscriptionModelOptions()
+        options.metadata = "recording"
+        options.notificationConfig = .init(url: "https://callback.example", authHeaders: .init(authorization: "Bearer callback"))
+        options.deleteAfterSeconds = 1e100
+        options.verbatim = false
+        options.rush = true
+        options.testMode = true
+        options.segmentsToTranscribe = [.init(start: 0.25, end: 60.75)]
+        options.speakerNames = [.init(displayName: "Speaker")]
+        options.skipDiarization = true
+        options.skipPostprocessing = true
+        options.skipPunctuation = true
+        options.removeDisfluencies = true
+        options.removeAtmospherics = true
+        options.filterProfanity = true
+        options.speakerChannelsCount = 2.5
+        options.speakersCount = 1e100
+        options.diarizationType = .premium
+        options.customVocabularyId = "vocabulary"
+        options.customVocabularies = [["phrases": ["word"]]]
+        options.strictCustomVocabulary = true
+        options.summarizationConfig = .init(prompt: "Summarize")
+        options.translationConfig = .init(targetLanguages: [.init(language: .fr)])
+        options.language = "fr"
+        options.forcedAlignment = true
+        let supplied = try JSONDecoder().decode(JSONObject.self, from: JSONEncoder().encode(options))
+        let expectedConfig: JSONObject = [
+            "transcriber": "machine", "metadata": "recording",
+            "notification_config": ["url": "https://callback.example", "auth_headers": ["Authorization": "Bearer callback"]],
+            "delete_after_seconds": 1e100, "verbatim": false, "rush": true, "test_mode": true,
+            "segments_to_transcribe": [["start": 0.25, "end": 60.75]],
+            "speaker_names": [["display_name": "Speaker"]],
+            "skip_diarization": true, "skip_postprocessing": true, "skip_punctuation": true,
+            "remove_disfluencies": true, "remove_atmospherics": true, "filter_profanity": true,
+            "speaker_channels_count": 2.5, "speakers_count": 1e100, "diarization_type": "premium",
+            "custom_vocabulary_id": "vocabulary", "custom_vocabularies": [.object([:])],
+            "strict_custom_vocabulary": true,
+            "summarization_config": ["model": "standard", "type": "paragraph", "prompt": "Summarize"],
+            "translation_config": ["target_languages": [["language": "fr"]], "model": "standard"],
+            "language": "fr", "forced_alignment": true
         ]
-        let fetch = makeFetch(capture: capture, transcriptHeaders: headers)
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let model = RevAITranscriptionModel(
-            modelId: .machine,
-            config: RevAIConfig(
-                provider: "test-provider",
-                url: { options in "https://api.rev.ai\(options.path)" },
-                headers: { [:] },
-                fetch: fetch,
-                currentDate: { testDate }
-            )
-        )
-
-        let result = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
-
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "machine")
-
-        let responseHeaders = result.response.headers ?? [:]
-        #expect(responseHeaders["content-type"] == "application/json")
-        #expect(responseHeaders["x-request-id"] == "test-request-id")
-        #expect(responseHeaders["x-ratelimit-remaining"] == "123")
-    }
-
-    @Test("throws TranscriptionJobSubmissionFailed when submission status is failed")
-    func submissionFailedThrows() async throws {
-        let capture = RequestCapture()
-
-        let submitData = Data(#"{"id":"test-id","status":"failed"}"#.utf8)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.rev.ai/speechtotext/v1/jobs")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
         let fetch: FetchFunction = { request in
-            await capture.append(request)
-            let url = request.url?.absoluteString ?? ""
-            if url == "https://api.rev.ai/speechtotext/v1/jobs" {
-                return FetchResponse(body: .data(submitData), urlResponse: response)
+            if request.httpMethod == "POST" {
+                let config = try configPayload(request)
+                #expect(config == expectedConfig)
+                return response(request, #"{"id":"job","status":"transcribed"}"#)
             }
-            return FetchResponse(body: .data(Data()), urlResponse: response)
+            return response(request, #"{"monologues":[{"elements":[{"type":"text","ts":0.25,"end_ts":1e100},{"type":"text","value":null,"ts":2,"end_ts":2.5},{"type":"text","value":"\ufeff Trim \ufeff","ts":5,"end_ts":6},{"type":"text","value":"\u0085","ts":6,"end_ts":7}]}],"native":2.5}"#)
         }
-
-        let model = RevAITranscriptionModel(
-            modelId: .machine,
-            config: RevAIConfig(
-                provider: "test-provider",
-                url: { options in "https://api.rev.ai\(options.path)" },
-                headers: { [:] },
-                fetch: fetch
-            )
-        )
-
-        do {
-            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
-            Issue.record("Expected AISDKError")
-        } catch let error as any AISDKError {
-            #expect(error.name == "TranscriptionJobSubmissionFailed")
-            #expect(error.message == "Failed to submit transcription job to Rev.ai")
-            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
-        } catch {
-            Issue.record("Expected AISDKError, got: \(error)")
-        }
+        let result = try await createRevAI(settings: .init(apiKey: "key", fetch: fetch)).transcription(modelId: .machine).doGenerate(options: .init(
+            audio: .binary(Data()), mediaType: "audio/mp3", providerOptions: ["revai": supplied]
+        ))
+        #expect(result.text == "\u{FEFF} Trim \u{FEFF}\u{0085}")
+        #expect(result.segments == [
+            .init(text: "undefined", startSecond: 0.25, endSecond: 1e100),
+            .init(text: "null", startSecond: 2, endSecond: 2.5),
+            .init(text: "Trim", startSecond: 5, endSecond: 6),
+            .init(text: "\u{0085}", startSecond: 6, endSecond: 7)
+        ])
+        #expect(result.durationInSeconds == 1e100)
+        #expect((result.response.body as? [String: Any])?["native"] as? Double == 2.5)
     }
 
-    @Test("throws TranscriptionJobFailed when polling returns failed status")
-    func pollingFailedThrows() async throws {
-        let capture = RequestCapture()
-
-        let submitData = Data(#"{"id":"test-id","status":"in_progress"}"#.utf8)
-        let pollData = Data(#"{"id":"test-id","status":"failed"}"#.utf8)
-
-        let makeResponse: @Sendable (_ url: String, _ body: Data) -> FetchResponse = { url, body in
-            let response = HTTPURLResponse(
-                url: URL(string: url)!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(body), urlResponse: response)
-        }
-
-        let fetch: FetchFunction = { request in
-            await capture.append(request)
-            let url = request.url?.absoluteString ?? ""
-            switch url {
-            case "https://api.rev.ai/speechtotext/v1/jobs":
-                return makeResponse(url, submitData)
-            case "https://api.rev.ai/speechtotext/v1/jobs/test-id":
-                return makeResponse(url, pollData)
-            default:
-                return makeResponse(url, Data())
+    enum InvalidData: Sendable {
+        case verbatimNull, languageNumber, diarizationNumber, infiniteNumber, response
+        var options: JSONObject? {
+            switch self {
+            case .verbatimNull: ["verbatim": .null]
+            case .languageNumber: ["language": 1]
+            case .diarizationNumber: ["diarization_type": 1]
+            case .infiniteNumber: ["speakers_count": .number(.infinity)]
+            case .response: nil
             }
         }
+    }
 
-        let model = RevAITranscriptionModel(
-            modelId: .machine,
-            config: RevAIConfig(
-                provider: "test-provider",
-                url: { options in "https://api.rev.ai\(options.path)" },
-                headers: { [:] },
-                fetch: fetch
-            )
-        )
-
+    @Test("Rejects malformed options and successful responses through the public operation", arguments: [InvalidData.verbatimNull, .languageNumber, .diarizationNumber, .infiniteNumber, .response])
+    func rejectsMalformedData(data: InvalidData) async throws {
+        let fetch: FetchFunction = { request in
+            if request.httpMethod == "POST" { return response(request, #"{"id":"job","status":"transcribed"}"#) }
+            return response(request, #"{"monologues":[{"elements":[{"ts":"invalid"}]}]}"#)
+        }
+        let model = createRevAI(settings: .init(apiKey: "key", fetch: fetch)).transcription(modelId: .machine)
         do {
-            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
-            Issue.record("Expected AISDKError")
-        } catch let error as any AISDKError {
-            #expect(error.name == "TranscriptionJobFailed")
-            #expect(error.message == "Transcription job failed")
-            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
-        } catch {
-            Issue.record("Expected AISDKError, got: \(error)")
+            _ = try await model.doGenerate(options: .init(
+                audio: .binary(Data()), mediaType: "audio/wav",
+                providerOptions: data.options.map { ["revai": $0] }
+            ))
+            Issue.record("Expected boundary validation failure")
+        } catch let error as InvalidArgumentError {
+            #expect(data.options != nil)
+            #expect(error.argument == "providerOptions")
+        } catch let error as APICallError {
+            #expect(data.options == nil)
+            #expect(error.statusCode == 200)
+            #expect(error.cause is TypeValidationError)
         }
     }
 
-    @Test("throws TranscriptionJobPollingTimedOut when polling exceeds timeout")
-    func pollingTimedOutThrows() async throws {
-        final class DateSequence: @unchecked Sendable {
-            private let start: Date
-            private var index: Int = 0
+    @Test("Returns job submission and polling failures as AISDK errors", arguments: [false, true])
+    func jobFailure(submissionFailed: Bool) async throws {
+        let fetch: FetchFunction = { request in
+            if request.httpMethod == "POST", !submissionFailed {
+                return response(request, #"{"id":"job","status":"in_progress"}"#)
+            }
+            return response(request, #"{"id":"job","status":"failed","reason":"invalid_media"}"#)
+        }
+        let model = createRevAI(settings: .init(apiKey: "key", fetch: fetch)).transcription(modelId: .machine)
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))
+            Issue.record("Expected job failure")
+        } catch let error as any AISDKError {
+            #expect(error.name == (submissionFailed ? "TranscriptionJobSubmissionFailed" : "TranscriptionJobFailed"))
+            #expect(error.cause != nil)
+            #expect(hasMarker(error, marker: "vercel.ai.error"))
+        }
+    }
+
+    @Test("Cancellation stops an unfinished job before the polling delay")
+    func cancelsPolling() async throws {
+        final class Abort: @unchecked Sendable {
             private let lock = NSLock()
-
-            init(start: Date) { self.start = start }
-
-            func next() -> Date {
-                lock.lock()
-                defer { lock.unlock() }
-                index += 1
-                // Call order:
-                // 1) response timestamp
-                // 2) polling start time
-                // 3) elapsed check (force timeout)
-                if index <= 2 { return start }
-                return start.addingTimeInterval(61)
-            }
+            private var value = false
+            func set() { lock.withLock { value = true } }
+            func get() -> Bool { lock.withLock { value } }
         }
-
-        let capture = RequestCapture()
-        let dates = DateSequence(start: Date(timeIntervalSince1970: 0))
-
-        let submitData = Data(#"{"id":"test-id","status":"in_progress"}"#.utf8)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.rev.ai/speechtotext/v1/jobs")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
+        let abort = Abort()
         let fetch: FetchFunction = { request in
-            await capture.append(request)
-            let url = request.url?.absoluteString ?? ""
-            if url == "https://api.rev.ai/speechtotext/v1/jobs" {
-                return FetchResponse(body: .data(submitData), urlResponse: response)
-            }
-            Issue.record("Unexpected URL: \(url)")
-            return FetchResponse(body: .data(Data()), urlResponse: response)
+            if request.httpMethod == "POST" { return response(request, #"{"id":"job","status":"in_progress"}"#) }
+            abort.set()
+            return response(request, #"{"id":"job","status":"in_progress"}"#)
         }
-
-        let model = RevAITranscriptionModel(
-            modelId: .machine,
-            config: RevAIConfig(
-                provider: "test-provider",
-                url: { options in "https://api.rev.ai\(options.path)" },
-                headers: { [:] },
-                fetch: fetch,
-                currentDate: { dates.next() }
-            )
-        )
-
-        do {
-            _ = try await model.doGenerate(options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav"))
-            Issue.record("Expected AISDKError")
-        } catch let error as any AISDKError {
-            #expect(error.name == "TranscriptionJobPollingTimedOut")
-            #expect(error.message == "Transcription job polling timed out")
-            #expect(hasMarker(error, marker: "vercel.ai.error.AI_RevAITranscriptionJobError"))
-        } catch {
-            Issue.record("Expected AISDKError, got: \(error)")
+        let model = createRevAI(settings: .init(apiKey: "key", fetch: fetch)).transcription(modelId: .machine)
+        await #expect(throws: CancellationError.self) {
+            try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav", abortSignal: { abort.get() }))
         }
-
-        // Should time out before the first poll request.
-        #expect((await capture.all()).count == 1)
     }
 }

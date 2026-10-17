@@ -2,12 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/revai/src/revai-transcription-model.ts
-// Upstream commit: 73d5c5920e0fea7633027fdd87374adc9ba49743
-//===----------------------------------------------------------------------===//
+// Port of packages/revai/src/revai-transcription-model.ts and its options schema.
 
 private let revaiProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -65,7 +60,7 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
 
                 func readNumber(_ key: String) -> Double? {
                     guard let raw = dict[key], raw != .null else { return nil }
-                    guard case .number(let n) = raw else { return nil }
+                    guard case .number(let n) = raw, n.isFinite else { return nil }
                     return n
                 }
 
@@ -113,7 +108,9 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                         var notifOut: [String: JSONValue] = ["url": .string(url)]
 
                         if let authHeaders = obj["auth_headers"] {
-                            if authHeaders != .null {
+                            if authHeaders == .null {
+                                notifOut["auth_headers"] = .null
+                            } else {
                                 guard case .object(let authObj) = authHeaders else {
                                     return fail("notification_config.auth_headers must be an object")
                                 }
@@ -160,8 +157,8 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                             guard case .object(let seg) = entry else {
                                 return fail("segments_to_transcribe entries must be objects")
                             }
-                            guard case .number(let start) = (seg["start"] ?? .null),
-                                  case .number(let end) = (seg["end"] ?? .null) else {
+                            guard case .number(let start) = (seg["start"] ?? .null), start.isFinite,
+                                  case .number(let end) = (seg["end"] ?? .null), end.isFinite else {
                                 return fail("segments_to_transcribe entries must include start/end numbers")
                             }
                             outSegments.append(.object(["start": .number(start), "end": .number(end)]))
@@ -292,7 +289,9 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                         }
 
                         if let promptRaw = obj["prompt"] {
-                            if promptRaw != .null {
+                            if promptRaw == .null {
+                                summaryOut["prompt"] = .null
+                            } else {
                                 guard case .string = promptRaw else { return fail("summarization_config.prompt must be a string") }
                                 summaryOut["prompt"] = promptRaw
                             }
@@ -359,6 +358,8 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
                 // Ensure any present keys were type-checked (so we don't silently accept wrong types).
                 // This mirrors zod's behavior in the upstream implementation.
                 if hasKey("metadata"), readString("metadata") == nil, dict["metadata"] != .null { return fail("metadata must be a string") }
+                if hasKey("language"), readString("language") == nil, dict["language"] != .null { return fail("language must be a string") }
+                if hasKey("diarization_type"), readString("diarization_type") == nil, dict["diarization_type"] != .null { return fail("diarization_type must be a string") }
                 if hasKey("delete_after_seconds"), readNumber("delete_after_seconds") == nil, dict["delete_after_seconds"] != .null { return fail("delete_after_seconds must be a number") }
                 if hasKey("speaker_channels_count"), readNumber("speaker_channels_count") == nil, dict["speaker_channels_count"] != .null { return fail("speaker_channels_count must be a number") }
                 if hasKey("speakers_count"), readNumber("speakers_count") == nil, dict["speakers_count"] != .null { return fail("speakers_count must be a number") }
@@ -381,10 +382,21 @@ private let revaiProviderOptionsSchema = FlexibleSchema(
     )
 )
 
-private struct RevAIJobResponse: Codable, Sendable {
+private struct RevAIJobResponse: Codable, Sendable, Error {
     let id: String?
     let status: String?
     let language: String?
+    let pathId: String
+
+    enum CodingKeys: String, CodingKey { case id, status, language }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(String.self, forKey: .id)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        language = try values.decodeIfPresent(String.self, forKey: .language)
+        pathId = id ?? (values.contains(.id) ? "null" : "undefined")
+    }
 }
 
 private let revaiTranscriptionJobResponseSchema = FlexibleSchema(
@@ -399,6 +411,7 @@ private struct RevAITranscriptResponse: Codable, Sendable {
         struct Element: Codable, Sendable {
             let type: String?
             let value: String?
+            let segmentValue: String
             let ts: Double?
             let endTs: Double?
 
@@ -407,6 +420,16 @@ private struct RevAITranscriptResponse: Codable, Sendable {
                 case value
                 case ts
                 case endTs = "end_ts"
+            }
+
+            init(from decoder: Decoder) throws {
+                let fields = try decoder.container(keyedBy: CodingKeys.self)
+                type = try fields.decodeIfPresent(String.self, forKey: .type)
+                value = try fields.decodeIfPresent(String.self, forKey: .value)
+                ts = try fields.decodeIfPresent(Double.self, forKey: .ts)
+                endTs = try fields.decodeIfPresent(Double.self, forKey: .endTs)
+                // Concatenation and array joining coerce nullish values differently in JavaScript.
+                segmentValue = value ?? (fields.contains(.value) ? "null" : "undefined")
             }
         }
 
@@ -423,23 +446,20 @@ private let revaiTranscriptionResponseSchema = FlexibleSchema(
     )
 )
 
-private struct RevAITranscriptionJobError: AISDKError, @unchecked Sendable {
-    static let errorDomain = "vercel.ai.error.AI_RevAITranscriptionJobError"
+private struct RevAITranscriptionJobError: AISDKError, Sendable {
+    static let errorDomain = "vercel.ai.error"
 
     let name: String
     let message: String
     let cause: (any Error)?
-    let data: Any?
-
-    init(name: String, message: String, data: Any?) {
+    init(name: String, message: String, cause: RevAIJobResponse) {
         self.name = name
         self.message = message
-        self.data = data
-        self.cause = nil
+        self.cause = cause
     }
 }
 
-public final class RevAITranscriptionModel: TranscriptionModelV3 {
+public final class RevAITranscriptionModel: TranscriptionModelV4 {
     private let modelIdentifier: RevAITranscriptionModelId
     private let config: RevAIConfig
 
@@ -451,13 +471,16 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
         let currentDate = config.currentDate()
 
         let prepared = try await prepareRequest(options: options)
 
-        var headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
-        headers["Content-Type"] = prepared.contentType
+        let headers = combineHeaders(
+            try config.headers(),
+            options.headers?.mapValues(Optional.some),
+            ["content-type": prepared.contentType]
+        ).compactMapValues { $0 }
 
         let submission = try await postToAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/speechtotext/v1/jobs")),
@@ -475,20 +498,14 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
             throw RevAITranscriptionJobError(
                 name: "TranscriptionJobSubmissionFailed",
                 message: "Failed to submit transcription job to Rev.ai",
-                data: submission.rawValue
+                cause: submissionResponse
             )
         }
 
-        guard let jobId = submissionResponse.id else {
-            throw InvalidResponseDataError(
-                data: submission.rawValue as Any,
-                message: "Rev.ai job response missing id"
-            )
-        }
-
-        let timeoutMs = 60_000
+        let jobId = submissionResponse.pathId
+        let timeoutMs = 60_000.0
         let pollingIntervalMs = 1_000
-        let start = config.currentDate()
+        let start = Date()
         var jobResponse = submissionResponse
 
         while jobResponse.status != "transcribed" {
@@ -496,18 +513,18 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
                 throw CancellationError()
             }
 
-            let elapsedMs = Int(config.currentDate().timeIntervalSince(start) * 1000)
+            let elapsedMs = Date().timeIntervalSince(start) * 1000
             if elapsedMs > timeoutMs {
                 throw RevAITranscriptionJobError(
                     name: "TranscriptionJobPollingTimedOut",
                     message: "Transcription job polling timed out",
-                    data: submission.rawValue
+                    cause: submissionResponse
                 )
             }
 
             let polling = try await getFromAPI(
                 url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/speechtotext/v1/jobs/\(jobId)")),
-                headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+                headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
                 failedResponseHandler: revaiFailedResponseHandler,
                 successfulResponseHandler: createJsonResponseHandler(responseSchema: revaiTranscriptionJobResponseSchema),
                 isAborted: options.abortSignal,
@@ -520,18 +537,18 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
                 throw RevAITranscriptionJobError(
                     name: "TranscriptionJobFailed",
                     message: "Transcription job failed",
-                    data: polling.rawValue
+                    cause: jobResponse
                 )
             }
 
             if jobResponse.status != "transcribed" {
-                try await delay(pollingIntervalMs)
+                try await delay(pollingIntervalMs, abortSignal: options.abortSignal)
             }
         }
 
         let transcript = try await getFromAPI(
             url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/speechtotext/v1/jobs/\(jobId)/transcript")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             failedResponseHandler: revaiFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: revaiTranscriptionResponseSchema),
             isAborted: options.abortSignal,
@@ -540,14 +557,14 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
 
         let mapped = mapTranscript(transcript.value, submissionLanguage: submissionResponse.language)
 
-        return TranscriptionModelV3Result(
+        return TranscriptionModelV4Result(
             text: mapped.text,
             segments: mapped.segments,
             language: mapped.language,
             durationInSeconds: mapped.durationInSeconds,
             warnings: prepared.warnings,
             request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
+            response: TranscriptionModelV4Result.ResponseInfo(
                 timestamp: currentDate,
                 modelId: modelIdentifier.rawValue,
                 headers: transcript.responseHeaders,
@@ -562,11 +579,11 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
     private struct PreparedRequest: Sendable {
         let body: Data
         let contentType: String
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: TranscriptionModelV4CallOptions) async throws -> PreparedRequest {
+        let warnings: [SharedV4Warning] = []
 
         let revaiOptions = try await parseProviderOptions(
             provider: "revai",
@@ -576,7 +593,7 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
 
         let audioData = try data(from: options.audio)
         let fileExtension = mediaTypeToExtension(options.mediaType)
-        let filename = fileExtension.isEmpty ? "audio" : "audio.\(fileExtension)"
+        let filename = "audio.\(fileExtension)"
 
         var builder = MultipartFormDataBuilder()
         builder.appendFile(name: "media", filename: filename, contentType: options.mediaType, data: audioData)
@@ -598,7 +615,7 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
         return PreparedRequest(body: body, contentType: contentType, warnings: warnings)
     }
 
-    private func data(from audio: TranscriptionModelV3Audio) throws -> Data {
+    private func data(from audio: TranscriptionModelV4Audio) throws -> Data {
         switch audio {
         case .binary(let data):
             return data
@@ -622,16 +639,18 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
 
     // MARK: - Response Mapping
 
+    private static let segmentWhitespace = CharacterSet(charactersIn: "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+
     private struct MappedTranscript: Sendable {
         let text: String
-        let segments: [TranscriptionModelV3Result.Segment]
+        let segments: [TranscriptionModelV4Result.Segment]
         let language: String?
         let durationInSeconds: Double?
     }
 
     private func mapTranscript(_ transcript: RevAITranscriptResponse, submissionLanguage: String?) -> MappedTranscript {
         var durationInSeconds: Double = 0
-        var segments: [TranscriptionModelV3Result.Segment] = []
+        var segments: [TranscriptionModelV4Result.Segment] = []
 
         for monologue in transcript.monologues ?? [] {
             var currentSegmentText = ""
@@ -639,7 +658,7 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
             var hasStartedSegment = false
 
             for element in monologue.elements ?? [] {
-                currentSegmentText += element.value ?? ""
+                currentSegmentText += element.segmentValue
 
                 if element.type == "text" {
                     if let end = element.endTs, end > durationInSeconds {
@@ -652,10 +671,10 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
                     }
 
                     if let end = element.endTs, hasStartedSegment {
-                        let trimmed = currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmed = currentSegmentText.trimmingCharacters(in: Self.segmentWhitespace)
                         if !trimmed.isEmpty {
                             segments.append(
-                                TranscriptionModelV3Result.Segment(
+                                TranscriptionModelV4Result.Segment(
                                     text: trimmed,
                                     startSecond: segmentStartSecond,
                                     endSecond: end
@@ -670,11 +689,11 @@ public final class RevAITranscriptionModel: TranscriptionModelV3 {
             }
 
             if hasStartedSegment {
-                let trimmed = currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmed = currentSegmentText.trimmingCharacters(in: Self.segmentWhitespace)
                 if !trimmed.isEmpty {
                     let endSecond: Double = durationInSeconds > segmentStartSecond ? durationInSeconds : (segmentStartSecond + 1)
                     segments.append(
-                        TranscriptionModelV3Result.Segment(
+                        TranscriptionModelV4Result.Segment(
                             text: trimmed,
                             startSecond: segmentStartSecond,
                             endSecond: endSecond

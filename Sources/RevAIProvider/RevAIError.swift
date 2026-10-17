@@ -2,17 +2,12 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/revai/src/revai-error.ts
-// Upstream commit: f3a72bc2a
-//===----------------------------------------------------------------------===//
+// Port of packages/revai/src/revai-error.ts.
 
 struct RevAIErrorData: Codable, Sendable, Equatable {
     struct ErrorPayload: Codable, Sendable, Equatable {
         let message: String
-        let code: Int
+        let code: Double
     }
 
     let error: ErrorPayload
