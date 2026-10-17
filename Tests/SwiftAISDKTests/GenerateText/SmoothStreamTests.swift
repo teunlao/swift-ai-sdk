@@ -537,4 +537,46 @@ struct SmoothStreamTests {
         #expect(id1Count > 0)
         #expect(id2Count > 0)
     }
+
+    @Test("Should keep each delta's provider metadata and smooth reasoning")
+    func keepsProviderMetadataPerDelta() async throws {
+        func metadata(_ tag: String) -> ProviderMetadata { ["test": ["tag": .string(tag)]] }
+        let input: [TextStreamPart] = [
+            .textDelta(id: "1", text: "Hel", providerMetadata: metadata("a")),
+            .textDelta(id: "1", text: "lo world ", providerMetadata: metadata("b")),
+            .textDelta(id: "1", text: "", providerMetadata: metadata("c")),
+            .reasoningDelta(id: "2", text: "think more ", providerMetadata: nil)
+        ]
+
+        let smoothed = try smoothStream(
+            stream: convertArrayToAsyncStream(input),
+            delayInMs: nil,
+            chunking: .mode(.word)
+        )
+
+        func tag(_ providerMetadata: ProviderMetadata?) -> String {
+            guard case .string(let tag)? = providerMetadata?["test"]?["tag"] else { return "-" }
+            return tag
+        }
+        var output: [String] = []
+        for try await part in smoothed {
+            switch part {
+            case .textDelta(_, let text, let providerMetadata):
+                output.append("text:\(text):\(tag(providerMetadata))")
+            case .reasoningDelta(_, let text, let providerMetadata):
+                output.append("reasoning:\(text):\(tag(providerMetadata))")
+            default:
+                break
+            }
+        }
+
+        #expect(output == [
+            "text:Hel:a",
+            "text:lo :b",
+            "text:world :b",
+            "text::c",
+            "reasoning:think :-",
+            "reasoning:more :-"
+        ])
+    }
 }

@@ -133,6 +133,23 @@ public func smoothStream<S: AsyncSequence & Sendable>(
             Task { @Sendable in
                 var buffer = ""
                 var id = ""
+                var isReasoning = false
+                // Metadata of the delta the buffer came from; one output part carries one delta's metadata.
+                var providerMetadata: ProviderMetadata?
+
+                func part(_ text: String) -> TextStreamPart {
+                    isReasoning
+                        ? .reasoningDelta(id: id, text: text, providerMetadata: providerMetadata)
+                        : .textDelta(id: id, text: text, providerMetadata: providerMetadata)
+                }
+
+                func flushBuffer() {
+                    if !buffer.isEmpty || providerMetadata != nil {
+                        continuation.yield(part(buffer))
+                    }
+                    buffer = ""
+                    providerMetadata = nil
+                }
 
                 let delayFn: @Sendable (Int?) async -> Void
                 if let internalOptions = _internal {
@@ -147,68 +164,70 @@ public func smoothStream<S: AsyncSequence & Sendable>(
 
                 do {
                     for try await chunk in stream {
-                        // Handle non-text-delta chunks immediately
+                        let chunkId: String
+                        let text: String
+                        let metadata: ProviderMetadata?
+                        let chunkIsReasoning: Bool
                         switch chunk {
-                        case .textDelta(let chunkId, let text, let metadata):
-                            // If we have buffered text and the id changed, flush it
-                            if chunkId != id && !buffer.isEmpty {
-                                continuation.yield(.textDelta(id: id, text: buffer, providerMetadata: nil))
-                                buffer = ""
-                            }
-
-                            // Append new text to buffer
-                            buffer += text
-                            id = chunkId
-
-                            // Extract and emit chunks based on detector
-                            while let detectedChunk = detectChunk(buffer) {
-                                // Validate chunk
-                                guard !detectedChunk.isEmpty else {
-                                    throw NSError(
-                                        domain: "SmoothStream",
-                                        code: -1,
-                                        userInfo: [NSLocalizedDescriptionKey: "Chunking function must return a non-empty string."]
-                                    )
-                                }
-
-                                guard buffer.hasPrefix(detectedChunk) else {
-                                    throw NSError(
-                                        domain: "SmoothStream",
-                                        code: -1,
-                                        userInfo: [
-                                            NSLocalizedDescriptionKey:
-                                                "Chunking function must return a match that is a prefix of the buffer. " +
-                                                "Received: \"\(detectedChunk)\" expected to start with \"\(buffer)\""
-                                        ]
-                                    )
-                                }
-
-                                // Emit chunk
-                                continuation.yield(.textDelta(id: id, text: detectedChunk, providerMetadata: metadata))
-
-                                // Remove chunk from buffer
-                                buffer = String(buffer.dropFirst(detectedChunk.count))
-
-                                // Apply delay
-                                await delayFn(delayInMs)
-                            }
-
+                        case .textDelta(let deltaId, let deltaText, let deltaMetadata):
+                            (chunkId, text, metadata, chunkIsReasoning) = (deltaId, deltaText, deltaMetadata, false)
+                        case .reasoningDelta(let deltaId, let deltaText, let deltaMetadata):
+                            (chunkId, text, metadata, chunkIsReasoning) = (deltaId, deltaText, deltaMetadata, true)
                         default:
-                            // For non-text-delta chunks, flush buffer first
-                            if !buffer.isEmpty {
-                                continuation.yield(.textDelta(id: id, text: buffer, providerMetadata: nil))
-                                buffer = ""
+                            flushBuffer()
+                            continuation.yield(chunk)
+                            continue
+                        }
+
+                        // A metadata-only delta passes through on its own.
+                        if text.isEmpty && metadata != nil {
+                            flushBuffer()
+                            continuation.yield(chunk)
+                            continue
+                        }
+
+                        if !buffer.isEmpty,
+                           chunkIsReasoning != isReasoning || chunkId != id || providerMetadata != nil || metadata != nil {
+                            flushBuffer()
+                        }
+
+                        buffer += text
+                        id = chunkId
+                        isReasoning = chunkIsReasoning
+                        providerMetadata = metadata
+
+                        while let detectedChunk = detectChunk(buffer) {
+                            guard !detectedChunk.isEmpty else {
+                                throw NSError(
+                                    domain: "SmoothStream",
+                                    code: -1,
+                                    userInfo: [NSLocalizedDescriptionKey: "Chunking function must return a non-empty string."]
+                                )
                             }
 
-                            // Then emit the chunk as-is
-                            continuation.yield(chunk)
+                            guard buffer.hasPrefix(detectedChunk) else {
+                                throw NSError(
+                                    domain: "SmoothStream",
+                                    code: -1,
+                                    userInfo: [
+                                        NSLocalizedDescriptionKey:
+                                            "Chunking function must return a match that is a prefix of the buffer. " +
+                                            "Received: \"\(detectedChunk)\" expected to start with \"\(buffer)\""
+                                    ]
+                                )
+                            }
+
+                            continuation.yield(part(detectedChunk))
+                            buffer = String(buffer.dropFirst(detectedChunk.count))
+                            await delayFn(delayInMs)
+                        }
+
+                        if buffer.isEmpty {
+                            providerMetadata = nil
                         }
                     }
 
-                    // Flush any remaining buffer at the end
-                    if !buffer.isEmpty {
-                        continuation.yield(.textDelta(id: id, text: buffer, providerMetadata: nil))
-                    }
+                    flushBuffer()
 
                     continuation.finish()
                 } catch {
