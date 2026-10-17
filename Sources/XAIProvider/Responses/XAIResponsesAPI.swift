@@ -8,6 +8,13 @@ public struct XAIResponsesUsage: Codable, Sendable, Equatable {
     public struct InputTokensDetails: Codable, Sendable, Equatable {
         public let cachedTokens: Int?
 
+        init(cachedTokens: Int?) { self.cachedTokens = cachedTokens }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            cachedTokens = try container.decodeIfPresent(Double.self, forKey: .cachedTokens).flatMap(Int.init(exactly:))
+        }
+
         enum CodingKeys: String, CodingKey {
             case cachedTokens = "cached_tokens"
         }
@@ -16,13 +23,20 @@ public struct XAIResponsesUsage: Codable, Sendable, Equatable {
     public struct OutputTokensDetails: Codable, Sendable, Equatable {
         public let reasoningTokens: Int?
 
+        init(reasoningTokens: Int?) { self.reasoningTokens = reasoningTokens }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            reasoningTokens = try container.decodeIfPresent(Double.self, forKey: .reasoningTokens).flatMap(Int.init(exactly:))
+        }
+
         enum CodingKeys: String, CodingKey {
             case reasoningTokens = "reasoning_tokens"
         }
     }
 
-    public let inputTokens: Int
-    public let outputTokens: Int
+    public let inputTokens: Int?
+    public let outputTokens: Int?
     public let totalTokens: Int?
     public let inputTokensDetails: InputTokensDetails?
     public let outputTokensDetails: OutputTokensDetails?
@@ -34,13 +48,13 @@ public struct XAIResponsesUsage: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         raw = try JSONValue(from: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-        outputTokens = try container.decode(Int.self, forKey: .outputTokens)
-        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens)
+        inputTokens = Int(exactly: try container.decode(Double.self, forKey: .inputTokens))
+        outputTokens = Int(exactly: try container.decode(Double.self, forKey: .outputTokens))
+        totalTokens = try container.decodeIfPresent(Double.self, forKey: .totalTokens).flatMap(Int.init(exactly:))
         inputTokensDetails = try container.decodeIfPresent(InputTokensDetails.self, forKey: .inputTokensDetails)
         outputTokensDetails = try container.decodeIfPresent(OutputTokensDetails.self, forKey: .outputTokensDetails)
-        numSourcesUsed = try container.decodeIfPresent(Int.self, forKey: .numSourcesUsed)
-        numServerSideToolsUsed = try container.decodeIfPresent(Int.self, forKey: .numServerSideToolsUsed)
+        numSourcesUsed = try container.decodeIfPresent(Double.self, forKey: .numSourcesUsed).flatMap(Int.init(exactly:))
+        numServerSideToolsUsed = try container.decodeIfPresent(Double.self, forKey: .numServerSideToolsUsed).flatMap(Int.init(exactly:))
         costInUsdTicks = try container.decodeIfPresent(Double.self, forKey: .costInUsdTicks)
     }
 

@@ -72,11 +72,22 @@ struct OpenAIChatUsageCompletionDetails: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case reasoningTokens = "reasoning_tokens", acceptedPredictionTokens = "accepted_prediction_tokens", rejectedPredictionTokens = "rejected_prediction_tokens"
     }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reasoningTokens = try container.decodeIfPresent(Double.self, forKey: .reasoningTokens).flatMap(Int.init(exactly:))
+        acceptedPredictionTokens = try container.decodeIfPresent(Double.self, forKey: .acceptedPredictionTokens).flatMap(Int.init(exactly:))
+        rejectedPredictionTokens = try container.decodeIfPresent(Double.self, forKey: .rejectedPredictionTokens).flatMap(Int.init(exactly:))
+    }
 }
 struct OpenAIChatUsagePromptDetails: Codable, Sendable {
     let cachedTokens: Int?
     let cacheWriteTokens: Int?
     enum CodingKeys: String, CodingKey { case cachedTokens = "cached_tokens", cacheWriteTokens = "cache_write_tokens" }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cachedTokens = try container.decodeIfPresent(Double.self, forKey: .cachedTokens).flatMap(Int.init(exactly:))
+        cacheWriteTokens = try container.decodeIfPresent(Double.self, forKey: .cacheWriteTokens).flatMap(Int.init(exactly:))
+    }
 }
 struct OpenAIChatUsage: Codable, Sendable {
     let promptTokens: Int?
@@ -91,22 +102,12 @@ struct OpenAIChatUsage: Codable, Sendable {
     }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        promptTokens = try container.decodeIfPresent(Int.self, forKey: .promptTokens)
-        completionTokens = try container.decodeIfPresent(Int.self, forKey: .completionTokens)
-        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens)
+        promptTokens = try container.decodeIfPresent(Double.self, forKey: .promptTokens).flatMap(Int.init(exactly:))
+        completionTokens = try container.decodeIfPresent(Double.self, forKey: .completionTokens).flatMap(Int.init(exactly:))
+        totalTokens = try container.decodeIfPresent(Double.self, forKey: .totalTokens).flatMap(Int.init(exactly:))
         promptTokensDetails = try container.decodeIfPresent(OpenAIChatUsagePromptDetails.self, forKey: .promptTokensDetails)
         completionTokensDetails = try container.decodeIfPresent(OpenAIChatUsageCompletionDetails.self, forKey: .completionTokensDetails)
-        var value: [String: JSONValue] = [:]
-        for key in CodingKeys.allCases where container.contains(key) {
-            value[key.rawValue] = try container.decode(JSONValue.self, forKey: key)
-        }
-        if case .object(let details)? = value["prompt_tokens_details"] {
-            value["prompt_tokens_details"] = .object(details.filter { ["cached_tokens", "cache_write_tokens"].contains($0.key) })
-        }
-        if case .object(let details)? = value["completion_tokens_details"] {
-            value["completion_tokens_details"] = .object(details.filter { ["reasoning_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"].contains($0.key) })
-        }
-        raw = .object(value)
+        raw = try JSONValue(from: decoder)
     }
     func encode(to encoder: Encoder) throws { try raw.encode(to: encoder) }
 }

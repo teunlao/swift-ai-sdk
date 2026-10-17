@@ -8,7 +8,7 @@ private let completionPrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
 ]
 private let completionResponse = #"{"id":"cmpl-test","created":0,"model":"instruct","choices":[{"text":"Hello!","finish_reason":"stop","logprobs":{"tokens":["Hello!"],"token_logprobs":[-0.5],"top_logprobs":null,"ignored":true}}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"ignored":true}}"#
-private let completionUsage: JSONValue = .object(["prompt_tokens": .number(4), "completion_tokens": .number(2), "total_tokens": .number(6)])
+private let completionUsage: JSONValue = .object(["prompt_tokens": .number(4), "completion_tokens": .number(2), "total_tokens": .number(6), "ignored": .bool(true)])
 private let completionLogprobs: JSONValue = .object(["tokens": .array([.string("Hello!")]), "token_logprobs": .array([.number(-0.5)]), "top_logprobs": .null])
 
 @Suite("OpenAI Completion contracts")
@@ -186,7 +186,7 @@ struct OpenAICompletionLanguageModelTests {
     func streamResponse() async throws {
         let first = #"{"id":"first","created":0,"model":"instruct","choices":[{"index":0,"text":"Hello","finish_reason":null}],"error":{"message":"ignore","type":"server_error"}}"#
         let last = #"{"id":"last","choices":[{"index":0,"text":"!","finish_reason":"stop","logprobs":{"tokens":["Hello!"],"token_logprobs":[-0.5],"top_logprobs":null}}]}"#
-        let usage = #"{"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}"#
+        let usage = #"{"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"ignored":true}}"#
         let model = model(body: events([first, last, usage]), streaming: true, inspect: { request in
             let body = try JSONDecoder().decode([String: JSONValue].self, from: #require(request.httpBody))
             #expect(request.url?.path == "/completions")

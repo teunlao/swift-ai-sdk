@@ -145,15 +145,15 @@ public final class OpenAICompatibleCompletionLanguageModel: LanguageModelV4 {
 }
 
 private struct CompletionUsage: Decodable, Sendable {
-    let promptTokens: Int
-    let completionTokens: Int
-    let totalTokens: Int
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let totalTokens: Int?
     let raw: JSONValue
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
-        promptTokens = try c.decode(Int.self, forKey: .prompt)
-        completionTokens = try c.decode(Int.self, forKey: .completion)
-        totalTokens = try c.decode(Int.self, forKey: .total)
+        promptTokens = Int(exactly: try c.decode(Double.self, forKey: .prompt))
+        completionTokens = Int(exactly: try c.decode(Double.self, forKey: .completion))
+        totalTokens = Int(exactly: try c.decode(Double.self, forKey: .total))
         raw = try JSONValue(from: decoder)
     }
     private enum Key: String, CodingKey { case prompt = "prompt_tokens", completion = "completion_tokens", total = "total_tokens" }

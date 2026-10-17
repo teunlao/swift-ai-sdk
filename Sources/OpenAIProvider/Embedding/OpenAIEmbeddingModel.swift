@@ -42,7 +42,7 @@ public final class OpenAIEmbeddingModel: EmbeddingModelV4, EmbeddingModelMaxInpu
         )
         return EmbeddingModelV4Result(
             embeddings: response.value.data.map { $0.embedding },
-            usage: response.value.usage.map { EmbeddingModelV4Usage(tokens: $0.promptTokens) },
+            usage: (response.value.usage?.promptTokens).map { EmbeddingModelV4Usage(tokens: $0) },
             response: EmbeddingModelV4ResponseInfo(headers: response.responseHeaders, body: response.rawValue),
             warnings: []
         )

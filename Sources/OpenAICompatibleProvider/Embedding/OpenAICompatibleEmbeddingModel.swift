@@ -59,7 +59,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV4 {
                                                body: JSONValue.object(body), failedResponseHandler: config.errorConfiguration.failedResponseHandler,
                                                successfulResponseHandler: createJsonResponseHandler(responseSchema: embeddingResponseSchema),
                                                isAborted: options.abortSignal, fetch: config.fetch)
-        return .init(embeddings: response.value.data.map(\.embedding), usage: response.value.usage.map { .init(tokens: $0.promptTokens) },
+        return .init(embeddings: response.value.data.map(\.embedding), usage: (response.value.usage?.promptTokens).map { .init(tokens: $0) },
                      providerMetadata: response.value.providerMetadata,
                      response: .init(headers: response.responseHeaders, body: response.rawValue), warnings: warnings)
     }
@@ -68,8 +68,12 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV4 {
 private struct EmbeddingResponse: Decodable, Sendable {
     struct Item: Decodable, Sendable { let embedding: [Double] }
     struct Usage: Decodable, Sendable {
-        let promptTokens: Int
+        let promptTokens: Int?
         enum CodingKeys: String, CodingKey { case promptTokens = "prompt_tokens" }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            promptTokens = Int(exactly: try container.decode(Double.self, forKey: .promptTokens))
+        }
     }
     let data: [Item]
     let usage: Usage?

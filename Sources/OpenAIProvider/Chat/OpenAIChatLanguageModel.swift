@@ -281,14 +281,29 @@ private func responseMetadata(id: String?, created: Double?, model: String?) -> 
 
 private func convertUsage(_ usage: OpenAIChatUsage?) -> LanguageModelV4Usage {
     guard let usage else { return LanguageModelV4Usage() }
-    let prompt = usage.promptTokens ?? 0
-    let completion = usage.completionTokens ?? 0
-    let cacheRead = usage.promptTokensDetails?.cachedTokens ?? 0
+    func field(_ key: String, details: String? = nil) -> JSONValue? {
+        guard case .object(let object) = usage.raw else { return nil }
+        guard let details else { return object[key] }
+        guard case .object(let values)? = object[details] else { return nil }
+        return values[key]
+    }
+    func count(_ value: Int?, raw: JSONValue?) -> Int? {
+        value ?? (raw == nil || raw == .null ? 0 : nil)
+    }
+    func subtract(_ left: Int?, _ right: Int?) -> Int? {
+        guard let left, let right else { return nil }
+        let result = left.subtractingReportingOverflow(right)
+        return result.overflow ? nil : result.partialValue
+    }
+    let prompt = count(usage.promptTokens, raw: field("prompt_tokens"))
+    let completion = count(usage.completionTokens, raw: field("completion_tokens"))
+    let cacheRead = count(usage.promptTokensDetails?.cachedTokens, raw: field("cached_tokens", details: "prompt_tokens_details"))
     let cacheWrite = usage.promptTokensDetails?.cacheWriteTokens
-    let reasoning = usage.completionTokensDetails?.reasoningTokens ?? 0
+    let cacheWriteForTotal = count(cacheWrite, raw: field("cache_write_tokens", details: "prompt_tokens_details"))
+    let reasoning = count(usage.completionTokensDetails?.reasoningTokens, raw: field("reasoning_tokens", details: "completion_tokens_details"))
     return LanguageModelV4Usage(
-        inputTokens: .init(total: prompt, noCache: prompt - cacheRead - (cacheWrite ?? 0), cacheRead: cacheRead, cacheWrite: cacheWrite),
-        outputTokens: .init(total: completion, text: max(0, completion - reasoning), reasoning: reasoning),
+        inputTokens: .init(total: prompt, noCache: subtract(subtract(prompt, cacheRead), cacheWriteForTotal), cacheRead: cacheRead, cacheWrite: cacheWrite),
+        outputTokens: .init(total: completion, text: subtract(completion, reasoning).map { max(0, $0) }, reasoning: reasoning),
         raw: usage.raw
     )
 }

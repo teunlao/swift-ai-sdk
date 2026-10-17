@@ -3,15 +3,24 @@ import AISDKProvider
 import AISDKProviderUtils
 
 struct OpenAICompletionUsage: Codable, Sendable {
-    let promptTokens: Int
-    let completionTokens: Int
-    let totalTokens: Int
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let totalTokens: Int?
+    let raw: JSONValue
 
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
     }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        promptTokens = Int(exactly: try container.decode(Double.self, forKey: .promptTokens))
+        completionTokens = Int(exactly: try container.decode(Double.self, forKey: .completionTokens))
+        totalTokens = Int(exactly: try container.decode(Double.self, forKey: .totalTokens))
+        raw = try JSONValue(from: decoder)
+    }
+    func encode(to encoder: Encoder) throws { try raw.encode(to: encoder) }
 }
 
 struct OpenAICompletionLogprobs: Codable, Sendable {

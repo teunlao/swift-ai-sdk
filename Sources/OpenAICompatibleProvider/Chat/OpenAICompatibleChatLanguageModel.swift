@@ -569,21 +569,35 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
         if let customConvertUsage = config.convertUsage {
             converted = customConvertUsage(usage)
         } else if let usage {
-            let promptTokens = usage.promptTokens ?? 0
-            let completionTokens = usage.completionTokens ?? 0
-            let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
-            let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
+            func field(_ key: String, details: String? = nil) -> JSONValue? {
+                guard case .object(let object)? = raw ?? usage.raw else { return nil }
+                guard let details else { return object[key] }
+                guard case .object(let values)? = object[details] else { return nil }
+                return values[key]
+            }
+            func count(_ value: Int?, raw: JSONValue?) -> Int? {
+                value ?? (raw == nil || raw == .null ? 0 : nil)
+            }
+            func subtract(_ left: Int?, _ right: Int?) -> Int? {
+                guard let left, let right else { return nil }
+                let result = left.subtractingReportingOverflow(right)
+                return result.overflow ? nil : result.partialValue
+            }
+            let promptTokens = count(usage.promptTokens, raw: field("prompt_tokens"))
+            let completionTokens = count(usage.completionTokens, raw: field("completion_tokens"))
+            let cacheReadTokens = count(usage.promptTokensDetails?.cachedTokens, raw: field("cached_tokens", details: "prompt_tokens_details"))
+            let reasoningTokens = count(usage.completionTokensDetails?.reasoningTokens, raw: field("reasoning_tokens", details: "completion_tokens_details"))
 
             converted = LanguageModelV4Usage(
                 inputTokens: .init(
                     total: promptTokens,
-                    noCache: promptTokens - cacheReadTokens,
+                    noCache: subtract(promptTokens, cacheReadTokens),
                     cacheRead: cacheReadTokens,
                     cacheWrite: nil
                 ),
                 outputTokens: .init(
                     total: completionTokens,
-                    text: max(0, completionTokens - reasoningTokens),
+                    text: subtract(completionTokens, reasoningTokens).map { max(0, $0) },
                     reasoning: reasoningTokens
                 ),
                 raw: raw == .null ? nil : raw
@@ -744,6 +758,11 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
             self.cachedTokens = cachedTokens
         }
 
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            cachedTokens = try container.decodeIfPresent(Double.self, forKey: .cachedTokens).flatMap(Int.init(exactly:))
+        }
+
         private enum CodingKeys: String, CodingKey {
             case cachedTokens = "cached_tokens"
         }
@@ -762,6 +781,13 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
             self.reasoningTokens = reasoningTokens
             self.acceptedPredictionTokens = acceptedPredictionTokens
             self.rejectedPredictionTokens = rejectedPredictionTokens
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            reasoningTokens = try container.decodeIfPresent(Double.self, forKey: .reasoningTokens).flatMap(Int.init(exactly:))
+            acceptedPredictionTokens = try container.decodeIfPresent(Double.self, forKey: .acceptedPredictionTokens).flatMap(Int.init(exactly:))
+            rejectedPredictionTokens = try container.decodeIfPresent(Double.self, forKey: .rejectedPredictionTokens).flatMap(Int.init(exactly:))
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -796,9 +822,9 @@ public struct OpenAICompatibleChatUsage: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        promptTokens = try container.decodeIfPresent(Int.self, forKey: .promptTokens)
-        completionTokens = try container.decodeIfPresent(Int.self, forKey: .completionTokens)
-        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens)
+        promptTokens = try container.decodeIfPresent(Double.self, forKey: .promptTokens).flatMap(Int.init(exactly:))
+        completionTokens = try container.decodeIfPresent(Double.self, forKey: .completionTokens).flatMap(Int.init(exactly:))
+        totalTokens = try container.decodeIfPresent(Double.self, forKey: .totalTokens).flatMap(Int.init(exactly:))
         promptTokensDetails = try container.decodeIfPresent(PromptTokensDetails.self, forKey: .promptTokensDetails)
         completionTokensDetails = try container.decodeIfPresent(CompletionTokensDetails.self, forKey: .completionTokensDetails)
         raw = try JSONValue(from: decoder)

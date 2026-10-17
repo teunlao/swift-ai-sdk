@@ -175,11 +175,7 @@ private func convertUsage(_ usage: OpenAICompletionUsage?) -> LanguageModelV4Usa
     return .init(
         inputTokens: .init(total: usage.promptTokens, noCache: usage.promptTokens),
         outputTokens: .init(total: usage.completionTokens, text: usage.completionTokens),
-        raw: .object([
-            "prompt_tokens": .number(Double(usage.promptTokens)),
-            "completion_tokens": .number(Double(usage.completionTokens)),
-            "total_tokens": .number(Double(usage.totalTokens))
-        ])
+        raw: usage.raw
     )
 }
 

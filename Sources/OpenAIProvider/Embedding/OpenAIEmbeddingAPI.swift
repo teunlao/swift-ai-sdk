@@ -8,10 +8,14 @@ public struct OpenAIEmbeddingResponse: Codable, Sendable {
     }
 
     public struct Usage: Codable, Sendable {
-        public let promptTokens: Int
+        public let promptTokens: Int?
 
         enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"
+        }
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            promptTokens = Int(exactly: try container.decode(Double.self, forKey: .promptTokens))
         }
     }
 
