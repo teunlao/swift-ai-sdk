@@ -1,85 +1,34 @@
-import Foundation
 import AISDKProvider
-
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/cohere/src/cohere-prepare-tools.ts
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
-private struct CohereFunctionToolDefinition {
-    let name: String
-    let json: JSONValue
-}
 
 struct CoherePreparedTools {
     let tools: [JSONValue]?
     let toolChoice: CohereToolChoice?
-    let toolWarnings: [SharedV3Warning]
+    let toolWarnings: [SharedV4Warning]
 }
 
-func prepareCohereTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?
-) -> CoherePreparedTools {
-    let normalizedTools = (tools?.isEmpty == false) ? tools : nil
-    var toolWarnings: [SharedV3Warning] = []
-
-    guard let normalizedTools else {
-        return CoherePreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
-    }
-
-    var functionTools: [CohereFunctionToolDefinition] = []
-    functionTools.reserveCapacity(normalizedTools.count)
-
-    for tool in normalizedTools {
+func prepareCohereTools(tools: [LanguageModelV4Tool]?, toolChoice: LanguageModelV4ToolChoice?) -> CoherePreparedTools {
+    guard let tools, !tools.isEmpty else { return .init(tools: nil, toolChoice: nil, toolWarnings: []) }
+    var functions: [(name: String, value: JSONValue)] = []
+    var warnings: [SharedV4Warning] = []
+    for tool in tools {
         switch tool {
-        case .provider(let providerTool):
-            toolWarnings.append(.unsupported(feature: "provider-defined tool \(providerTool.id)", details: nil))
-
-        case .function(let functionTool):
-            var functionObject: [String: JSONValue] = [
-                "name": .string(functionTool.name),
-                "parameters": functionTool.inputSchema
-            ]
-
-            if let description = functionTool.description {
-                functionObject["description"] = .string(description)
-            }
-
-            let toolJSON = JSONValue.object([
-                "type": .string("function"),
-                "function": .object(functionObject)
-            ])
-
-            functionTools.append(.init(name: functionTool.name, json: toolJSON))
+        case .provider(let tool): warnings.append(.unsupported(feature: "provider-defined tool \(tool.id)", details: nil))
+        case .function(let tool):
+            var function: JSONObject = ["name": .string(tool.name), "parameters": tool.inputSchema]
+            if let description = tool.description { function["description"] = .string(description) }
+            functions.append((tool.name, ["type": "function", "function": .object(function)]))
         }
     }
-
-    // Note: if `tools` were provided but all were provider-defined (unsupported),
-    // upstream returns `tools: []` (empty array), not `undefined`.
-    let serializedTools = functionTools.map { $0.json }
-
-    guard let toolChoice else {
-        return CoherePreparedTools(tools: serializedTools, toolChoice: nil, toolWarnings: toolWarnings)
+    var choice: CohereToolChoice?
+    if let toolChoice {
+        switch toolChoice {
+        case .auto: break
+        case .none: choice = CohereToolChoice.none
+        case .required: choice = .required
+        case .tool(let name):
+            functions = functions.filter { $0.name == name }
+            choice = .required
+        }
     }
-
-    switch toolChoice {
-    case .auto:
-        return CoherePreparedTools(tools: serializedTools, toolChoice: nil, toolWarnings: toolWarnings)
-
-    case .none:
-        return CoherePreparedTools(tools: serializedTools, toolChoice: CohereToolChoice.none, toolWarnings: toolWarnings)
-
-    case .required:
-        return CoherePreparedTools(tools: serializedTools, toolChoice: CohereToolChoice.required, toolWarnings: toolWarnings)
-
-    case .tool(let toolName):
-        let filtered = functionTools.filter { $0.name == toolName }.map { $0.json }
-        return CoherePreparedTools(tools: filtered, toolChoice: CohereToolChoice.required, toolWarnings: toolWarnings)
-
-    @unknown default:
-        return CoherePreparedTools(tools: serializedTools, toolChoice: nil, toolWarnings: toolWarnings)
-    }
+    return .init(tools: functions.map(\.value), toolChoice: choice, toolWarnings: warnings)
 }

@@ -263,7 +263,7 @@ struct CohereRerankingModelTests {
         )
 
         let result = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .text(values: ["a", "b", "c"]),
                 query: "q",
                 topN: 2,
@@ -278,7 +278,7 @@ struct CohereRerankingModelTests {
         )
 
         #expect(result.ranking == [
-            RerankingModelV3Ranking(index: 1, relevanceScore: 0.8)
+            RerankingModelV4Ranking(index: 1, relevanceScore: 0.8)
         ])
         #expect(result.warnings.isEmpty)
         #expect(result.response?.id == "cohere-rerank-id")
@@ -351,7 +351,7 @@ struct CohereRerankingModelTests {
         ]
 
         let result = try await model.doRerank(
-            options: RerankingModelV3CallOptions(
+            options: RerankingModelV4CallOptions(
                 documents: .object(values: documents),
                 query: "q"
             )
@@ -371,8 +371,8 @@ struct CohereRerankingModelTests {
             return
         }
 
-        #expect(first.contains("\"title\""))
-        #expect(first.contains("\"hello\""))
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(first.utf8))
+        #expect(value == .object(documents[0]))
     }
 }
 

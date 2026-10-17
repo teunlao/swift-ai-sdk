@@ -9,11 +9,11 @@ import AISDKProviderUtils
 // Upstream commit: f3a72bc2a
 //===----------------------------------------------------------------------===//
 
-public final class CohereRerankingModel: RerankingModelV3 {
+public final class CohereRerankingModel: RerankingModelV4 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
     }
 
@@ -30,14 +30,14 @@ public final class CohereRerankingModel: RerankingModelV3 {
 
     // Current implementation is based on v2 of the Cohere API:
     // https://docs.cohere.com/v2/reference/rerank
-    public func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
+    public func doRerank(options: RerankingModelV4CallOptions) async throws -> RerankingModelV4Result {
         let rerankingOptions = try await parseProviderOptions(
             provider: "cohere",
             providerOptions: options.providerOptions,
-            schema: cohereRerankingOptionsSchema
+            schema: cohereRerankingModelOptionsSchema
         )
 
-        var warnings: [SharedV3Warning] = []
+        var warnings: [SharedV4Warning] = []
 
         let documentStrings: [String]
         switch options.documents {
@@ -64,15 +64,15 @@ public final class CohereRerankingModel: RerankingModelV3 {
         }
 
         if let maxTokensPerDoc = rerankingOptions?.maxTokensPerDoc {
-            body["max_tokens_per_doc"] = .number(Double(maxTokensPerDoc))
+            body["max_tokens_per_doc"] = .number(maxTokensPerDoc)
         }
 
         if let priority = rerankingOptions?.priority {
-            body["priority"] = .number(Double(priority))
+            body["priority"] = .number(priority)
         }
 
         let headers = combineHeaders(
-            config.headers(),
+            try config.headers(),
             options.headers?.mapValues { Optional($0) }
         ).compactMapValues { $0 }
 
@@ -86,12 +86,12 @@ public final class CohereRerankingModel: RerankingModelV3 {
             fetch: config.fetch
         )
 
-        return RerankingModelV3DoRerankResult(
+        return RerankingModelV4Result(
             ranking: response.value.results.map { result in
-                RerankingModelV3Ranking(index: result.index, relevanceScore: result.relevanceScore)
+                RerankingModelV4Ranking(index: result.index, relevanceScore: result.relevanceScore)
             },
             warnings: warnings,
-            response: RerankingModelV3ResponseInfo(
+            response: RerankingModelV4ResponseInfo(
                 id: response.value.id,
                 headers: response.responseHeaders,
                 body: response.rawValue

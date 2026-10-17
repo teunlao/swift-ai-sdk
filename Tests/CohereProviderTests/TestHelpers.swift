@@ -98,8 +98,8 @@ func lowercaseHeaders(_ request: URLRequest) -> [String: String] {
     )
 }
 
-func collectStream(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-    var parts: [LanguageModelV3StreamPart] = []
+func collectStream(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+    var parts: [LanguageModelV4StreamPart] = []
     for try await part in stream {
         parts.append(part)
     }

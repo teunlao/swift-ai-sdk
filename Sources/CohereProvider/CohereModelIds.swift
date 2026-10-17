@@ -23,6 +23,7 @@ public struct CohereChatModelId: RawRepresentable, Hashable, Sendable, Expressib
 public extension CohereChatModelId {
     static let commandA032025: Self = "command-a-03-2025"
     static let commandAReasoning082025: Self = "command-a-reasoning-08-2025"
+    static let commandAVision072025: Self = "command-a-vision-07-2025"
     static let commandR7b122024: Self = "command-r7b-12-2024"
     static let commandRPlus042024: Self = "command-r-plus-04-2024"
     static let commandRPlus: Self = "command-r-plus"

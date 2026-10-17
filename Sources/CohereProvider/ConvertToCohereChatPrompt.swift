@@ -2,186 +2,95 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/cohere/src/convert-to-cohere-chat-prompt.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-func convertToCohereChatPrompt(_ prompt: LanguageModelV3Prompt) throws -> CohereChatPromptConversion {
+func convertToCohereChatPrompt(_ prompt: LanguageModelV4Prompt) async throws -> CohereChatPromptConversion {
     var messages: [JSONValue] = []
     var documents: [JSONValue] = []
-    let warnings: [SharedV3Warning] = []
-
     for message in prompt {
         switch message {
-        case .system(let content, _):
-            messages.append(.object([
-                "role": .string("system"),
-                "content": .string(content)
-            ]))
-
+        case .system(let content, _): messages.append(["role": "system", "content": .string(content)])
         case .user(let parts, _):
-            var aggregatedText = ""
-
+            var content: [JSONValue] = []
+            var text = ""
+            var hasImage = false
             for part in parts {
                 switch part {
-                case .text(let textPart):
-                    aggregatedText.append(textPart.text)
-
-                case .file(let filePart):
-                    let textContent: String
-
-                    switch filePart.data {
-                    case .base64(let value):
-                        textContent = value
-                    case .data(let data):
-                        guard filePart.mediaType.hasPrefix("text/") || filePart.mediaType == "application/json" else {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "document media type: \(filePart.mediaType)",
-                                message: "Media type '\(filePart.mediaType)' is not supported. Supported media types are: text/* and application/json."
-                            )
-                        }
-                        guard let decoded = String(data: data, encoding: .utf8) else {
-                            throw UnsupportedFunctionalityError(
-                                functionality: "document media type: \(filePart.mediaType)",
-                                message: "Expected UTF-8 encoded text content."
-                            )
-                        }
-                        textContent = decoded
-                    case .url:
-                        throw UnsupportedFunctionalityError(
-                            functionality: "File URL data",
-                            message: "URLs should be downloaded by the AI SDK and not reach the Cohere converter."
-                        )
+                case .text(let value):
+                    if !value.text.isEmpty {
+                        text += value.text
+                        content.append(["type": "text", "text": .string(value.text)])
                     }
-
-                    var dataObject: [String: JSONValue] = [
-                        "text": .string(textContent)
-                    ]
-                    if let filename = filePart.filename {
-                        dataObject["title"] = .string(filename)
+                case .file(let file):
+                    if getTopLevelMediaType(file.mediaType) == "image" {
+                        hasImage = true
+                        let url = try cohereImageUrl(file)
+                        let options = try await parseProviderOptions(provider: "cohere", providerOptions: file.providerOptions, schema: cohereImagePartProviderOptions)
+                        var image: JSONObject = ["url": .string(url)]
+                        if let detail = options?.detail { image["detail"] = .string(detail.rawValue) }
+                        content.append(["type": "image_url", "image_url": .object(image)])
+                    } else {
+                        let documentText: String
+                        switch file.data {
+                        case .reference: throw UnsupportedFunctionalityError(functionality: "file parts with provider references")
+                        case .url:
+                            throw UnsupportedFunctionalityError(functionality: "File URL data", message: "URLs should be downloaded by the AI SDK and not reach this point. This indicates a configuration issue.")
+                        case .text(let value): documentText = value
+                        case .base64(let value): documentText = value
+                        case .data(let data):
+                            var bytes = data
+                            if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { bytes.removeFirst(3) }
+                            documentText = String(decoding: bytes, as: UTF8.self)
+                        }
+                        var data: JSONObject = ["text": .string(documentText)]
+                        if let title = file.filename { data["title"] = .string(title) }
+                        documents.append(["data": .object(data)])
                     }
-
-                    documents.append(.object([
-                        "data": .object(dataObject)
-                    ]))
                 }
             }
-
-            messages.append(.object([
-                "role": .string("user"),
-                "content": .string(aggregatedText)
-            ]))
-
+            messages.append(["role": "user", "content": hasImage ? .array(content) : .string(text)])
         case .assistant(let parts, _):
             var text = ""
-            var toolCalls: [JSONValue] = []
-
+            var tools: [JSONValue] = []
             for part in parts {
                 switch part {
-                case .text(let textPart):
-                    text.append(textPart.text)
-                case .reasoning:
-                    continue
+                case .text(let value): text += value.text
                 case .toolCall(let call):
-                    let argumentsData = try JSONEncoder().encode(call.input)
-                    let arguments = String(data: argumentsData, encoding: .utf8) ?? "{}"
-                    toolCalls.append(.object([
-                        "id": .string(call.toolCallId),
-                        "type": .string("function"),
-                        "function": .object([
-                            "name": .string(call.toolName),
-                            "arguments": .string(arguments)
-                        ])
-                    ]))
-                case .file, .toolResult, .custom:
-                    continue
+                    tools.append(["id": .string(call.toolCallId), "type": "function", "function": ["name": .string(call.toolName), "arguments": .string(try cohereJSONString(call.input))]])
+                case .reasoning, .reasoningFile, .file, .toolResult, .custom: break
                 }
             }
-
-            var payload: [String: JSONValue] = [
-                "role": .string("assistant")
-            ]
-
-            if !toolCalls.isEmpty {
-                payload["tool_calls"] = .array(toolCalls)
-            } else {
-                payload["content"] = .string(text)
-            }
-
+            var payload: JSONObject = ["role": "assistant"]
+            if tools.isEmpty { payload["content"] = .string(text) }
+            else { payload["tool_calls"] = .array(tools) }
             messages.append(.object(payload))
-
-        case .tool(let results, _):
-            for part in results {
+        case .tool(let parts, _):
+            for part in parts {
                 guard case .toolResult(let result) = part else { continue }
-                let output = result.output
-                let contentValue: String
-
-                switch output {
-                case .text(let value, _), .errorText(let value, _):
-                    contentValue = value
-                case .executionDenied(let reason, _):
-                    contentValue = reason ?? "Tool execution denied."
-                case .json(let value, _), .errorJson(let value, _):
-                    contentValue = try canonicalJSONString(from: value)
-                case .content(let parts, _):
-                    contentValue = try canonicalJSONString(from: parts)
+                let content: String
+                switch result.output {
+                case .text(let value, _), .errorText(let value, _): content = value
+                case .executionDenied(let reason, _): content = reason ?? "Tool call execution denied."
+                case .json(let value, _), .errorJson(let value, _): content = try cohereJSONString(value)
+                case .content(let value): content = try cohereJSONString(value)
                 }
-
-                messages.append(.object([
-                    "role": .string("tool"),
-                    "content": .string(contentValue),
-                    "tool_call_id": .string(result.toolCallId)
-                ]))
+                messages.append(["role": "tool", "tool_call_id": .string(result.toolCallId), "content": .string(content)])
             }
         }
     }
-
-    return CohereChatPromptConversion(messages: messages, documents: documents, warnings: warnings)
+    return .init(messages: messages, documents: documents, warnings: [])
 }
 
-private func canonicalJSONString(from value: JSONValue) throws -> String {
-    return try canonicalJSONString(any: jsonValueToFoundation(value))
+private func cohereImageUrl(_ file: LanguageModelV4FilePart) throws -> String {
+    switch file.data {
+    case .url(let value, let original): return original ?? value.absoluteString
+    case .data(let value): return "data:\(try resolveFullMediaType(part: file));base64,\(value.base64EncodedString())"
+    case .base64(let value): return "data:\(try resolveFullMediaType(part: file));base64,\(value)"
+    case .reference: throw UnsupportedFunctionalityError(functionality: "image file parts with provider references")
+    case .text: throw UnsupportedFunctionalityError(functionality: "image file parts with text data")
+    }
 }
 
-private func canonicalJSONString(from parts: [LanguageModelV3ToolResultContentPart]) throws -> String {
+func cohereJSONString<Value: Encodable>(_ value: Value) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.withoutEscapingSlashes]
-    let data = try encoder.encode(parts)
-    guard let any = try? JSONSerialization.jsonObject(with: data) else {
-        guard let string = String(data: data, encoding: .utf8) else { return "[]" }
-        return string
-    }
-    return try canonicalJSONString(any: any)
-}
-
-private func canonicalJSONString(any: Any) throws -> String {
-    let normalized = try normalizeJSONObject(any)
-    let data = try JSONSerialization.data(withJSONObject: normalized, options: [])
-    guard let string = String(data: data, encoding: .utf8) else {
-        throw EncodingError.invalidValue(
-            any,
-            EncodingError.Context(codingPath: [], debugDescription: "Failed to encode canonical JSON string")
-        )
-    }
-    return string
-}
-
-private func normalizeJSONObject(_ value: Any) throws -> Any {
-    if let dict = value as? [String: Any] {
-        let sortedKeys = dict.keys.sorted()
-        var result: [String: Any] = [:]
-        for key in sortedKeys {
-            result[key] = try normalizeJSONObject(dict[key] as Any)
-        }
-        return result
-    }
-
-    if let array = value as? [Any] {
-        return try array.map { try normalizeJSONObject($0) }
-    }
-
-    return value
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    return String(decoding: try encoder.encode(value), as: UTF8.self)
 }

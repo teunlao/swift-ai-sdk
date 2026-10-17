@@ -138,4 +138,28 @@ struct CohereRerankingModelTests {
         #expect(result.response?.id == "b44fe75b-e3d3-489a-b61e-1a1aede3ef72")
         #expect(result.response?.body != nil)
     }
+
+    @Test("numeric reranking options retain fractions and large finite values")
+    func numericOptions() async throws {
+        let (model, recorder, responseBox) = makeModel()
+        let payload: [String: Any] = ["results": [["index": 0, "relevance_score": 0.5]], "meta": NSNull()]
+        await responseBox.setJSON(url: HTTPTestHelpers.rerankURL, body: payload)
+        let result = try await model.doRerank(options: .init(
+            documents: .text(values: ["document"]), query: "query",
+            providerOptions: ["cohere": ["maxTokensPerDoc": .number(1000.5), "priority": .number(1e100)]]
+        ))
+        let request = try #require(await recorder.first())
+        let body = try decodeJSONBody(request)
+        #expect(body["max_tokens_per_doc"] as? Double == 1000.5)
+        #expect(body["priority"] as? Double == 1e100)
+        #expect(result.ranking == [.init(index: 0, relevanceScore: 0.5)])
+    }
+
+    @Test("explicit null reranking options are invalid arguments", arguments: ["maxTokensPerDoc", "priority"])
+    func nullOptions(key: String) async throws {
+        let (model, _, _) = makeModel()
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doRerank(options: .init(documents: .text(values: ["document"]), query: "query", providerOptions: ["cohere": [key: .null]]))
+        }
+    }
 }

@@ -2,129 +2,86 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/cohere/src/cohere-embedding-model.ts
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
-public final class CohereEmbeddingModel: EmbeddingModelV3 {
-    public typealias VALUE = String
-
+public final class CohereEmbeddingModel: EmbeddingModelV4 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
     }
-
     private let modelIdentifier: CohereEmbeddingModelId
     private let config: Config
 
-    init(modelId: CohereEmbeddingModelId, config: Config) {
-        self.modelIdentifier = modelId
-        self.config = config
-    }
-
+    init(modelId: CohereEmbeddingModelId, config: Config) { modelIdentifier = modelId; self.config = config }
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
+    public var maxEmbeddingsPerCall: Int? { get async throws { 96 } }
+    public var supportsParallelCalls: Bool { get async throws { true } }
 
-    public var maxEmbeddingsPerCall: Int? {
-        get async throws { 96 }
-    }
-
-    public var supportsParallelCalls: Bool {
-        get async throws { true }
-    }
-
-    public func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
-        let values = options.values
-
-        if let limit = try await maxEmbeddingsPerCall, values.count > limit {
-            throw TooManyEmbeddingValuesForCallError(
-                provider: provider,
-                modelId: modelIdentifier.rawValue,
-                maxEmbeddingsPerCall: limit,
-                values: values
-            )
+    public func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
+        let settings = try await parseProviderOptions(provider: "cohere", providerOptions: options.providerOptions, schema: cohereEmbeddingModelOptions)
+        let embeddingType = settings?.embeddingType ?? .float
+        if options.values.count > 96 {
+            throw TooManyEmbeddingValuesForCallError(provider: provider, modelId: modelId, maxEmbeddingsPerCall: 96, values: options.values)
         }
-
-        let embeddingOptions = try await parseProviderOptions(
-            provider: "cohere",
-            providerOptions: options.providerOptions,
-            schema: cohereEmbeddingOptionsSchema
-        )
-
-        var body: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "embedding_types": .array([.string("float")]),
-            "texts": .array(values.map { .string($0) }),
-            "input_type": .string(embeddingOptions?.inputType?.rawValue ?? "search_query")
+        var body: JSONObject = [
+            "model": .string(modelId), "embedding_types": [.string(embeddingType.rawValue)],
+            "texts": .array(options.values.map(JSONValue.string)), "input_type": .string(settings?.inputType?.rawValue ?? "search_query")
         ]
-
-        if let truncate = embeddingOptions?.truncate {
-            body["truncate"] = .string(truncate.rawValue)
-        }
-
-        if let outputDimension = embeddingOptions?.outputDimension {
-            body["output_dimension"] = .number(Double(outputDimension))
-        }
-
-        let headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
-
+        if let value = settings?.truncate { body["truncate"] = .string(value.rawValue) }
+        if let value = settings?.outputDimension ?? options.dimensions { body["output_dimension"] = .number(Double(value)) }
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/embed",
-            headers: headers,
-            body: JSONValue.object(body),
-            failedResponseHandler: cohereFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: cohereEmbeddingResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(body), failedResponseHandler: cohereFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: cohereEmbeddingResponseSchema(embeddingType)),
+            isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        let embeddings = response.value.embeddings.float
-        let usage = EmbeddingModelV3Usage(tokens: response.value.meta.billedUnits.inputTokens)
-
-        return EmbeddingModelV3DoEmbedResult(
-            embeddings: embeddings,
-            usage: usage,
-            providerMetadata: nil,
-            response: EmbeddingModelV3ResponseInfo(headers: response.responseHeaders, body: response.rawValue)
-        )
+        return .init(embeddings: response.value.embeddings, usage: .init(tokens: response.value.tokens),
+                     response: .init(headers: response.responseHeaders, body: response.rawValue))
     }
 }
 
-private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
+private let cohereEmbeddingFormatKey = CodingUserInfoKey(rawValue: "cohere.embeddingType")!
 
-private struct CohereEmbeddingResponse: Codable {
-    struct Embeddings: Codable {
-        let float: [[Double]]
-    }
-
-    struct Meta: Codable {
-        struct BilledUnits: Codable {
+private struct CohereEmbeddingResponse: Decodable, Sendable {
+    private struct Meta: Decodable {
+        struct BilledUnits: Decodable {
             let inputTokens: Int
-
-            private enum CodingKeys: String, CodingKey {
-                case inputTokens = "input_tokens"
-            }
+            enum CodingKeys: String, CodingKey { case inputTokens = "input_tokens" }
         }
-
         let billedUnits: BilledUnits
-
-        private enum CodingKeys: String, CodingKey {
-            case billedUnits = "billed_units"
-        }
+        enum CodingKeys: String, CodingKey { case billedUnits = "billed_units" }
     }
+    private struct FormatKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+    private enum Keys: String, CodingKey { case embeddings, meta }
+    let embeddings: [[Double]]
+    let tokens: Int
 
-    let embeddings: Embeddings
-    let meta: Meta
+    init(from decoder: Decoder) throws {
+        guard let format = decoder.userInfo[cohereEmbeddingFormatKey] as? CohereEmbeddingModelOptions.EmbeddingType else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Missing requested embedding format"))
+        }
+        let container = try decoder.container(keyedBy: Keys.self)
+        let vectors = try container.nestedContainer(keyedBy: FormatKey.self, forKey: .embeddings)
+        embeddings = try vectors.decode([[Double]].self, forKey: .init(stringValue: format.rawValue))
+        tokens = try container.decode(Meta.self, forKey: .meta).billedUnits.inputTokens
+    }
 }
 
-private let cohereEmbeddingResponseSchema = FlexibleSchema(
-    Schema<CohereEmbeddingResponse>.codable(
-        CohereEmbeddingResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
+private func cohereEmbeddingResponseSchema(_ format: CohereEmbeddingModelOptions.EmbeddingType) -> FlexibleSchema<CohereEmbeddingResponse> {
+    FlexibleSchema(Schema<CohereEmbeddingResponse>(jsonSchemaResolver: { ["type": "object"] }, validator: { raw in
+        do {
+            let decoder = JSONDecoder()
+            decoder.userInfo[cohereEmbeddingFormatKey] = format
+            // Keep decimal tokens intact until JSONDecoder produces Double values.
+            let data = try JSONSerialization.data(withJSONObject: raw, options: [.fragmentsAllowed])
+            return .success(value: try decoder.decode(CohereEmbeddingResponse.self, from: data))
+        } catch { return .failure(error: TypeValidationError.wrap(value: raw, cause: error)) }
+    }))
+}

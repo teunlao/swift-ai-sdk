@@ -2,13 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/cohere/src/cohere-provider.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct CohereProviderSettings: Sendable {
     public var baseURL: String?
     public var apiKey: String?
@@ -16,13 +9,8 @@ public struct CohereProviderSettings: Sendable {
     public var fetch: FetchFunction?
     public var generateId: IDGenerator?
 
-    public init(
-        baseURL: String? = nil,
-        apiKey: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil,
-        generateId: IDGenerator? = nil
-    ) {
+    public init(baseURL: String? = nil, apiKey: String? = nil, headers: [String: String]? = nil,
+                fetch: FetchFunction? = nil, generateId: IDGenerator? = nil) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.headers = headers
@@ -31,151 +19,41 @@ public struct CohereProviderSettings: Sendable {
     }
 }
 
-public final class CohereProvider: ProviderV3 {
-    private let chatFactory: @Sendable (CohereChatModelId) -> CohereChatLanguageModel
-    private let embeddingFactory: @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel
-    private let rerankingFactory: @Sendable (CohereRerankingModelId) -> CohereRerankingModel
+public final class CohereProvider: ProviderV4 {
+    private let settings: CohereProviderSettings
+    private let baseURL: String
+    private let headers: @Sendable () throws -> [String: String?]
 
-    init(
-        chatFactory: @escaping @Sendable (CohereChatModelId) -> CohereChatLanguageModel,
-        embeddingFactory: @escaping @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel,
-        rerankingFactory: @escaping @Sendable (CohereRerankingModelId) -> CohereRerankingModel
-    ) {
-        self.chatFactory = chatFactory
-        self.embeddingFactory = embeddingFactory
-        self.rerankingFactory = rerankingFactory
+    init(settings: CohereProviderSettings) {
+        self.settings = settings
+        baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.cohere.com/v2"
+        headers = {
+            let headers = combineHeaders(
+                ["Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "COHERE_API_KEY", description: "Cohere"))"],
+                settings.headers?.mapValues(Optional.some)
+            )
+            return withUserAgentSuffix(headers, "ai-sdk-cohere/\(COHERE_VERSION)").mapValues(Optional.some)
+        }
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        chatFactory(CohereChatModelId(rawValue: modelId))
+    public func languageModel(modelId: String) -> any LanguageModelV4 { languageModel(.init(rawValue: modelId)) }
+    public func languageModel(_ modelId: CohereChatModelId) -> CohereChatLanguageModel {
+        .init(modelId: modelId, config: .init(provider: "cohere.chat", baseURL: baseURL, headers: headers,
+                                            fetch: settings.fetch, generateId: settings.generateId ?? generateID))
     }
-
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
-    }
-
-    public func chat(modelId: CohereChatModelId) -> CohereChatLanguageModel {
-        chatFactory(modelId)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        embeddingFactory(CohereEmbeddingModelId(rawValue: modelId))
-    }
-
+    public func callAsFunction(_ modelId: CohereChatModelId) -> CohereChatLanguageModel { languageModel(modelId) }
+    public func embeddingModel(modelId: String) -> any EmbeddingModelV4 { embedding(modelId: .init(rawValue: modelId)) }
     public func embedding(modelId: CohereEmbeddingModelId) -> CohereEmbeddingModel {
-        embeddingFactory(modelId)
+        .init(modelId: modelId, config: .init(provider: "cohere.textEmbedding", baseURL: baseURL, headers: headers, fetch: settings.fetch))
     }
-
-    public func rerankingModel(modelId: String) throws -> (any RerankingModelV3)? {
-        rerankingFactory(CohereRerankingModelId(rawValue: modelId))
-    }
-
+    public func rerankingModel(modelId: String) -> (any RerankingModelV4)? { reranking(modelId: .init(rawValue: modelId)) }
     public func reranking(modelId: CohereRerankingModelId) -> CohereRerankingModel {
-        rerankingFactory(modelId)
+        .init(modelId: modelId, config: .init(provider: "cohere.reranking", baseURL: baseURL, headers: headers, fetch: settings.fetch))
     }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
-
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
-    }
 }
 
-private func createCohereAuthFetch(
-    apiKey: String?,
-    customFetch: FetchFunction?
-) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let resolved = try loadAPIKey(
-            apiKey: apiKey,
-            environmentVariableName: "COHERE_API_KEY",
-            description: "Cohere"
-        )
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            headers["Authorization"] = "Bearer \(resolved)"
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
-    }
-}
-
-public func createCohereProvider(settings: CohereProviderSettings = .init()) -> CohereProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.cohere.com/v2"
-
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        if let headers = settings.headers {
-            for (key, value) in headers {
-                computed[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(computed.compactMapValues { $0 }, "ai-sdk/cohere/\(COHERE_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let fetch = createCohereAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let chatFactory: @Sendable (CohereChatModelId) -> CohereChatLanguageModel = { modelId in
-        CohereChatLanguageModel(
-            modelId: modelId,
-            config: CohereChatLanguageModel.Config(
-                provider: "cohere.chat",
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: fetch,
-                generateId: settings.generateId ?? generateID
-            )
-        )
-    }
-
-    let embeddingFactory: @Sendable (CohereEmbeddingModelId) -> CohereEmbeddingModel = { modelId in
-        CohereEmbeddingModel(
-            modelId: modelId,
-            config: CohereEmbeddingModel.Config(
-                provider: "cohere.textEmbedding",
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: fetch
-            )
-        )
-    }
-
-    let rerankingFactory: @Sendable (CohereRerankingModelId) -> CohereRerankingModel = { modelId in
-        CohereRerankingModel(
-            modelId: modelId,
-            config: CohereRerankingModel.Config(
-                provider: "cohere.reranking",
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: fetch
-            )
-        )
-    }
-
-    return CohereProvider(
-        chatFactory: chatFactory,
-        embeddingFactory: embeddingFactory,
-        rerankingFactory: rerankingFactory
-    )
-}
-
-/// Alias matching the upstream naming (`createCohere`).
-public func createCohere(settings: CohereProviderSettings = .init()) -> CohereProvider {
-    createCohereProvider(settings: settings)
-}
-
-public let cohere = createCohereProvider()
+public func createCohere(settings: CohereProviderSettings = .init()) -> CohereProvider { .init(settings: settings) }
+public let cohere = createCohere()

@@ -237,7 +237,57 @@ struct CohereEmbeddingModelTests {
         #expect(headers["custom-request-header"] == "request-header-value")
 
         let userAgent = request.value(forHTTPHeaderField: "User-Agent") ?? ""
-        #expect(userAgent.contains("ai-sdk/cohere/\(COHERE_VERSION)"))
+        #expect(userAgent.contains("ai-sdk-cohere/\(COHERE_VERSION)"))
+    }
+
+    @Test("requested embedding encodings return their vectors without expanding packed values", arguments: ["float", "int8", "uint8", "binary", "ubinary"])
+    func embeddingFormats(format: String) async throws {
+        let (model, recorder, responseBox) = makeModel()
+        let formats: [String: Any] = [format: [[1, 2]], "unknown": "ignored"]
+        await responseBox.setJSON(url: HTTPTestHelpers.embeddingURL, body: [
+            "embeddings": formats, "meta": ["billed_units": ["input_tokens": 4]]
+        ])
+        let result = try await model.doEmbed(options: .init(values: ["text"], providerOptions: ["cohere": ["embeddingType": .string(format)]]))
+        let body = try decodeJSONBody(#require(await recorder.first()))
+        #expect(body["embedding_types"] as? [String] == [format])
+        #expect(result.embeddings == [[1, 2]])
+        #expect(result.usage?.tokens == 4)
+    }
+
+    @Test("new provider dimensions override the common dimensions option", arguments: [768, 2048])
+    func dimensions(value: Int) async throws {
+        let (model, recorder, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.embeddingURL, body: [
+            "embeddings": ["float": [[1.0]]], "meta": ["billed_units": ["input_tokens": 1]]
+        ])
+        let result = try await model.doEmbed(options: .init(values: ["text"], dimensions: 1024, providerOptions: ["cohere": ["outputDimension": .number(Double(value))]]))
+        let body = try decodeJSONBody(#require(await recorder.first()))
+        #expect(body["output_dimension"] as? Int == value)
+        #expect(result.embeddings == [[1]])
+    }
+
+    @Test("the requested embedding format must be present in the response")
+    func missingFormat() async throws {
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.embeddingURL, body: [
+            "embeddings": ["float": [[1.0]]], "meta": ["billed_units": ["input_tokens": 1]]
+        ])
+        await #expect(throws: APICallError.self) {
+            try await model.doEmbed(options: .init(values: ["text"], providerOptions: ["cohere": ["embeddingType": "int8"]]))
+        }
+    }
+
+    @Test("dimension validation precedes the embedding batch limit")
+    func validationOrder() async throws {
+        let (model, _, _) = makeModel()
+        let values = Array(repeating: "text", count: 97)
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doEmbed(options: .init(values: values, providerOptions: ["cohere": ["outputDimension": .null]]))
+        }
+        await #expect(throws: TooManyEmbeddingValuesForCallError.self) { try await model.doEmbed(options: .init(values: values)) }
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doEmbed(options: .init(values: ["text"], providerOptions: ["cohere": ["outputDimension": .number(1e100)]]))
+        }
     }
 }
 

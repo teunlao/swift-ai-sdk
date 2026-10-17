@@ -6,7 +6,7 @@ import Testing
 
 @Suite("CohereChatLanguageModel")
 struct CohereChatLanguageModelTests {
-    private let testPrompt: LanguageModelV3Prompt = [
+    private let testPrompt: LanguageModelV4Prompt = [
         .system(content: "you are a friendly bot!", providerOptions: nil),
         .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
     ]
@@ -39,7 +39,7 @@ struct CohereChatLanguageModelTests {
             generateId: generateId
         ))
 
-        return (provider.chat(modelId: .commandRPlus), recorder, responseBox)
+        return (provider.languageModel(.commandRPlus), recorder, responseBox)
     }
 
     private func fixturesDirectory() -> URL {
@@ -69,14 +69,14 @@ struct CohereChatLanguageModelTests {
             }
     }
 
-    private func collectTextDeltas(_ parts: [LanguageModelV3StreamPart]) -> String {
+    private func collectTextDeltas(_ parts: [LanguageModelV4StreamPart]) -> String {
         parts.compactMap { part in
             if case .textDelta(_, let delta, _) = part { return delta }
             return nil
         }.joined()
     }
 
-    private func collectReasoningDeltas(_ parts: [LanguageModelV3StreamPart]) -> String {
+    private func collectReasoningDeltas(_ parts: [LanguageModelV4StreamPart]) -> String {
         parts.compactMap { part in
             if case .reasoningDelta(_, let delta, _) = part { return delta }
             return nil
@@ -114,7 +114,7 @@ struct CohereChatLanguageModelTests {
         let (model, _, responseBox) = makeModel()
         await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-tool-call"))
 
-        let tool = LanguageModelV3Tool.function(.init(
+        let tool = LanguageModelV4Tool.function(.init(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -127,7 +127,7 @@ struct CohereChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: testPrompt, tools: [tool]))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -141,7 +141,7 @@ struct CohereChatLanguageModelTests {
         let (model, _, responseBox) = makeModel()
         await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-null-args"))
 
-        let tool = LanguageModelV3Tool.function(.init(
+        let tool = LanguageModelV4Tool.function(.init(
             name: "currentTime",
             inputSchema: .object([
                 "type": .string("object"),
@@ -152,13 +152,13 @@ struct CohereChatLanguageModelTests {
             ])
         ))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "What is the current time?"))], providerOptions: nil),
         ]
 
         let result = try await model.doGenerate(options: .init(prompt: prompt, tools: [tool]))
 
-        let call = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let call = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }.first
@@ -183,7 +183,7 @@ struct CohereChatLanguageModelTests {
         let (model, _, responseBox) = makeModel(generateId: { "test-citation-id" })
         await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-citations"))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "What are AI benefits?")),
                 .file(.init(
@@ -196,7 +196,7 @@ struct CohereChatLanguageModelTests {
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
 
-        let sources = result.content.compactMap { content -> LanguageModelV3Source? in
+        let sources = result.content.compactMap { content -> LanguageModelV4Source? in
             if case .source(let source) = content { return source }
             return nil
         }
@@ -222,7 +222,7 @@ struct CohereChatLanguageModelTests {
         let (model, recorder, responseBox) = makeModel()
         await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-text"))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "What does this say?")),
                 .file(.init(
@@ -282,7 +282,7 @@ struct CohereChatLanguageModelTests {
         let (model, recorder, responseBox) = makeModel()
         await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-text"))
 
-        let tool = LanguageModelV3Tool.function(.init(
+        let tool = LanguageModelV4Tool.function(.init(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -296,7 +296,7 @@ struct CohereChatLanguageModelTests {
         _ = try await model.doGenerate(options: .init(
             prompt: testPrompt,
             tools: [tool],
-            toolChoice: .some(LanguageModelV3ToolChoice.none)
+            toolChoice: .some(LanguageModelV4ToolChoice.none)
         ))
 
         let request = try #require(await recorder.first())
@@ -451,7 +451,7 @@ struct CohereChatLanguageModelTests {
         let (model, _, responseBox) = makeModel()
         await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: try loadChunksFixture("cohere-tool-call"))
 
-        let tool = LanguageModelV3Tool.function(.init(
+        let tool = LanguageModelV4Tool.function(.init(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -465,7 +465,7 @@ struct CohereChatLanguageModelTests {
         let result = try await model.doStream(options: .init(prompt: testPrompt, tools: [tool], includeRawChunks: false))
         let parts = try await collectStream(result.stream)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -479,7 +479,7 @@ struct CohereChatLanguageModelTests {
         let (model, _, responseBox) = makeModel()
         await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: try loadChunksFixture("cohere-empty-tool-call"))
 
-        let tool = LanguageModelV3Tool.function(.init(
+        let tool = LanguageModelV4Tool.function(.init(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -493,7 +493,7 @@ struct CohereChatLanguageModelTests {
         let result = try await model.doStream(options: .init(prompt: testPrompt, tools: [tool], includeRawChunks: false))
         let parts = try await collectStream(result.stream)
 
-        let toolCall = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCall = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }.first
@@ -513,5 +513,141 @@ struct CohereChatLanguageModelTests {
         let request = try #require(await recorder.first())
         let body = try decodeJSONBody(request)
         #expect(body["stream"] as? Bool == true)
+    }
+
+    @Test("top-level reasoning maps to thinking budgets and provider thinking takes precedence", arguments: ["high", "none", "override"])
+    func reasoningRequest(mode: String) async throws {
+        let (model, recorder, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try loadJSONFixture("cohere-text"))
+        let providerOptions: SharedV4ProviderOptions? = mode == "override" ? ["cohere": ["thinking": ["tokenBudget": 1.5]]] : nil
+        _ = try await model.doGenerate(options: .init(prompt: testPrompt, maxOutputTokens: 1, reasoning: mode == "high" ? .high : LanguageModelV4ReasoningEffort.none, providerOptions: providerOptions))
+        let request = try #require(await recorder.first())
+        let body = try JSONDecoder().decode(JSONObject.self, from: #require(request.httpBody))
+        let expected: JSONValue = mode == "high" ? ["type": "enabled", "token_budget": 19661] : mode == "none" ? ["type": "disabled"] : ["type": "enabled", "token_budget": 1.5]
+        #expect(body["thinking"] == expected)
+    }
+
+    @Test("null optional thinking fields reject instead of silently defaulting", arguments: [
+        ["thinking": JSONValue.null], ["thinking": ["type": .null]], ["thinking": ["tokenBudget": .null]]
+    ])
+    func invalidThinking(value: JSONObject) async throws {
+        let (model, _, _) = makeModel()
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: testPrompt, providerOptions: ["cohere": value]))
+        }
+    }
+
+    @Test("usage preserves loose top-level and nested fields while mapping cached tokens")
+    func detailedUsage() async throws {
+        let usage: JSONValue = [
+            "tokens": ["input_tokens": 10, "output_tokens": 4, "extension": ["retained": true]],
+            "billed_units": ["input_tokens": .number(1e100), "output_tokens": 1.5, "cost": 2],
+            "cached_tokens": 3, "custom": ["count": 1]
+        ]
+        let payload: JSONValue = ["generation_id": "generation", "message": ["role": "assistant"], "finish_reason": "COMPLETE", "usage": usage]
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload))
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: object)
+        let generated = try await model.doGenerate(options: .init(prompt: testPrompt))
+        #expect(generated.usage.inputTokens.total == 10)
+        #expect(generated.usage.inputTokens.noCache == 7)
+        #expect(generated.usage.inputTokens.cacheRead == 3)
+        #expect(generated.usage.outputTokens.text == 4)
+        #expect(generated.usage.raw == usage)
+        #expect(generated.response?.id == "generation")
+        let event: JSONValue = ["type": "message-end", "delta": ["finish_reason": "COMPLETE", "usage": usage]]
+        let json = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: ["data: \(json)\n\n"])
+        let parts = try await collectStream(model.doStream(options: .init(prompt: testPrompt)).stream)
+        guard case .finish(let reason, let streamed, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(streamed == generated.usage)
+    }
+
+    @Test("generation only replaces the exact null argument string", arguments: ["null", " null ", "", " { \"city\": \"Paris\" } "])
+    func argumentPreservation(arguments: String) async throws {
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: [
+            "message": ["role": "assistant", "tool_calls": [["id": "call", "type": "function", "function": ["name": "tool", "arguments": arguments]]]],
+            "finish_reason": "TOOL_CALL", "usage": ["tokens": ["input_tokens": 0, "output_tokens": 0]]
+        ])
+        let result = try await model.doGenerate(options: .init(prompt: testPrompt))
+        #expect(result.content == [.toolCall(.init(toolCallId: "call", toolName: "tool", input: arguments == "null" ? "{}" : arguments))])
+    }
+
+    @Test("streamed tool calls parse JSON and preserve null as a value", arguments: ["", "null", " { \"city\": \"Paris\" } "])
+    func streamedArgumentParsing(arguments: String) async throws {
+        let (model, _, responseBox) = makeModel()
+        let start: JSONValue = ["type": "tool-call-start", "delta": ["message": ["tool_calls": ["id": "call", "type": "function", "function": ["name": "tool", "arguments": .string(arguments)]]]]]
+        let delta: JSONValue = ["type": "tool-call-delta", "delta": ["message": ["tool_calls": ["function": ["arguments": ""]]]]]
+        let finish: JSONValue = ["type": "message-end", "delta": ["finish_reason": "TOOL_CALL", "usage": ["tokens": ["input_tokens": 0, "output_tokens": 0]]]]
+        let events: [JSONValue] = [start, delta, ["type": "tool-call-end"], finish]
+        let chunks = try events.map { "data: \(String(decoding: try JSONEncoder().encode($0), as: UTF8.self))\n\n" }
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: chunks)
+        let parts = try await collectStream(model.doStream(options: .init(prompt: testPrompt)).stream)
+        let expected = arguments.isEmpty ? "{}" : arguments == "null" ? "null" : #"{"city":"Paris"}"#
+        #expect(parts.contains(.toolInputDelta(id: "call", delta: "", providerMetadata: nil)))
+        #expect(parts.contains(.toolCall(.init(toolCallId: "call", toolName: "tool", input: expected))))
+        guard case .finish(let reason, _, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .toolCalls)
+    }
+
+    @Test("streamed tool arguments use ECMAScript whitespace boundaries", arguments: [UInt32(0xFEFF), UInt32(0x0085)])
+    func streamedWhitespace(point: UInt32) async throws {
+        let edge = String(UnicodeScalar(point)!)
+        let start: JSONValue = ["type": "tool-call-start", "delta": ["message": ["tool_calls": ["id": "call", "type": "function", "function": ["name": "tool", "arguments": .string(edge + "{}" + edge)]]]]]
+        let json = String(decoding: try JSONEncoder().encode(start), as: UTF8.self)
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: ["data: \(json)\n\n", "data: {\"type\":\"tool-call-end\"}\n\n"])
+        let result = try await model.doStream(options: .init(prompt: testPrompt))
+        if point == 0xFEFF {
+            let parts = try await collectStream(result.stream)
+            #expect(parts.contains(.toolCall(.init(toolCallId: "call", toolName: "tool", input: "{}"))))
+        } else {
+            await #expect(throws: JSONParseError.self) { _ = try await collectStream(result.stream) }
+        }
+    }
+
+    @Test("unsafe or malformed streamed tool JSON fails as a typed parse error", arguments: [#"{"__proto__":{"polluted":true}}"#, "{"])
+    func invalidStreamedArguments(arguments: String) async throws {
+        let (model, _, responseBox) = makeModel()
+        let start: JSONValue = ["type": "tool-call-start", "delta": ["message": ["tool_calls": ["id": "call", "type": "function", "function": ["name": "tool", "arguments": .string(arguments)]]]]]
+        let json = String(decoding: try JSONEncoder().encode(start), as: UTF8.self)
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: ["data: \(json)\n\n", "data: {\"type\":\"tool-call-end\"}\n\n"])
+        let result = try await model.doStream(options: .init(prompt: testPrompt))
+        await #expect(throws: JSONParseError.self) { _ = try await collectStream(result.stream) }
+    }
+
+    @Test("malformed content events report typed validation errors and error finish")
+    func malformedEvent() async throws {
+        let (model, _, responseBox) = makeModel()
+        let raw: JSONValue = ["type": "content-start", "delta": ["message": ["content": ["type": "text", "text": ""]]]]
+        let json = String(decoding: try JSONEncoder().encode(raw), as: UTF8.self)
+        await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: ["data: \(json)\n\n"])
+        let parts = try await collectStream(model.doStream(options: .init(prompt: testPrompt, includeRawChunks: true)).stream)
+        #expect(parts.contains(.raw(rawValue: raw)))
+        let errors = parts.compactMap { part -> (any Error)? in if case .error(.error(let error)) = part { return error }; return nil }
+        #expect(errors.first is TypeValidationError)
+        guard case .finish(let reason, _, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .error)
+    }
+
+    @Test("malformed usage and response fields reject at the HTTP boundary", arguments: [
+        #"{"message":{"role":"assistant"},"usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#,
+        #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":0,"output_tokens":0},"cached_tokens":"1"}}"#,
+        #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":0,"output_tokens":0},"billed_units":{"input_tokens":"1","output_tokens":1}}}"#,
+        #"{"message":{"role":"assistant","tool_calls":[{"id":"call","type":"wrong","function":{"name":"tool","arguments":"{}"}}]},"finish_reason":"TOOL_CALL","usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#,
+        #"{"message":{"role":"assistant"},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1e100,"output_tokens":0}}}"#
+    ])
+    func responseValidation(payload: String) async throws {
+        let (model, _, responseBox) = makeModel()
+        await responseBox.setJSON(url: HTTPTestHelpers.chatURL, body: try JSONSerialization.jsonObject(with: Data(payload.utf8)))
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: testPrompt))
+            Issue.record("Expected response validation failure")
+        } catch let error as APICallError {
+            #expect(error.message == "Invalid JSON response")
+            #expect(error.statusCode == 200)
+        }
     }
 }

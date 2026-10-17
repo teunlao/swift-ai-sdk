@@ -24,7 +24,7 @@ struct CohereRerankingResponse: Codable, Sendable {
 
     let id: String?
     let results: [Result]
-    let meta: JSONValue
+    let meta: JSONValue?
 }
 
 let cohereRerankingResponseSchema = FlexibleSchema(

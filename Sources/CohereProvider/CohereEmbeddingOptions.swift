@@ -2,134 +2,41 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/cohere/src/cohere-embedding-options.ts (provider options)
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
-public struct CohereEmbeddingOptions: Sendable, Equatable {
-    public enum InputType: String, Sendable, Equatable {
+public struct CohereEmbeddingModelOptions: Sendable, Equatable, Codable {
+    public enum EmbeddingType: String, Sendable, Codable { case float, int8, uint8, binary, ubinary }
+    public enum InputType: String, Sendable, Codable {
         case searchDocument = "search_document"
         case searchQuery = "search_query"
-        case classification
-        case clustering
+        case classification, clustering
     }
-
-    public enum Truncate: String, Sendable, Equatable {
-        case none = "NONE"
-        case start = "START"
-        case end = "END"
-    }
-
+    public enum Truncate: String, Sendable, Codable { case none = "NONE", start = "START", end = "END" }
+    public var embeddingType: EmbeddingType?
     public var inputType: InputType?
     public var truncate: Truncate?
     public var outputDimension: Int?
 
-    public init(inputType: InputType? = nil, truncate: Truncate? = nil, outputDimension: Int? = nil) {
+    public init(embeddingType: EmbeddingType? = nil, inputType: InputType? = nil, truncate: Truncate? = nil, outputDimension: Int? = nil) {
+        self.embeddingType = embeddingType
         self.inputType = inputType
         self.truncate = truncate
         self.outputDimension = outputDimension
     }
+
+    private enum CodingKeys: String, CodingKey { case embeddingType, inputType, truncate, outputDimension }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            embeddingType: container.contains(.embeddingType) ? container.decode(EmbeddingType.self, forKey: .embeddingType) : nil,
+            inputType: container.contains(.inputType) ? container.decode(InputType.self, forKey: .inputType) : nil,
+            truncate: container.contains(.truncate) ? container.decode(Truncate.self, forKey: .truncate) : nil,
+            outputDimension: container.contains(.outputDimension) ? container.decode(Int.self, forKey: .outputDimension) : nil
+        )
+        if let outputDimension, ![256, 512, 768, 1024, 1536, 2048].contains(outputDimension) {
+            throw DecodingError.dataCorruptedError(forKey: .outputDimension, in: container, debugDescription: "Unsupported output dimension")
+        }
+    }
 }
 
-private let cohereEmbeddingOptionsJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(true)
-])
-
-public let cohereEmbeddingOptionsSchema = FlexibleSchema(
-    Schema<CohereEmbeddingOptions>(
-        jsonSchemaResolver: { cohereEmbeddingOptionsJSONSchema },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(
-                        vendor: "cohere",
-                        issues: "provider options must be an object"
-                    )
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                var options = CohereEmbeddingOptions()
-
-                if let inputTypeValue = dict["inputType"], inputTypeValue != .null {
-                    guard case .string(let inputTypeString) = inputTypeValue else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "inputType must be a string"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: inputTypeValue, cause: error))
-                    }
-
-                    guard let resolved = CohereEmbeddingOptions.InputType(rawValue: inputTypeString) else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "inputType must be one of search_document, search_query, classification, clustering"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: inputTypeValue, cause: error))
-                    }
-
-                    options.inputType = resolved
-                }
-
-                if let truncateValue = dict["truncate"], truncateValue != .null {
-                    guard case .string(let truncateString) = truncateValue else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "truncate must be a string"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: truncateValue, cause: error))
-                    }
-
-                    guard let resolved = CohereEmbeddingOptions.Truncate(rawValue: truncateString) else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "truncate must be one of NONE, START, END"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: truncateValue, cause: error))
-                    }
-
-                    options.truncate = resolved
-                }
-
-                if let outputDimensionValue = dict["outputDimension"], outputDimensionValue != .null {
-                    guard case .number(let outputDimensionNumber) = outputDimensionValue,
-                          outputDimensionNumber.isFinite
-                    else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "outputDimension must be a number"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
-                    }
-
-                    let resolved = Int(outputDimensionNumber)
-                    guard outputDimensionNumber == Double(resolved) else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "outputDimension must be an integer"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
-                    }
-
-                    guard [256, 512, 1024, 1536].contains(resolved) else {
-                        let error = SchemaValidationIssuesError(
-                            vendor: "cohere",
-                            issues: "outputDimension must be one of 256, 512, 1024, 1536"
-                        )
-                        return .failure(error: TypeValidationError.wrap(value: outputDimensionValue, cause: error))
-                    }
-
-                    options.outputDimension = resolved
-                }
-
-                return .success(value: options)
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
+let cohereEmbeddingModelOptions = FlexibleSchema(
+    Schema<CohereEmbeddingModelOptions>.codable(CohereEmbeddingModelOptions.self, jsonSchema: ["type": "object"])
 )

@@ -1,158 +1,97 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import CohereProvider
+import AISDKProvider
+import AISDKProviderUtils
+import CohereProvider
 
-@Suite("convertToCohereChatPrompt")
+@Suite("Cohere prompt HTTP boundaries")
 struct ConvertToCohereChatPromptTests {
-    @Test("extracts documents from file parts")
-    func extractsDocumentsFromFileParts() throws {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [
-                .text(.init(text: "Analyze this file: ")),
-                .file(.init(
-                    data: .data(Data("This is file content".utf8)),
-                    mediaType: "text/plain",
-                    filename: "test.txt"
-                )),
-            ], providerOptions: nil),
-        ]
-
-        let result = try convertToCohereChatPrompt(prompt)
-
-        #expect(result.messages == [
-            .object([
-                "role": .string("user"),
-                "content": .string("Analyze this file: "),
-            ]),
-        ])
-
-        #expect(result.documents == [
-            .object([
-                "data": .object([
-                    "text": .string("This is file content"),
-                    "title": .string("test.txt"),
-                ]),
-            ]),
-        ])
-
-        #expect(result.warnings.isEmpty)
+    private func requestBody(_ prompt: LanguageModelV4Prompt) async throws -> JSONObject {
+        let recorder = RequestRecorder()
+        let provider = createCohere(settings: .init(apiKey: "key", fetch: { request in
+            await recorder.record(request)
+            return FetchResponse(body: .data(Data(#"{"message":{"role":"assistant","content":[]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":0,"output_tokens":0}}}"#.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+        }))
+        _ = try await provider.languageModel(.commandAVision072025).doGenerate(options: .init(prompt: prompt))
+        let request = try #require(await recorder.first())
+        return try JSONDecoder().decode(JSONObject.self, from: #require(request.httpBody))
     }
 
-    @Test("throws for unsupported media types")
-    func throwsForUnsupportedMediaTypes() {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [
-                .file(.init(
-                    data: .data(Data("PDF content".utf8)),
-                    mediaType: "application/pdf",
-                    filename: "test.pdf"
-                )),
-            ], providerOptions: nil),
-        ]
+    @Test("mixed text and image parts retain order, detected media type, and image fidelity")
+    func mixedImage() async throws {
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        let body = try await requestBody([.user(content: [
+            .text(.init(text: "Before")), .text(.init(text: "")),
+            .file(.init(data: .data(png), mediaType: "image", providerOptions: ["cohere": ["detail": "high"]])),
+            .text(.init(text: "After")), .text(.init(text: "More")),
+            .file(.init(data: .data(Data("PDF-like text".utf8)), mediaType: "application/pdf", filename: "document.pdf"))
+        ], providerOptions: nil)])
+        #expect(body["messages"] == [["role": "user", "content": [
+            ["type": "text", "text": "Before"],
+            ["type": "image_url", "image_url": ["url": "data:image/png;base64,iVBORw0KGgo=", "detail": "high"]],
+            ["type": "text", "text": "After"], ["type": "text", "text": "More"]
+        ]]])
+        #expect(body["documents"] == [["data": ["text": "PDF-like text", "title": "document.pdf"]]])
+    }
 
-        do {
-            _ = try convertToCohereChatPrompt(prompt)
-            Issue.record("Expected UnsupportedFunctionalityError")
-        } catch let error as UnsupportedFunctionalityError {
-            #expect(error.message.contains("Media type 'application/pdf' is not supported"))
-        } catch {
-            Issue.record("Expected UnsupportedFunctionalityError, got: \(error)")
+    @Test("base64 and remote images become image URLs rather than documents", arguments: [false, true])
+    func imageVariants(remote: Bool) async throws {
+        let data: SharedV4FileData = remote ? .url(URL(string: "https://example.com/image.png")!) : .base64("AAECAw==")
+        let body = try await requestBody([.user(content: [.file(.init(data: data, mediaType: "image/png"))], providerOptions: nil)])
+        let url = remote ? "https://example.com/image.png" : "data:image/png;base64,AAECAw=="
+        #expect(body["messages"] == [["role": "user", "content": [["type": "image_url", "image_url": ["url": .string(url)]]]]])
+        #expect(body["documents"] == nil)
+    }
+
+    @Test("non-image files preserve source string semantics and text-only parts join without separators")
+    func documents() async throws {
+        let bytes = Data([0xEF, 0xBB, 0xBF, 0xFF])
+        let body = try await requestBody([.user(content: [
+            .text(.init(text: "One")), .text(.init(text: "Two")),
+            .file(.init(data: .text("Inline text"), mediaType: "text")),
+            .file(.init(data: .base64("RmlsZQ=="), mediaType: "application/octet-stream", filename: "raw.txt")),
+            .file(.init(data: .data(bytes), mediaType: "application/pdf"))
+        ], providerOptions: nil)])
+        #expect(body["messages"] == [["role": "user", "content": "OneTwo"]])
+        #expect(body["documents"] == [
+            ["data": ["text": "Inline text"]], ["data": ["text": "RmlsZQ==", "title": "raw.txt"]],
+            ["data": ["text": "\u{FFFD}"]]
+        ])
+    }
+
+    @Test("unsupported file representations fail through the public model", arguments: ["image-reference", "image-text", "document-reference", "document-url"])
+    func unsupportedFiles(kind: String) async throws {
+        let image = kind.hasPrefix("image")
+        let data: SharedV4FileData
+        if kind.hasSuffix("reference") { data = .reference(["cohere": "file-id"]) }
+        else if kind.hasSuffix("url") { data = .url(URL(string: "https://example.com/file.txt")!) }
+        else { data = .text("Image text") }
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await requestBody([.user(content: [.file(.init(data: data, mediaType: image ? "image/png" : "text/plain"))], providerOptions: nil)])
         }
     }
 
-    @Test("converts a tool call into a Cohere assistant message")
-    func convertsToolCallMessage() throws {
-        let prompt: LanguageModelV3Prompt = [
-            .assistant(content: [
-                .text(.init(text: "Calling a tool")),
-                .toolCall(.init(
-                    toolCallId: "tool-call-1",
-                    toolName: "tool-1",
-                    input: .object(["test": .string("This is a tool message")])
-                )),
-            ], providerOptions: nil),
-        ]
-
-        let result = try convertToCohereChatPrompt(prompt)
-
-        #expect(result.messages == [
-            .object([
-                "role": .string("assistant"),
-                "tool_calls": .array([
-                    .object([
-                        "id": .string("tool-call-1"),
-                        "type": .string("function"),
-                        "function": .object([
-                            "name": .string("tool-1"),
-                            "arguments": .string("{\"test\":\"This is a tool message\"}"),
-                        ]),
-                    ]),
-                ]),
-            ]),
-        ])
-        #expect(result.documents.isEmpty)
-        #expect(result.warnings.isEmpty)
+    @Test("invalid image detail rejects at the provider-option boundary", arguments: [JSONValue.string("invalid"), .null])
+    func invalidImageDetail(detail: JSONValue) async throws {
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await requestBody([.user(content: [.file(.init(data: .base64("AAECAw=="), mediaType: "image/png", providerOptions: ["cohere": ["detail": detail]]))], providerOptions: nil)])
+        }
     }
 
-    @Test("converts a single tool result into a Cohere tool message")
-    func convertsSingleToolResult() throws {
-        let prompt: LanguageModelV3Prompt = [
+    @Test("assistant calls and tool results replay with native V4 content")
+    func replay() async throws {
+        let body = try await requestBody([
+            .assistant(content: [.text(.init(text: "Calling")), .reasoning(.init(text: "ignored")), .toolCall(.init(toolCallId: "call-1", toolName: "tool", input: ["city": "Paris"]))], providerOptions: nil),
             .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "tool-call-1",
-                    toolName: "tool-1",
-                    output: .json(value: .object(["test": .string("This is a tool message")]))
-                )),
-            ], providerOptions: nil),
-        ]
-
-        let result = try convertToCohereChatPrompt(prompt)
-
-        #expect(result.messages == [
-            .object([
-                "role": .string("tool"),
-                "content": .string("{\"test\":\"This is a tool message\"}"),
-                "tool_call_id": .string("tool-call-1"),
-            ]),
+                .toolApprovalResponse(.init(approvalId: "approval", approved: true)),
+                .toolResult(.init(toolCallId: "call-1", toolName: "tool", output: .json(value: ["weather": "sunny"]))),
+                .toolResult(.init(toolCallId: "call-2", toolName: "tool", output: .executionDenied(reason: nil)))
+            ], providerOptions: nil)
         ])
-        #expect(result.documents.isEmpty)
-        #expect(result.warnings.isEmpty)
-    }
-
-    @Test("converts multiple tool results into Cohere tool messages")
-    func convertsMultipleToolResults() throws {
-        let prompt: LanguageModelV3Prompt = [
-            .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "tool-call-1",
-                    toolName: "tool-1",
-                    output: .json(value: .object(["test": .string("This is a tool message")]))
-                )),
-                .toolResult(.init(
-                    toolCallId: "tool-call-2",
-                    toolName: "tool-2",
-                    output: .json(value: .object(["something": .string("else")]))
-                )),
-            ], providerOptions: nil),
-        ]
-
-        let result = try convertToCohereChatPrompt(prompt)
-
-        #expect(result.messages == [
-            .object([
-                "role": .string("tool"),
-                "content": .string("{\"test\":\"This is a tool message\"}"),
-                "tool_call_id": .string("tool-call-1"),
-            ]),
-            .object([
-                "role": .string("tool"),
-                "content": .string("{\"something\":\"else\"}"),
-                "tool_call_id": .string("tool-call-2"),
-            ]),
+        #expect(body["messages"] == [
+            ["role": "assistant", "tool_calls": [["id": "call-1", "type": "function", "function": ["name": "tool", "arguments": #"{"city":"Paris"}"#]]]],
+            ["role": "tool", "tool_call_id": "call-1", "content": #"{"weather":"sunny"}"#],
+            ["role": "tool", "tool_call_id": "call-2", "content": "Tool call execution denied."]
         ])
-        #expect(result.documents.isEmpty)
-        #expect(result.warnings.isEmpty)
     }
 }
-
