@@ -43,8 +43,8 @@ struct MistralConversationModelTests {
         return parts
     }
 
-    @Test("built-in executions map tools, results, sources, and replay on the public API")
-    func executionAndReplay() async throws {
+    @Test("built-in executions map tools, results, sources, and replay on the public API", arguments: [false, true])
+    func executionAndReplay(nullResult: Bool) async throws {
         let payload = #"{"conversation_id":"conversation-1","outputs":[{"type":"tool.execution","id":"search-1","name":"web_search","arguments":"{\"url\":\"https://example.com\"}","function":"web_fetch","info":{"result":"Retrieved page"}},{"type":"message.output","model":"response-model","content":[{"type":"text","text":"Spain won."},{"type":"tool_reference","title":"Results","url":"https://example.com/results"}]},{"type":"message.output","content":[{"type":"thinking","thinking":[{"type":"text","text":"Think"}]},{"type":"tool_reference","url":"https://example.com/results"},{"type":"tool_reference","url":null}]}],"usage":{}}"#
         let recorder = RequestRecorder()
         let instance = model(response: payload, recorder: recorder)
@@ -63,11 +63,13 @@ struct MistralConversationModelTests {
         #expect(first.response?.id == "conversation-1")
         #expect(first.response?.modelId == "response-model")
         #expect(first.response?.headers?["x-response"] == "response")
+        let replayOutput: JSONValue = nullResult ? ["info": ["result": .null, "status": "ok"]] : ["info": ["result": "Retrieved page"]]
+        let replayResult = nullResult ? #"{"result":null,"status":"ok"}"# : "Retrieved page"
         let history: LanguageModelV4Prompt = prompt + [
             .assistant(content: [
                 .text(.init(text: "Before")), .reasoning(.init(text: "Think")),
                 .toolCall(.init(toolCallId: "search-1", toolName: "search", input: ["arguments": #"{"url":"https://example.com"}"#], providerExecuted: true, providerOptions: ["mistral": ["function": .null, "name": "web_fetch"]])),
-                .toolResult(.init(toolCallId: "search-1", toolName: "search", output: .json(value: ["info": ["result": "Retrieved page"]]))),
+                .toolResult(.init(toolCallId: "search-1", toolName: "search", output: .json(value: replayOutput))),
                 .text(.init(text: "After")),
                 .toolCall(.init(toolCallId: "function-1", toolName: "weather", input: ["city": "Madrid"]))
             ], providerOptions: nil),
@@ -90,7 +92,7 @@ struct MistralConversationModelTests {
             ["type": "message.input", "role": "user", "content": [["type": "text", "text": "Who won?"]]],
             ["type": "message.input", "role": "assistant", "content": [["type": "text", "text": "Before"], ["type": "thinking", "thinking": [["type": "text", "text": "Think"]], "closed": true]]],
             ["type": "function.call", "tool_call_id": "search-1", "name": "web_fetch", "arguments": #"{"url":"https://example.com"}"#],
-            ["type": "function.result", "tool_call_id": "search-1", "result": "Retrieved page"],
+            ["type": "function.result", "tool_call_id": "search-1", "result": .string(replayResult)],
             ["type": "message.input", "role": "assistant", "content": [["type": "text", "text": "After"]]],
             ["type": "function.call", "tool_call_id": "function-1", "name": "weather", "arguments": #"{"city":"Madrid"}"#],
             ["type": "function.result", "tool_call_id": "function-1", "result": "Sunny"]

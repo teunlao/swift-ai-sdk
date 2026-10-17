@@ -21,7 +21,8 @@ func convertToMistralConversationInputs(
             if case .json(let output, _) = part.output,
                case .object(let object) = output,
                case .object(let info) = object["info"] {
-                value = info["result"].flatMap { $0 == .null ? nil : $0 } ?? .object(info)
+                // JSONValue's nil literal is JSON null; Optional.none expresses absence.
+                value = info["result"].flatMap { value -> JSONValue? in value == .null ? Optional<JSONValue>.none : value } ?? .object(info)
             }
             if case .string(let text) = value { result = text }
             else { result = try mistralJSONString(value) }
@@ -64,7 +65,7 @@ func convertToMistralConversationInputs(
                     var arguments = try mistralJSONString(call.input)
                     if call.providerExecuted == true {
                         let metadata = call.providerOptions?["mistral"]
-                        let declaredName = metadata?["function"].flatMap { $0 == .null ? nil : $0 } ?? metadata?["name"]
+                        let declaredName = metadata?["function"].flatMap { value -> JSONValue? in value == .null ? Optional<JSONValue>.none : value } ?? metadata?["name"]
                         if case .string(let value) = declaredName { name = value }
                         else { name = toolNameMapping.toProviderToolName(call.toolName) }
                         if case .object(let input) = call.input, case .string(let value) = input["arguments"] { arguments = value }
