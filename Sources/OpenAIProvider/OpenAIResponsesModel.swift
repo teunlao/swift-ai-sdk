@@ -174,7 +174,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             },
             isOutput: { chunk in
                 guard let type = chunk.type else { return false }
-                return ["response.output_item.added", "response.output_item.done", "response.output_text.delta", "response.output_text.annotation.added", "response.completed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.custom_tool_call_input.delta", "response.code_interpreter_call_code.delta", "response.code_interpreter_call_code.done", "response.image_generation_call.partial_image", "response.apply_patch_call_operation_diff.delta", "response.apply_patch_call_operation_diff.done", "response.reasoning_summary_part.added", "response.reasoning_summary_part.done", "response.reasoning_summary_text.delta"].contains(type)
+                return !["response.created", "response.in_progress", "response.failed", "error", "unknown_chunk"].contains(type)
             },
             isAccepted: { $0.type == "response.in_progress" },
             url: url,
@@ -210,7 +210,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 var ongoingAnnotations: [JSONValue] = []
                 var activeMessagePhase: String?
 
-                var ongoingToolCalls: [Int: ToolCallState] = [:]
+                var ongoingToolCalls: [Double: ToolCallState] = [:]
                 var activeReasoning: [String: ReasoningState] = [:]
                 var approvalRequestIdToDummyToolCallIdFromStream: [String: String] = [:]
                 var hostedToolSearchCallIds: [String] = []
@@ -343,17 +343,16 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                             case "response.completed", "response.incomplete":
                                 if let metadata = chunkObject["response"], let responseObject = metadata.objectValue {
                                     let rawFinishReason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
-                                    finishReason = LanguageModelV4FinishReason(
-                                        unified: mapOpenAIResponsesFinishReason(
-                                            finishReason: rawFinishReason,
-                                            hasFunctionCall: hasFunctionCall
-                                        ),
-                                        raw: rawFinishReason
-                                    )
-
-                                    if let usageValue = responseObject["usage"], let usageObject = usageValue.objectValue {
-                                        usage = makeUsage(from: usageObject)
+                                    if !encounteredStreamError {
+                                        finishReason = LanguageModelV4FinishReason(
+                                            unified: mapOpenAIResponsesFinishReason(
+                                                finishReason: rawFinishReason,
+                                                hasFunctionCall: hasFunctionCall
+                                            ),
+                                            raw: rawFinishReason
+                                        )
                                     }
+                                    usage = convertOpenAIResponsesUsage(chunk.usage)
 
                                     if let tier = responseObject["service_tier"]?.stringValue {
                                         serviceTier = tier
@@ -373,6 +372,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                                 }
                                 handleResponseFailed(
                                     chunkObject,
+                                    parsedUsage: chunk.usage,
                                     hasFunctionCall: hasFunctionCall,
                                     finishReason: &finishReason,
                                     usage: &usage,
@@ -1438,34 +1438,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         return string
     }
 
-    private func makeUsage(from object: [String: JSONValue]) -> LanguageModelV4Usage {
-        let inputTokens = object["input_tokens"]?.intValue
-        let outputTokens = object["output_tokens"]?.intValue
-
-        guard let inputTokens, let outputTokens else {
-            return LanguageModelV4Usage(raw: .object(object))
-        }
-
-        let cachedTokens = object["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue ?? 0
-        let cacheWriteTokens = object["input_tokens_details"]?.objectValue?["cache_write_tokens"]?.intValue
-        let reasoningTokens = object["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue ?? 0
-
-        return LanguageModelV4Usage(
-            inputTokens: .init(
-                total: inputTokens,
-                noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),
-                cacheRead: cachedTokens,
-                cacheWrite: cacheWriteTokens
-            ),
-            outputTokens: .init(
-                total: outputTokens,
-                text: outputTokens - reasoningTokens,
-                reasoning: reasoningTokens
-            ),
-            raw: .object(object)
-        )
-    }
-
     // MARK: - Streaming helpers
     
     private struct ToolCallState {
@@ -1485,15 +1457,38 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         var endEmitted: Bool
     }
 
-    private enum ReasoningSummaryPartStatus: Sendable {
-        case active
-        case canConclude
-        case concluded
+    private final class SummaryParts: ExpressibleByDictionaryLiteral {
+        enum Status: Sendable { case active, canConclude, concluded }
+        private var states: [Double: Status] = [:]
+        private var creation: [Double] = []
+
+        init(dictionaryLiteral elements: (Double, Status)...) {
+            for (index, status) in elements { set(status, at: index) }
+        }
+        subscript(index: Double) -> Status? { states[index] }
+        var count: Int { states.count }
+        func set(_ status: Status, at index: Double) {
+            if states[index] == nil { creation.append(index) }
+            states[index] = status
+        }
+        var ordered: [(Double, Status)] {
+            var indices: [Double] = []
+            var others: [Double] = []
+            for key in creation {
+                // ECMAScript ranks array indices below UInt32.max before other keys.
+                if key >= 0 && key < Double(UInt32.max) && key.rounded(.towardZero) == key {
+                    indices.append(key)
+                } else {
+                    others.append(key)
+                }
+            }
+            return (indices.sorted() + others).map { ($0, states[$0]!) }
+        }
     }
 
     private struct ReasoningState {
         var encryptedContent: String?
-        var summaryParts: [Int: ReasoningSummaryPartStatus]
+        let summaryParts: SummaryParts
     }
 
     private struct ResponseMetadata {
@@ -1649,11 +1644,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         toolNameMapping: OpenAIToolNameMapping,
         ongoingAnnotations: inout [JSONValue],
         activeMessagePhase: inout String?,
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) throws {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let item = chunk["item"]?.objectValue,
               let type = item["type"]?.stringValue else {
             return
@@ -1888,13 +1883,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         approvalRequestIdToDummyToolCallIdFromStream: inout [String: String],
         hostedToolSearchCallIds: inout [String],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
         isShellProviderExecuted: Bool,
         hasFunctionCall: inout Bool,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) throws {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let item = chunk["item"]?.objectValue,
               let type = item["type"]?.stringValue else {
             return
@@ -2322,9 +2317,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 "itemId": .string(id),
                 "reasoningEncryptedContent": finalEncryptedContent.map(JSONValue.string) ?? .null
             ])
-            for (summaryIndex, status) in state.summaryParts {
+            for (summaryIndex, status) in state.summaryParts.ordered {
                 if status == .concluded { continue }
-                continuation.yield(.reasoningEnd(id: "\(id):\(summaryIndex)", providerMetadata: metadata))
+                continuation.yield(.reasoningEnd(id: "\(id):\(jsNumberString(summaryIndex))", providerMetadata: metadata))
             }
             activeReasoning[id] = nil
         case "compaction":
@@ -2347,10 +2342,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleFunctionCallArgumentsDelta(
         _ chunk: [String: JSONValue],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue,
               let state = ongoingToolCalls[outputIndex] else {
             return
@@ -2360,10 +2355,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleApplyPatchCallOperationDiffDelta(
         _ chunk: [String: JSONValue],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue,
               var state = ongoingToolCalls[outputIndex],
               var applyPatch = state.applyPatch else {
@@ -2378,10 +2373,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleApplyPatchCallOperationDiffDone(
         _ chunk: [String: JSONValue],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let diff = chunk["diff"]?.stringValue,
               var state = ongoingToolCalls[outputIndex],
               var applyPatch = state.applyPatch,
@@ -2423,10 +2418,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleCodeInterpreterDelta(
         _ chunk: [String: JSONValue],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue,
               let state = ongoingToolCalls[outputIndex],
               state.codeInterpreter != nil else {
@@ -2439,10 +2434,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleCodeInterpreterDone(
         _ chunk: [String: JSONValue],
-        ongoingToolCalls: inout [Int: ToolCallState],
+        ongoingToolCalls: inout [Double: ToolCallState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
-        guard let outputIndex = chunk["output_index"]?.intValue,
+        guard let outputIndex = chunk["output_index"]?.numberValue,
               let state = ongoingToolCalls[outputIndex],
               let interpreter = state.codeInterpreter,
               let code = chunk["code"]?.stringValue else {
@@ -2478,8 +2473,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
-              var state = activeReasoning[itemId],
-              let summaryIndex = chunk["summary_index"]?.intValue,
+              let state = activeReasoning[itemId],
+              let summaryIndex = chunk["summary_index"]?.numberValue,
               summaryIndex >= 0 else {
             return
         }
@@ -2489,27 +2484,25 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
         if state.summaryParts[summaryIndex] == nil {
             // Since there is a new active summary part, conclude all can-conclude parts.
-            var concludedIndices: [Int] = []
+            var concludedIndices: [Double] = []
             concludedIndices.reserveCapacity(state.summaryParts.count)
-            for (index, status) in state.summaryParts where status == .canConclude {
+            for (index, status) in state.summaryParts.ordered where status == .canConclude {
                 concludedIndices.append(index)
             }
-            concludedIndices.sort()
 
             for index in concludedIndices {
                 let endMetadata = openAIProviderMetadata(["itemId": .string(itemId)])
-                continuation.yield(.reasoningEnd(id: "\(itemId):\(index)", providerMetadata: endMetadata))
-                state.summaryParts[index] = .concluded
+                continuation.yield(.reasoningEnd(id: "\(itemId):\(jsNumberString(index))", providerMetadata: endMetadata))
+                state.summaryParts.set(.concluded, at: index)
             }
 
-            state.summaryParts[summaryIndex] = .active
-            activeReasoning[itemId] = state
+            state.summaryParts.set(.active, at: summaryIndex)
 
             let startMetadata = openAIProviderMetadata([
                 "itemId": .string(itemId),
                 "reasoningEncryptedContent": state.encryptedContent.map(JSONValue.string) ?? .null
             ])
-            continuation.yield(.reasoningStart(id: "\(itemId):\(summaryIndex)", providerMetadata: startMetadata))
+            continuation.yield(.reasoningStart(id: "\(itemId):\(jsNumberString(summaryIndex))", providerMetadata: startMetadata))
         }
     }
 
@@ -2518,12 +2511,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
-              let summaryIndex = chunk["summary_index"]?.intValue,
+              let summaryIndex = chunk["summary_index"]?.numberValue,
               let delta = chunk["delta"]?.stringValue else {
             return
         }
         let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-        continuation.yield(.reasoningDelta(id: "\(itemId):\(summaryIndex)", delta: delta, providerMetadata: metadata))
+        continuation.yield(.reasoningDelta(id: "\(itemId):\(jsNumberString(summaryIndex))", delta: delta, providerMetadata: metadata))
     }
 
     private func handleReasoningSummaryPartDone(
@@ -2533,21 +2526,20 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
-              let summaryIndex = chunk["summary_index"]?.intValue,
-              var state = activeReasoning[itemId],
+              let summaryIndex = chunk["summary_index"]?.numberValue,
+              let state = activeReasoning[itemId],
               state.summaryParts[summaryIndex] != nil else {
             return
         }
 
         if store {
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-            continuation.yield(.reasoningEnd(id: "\(itemId):\(summaryIndex)", providerMetadata: metadata))
-            state.summaryParts[summaryIndex] = .concluded
+            continuation.yield(.reasoningEnd(id: "\(itemId):\(jsNumberString(summaryIndex))", providerMetadata: metadata))
+            state.summaryParts.set(.concluded, at: summaryIndex)
         } else {
-            state.summaryParts[summaryIndex] = .canConclude
+            state.summaryParts.set(.canConclude, at: summaryIndex)
         }
 
-        activeReasoning[itemId] = state
     }
 
     private func handleTextDelta(
@@ -2655,6 +2647,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleResponseFailed(
         _ chunk: [String: JSONValue],
+        parsedUsage: OpenAIResponsesResponse.Usage?,
         hasFunctionCall: Bool,
         finishReason: inout LanguageModelV4FinishReason,
         usage: inout LanguageModelV4Usage,
@@ -2680,11 +2673,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             finishReason = .init(unified: .error, raw: "error")
         }
 
-        if let usageObject = responseObject["usage"]?.objectValue {
-            usage = makeUsage(from: usageObject)
-        } else if responseObject["usage"] != nil {
-            usage = LanguageModelV4Usage()
-        }
+        usage = convertOpenAIResponsesUsage(parsedUsage)
 
         if let tier = responseObject["service_tier"]?.stringValue {
             serviceTier = tier
@@ -2710,13 +2699,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             return nil
         }
 
+        var failure: [String: JSONValue] = ["error": errorValue]
+        failure["incomplete_details"] = responseObject["incomplete_details"]
+        failure["service_tier"] = responseObject["service_tier"]
         var payload: [String: JSONValue] = [
             "type": .string("response.failed"),
-            "response": .object([
-                "error": errorValue,
-                "incomplete_details": responseObject["incomplete_details"] ?? .null,
-                "service_tier": responseObject["service_tier"] ?? .null
-            ])
+            "response": .object(failure)
         ]
         if let sequenceNumber = chunk["sequence_number"] {
             payload["sequence_number"] = sequenceNumber
@@ -2816,8 +2804,4 @@ private extension JSONValue {
         return nil
     }
 
-    var intValue: Int? {
-        guard let number = numberValue else { return nil }
-        return Int(number)
-    }
 }

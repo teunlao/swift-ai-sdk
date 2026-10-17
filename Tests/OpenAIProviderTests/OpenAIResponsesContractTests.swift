@@ -654,7 +654,7 @@ struct OpenAIResponsesContractTests {
             fetch: { request in
                 FetchResponse(
                     body: streamBody(from: [
-                        #"{"type":"error","message":"The server had an error processing your request.","code":"server_error"}"#
+                        #"{"type":"error","sequence_number":0,"message":"The server had an error processing your request.","code":"server_error"}"#
                     ]),
                     urlResponse: HTTPURLResponse(
                         url: request.url!,

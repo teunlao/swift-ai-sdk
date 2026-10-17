@@ -149,7 +149,7 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
             var parts: [MultipartStreamPart] = [.field(name: "purpose", value: purpose)]
             if let expiry = openAIOptions?.expiresAfter {
                 parts.append(.field(name: "expires_after[anchor]", value: "created_at"))
-                parts.append(.field(name: "expires_after[seconds]", value: openAIFormValue(from: expiry)))
+                parts.append(.field(name: "expires_after[seconds]", value: jsNumberString(expiry)))
             }
             parts.append(.file(name: "file", filename: options.filename, mediaType: options.mediaType, content: .stream(stream)))
             response = try await postMultipartStreamToAPI(
@@ -165,7 +165,7 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
             builder.appendField(name: "purpose", value: purpose)
             var values: [String: Any] = ["file": data, "purpose": purpose]
             if let expiry = openAIOptions?.expiresAfter {
-                let seconds = openAIFormValue(from: expiry)
+                let seconds = jsNumberString(expiry)
                 builder.appendField(name: "expires_after[anchor]", value: "created_at")
                 builder.appendField(name: "expires_after[seconds]", value: seconds)
                 values["expires_after[anchor]"] = "created_at"
@@ -259,22 +259,4 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
         if let expiresAt = response.expiresAt { value["expiresAt"] = .number(expiresAt) }
         return value
     }
-}
-
-private func openAIFormValue(from number: Double) -> String {
-    if number == 0 { return "0" }
-    let sign = number < 0 ? "-" : ""
-    let parts = String(abs(number)).lowercased().split(separator: "e")
-    var mantissa = String(parts[0])
-    if mantissa.hasSuffix(".0") { mantissa.removeLast(2) }
-    guard parts.count == 2, let exponent = Int(parts[1]) else { return sign + mantissa }
-    if abs(number) >= 1e21 || abs(number) < 1e-6 {
-        return sign + mantissa + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
-    }
-    let point = (mantissa.firstIndex(of: ".").map { mantissa.distance(from: mantissa.startIndex, to: $0) } ?? mantissa.count) + exponent
-    let digits = mantissa.replacingOccurrences(of: ".", with: "")
-    if point <= 0 { return sign + "0." + String(repeating: "0", count: -point) + digits }
-    if point >= digits.count { return sign + digits + String(repeating: "0", count: point - digits.count) }
-    let index = digits.index(digits.startIndex, offsetBy: point)
-    return sign + String(digits[..<index]) + "." + String(digits[index...])
 }

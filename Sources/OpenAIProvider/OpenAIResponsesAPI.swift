@@ -163,14 +163,18 @@ public struct OpenAIResponsesWarning: Codable, Sendable {
 
 public struct OpenAIResponsesChunk: Codable, Sendable {
     public let rawValue: JSONValue
+    public let usage: OpenAIResponsesResponse.Usage?
 
-    public init(rawValue: JSONValue) {
-        self.rawValue = rawValue
-    }
-
+    private enum CodingKeys: String, CodingKey { case response, usage }
     public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        rawValue = try container.decode(JSONValue.self)
+        rawValue = try projectOpenAIResponsesChunk(JSONValue(from: decoder))
+        if case .object(let fields) = rawValue, case .object(let response)? = fields["response"], response["usage"] != nil {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let response = try container.nestedContainer(keyedBy: CodingKeys.self, forKey: .response)
+            usage = try response.decodeIfPresent(OpenAIResponsesResponse.Usage.self, forKey: .usage)
+        } else {
+            usage = nil
+        }
     }
 
     public func encode(to encoder: Encoder) throws {

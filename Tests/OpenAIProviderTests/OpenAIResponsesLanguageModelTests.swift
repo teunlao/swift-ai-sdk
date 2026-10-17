@@ -1028,17 +1028,20 @@ struct OpenAIResponsesLanguageModelTests {
                     "type": "function_call",
                     "status": "in_progress",
                     "name": "lookup_weather",
+                    "arguments": "",
                     "call_id": "tool-42"
                 ]
             ]),
             chunk([
                 "type": "response.function_call_arguments.delta",
+                "item_id": "call_item",
                 "output_index": 0,
                 "delta": "{\"city\":",
                 "sequence_number": 1
             ]),
             chunk([
                 "type": "response.function_call_arguments.delta",
+                "item_id": "call_item",
                 "output_index": 0,
                 "delta": "\"Berlin\"}",
                 "sequence_number": 2
@@ -2209,6 +2212,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "item": [
                     "id": "mcp_req_item_1",
                     "type": "mcp_approval_request",
+                    "server_label": "My MCP",
                     "name": "list_files",
                     "arguments": "{\"path\":\"/\"}",
                     "approval_request_id": "approval_1"
@@ -2220,6 +2224,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "item": [
                     "id": "mcp_item_2",
                     "type": "mcp_call",
+                    "status": "completed",
                     "name": "list_files",
                     "arguments": "{\"path\":\"/\"}",
                     "server_label": "My MCP",
@@ -2824,16 +2829,20 @@ struct OpenAIResponsesLanguageModelTests {
                     "id": "code_call",
                     "type": "code_interpreter_call",
                     "status": "in_progress",
+                    "code": NSNull(),
+                    "outputs": NSNull(),
                     "container_id": "container-7"
                 ]
             ]),
             chunk([
                 "type": "response.code_interpreter_call_code.delta",
+                "item_id": "code_call",
                 "output_index": 0,
                 "delta": "print(\"Hi\")"
             ]),
             chunk([
                 "type": "response.code_interpreter_call_code.done",
+                "item_id": "code_call",
                 "output_index": 0,
                 "code": "print(\"Hi\")"
             ]),
@@ -2844,9 +2853,10 @@ struct OpenAIResponsesLanguageModelTests {
                     "id": "code_call",
                     "type": "code_interpreter_call",
                     "status": "completed",
+                    "code": "print(\"Hi\")",
                     "container_id": "container-7",
                     "outputs": [
-                        ["type": "logs", "content": "Hi"]
+                        ["type": "logs", "logs": "Hi"]
                     ]
                 ]
             ]),
@@ -2969,6 +2979,7 @@ struct OpenAIResponsesLanguageModelTests {
             ]),
             chunk([
                 "type": "response.image_generation_call.partial_image",
+                "output_index": 0,
                 "item_id": "image_call",
                 "partial_image_b64": "partial-data"
             ]),
@@ -3174,6 +3185,7 @@ struct OpenAIResponsesLanguageModelTests {
             ]),
             chunk([
                 "type": "error",
+                "sequence_number": 2,
                 "code": "ERR_SOMETHING",
                 "message": "Something went wrong"
             ]),
