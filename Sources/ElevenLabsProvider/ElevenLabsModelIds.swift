@@ -1,12 +1,5 @@
 import Foundation
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/elevenlabs/src/elevenlabs-*-options.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct ElevenLabsTranscriptionModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {
     public let rawValue: String
 
@@ -22,6 +15,8 @@ public struct ElevenLabsTranscriptionModelId: RawRepresentable, Hashable, Sendab
 public extension ElevenLabsTranscriptionModelId {
     static let scribeV1: Self = "scribe_v1"
     static let scribeV1Experimental: Self = "scribe_v1_experimental"
+    static let scribeV2: Self = "scribe_v2"
+    static let scribeV2Realtime: Self = "scribe_v2_realtime"
 }
 
 public struct ElevenLabsSpeechModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {

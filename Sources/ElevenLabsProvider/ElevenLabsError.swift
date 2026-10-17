@@ -2,17 +2,10 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/elevenlabs/src/elevenlabs-error.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct ElevenLabsErrorPayload: Codable, Sendable {
     public struct ErrorBody: Codable, Sendable {
         public let message: String
-        public let code: Int
+        public let code: Double
     }
 
     public let error: ErrorBody

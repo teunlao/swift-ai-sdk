@@ -1,13 +1,6 @@
 import Foundation
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Inspired by packages/elevenlabs/src/elevenlabs-config.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct ElevenLabsConfig: Sendable {
     public struct RequestOptions: Sendable {
         public let modelId: String
@@ -21,15 +14,15 @@ public struct ElevenLabsConfig: Sendable {
 
     public let provider: String
     public let url: @Sendable (RequestOptions) -> String
-    public let headers: @Sendable () -> [String: String?]
+    public let headers: @Sendable () throws -> [String: String?]
     public let fetch: FetchFunction?
     public let currentDate: @Sendable () -> Date
 
     public init(
         provider: String,
         url: @escaping @Sendable (RequestOptions) -> String,
-        headers: @escaping @Sendable () -> [String: String?],
-        fetch: FetchFunction?,
+        headers: @escaping @Sendable () throws -> [String: String?] = { [:] },
+        fetch: FetchFunction? = nil,
         currentDate: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.provider = provider
