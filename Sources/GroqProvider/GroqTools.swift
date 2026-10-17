@@ -1,14 +1,9 @@
-import Foundation
-import AISDKProvider
 import AISDKProviderUtils
 
 public struct GroqTools: Sendable {
     public init() {}
 
-    @discardableResult
-    public func browserSearch() -> Tool {
-        groqBrowserSearchTool()
+    public func browserSearch(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+        groqBrowserSearchFactory(options)
     }
 }
-
-public let groqTools = GroqTools()

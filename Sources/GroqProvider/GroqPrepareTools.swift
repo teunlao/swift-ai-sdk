@@ -5,19 +5,19 @@ import AISDKProviderUtils
 struct GroqPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let toolWarnings: [SharedV3Warning]
+    let toolWarnings: [SharedV4Warning]
 }
 
 func prepareGroqTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?,
     modelId: GroqChatModelId
 ) -> GroqPreparedTools {
     guard let tools, !tools.isEmpty else {
         return GroqPreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
     }
 
-    var toolWarnings: [SharedV3Warning] = []
+    var toolWarnings: [SharedV4Warning] = []
     var groqTools: [JSONValue] = []
 
     for tool in tools {
@@ -31,6 +31,7 @@ func prepareGroqTools(
                         inner["description"] = .string(description)
                     }
                     inner["parameters"] = functionTool.inputSchema
+                    if let strict = functionTool.strict { inner["strict"] = .bool(strict) }
                     return inner
                 }())
             ]))
@@ -45,7 +46,7 @@ func prepareGroqTools(
                     toolWarnings.append(
                         .unsupported(
                             feature: "provider-defined tool \(providerTool.id)",
-                            details: "Browser search is only supported on the following models: \(GroqBrowserSearchSupportedModels.supportedModelsString()). Current model: \(modelId.rawValue)"
+                            details: "Browser search is not supported on model \(modelId.rawValue)."
                         )
                     )
                 }
@@ -77,23 +78,20 @@ func prepareGroqTools(
     }
 
     return GroqPreparedTools(
-        tools: groqTools.isEmpty ? nil : groqTools,
+        tools: groqTools,
         toolChoice: toolChoiceJSON,
         toolWarnings: toolWarnings
     )
 }
 
 private enum GroqBrowserSearchSupportedModels {
-    private static let supported: Set<String> = [
-        "openai/gpt-oss-20b",
-        "openai/gpt-oss-120b"
+    private static let unsupported: Set<String> = [
+        "gemma2-9b-it", "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-guard-4-12b",
+        "deepseek-r1-distill-llama-70b", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct",
+        "meta-llama/llama-prompt-guard-2-22m", "meta-llama/llama-prompt-guard-2-86m", "moonshotai/kimi-k2-instruct-0905",
+        "qwen/qwen3.6-27b", "llama-guard-3-8b", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768",
+        "qwen-qwq-32b", "qwen-2.5-32b", "deepseek-r1-distill-qwen-32b"
     ]
 
-    static func isSupported(modelId: String) -> Bool {
-        supported.contains(modelId)
-    }
-
-    static func supportedModelsString() -> String {
-        supported.sorted().joined(separator: ", ")
-    }
+    static func isSupported(modelId: String) -> Bool { !unsupported.contains(modelId) }
 }

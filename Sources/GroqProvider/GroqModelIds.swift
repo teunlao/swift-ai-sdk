@@ -29,8 +29,8 @@ public extension GroqChatModelId {
     static let llama4Scout17b16eInstruct: Self = "meta-llama/llama-4-scout-17b-16e-instruct"
     static let llamaPromptGuard2_22m: Self = "meta-llama/llama-prompt-guard-2-22m"
     static let llamaPromptGuard2_86m: Self = "meta-llama/llama-prompt-guard-2-86m"
-    static let moonshotKimiK2Instruct: Self = "moonshotai/kimi-k2-instruct"
-    static let qwen3_32b: Self = "qwen/qwen3-32b"
+    static let moonshotKimiK2Instruct0905: Self = "moonshotai/kimi-k2-instruct-0905"
+    static let qwen36_27b: Self = "qwen/qwen3.6-27b"
     static let llamaGuard3_8b: Self = "llama-guard-3-8b"
     static let llama3_70b_8192: Self = "llama3-70b-8192"
     static let llama3_8b_8192: Self = "llama3-8b-8192"
@@ -54,6 +54,5 @@ public struct GroqTranscriptionModelId: RawRepresentable, Hashable, Sendable, Ex
 
 public extension GroqTranscriptionModelId {
     static let whisperLargeV3Turbo: Self = "whisper-large-v3-turbo"
-    static let distilWhisperLargeV3En: Self = "distil-whisper-large-v3-en"
     static let whisperLargeV3: Self = "whisper-large-v3"
 }

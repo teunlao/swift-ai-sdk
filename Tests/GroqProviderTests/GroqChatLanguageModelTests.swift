@@ -6,13 +6,12 @@ import Testing
 
 @Suite("GroqChatLanguageModel")
 struct GroqChatLanguageModelTests {
-    private func makeConfig(fetch: @escaping FetchFunction, generateId: @escaping @Sendable () -> String = { UUID().uuidString }) -> GroqChatLanguageModel.Config {
+    private func makeConfig(fetch: @escaping FetchFunction) -> GroqChatLanguageModel.Config {
         GroqChatLanguageModel.Config(
             provider: "groq.chat",
             url: { options in "https://api.groq.com/openai/v1\(options.path)" },
             headers: { ["Authorization": "Bearer test"] },
-            fetch: fetch,
-            generateId: generateId
+            fetch: fetch
         )
     }
 
@@ -27,6 +26,7 @@ struct GroqChatLanguageModelTests {
             "created": 1_700_000_000.0,
             "model": "gemma",
             "choices": [[
+                "index": 0,
                 "message": [
                     "content": "Answer",
                     "reasoning": "Thought",
@@ -81,10 +81,10 @@ struct GroqChatLanguageModelTests {
 
         let generator = GroqChatLanguageModel(
             modelId: GroqChatModelId(rawValue: "gemma"),
-            config: makeConfig(fetch: fetch, generateId: { "generated" })
+            config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -95,7 +95,8 @@ struct GroqChatLanguageModelTests {
         #expect(result.content.contains { if case .toolCall(let call) = $0 { return call.toolName == "lookup" && call.input == "{\"q\":\"rain\"}" } else { return false } })
         #expect(result.finishReason.unified == .toolCalls)
         #expect(result.usage.inputTokens.total == 12)
-        #expect(result.usage.inputTokens.cacheRead == nil)
+        #expect(result.usage.inputTokens.noCache == 9)
+        #expect(result.usage.inputTokens.cacheRead == 3)
 
         if let request = await capture.value() {
             let json = try decodeRequestBody(request)
@@ -109,8 +110,8 @@ struct GroqChatLanguageModelTests {
         payloads.map { "data: \($0)\n\n" } + ["data: [DONE]\n\n"]
     }
 
-    private func collect(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-        var parts: [LanguageModelV3StreamPart] = []
+    private func collect(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream {
             parts.append(part)
         }
@@ -142,7 +143,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
         let schema: JSONValue = .object(["type": .string("object")])
@@ -168,6 +169,7 @@ struct GroqChatLanguageModelTests {
             #expect(converted == schema)
             #expect(jsonSchema["name"] as? String == "Weather")
             #expect(jsonSchema["description"] as? String == "desc")
+            #expect(jsonSchema["strict"] as? Bool == true)
         } else {
             Issue.record("Missing json_schema payload")
         }
@@ -194,7 +196,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
         let schema: JSONValue = .object(["type": .string("object")])
@@ -244,10 +246,10 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "groq": [
                 "parallelToolCalls": .bool(false),
                 "reasoningFormat": .string("parsed"),
@@ -286,7 +288,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -300,14 +302,15 @@ struct GroqChatLanguageModelTests {
         #expect(warningFound)
     }
 
-    @Test("missing tool call id throws invalid response error")
-    func missingToolCallIdThrows() async throws {
+    @Test("missing tool call ID is generated for function deltas")
+    func missingToolCallIdGenerates() async throws {
         let events = sseEvents([
             encodeJSON([
                 "choices": [
-                    ["delta": [
+                    ["index": 0, "delta": [
                         "tool_calls": [[
                             "index": 0,
+                            "type": "function",
                             "function": [
                                 "name": "lookup",
                                 "arguments": "{\"foo\":1}"
@@ -343,19 +346,20 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
         let result = try await model.doStream(options: .init(prompt: prompt))
-        do {
-            _ = try await collect(result.stream)
-            Issue.record("Expected stream to fail")
-        } catch let error as InvalidResponseDataError {
-            #expect(error.message.contains("Expected 'id'"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        let parts = try await collect(result.stream)
+        let calls = parts.compactMap { part -> LanguageModelV4ToolCall? in
+            if case .toolCall(let call) = part { return call }
+            return nil
         }
+        let call = try #require(calls.first)
+        #expect(!call.toolCallId.isEmpty)
+        #expect(call.toolName == "lookup")
+        #expect(call.input == "{\"foo\":1}")
     }
 
 
@@ -367,16 +371,17 @@ struct GroqChatLanguageModelTests {
                 "created": 1_700_000_000,
                 "model": "gemma",
                 "choices": [
-                    ["delta": ["content": "Hel"]]
+                    ["index": 0, "delta": ["content": "Hel"]]
                 ]
             ]),
             encodeJSON([
                 "choices": [
-                    ["delta": [
+                    ["index": 0, "delta": [
                         "content": "lo",
                         "tool_calls": [[
                             "index": 0,
                             "id": "call-1",
+                            "type": "function",
                             "function": [
                                 "name": "lookup",
                                 "arguments": "{\"q\":\"rain\"}"
@@ -387,12 +392,12 @@ struct GroqChatLanguageModelTests {
             ]),
             encodeJSON([
                 "choices": [
-                    ["delta": ["reasoning": " think"]]
+                    ["index": 0, "delta": ["reasoning": " think"]]
                 ]
             ]),
             encodeJSON([
                 "choices": [
-                    ["finish_reason": "stop"]
+                    ["index": 0, "finish_reason": "stop"]
                 ],
                 "x_groq": [
                     "usage": [
@@ -427,10 +432,10 @@ struct GroqChatLanguageModelTests {
 
         let model = GroqChatLanguageModel(
             modelId: GroqChatModelId(rawValue: "gemma"),
-            config: makeConfig(fetch: fetch, generateId: { "generated" })
+            config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
@@ -458,6 +463,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": "Hello, World!"],
                 "finish_reason": "stop"
             ]],
@@ -480,7 +486,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -501,6 +507,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["reasoning": "This is a test reasoning"],
                 "finish_reason": "stop"
             ]],
@@ -523,7 +530,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -544,6 +551,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -566,7 +574,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -585,6 +593,7 @@ struct GroqChatLanguageModelTests {
             "created": 123,
             "model": "test-model",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -607,7 +616,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -629,6 +638,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -651,7 +661,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -670,6 +680,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -697,7 +708,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -706,7 +717,8 @@ struct GroqChatLanguageModelTests {
         #expect(result.usage.inputTokens.total == 20)
         #expect(result.usage.outputTokens.total == 5)
         #expect((result.usage.inputTokens.total ?? 0) + (result.usage.outputTokens.total ?? 0) == 25)
-        #expect(result.usage.inputTokens.cacheRead == nil)
+        #expect(result.usage.inputTokens.cacheRead == 15)
+        #expect(result.usage.inputTokens.noCache == 5)
         if case let .object(raw)? = result.usage.raw,
            case let .object(promptTokensDetails)? = raw["prompt_tokens_details"],
            case let .number(cachedTokens)? = promptTokensDetails["cached_tokens"] {
@@ -723,6 +735,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -745,7 +758,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -761,6 +774,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "eos"
             ]],
@@ -783,7 +797,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -800,6 +814,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": ["content": ""],
                 "finish_reason": "stop"
             ]],
@@ -822,7 +837,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -857,7 +872,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -899,7 +914,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -937,11 +952,11 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let tool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+        let tool = LanguageModelV4Tool.function(LanguageModelV4FunctionTool(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -987,8 +1002,7 @@ struct GroqChatLanguageModelTests {
             provider: "groq.chat",
             url: { options in "https://api.groq.com/openai/v1\(options.path)" },
             headers: { ["Authorization": "Bearer test", "Custom-Provider-Header": "provider-header-value"] },
-            fetch: fetch,
-            generateId: { UUID().uuidString }
+            fetch: fetch
         )
 
         let model = GroqChatLanguageModel(
@@ -996,7 +1010,7 @@ struct GroqChatLanguageModelTests {
             config: config
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -1024,6 +1038,7 @@ struct GroqChatLanguageModelTests {
             "created": 1700000000,
             "model": "gemma2-9b-it",
             "choices": [[
+                "index": 0,
                 "message": [
                     "content": "",
                     "tool_calls": [[
@@ -1056,11 +1071,11 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
-        let tool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+        let tool = LanguageModelV4Tool.function(LanguageModelV4FunctionTool(
             name: "test-tool",
             inputSchema: .object(["type": .string("object")]),
             description: nil
@@ -1103,7 +1118,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
         let schema: JSONValue = .object(["type": .string("object")])
@@ -1147,7 +1162,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
         let schema: JSONValue = .object(["type": .string("object")])
@@ -1193,7 +1208,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -1203,11 +1218,11 @@ struct GroqChatLanguageModelTests {
             Issue.record("Missing request")
             return
         }
-        #expect(request.body != nil)
-        if let bodyString = request.body as? String {
-            #expect(bodyString.contains("gemma2-9b-it"))
-            #expect(bodyString.contains("Hello"))
-        }
+        let body = try #require(request.body as? String)
+        let sent = try #require(await capture.value()?.httpBody)
+        let metadata = try JSONDecoder().decode(JSONValue.self, from: Data(body.utf8))
+        let payload = try JSONDecoder().decode(JSONValue.self, from: sent)
+        #expect(metadata == payload)
     }
 
     @Test("should handle Kimi K2 model structured outputs")
@@ -1231,7 +1246,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Generate a simple recipe"))], providerOptions: nil)
         ]
         let schema: JSONValue = .object(["type": .string("object")])
@@ -1259,18 +1274,21 @@ struct GroqChatLanguageModelTests {
                 "created": 1700000000,
                 "model": "gemma2-9b-it",
                 "choices": [[
+                "index": 0,
                     "delta": ["content": "Hello"],
                     "finish_reason": NSNull()
                 ]]
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": ["content": " World"],
                     "finish_reason": NSNull()
                 ]]
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": [:],
                     "finish_reason": "stop"
                 ]],
@@ -1309,7 +1327,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
@@ -1330,18 +1348,21 @@ struct GroqChatLanguageModelTests {
                 "created": 1700000000,
                 "model": "gemma2-9b-it",
                 "choices": [[
+                "index": 0,
                     "delta": ["reasoning": "I think"],
                     "finish_reason": NSNull()
                 ]]
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": ["reasoning": " therefore"],
                     "finish_reason": NSNull()
                 ]]
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": [:],
                     "finish_reason": "stop"
                 ]],
@@ -1380,7 +1401,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
@@ -1401,6 +1422,7 @@ struct GroqChatLanguageModelTests {
                 "created": 1700000000,
                 "model": "gemma2-9b-it",
                 "choices": [[
+                "index": 0,
                     "delta": [
                         "tool_calls": [[
                             "index": 0,
@@ -1417,12 +1439,14 @@ struct GroqChatLanguageModelTests {
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": ["tool_calls": [[]]],
                     "finish_reason": NSNull()
                 ]]
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": [:],
                     "finish_reason": "tool_calls"
                 ]],
@@ -1455,7 +1479,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
@@ -1481,6 +1505,7 @@ struct GroqChatLanguageModelTests {
                 "created": 1700000000,
                 "model": "gemma2-9b-it",
                 "choices": [[
+                "index": 0,
                     "delta": ["content": "Hi"],
                     "finish_reason": NSNull()
                 ]]
@@ -1513,7 +1538,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -1541,7 +1566,7 @@ struct GroqChatLanguageModelTests {
         }
 
         let capture = RequestCapture()
-        let events = sseEvents([encodeJSON(["id": "1", "choices": [[:]]])])
+        let events = sseEvents([encodeJSON(["id": "1", "choices": [["index": 0]]])])
 
         let httpResponse = HTTPURLResponse(
             url: URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
@@ -1568,8 +1593,7 @@ struct GroqChatLanguageModelTests {
             provider: "groq.chat",
             url: { options in "https://api.groq.com/openai/v1\(options.path)" },
             headers: { ["Authorization": "Bearer test", "Custom-Provider-Header": "provider-value"] },
-            fetch: fetch,
-            generateId: { UUID().uuidString }
+            fetch: fetch
         )
 
         let model = GroqChatLanguageModel(
@@ -1577,7 +1601,7 @@ struct GroqChatLanguageModelTests {
             config: config
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -1604,7 +1628,7 @@ struct GroqChatLanguageModelTests {
         }
 
         let capture = RequestCapture()
-        let events = sseEvents([encodeJSON(["id": "1", "choices": [[:]]])])
+        let events = sseEvents([encodeJSON(["id": "1", "choices": [["index": 0]]])])
 
         let httpResponse = HTTPURLResponse(
             url: URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
@@ -1632,7 +1656,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
         ]
 
@@ -1651,9 +1675,10 @@ struct GroqChatLanguageModelTests {
             Issue.record("Cannot decode body")
             return
         }
-        #expect(bodyString.contains("gemma2-9b-it"))
-        #expect(bodyString.contains("Hello"))
-        #expect(bodyString.contains("\"stream\":true"))
+        let payload = try JSONDecoder().decode(JSONValue.self, from: Data(bodyString.utf8))
+        guard case .object(let object) = payload else { Issue.record("Expected request object"); return }
+        #expect(object["model"] == "gemma2-9b-it")
+        #expect(object["stream"] == true)
     }
 
     @Test("should handle error stream parts")
@@ -1691,7 +1716,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 
@@ -1707,7 +1732,8 @@ struct GroqChatLanguageModelTests {
         // Verify error part
         let hasError = parts.contains {
             if case .error(let error) = $0 {
-                guard case let .object(errorObj) = error,
+                guard case .providerStreamError(let payload) = error,
+                      case let .object(errorObj) = payload.data,
                       let errorValue = errorObj["error"],
                       case let .object(errorBody) = errorValue,
                       case let .string(message)? = errorBody["message"],
@@ -1740,6 +1766,7 @@ struct GroqChatLanguageModelTests {
                 "created": 1700000000,
                 "model": "gemma2-9b-it",
                 "choices": [[
+                "index": 0,
                     "delta": [
                         "tool_calls": [[
                             "index": 0,
@@ -1756,6 +1783,7 @@ struct GroqChatLanguageModelTests {
             ]),
             encodeJSON([
                 "choices": [[
+                "index": 0,
                     "delta": [:],
                     "finish_reason": "tool_calls"
                 ]],
@@ -1788,7 +1816,7 @@ struct GroqChatLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hi"))], providerOptions: nil)
         ]
 

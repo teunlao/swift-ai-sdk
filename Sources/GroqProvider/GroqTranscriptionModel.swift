@@ -2,98 +2,16 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-struct GroqTranscriptionProviderOptions: Sendable, Equatable {
-    var language: String?
-    var prompt: String?
-    var responseFormat: String?
-    var temperature: Double?
-    var timestampGranularities: [String]?
-}
-
-private let groqTranscriptionOptionsSchema = FlexibleSchema(
-    Schema<GroqTranscriptionProviderOptions>(
-        jsonSchemaResolver: {
-            .object([
-                "type": .string("object"),
-                "additionalProperties": .bool(true)
-            ])
-        },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(vendor: "groq", issues: "transcription options must be an object")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                var options = GroqTranscriptionProviderOptions()
-
-                if let languageValue = dict["language"], languageValue != .null {
-                    guard case .string(let language) = languageValue else {
-                        let error = SchemaValidationIssuesError(vendor: "groq", issues: "language must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: languageValue, cause: error))
-                    }
-                    options.language = language
-                }
-
-                if let promptValue = dict["prompt"], promptValue != .null {
-                    guard case .string(let prompt) = promptValue else {
-                        let error = SchemaValidationIssuesError(vendor: "groq", issues: "prompt must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: promptValue, cause: error))
-                    }
-                    options.prompt = prompt
-                }
-
-                if let responseFormatValue = dict["responseFormat"], responseFormatValue != .null {
-                    guard case .string(let format) = responseFormatValue else {
-                        let error = SchemaValidationIssuesError(vendor: "groq", issues: "responseFormat must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: responseFormatValue, cause: error))
-                    }
-                    options.responseFormat = format
-                }
-
-                if let temperatureValue = dict["temperature"], temperatureValue != .null {
-                    guard case .number(let number) = temperatureValue else {
-                        let error = SchemaValidationIssuesError(vendor: "groq", issues: "temperature must be a number")
-                        return .failure(error: TypeValidationError.wrap(value: temperatureValue, cause: error))
-                    }
-                    options.temperature = number
-                }
-
-                if let granularitiesValue = dict["timestampGranularities"], granularitiesValue != .null {
-                    guard case .array(let array) = granularitiesValue else {
-                        let error = SchemaValidationIssuesError(vendor: "groq", issues: "timestampGranularities must be an array")
-                        return .failure(error: TypeValidationError.wrap(value: granularitiesValue, cause: error))
-                    }
-                    var result: [String] = []
-                    for element in array {
-                        guard case .string(let granularity) = element else {
-                            let error = SchemaValidationIssuesError(vendor: "groq", issues: "timestampGranularities must be an array of strings")
-                            return .failure(error: TypeValidationError.wrap(value: element, cause: error))
-                        }
-                        result.append(granularity)
-                    }
-                    options.timestampGranularities = result
-                }
-
-                return .success(value: options)
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
-)
-
-public final class GroqTranscriptionModel: TranscriptionModelV3 {
+public final class GroqTranscriptionModel: TranscriptionModelV4 {
     struct Config: Sendable {
-        struct RequestOptions {
+        struct RequestOptions: Sendable {
             let modelId: GroqTranscriptionModelId
             let path: String
         }
 
         let provider: String
         let url: @Sendable (RequestOptions) -> String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
         let currentDate: @Sendable () -> Date
     }
@@ -106,137 +24,130 @@ public final class GroqTranscriptionModel: TranscriptionModelV3 {
         self.config = config
     }
 
-    public let specificationVersion: String = "v3"
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
-        let prepared = try await prepareRequest(options: options)
-        let url = config.url(.init(modelId: modelIdentifier, path: "/audio/transcriptions"))
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        let timestamp = config.currentDate()
+        let groq = try await parseProviderOptions(provider: "groq", providerOptions: options.providerOptions, schema: groqTranscriptionModelOptions)
+        let audio: Data
+        switch options.audio {
+        case .binary(let data): audio = data
+        case .base64(let value): audio = try convertBase64ToData(value)
+        }
+        var formData = MultipartFormDataBuilder()
+        var values: [String: Any] = ["model": modelId, "file": audio]
+        formData.appendField(name: "model", value: modelId)
+        formData.appendFile(name: "file", filename: "audio.\(mediaTypeToExtension(options.mediaType))", contentType: options.mediaType, data: audio)
+        func append(_ name: String, _ value: String) {
+            formData.appendField(name: name, value: value)
+            values[name] = value
+        }
+        if let value = groq?.language { append("language", value) }
+        if let value = groq?.prompt { append("prompt", value) }
+        if let value = groq?.responseFormat { append("response_format", value) }
+        if let value = groq?.temperature {
+            append("temperature", value == 0 ? "0" : String(decoding: try JSONEncoder().encode(value), as: UTF8.self))
+        }
+        for value in groq?.timestampGranularities ?? [] { append("timestamp_granularities[]", value) }
 
+        let handler: ResponseHandler<Transcription>
+        if groq?.responseFormat == "text" {
+            handler = { input in
+                let response = try await createBinaryResponseHandler()(input)
+                var bytes = response.value
+                // Match TextDecoder's default handling of a leading UTF-8 BOM.
+                if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { bytes.removeFirst(3) }
+                let text = String(decoding: bytes, as: UTF8.self)
+                return .init(value: .init(text: text, segments: [], language: nil, duration: nil), rawValue: text, responseHeaders: response.responseHeaders)
+            }
+        } else {
+            handler = { input in
+                let response = try await createJsonResponseHandler(responseSchema: groqTranscriptionResponseSchema)(input)
+                return .init(value: response.value.transcription, rawValue: response.rawValue, responseHeaders: response.responseHeaders)
+            }
+        }
         let response = try await postToAPI(
-            url: url,
-            headers: prepared.headers,
-            body: PostBody(content: .data(prepared.body), values: nil),
+            url: config.url(.init(modelId: modelIdentifier, path: "/audio/transcriptions")),
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: PostBody(content: .multipartFormData(formData), values: values),
             failedResponseHandler: groqFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: groqTranscriptionResponseSchema),
+            successfulResponseHandler: handler,
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
-
-        let mapped = mapResponse(response.value)
-        let timestamp = config.currentDate()
-
-        return TranscriptionModelV3Result(
-            text: mapped.text,
-            segments: mapped.segments,
-            language: mapped.language,
-            durationInSeconds: mapped.duration,
-            warnings: prepared.warnings,
-            request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
-                timestamp: timestamp,
-                modelId: modelIdentifier.rawValue,
-                headers: response.responseHeaders,
-                body: response.rawValue
-            ),
-            providerMetadata: nil
+        return .init(
+            text: response.value.text,
+            segments: response.value.segments,
+            language: response.value.language,
+            durationInSeconds: response.value.duration,
+            response: .init(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders, body: response.rawValue)
         )
     }
-
-    private struct PreparedRequest {
-        let body: Data
-        let headers: [String: String]
-        let warnings: [SharedV3Warning]
-    }
-
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let groqOptions = try await parseProviderOptions(
-            provider: "groq",
-            providerOptions: options.providerOptions,
-            schema: groqTranscriptionOptionsSchema
-        )
-
-        let audioData: Data
-        switch options.audio {
-        case .binary(let data):
-            audioData = data
-        case .base64(let base64):
-            audioData = try convertBase64ToData(base64)
-        }
-
-        var builder = MultipartFormDataBuilder()
-        builder.appendField(name: "model", value: modelIdentifier.rawValue)
-
-        let fileExtension = mediaTypeToExtension(options.mediaType)
-        let filename = fileExtension.isEmpty ? "audio" : "audio.\(fileExtension)"
-        builder.appendFile(name: "file", filename: filename, contentType: options.mediaType, data: audioData)
-
-        if let groqOptions {
-            if let language = groqOptions.language {
-                builder.appendField(name: "language", value: language)
-            }
-            if let prompt = groqOptions.prompt {
-                builder.appendField(name: "prompt", value: prompt)
-            }
-            if let responseFormat = groqOptions.responseFormat {
-                builder.appendField(name: "response_format", value: responseFormat)
-            }
-            if let temperature = groqOptions.temperature {
-                builder.appendField(name: "temperature", value: String(temperature))
-            }
-            if let granularities = groqOptions.timestampGranularities, !granularities.isEmpty {
-                let joined = granularities.joined(separator: ",")
-                builder.appendField(name: "timestamp_granularities", value: joined)
-            }
-        }
-
-        let (body, contentType) = builder.build()
-
-        var headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
-        headers["Content-Type"] = contentType
-
-        return PreparedRequest(body: body, headers: headers, warnings: [])
-    }
-
-    private struct GroqTranscriptionResponse: Codable {
-        struct Segment: Codable {
-            let text: String
-            let start: Double
-            let end: Double
-        }
-
-        let text: String
-        let language: String?
-        let duration: Double?
-        let segments: [Segment]?
-    }
-
-    private func mapResponse(_ response: GroqTranscriptionResponse) -> (text: String, segments: [TranscriptionModelV3Result.Segment], language: String?, duration: Double?) {
-        let segments = response.segments?.map { segment in
-            TranscriptionModelV3Result.Segment(
-                text: segment.text,
-                startSecond: segment.start,
-                endSecond: segment.end
-            )
-        } ?? []
-
-        return (
-            text: response.text,
-            segments: segments,
-            language: response.language,
-            duration: response.duration
-        )
-    }
-
-    private let groqTranscriptionResponseSchema = FlexibleSchema(
-        Schema<GroqTranscriptionResponse>.codable(
-            GroqTranscriptionResponse.self,
-            jsonSchema: genericJSONObjectSchema
-        )
-    )
 }
 
-private let genericJSONObjectSchema: JSONValue = .object([
-    "type": .string("object")
-])
+private struct Transcription: Sendable {
+    let text: String
+    let segments: [TranscriptionModelV4Result.Segment]
+    let language: String?
+    let duration: Double?
+}
+
+private struct GroqTranscriptionResponse: Decodable, Sendable {
+    struct Metadata: Decodable, Sendable {
+        let id: String
+    }
+
+    struct Segment: Decodable, Sendable {
+        let id: Double
+        let seek: Double
+        let start: Double
+        let end: Double
+        let text: String
+        let tokens: [Double]
+        let temperature: Double
+        let averageLogProbability: Double
+        let compressionRatio: Double
+        let noSpeechProbability: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case id, seek, start, end, text, tokens, temperature
+            case averageLogProbability = "avg_logprob"
+            case compressionRatio = "compression_ratio"
+            case noSpeechProbability = "no_speech_prob"
+        }
+    }
+
+    struct Word: Decodable, Sendable {
+        let word: String
+        let start: Double
+        let end: Double
+    }
+
+    let text: String
+    let xGroq: Metadata
+    let task: String?
+    let language: String?
+    let duration: Double?
+    let segments: [Segment]?
+    let words: [Word]?
+
+    private enum CodingKeys: String, CodingKey {
+        case text, task, language, duration, segments, words
+        case xGroq = "x_groq"
+    }
+
+    var transcription: Transcription {
+        .init(
+            text: text,
+            segments: segments?.map { .init(text: $0.text, startSecond: $0.start, endSecond: $0.end) }
+                ?? words?.map { .init(text: $0.word, startSecond: $0.start, endSecond: $0.end) } ?? [],
+            language: language,
+            duration: duration
+        )
+    }
+}
+
+private let groqTranscriptionResponseSchema = FlexibleSchema(
+    Schema<GroqTranscriptionResponse>.codable(GroqTranscriptionResponse.self, jsonSchema: ["type": "object"])
+)

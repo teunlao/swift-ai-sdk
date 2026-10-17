@@ -10,13 +10,6 @@ struct GroqProviderTests {
         try! JSONSerialization.data(withJSONObject: dict)
     }
 
-    @Test("supports upstream createGroq alias")
-    func supportsCreateGroqAlias() throws {
-        let provider = createGroq(settings: GroqProviderSettings(apiKey: "test-key"))
-        let model = try provider.languageModel(modelId: "llama-3.3-70b-versatile")
-        #expect(model.provider == "groq.chat")
-    }
-
     @Test("uses default upstream base URL for chat requests")
     func usesDefaultBaseURLForChatRequests() async throws {
         actor RequestCapture {
@@ -60,11 +53,11 @@ struct GroqProviderTests {
         }
 
         let provider = createGroq(settings: GroqProviderSettings(apiKey: "test-key", fetch: fetch))
-        let model = try provider.languageModel(modelId: "llama-3.3-70b-versatile")
-        let prompt: LanguageModelV3Prompt = [
+        let model = provider.languageModel(modelId: "llama-3.3-70b-versatile")
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
         ]
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let request = await capture.value() else {
             Issue.record("Expected request capture")
@@ -129,13 +122,13 @@ struct GroqProviderTests {
             }
 
             let provider = createGroq(settings: GroqProviderSettings(fetch: fetch))
-            let model = try provider.languageModel(modelId: "llama-3.3-70b-versatile")
-            let prompt: LanguageModelV3Prompt = [
+            let model = provider.languageModel(modelId: "llama-3.3-70b-versatile")
+            let prompt: LanguageModelV4Prompt = [
                 .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
             ]
 
             do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+                _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("GROQ_API_KEY environment variable"))

@@ -1,6 +1,6 @@
 import AISDKProvider
 
-func mapGroqFinishReason(_ finishReason: String?) -> LanguageModelV3FinishReason.Unified {
+func mapGroqFinishReason(_ finishReason: String?) -> LanguageModelV4FinishReason.Unified {
     switch finishReason {
     case "stop":
         return .stop

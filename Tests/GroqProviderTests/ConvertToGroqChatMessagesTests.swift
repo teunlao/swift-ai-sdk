@@ -8,7 +8,7 @@ import Testing
 struct ConvertToGroqChatMessagesTests {
     @Test("system message maps to string content")
     func systemMessage() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "behave", providerOptions: nil)
         ]
 
@@ -25,7 +25,7 @@ struct ConvertToGroqChatMessagesTests {
     @Test("user image files converted to inline data")
     func userImage() throws {
         let data = Data([0x01, 0x02])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .file(.init(data: .data(data), mediaType: "image/png"))
             ], providerOptions: nil)
@@ -50,7 +50,7 @@ struct ConvertToGroqChatMessagesTests {
 
     @Test("assistant supports reasoning and tool calls")
     func assistantMessages() throws {
-        let toolCall = LanguageModelV3ToolCallPart(
+        let toolCall = LanguageModelV4ToolCallPart(
             toolCallId: "tool-1",
             toolName: "lookup",
             input: .object(["q": .string("rain")]),
@@ -58,7 +58,7 @@ struct ConvertToGroqChatMessagesTests {
             providerOptions: nil
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [
                 .reasoning(.init(text: "thinking")),
                 .text(.init(text: "answer")),
@@ -90,14 +90,14 @@ struct ConvertToGroqChatMessagesTests {
 
     @Test("tool result content serializes to string")
     func toolResultMapping() throws {
-        let toolResult = LanguageModelV3ToolResultPart(
+        let toolResult = LanguageModelV4ToolResultPart(
             toolCallId: "call-1",
             toolName: "lookup",
             output: .json(value: .object(["value": .string("42")])),
             providerOptions: nil
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
@@ -119,7 +119,7 @@ struct ConvertToGroqChatMessagesTests {
     @Test("should convert messages with image parts from Uint8Array")
     func userImageFromData() throws {
         let data = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [
                 .text(.init(text: "Hi")),
                 .file(.init(data: .data(data), mediaType: "image/png"))
@@ -157,7 +157,7 @@ struct ConvertToGroqChatMessagesTests {
 
     @Test("should not include reasoning field when no reasoning content is present")
     func noReasoningField() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [
                 .text(.init(text: "Hello, how can I help you?"))
             ], providerOptions: nil)

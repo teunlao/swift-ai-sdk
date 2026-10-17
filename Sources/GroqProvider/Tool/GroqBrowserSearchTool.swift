@@ -1,22 +1,22 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public let groqBrowserSearchToolFactory = createProviderExecutedToolFactory(
-    id: "groq.browser_search",
-    name: "browser_search",
-    inputSchema: FlexibleSchema(jsonSchema(.object([
-        "type": .string("object"),
-        "additionalProperties": .bool(false)
-    ]))),
-    outputSchema: FlexibleSchema(jsonSchema(.object([
-        "type": .string("object"),
-        "properties": .object([:]),
-        "additionalProperties": .bool(false)
-    ])))
+private let browserSearchSchema = FlexibleSchema(Schema<JSONValue>(
+    jsonSchemaResolver: { ["type": "object", "properties": [:], "additionalProperties": false] },
+    validator: { raw in
+        do {
+            guard case .object = try jsonValue(from: raw) else {
+                throw InvalidArgumentError(argument: "value", message: "Expected an object.")
+            }
+            return .success(value: .object([:]))
+        } catch { return .failure(error: TypeValidationError.wrap(value: raw, cause: error)) }
+    }
+))
+
+let groqBrowserSearchFactory = createProviderExecutedToolFactory(
+    id: "groq.browser_search", name: "browser_search", inputSchema: browserSearchSchema, outputSchema: browserSearchSchema
 )
 
-@discardableResult
-public func groqBrowserSearchTool() -> Tool {
-    groqBrowserSearchToolFactory(ProviderExecutedToolFactoryOptions(args: [:]))
+public func browserSearch(_ options: ProviderExecutedToolFactoryOptions = .init()) -> Tool {
+    groqBrowserSearchFactory(options)
 }
