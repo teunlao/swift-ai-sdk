@@ -61,6 +61,21 @@ struct OpenAIResponsesResponseContractTests {
         #expect(try jsonValue(from: #require(result.response?.body)) == response)
     }
 
+    @Test("Failed web searches return provider tool errors", arguments: ["failed", "incomplete"])
+    func webSearchFailure(status: String) async throws {
+        let result = try await generate(.object(["output": .array([.object([
+            "type": .string("web_search_call"), "id": .string("search"), "status": .string(status),
+            "action": .object(["type": .string("search"), "queries": .array([.string("weather")])])
+        ])])]))
+        let toolResult = try #require(result.content.compactMap { part -> LanguageModelV4ToolResult? in
+            if case .toolResult(let value) = part { return value }; return nil
+        }.first)
+        #expect(toolResult.toolCallId == "search")
+        #expect(toolResult.toolName == "web_search")
+        #expect(toolResult.isError == true)
+        #expect(toolResult.result == .object(["status": .string(status)]))
+    }
+
     @Test("Usage retains future fields and null versus absent details", arguments: [true, false])
     func rawUsage(withNullDetails: Bool) async throws {
         var usage: [String: JSONValue] = [

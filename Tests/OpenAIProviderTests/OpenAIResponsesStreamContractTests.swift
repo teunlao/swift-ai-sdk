@@ -123,6 +123,25 @@ struct OpenAIResponsesStreamContractTests {
         #expect(reason.unified == (event == "response.completed" ? .stop : .length))
     }
 
+    @Test("Failed web searches stream provider tool errors", arguments: ["failed", "incomplete"])
+    func webSearchFailure(status: String) async throws {
+        let parts = try await collect([
+            .object(["type": .string("response.output_item.added"), "output_index": .number(0), "item": .object([
+                "type": .string("web_search_call"), "id": .string("search"), "status": .string("in_progress")
+            ])]),
+            .object(["type": .string("response.output_item.done"), "output_index": .number(0), "item": .object([
+                "type": .string("web_search_call"), "id": .string("search"), "status": .string(status), "action": .null
+            ])]), completed
+        ])
+        let toolResult = try #require(parts.compactMap { part -> LanguageModelV4ToolResult? in
+            if case .toolResult(let value) = part { return value }; return nil
+        }.first)
+        #expect(toolResult.toolCallId == "search")
+        #expect(toolResult.toolName == "web_search")
+        #expect(toolResult.isError == true)
+        #expect(toolResult.result == .object(["status": .string(status)]))
+    }
+
     @Test("Numeric tool indices remain independent without truncation or caps")
     func numberToolIndices() async throws {
         let calls: [(Double, String)] = [(1.25, "first"), (1.75, "second"), (1e20, "wide")]

@@ -1019,6 +1019,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                       let mappedOutput = mapWebSearchOutput(object["action"]) else { continue }
 
                 let toolName = toolNameMapping.toCustomToolName(webSearchToolName ?? "web_search")
+                let isError = object["status"] == .string("failed") || object["status"] == .string("incomplete")
 
                 content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
@@ -1031,8 +1032,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
-                    result: mappedOutput,
-                    isError: nil,
+                    result: isError ? .object(["status": object["status"]!]) : mappedOutput,
+                    isError: isError ? true : nil,
                     preliminary: nil,
                     providerMetadata: nil
                 )))
@@ -1925,12 +1926,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         case "web_search_call":
             guard let callId = item["id"]?.stringValue,
                   let mappedOutput = mapWebSearchOutput(item["action"]) else { return }
+            let isError = item["status"] == .string("failed") || item["status"] == .string("incomplete")
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: webSearchToolName,
-                result: mappedOutput,
-                isError: nil,
+                result: isError ? .object(["status": item["status"]!]) : mappedOutput,
+                isError: isError ? true : nil,
                 preliminary: nil,
                 providerMetadata: nil
             )))
