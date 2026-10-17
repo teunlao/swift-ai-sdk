@@ -7283,9 +7283,9 @@ struct OpenAIResponsesLanguageModelTests {
 
         #expect(order == [
             "stream-start",
+            "text-end",
             "source:url",
             "source:document",
-            "text-end",
             "finish"
         ])
 

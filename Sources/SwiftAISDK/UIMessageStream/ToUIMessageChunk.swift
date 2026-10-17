@@ -39,7 +39,7 @@ public func toUIMessageChunk(
     switch part {
     case .textStart(let id, let metadata): return .textStart(id: id, providerMetadata: metadata)
     case .textDelta(let id, let text, let metadata): return .textDelta(id: id, delta: text, providerMetadata: metadata)
-    case .textEnd(let id, let metadata, _): return .textEnd(id: id, providerMetadata: metadata)
+    case .textEnd(let id, let metadata, let citations): return .textEnd(id: id, providerMetadata: metadata, citations: citations)
     case .reasoningStart(let id, let metadata):
         return options.sendReasoning ? .reasoningStart(id: id, providerMetadata: metadata) : nil
     case .reasoningDelta(let id, let text, let metadata):

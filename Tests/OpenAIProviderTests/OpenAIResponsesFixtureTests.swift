@@ -1840,9 +1840,15 @@ struct OpenAIResponsesFixtureTests {
         #expect(mediaType == "text/plain")
         #expect(title == "ai.pdf")
         #expect(filename == "ai.pdf")
-        #expect(providerMetadata?["openai"]?["type"] == .string("file_citation"))
+        #expect(providerMetadata?["openai"]?["type"] == .string("file_search"))
         #expect(providerMetadata?["openai"]?["fileId"] == .string("file-Ebzhf8H4DPGPr9pUhr7n7v"))
-        #expect(providerMetadata?["openai"]?["index"] == .number(350))
+        let citation = try #require(textParts[0].citations?.first)
+        guard case .document(let citedId, _, _, _, let citationMetadata) = citation.source else {
+            Issue.record("Expected file citation independent of retrieval source"); return
+        }
+        #expect(citedId == "file-Ebzhf8H4DPGPr9pUhr7n7v")
+        #expect(citationMetadata?["openai"]?["type"] == .string("file_citation"))
+        #expect(citationMetadata?["openai"]?["index"] == .number(350))
 
         guard let requestBody = decodeRequestBody(await capture.current()),
               let include = requestBody["include"] as? [String],

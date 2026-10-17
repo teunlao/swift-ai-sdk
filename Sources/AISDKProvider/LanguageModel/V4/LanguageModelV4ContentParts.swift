@@ -7,14 +7,14 @@ import Foundation
  */
 public struct LanguageModelV4Citation: Sendable, Equatable, Codable {
     public let source: LanguageModelV4Source
-    public let startIndex: Int?
-    public let endIndex: Int?
+    public let startIndex: Double?
+    public let endIndex: Double?
     public let citedText: String?
 
     public init(
         source: LanguageModelV4Source,
-        startIndex: Int? = nil,
-        endIndex: Int? = nil,
+        startIndex: Double? = nil,
+        endIndex: Double? = nil,
         citedText: String? = nil
     ) {
         self.source = source

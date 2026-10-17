@@ -290,8 +290,8 @@ private func citationJSON(_ citation: Citation) -> JSONValue {
     }
     return .object(baseObject([
         "source": .object(baseObject(source)),
-        "startIndex": citation.startIndex.map { .number(Double($0)) },
-        "endIndex": citation.endIndex.map { .number(Double($0)) },
+        "startIndex": citation.startIndex.map(JSONValue.number),
+        "endIndex": citation.endIndex.map(JSONValue.number),
         "citedText": citation.citedText.map(JSONValue.string)
     ]))
 }
