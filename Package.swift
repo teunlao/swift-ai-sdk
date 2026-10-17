@@ -97,7 +97,7 @@ let package = Package(
 	        .target(name: "GatewayProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "GoogleProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "GoogleVertexProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "GoogleProvider", "AnthropicProvider", "OpenAICompatibleProvider"]),
-        .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
+        .target(name: "AzureProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAIProvider", "DeepSeekProvider"]),
         .target(name: "GroqProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "MistralProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),
         .target(name: "PerplexityProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "EventSourceParser"]),

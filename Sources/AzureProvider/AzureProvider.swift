@@ -2,6 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 import OpenAIProvider
+import DeepSeekProvider
 
 /// Settings for configuring the Azure OpenAI provider.
 /// Mirrors `packages/azure/src/azure-openai-provider.ts`.
@@ -40,6 +41,7 @@ public struct AzureProviderSettings: Sendable {
 /// Mirrors `packages/azure/src/azure-openai-provider.ts`.
 public final class AzureProvider: ProviderV4 {
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
+    private let deepseekFactory: @Sendable (DeepSeekChatModelId) -> DeepSeekChatLanguageModel
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
@@ -50,6 +52,7 @@ public final class AzureProvider: ProviderV4 {
 
     init(
         chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
+        deepseekFactory: @escaping @Sendable (DeepSeekChatModelId) -> DeepSeekChatLanguageModel,
         responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
@@ -59,6 +62,7 @@ public final class AzureProvider: ProviderV4 {
         tools: AzureProviderTools
     ) {
         self.chatFactory = chatFactory
+        self.deepseekFactory = deepseekFactory
         self.responsesFactory = responsesFactory
         self.completionFactory = completionFactory
         self.embeddingFactory = embeddingFactory
@@ -106,6 +110,10 @@ public final class AzureProvider: ProviderV4 {
 
     public func chat(_ modelId: OpenAIChatModelId) -> OpenAIChatLanguageModel {
         chatFactory(modelId)
+    }
+
+    public func deepseek(_ modelId: DeepSeekChatModelId) -> DeepSeekChatLanguageModel {
+        deepseekFactory(modelId)
     }
 
     public func responses(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
@@ -286,6 +294,19 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         fetch: fetch
     )
 
+    let deepseekConfig = DeepSeekChatConfig(
+        provider: "azure.deepseek",
+        headers: { try headers().compactMapValues { $0 } },
+        url: { try urlBuilder(.init(modelId: $0.modelId, path: $0.path)) },
+        fetch: fetch,
+        supportsPenaltySampling: true,
+        supportsThinking: false,
+        supportsStructuredOutputs: true
+    )
+    let deepseekFactory: @Sendable (DeepSeekChatModelId) -> DeepSeekChatLanguageModel = { modelId in
+        DeepSeekChatLanguageModel(modelId: modelId, config: deepseekConfig)
+    }
+
     let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel = { modelId in
         OpenAIChatLanguageModel(
             modelId: modelId,
@@ -337,6 +358,7 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
 
     return AzureProvider(
         chatFactory: chatFactory,
+        deepseekFactory: deepseekFactory,
         responsesFactory: responsesFactory,
         completionFactory: completionFactory,
         embeddingFactory: embeddingFactory,

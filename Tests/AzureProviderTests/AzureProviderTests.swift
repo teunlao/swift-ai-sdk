@@ -1798,8 +1798,8 @@ struct AzureProviderTests {
 
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
-        @Test("Environment credentials and resource names resolve after model creation")
-        func requestTimeEnvironment() async throws {
+        @Test("Environment credentials and resource names resolve after model creation", arguments: [false, true])
+        func requestTimeEnvironment(deepseek: Bool) async throws {
             let names = ["AZURE_API_KEY", "AZURE_RESOURCE_NAME"]
             let original = names.map { name in (name, getenv(name).flatMap { String(validatingCString: $0) }) }
             defer {
@@ -1821,7 +1821,8 @@ struct AzureProviderTests {
                     urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                 )
             }))
-            let model = provider.chat("deployment")
+            let model: any LanguageModelV4
+            if deepseek { model = provider.deepseek("deployment") } else { model = provider.chat("deployment") }
             setenv("AZURE_API_KEY", "late-key", 1)
             setenv("AZURE_RESOURCE_NAME", "late-resource", 1)
             _ = try await model.doGenerate(options: .init(prompt: []))
