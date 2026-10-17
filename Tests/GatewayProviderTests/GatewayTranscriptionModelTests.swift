@@ -151,11 +151,11 @@ struct GatewayTranscriptionModelTests {
             #expect(body["model"] as? String == "openai/gpt-realtime-whisper")
             let url = try #require(request.url)
             let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]))
-            return FetchResponse(body: .data(Data(#"{"token":"vcst_transcription","expiresAt":1234}"#.utf8)), urlResponse: response)
+            return FetchResponse(body: .data(Data(#"{"token":"vcst_transcription","expiresAt":1234.125}"#.utf8)), urlResponse: response)
         }))
         let secret = try await provider.experimental_transcription.getToken(options: .init(model: "openai/gpt-realtime-whisper"))
         #expect(secret.token == "vcst_transcription")
-        #expect(secret.expiresAt == 1234)
+        #expect(secret.expiresAt == 1234.125)
         #expect(secret.url == "wss://proxy.test/v4/ai/transcription-model?ai-model-id=openai%2Fgpt-realtime-whisper")
     }
 

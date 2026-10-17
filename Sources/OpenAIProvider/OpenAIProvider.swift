@@ -43,7 +43,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     private let filesFactory: @Sendable () -> any FilesV4
     private let skillsFactory: @Sendable () -> any SkillsV4
-    public let experimental_realtime: any RealtimeFactoryV4
+    public let experimental_realtime: OpenAIRealtimeFactory
     public let tools: OpenAITools
     public let options: OpenAIOptions
 
@@ -57,7 +57,7 @@ public final class OpenAIProvider: ProviderV4 {
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         files: @escaping @Sendable () -> any FilesV4,
         skills: @escaping @Sendable () -> any SkillsV4,
-        experimentalRealtime: any RealtimeFactoryV4,
+        experimentalRealtime: OpenAIRealtimeFactory,
         tools: OpenAITools,
         options: OpenAIOptions
     ) {
@@ -264,7 +264,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         speeches: { OpenAISpeechModel(modelId: $0, config: speechConfig) },
         files: { OpenAIFiles(config: .init(provider: "\(providerName).files", baseURL: baseURL, headers: headers, fetch: settings.fetch)) },
         skills: { OpenAISkills(config: .init(provider: "\(providerName).skills", url: { "\(baseURL)\($0)" }, headers: headers, fetch: settings.fetch)) },
-        experimentalRealtime: OpenAIRealtimeFactory(config: .init(provider: "\(providerName).realtime", baseURL: baseURL, headers: headers, fetch: settings.fetch)),
+        experimentalRealtime: OpenAIRealtimeFactory(config: .init(provider: providerName, baseURL: baseURL, headers: headers, fetch: settings.fetch)),
         tools: openaiTools,
         options: OpenAIOptions()
     )

@@ -17,11 +17,11 @@ struct GatewayRealtimeModelTests {
             #expect(body["expiresIn"] as? Int == 120)
             let url = try #require(request.url)
             let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]))
-            return FetchResponse(body: .data(Data(#"{"token":"vcst_short","expiresAt":1234}"#.utf8)), urlResponse: response)
+            return FetchResponse(body: .data(Data(#"{"token":"vcst_short","expiresAt":1234.125}"#.utf8)), urlResponse: response)
         }))
         let token = try await provider.experimental_realtime.getToken(options: .init(model: "openai/gpt-realtime-2", expiresAfterSeconds: 120))
         #expect(token.token == "vcst_short")
-        #expect(token.expiresAt == 1234)
+        #expect(token.expiresAt == 1234.125)
         #expect(token.url == "wss://proxy.test/custom/v4/ai/realtime-model?ai-model-id=openai%2Fgpt-realtime-2")
         let model = provider.experimental_realtime("openai/gpt-realtime-2")
         let connection = try model.getWebSocketConfig(options: .init(token: token.token, url: token.url))
@@ -41,7 +41,7 @@ struct GatewayRealtimeModelTests {
             providerOptions: ["vendor": .object(["flag": .bool(true)])]
         )
         let payload = try await model.serializeClientEvent(.sessionUpdate(config: config, eventId: "evt_1"))
-        guard case .object(let body) = payload, case .object(let session)? = body["config"] else {
+        guard case .some(.object(let body)) = payload, case .object(let session)? = body["config"] else {
             Issue.record("Expected normalized session update")
             return
         }

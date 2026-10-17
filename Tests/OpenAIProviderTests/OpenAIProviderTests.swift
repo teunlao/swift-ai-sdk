@@ -274,9 +274,7 @@ struct OpenAIProviderTests {
         #expect(skills.specificationVersion == "v4")
         #expect(skills.provider == "custom-openai.skills")
 
-        let realtimeModel = provider.experimental_realtime.realtimeModel(modelId: "gpt-realtime")
-        #expect(realtimeModel.specificationVersion == "v4")
-        #expect(realtimeModel.provider == "custom-openai.realtime")
+        #expect(try provider.experimental_realtime("gpt-realtime").provider == "custom-openai.realtime")
     }
 
     @Test("createOpenAI V4 routes default, chat, and embedding calls like upstream")

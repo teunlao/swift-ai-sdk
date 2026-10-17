@@ -41,16 +41,122 @@ private func openAIRealtimeRequestJSON(_ request: URLRequest) throws -> JSONValu
     return try JSONDecoder().decode(JSONValue.self, from: body)
 }
 
+private final class RealtimeResponseBody: @unchecked Sendable {
+    let stream: AsyncThrowingStream<Data, Error>
+    let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let lock = NSLock()
+    private var terminated = false
+
+    init() {
+        let pair = AsyncThrowingStream<Data, Error>.makeStream()
+        stream = pair.stream; continuation = pair.continuation
+        continuation.onTermination = { [weak self] _ in self?.lock.withLock { self?.terminated = true } }
+    }
+    var isTerminated: Bool { lock.withLock { terminated } }
+}
+
 @Suite("OpenAI Realtime Model")
 struct OpenAIRealtimeModelTests {
-    @Test("provider exposes upstream experimental realtime factory")
-    func providerExposesExperimentalRealtimeFactory() throws {
-        let provider = try createOpenAIProvider(settings: .init(apiKey: "test-api-key", name: "custom-openai"))
-        let model = provider.experimental_realtime.realtimeModel(modelId: "gpt-realtime")
+    @Test func excludedLiveRouteIsNotSilentlyOrdinary() async throws {
+        let provider = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: openAIRealtimeFetch(capture: .init())))
+        #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try provider.experimental_realtime.realtimeModel(modelId: "gpt-live-1")
+        }
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await provider.experimental_realtime.getToken(options: .init(model: "gpt-live-1"))
+        }
+    }
 
-        #expect(model.specificationVersion == "v4")
-        #expect(model.provider == "custom-openai.realtime")
-        #expect(model.modelId == "gpt-realtime")
+    @Test(arguments: [("http://proxy.example:8443/custom/v2", "proxy.example:8443"), ("https://PROXY.example:443/custom/v2", "proxy.example"), ("http://[::1]:8080/custom/v2", "[::1]:8080")])
+    func reservedModelIdUsesURIComponentEncoding(baseURL: String, authority: String) async throws {
+        let capture = OpenAIRealtimeRequestCapture()
+        let model = OpenAIRealtimeModel(modelId: "gpt/rt +?#&=é!'()*", config: .init(
+            provider: "openai.realtime", baseURL: baseURL, headers: { [:] },
+            fetch: openAIRealtimeFetch(capture: capture)
+        ))
+        let result = try await model.doCreateClientSecret(options: .init())
+        #expect(result.url == "wss://\(authority)/v1/realtime?model=gpt%2Frt%20%2B%3F%23%26%3D%C3%A9!'()*")
+        #expect(await capture.first()?.url?.absoluteString == "\(baseURL)/realtime/client_secrets")
+    }
+
+    @Test func wireExpiryTimestampPreservesFractions() async throws {
+        let capture = OpenAIRealtimeRequestCapture()
+        let provider = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: openAIRealtimeFetch(capture: capture, body: {
+            ["value": "secret", "expires_at": 123.25]
+        })))
+        let result = try await provider.experimental_realtime.getToken(options: .init(model: "gpt-realtime"))
+        #expect(Double(try #require(result.expiresAt)) == 123.25)
+    }
+
+    @Test func unsupportedEventIsNoSendButNestedNullIsData() async throws {
+        let model = OpenAIRealtimeModel(modelId: "gpt-realtime", config: .init(provider: "openai.realtime", baseURL: "https://api.openai.com/v1", headers: { [:] }))
+        let ignored: JSONValue? = try await model.serializeClientEvent(.sessionClose())
+        #expect(ignored == Optional<JSONValue>.none)
+        let event: JSONValue? = try await model.serializeClientEvent(.sessionUpdate(config: .init(
+            instructions: "portable", voice: "alloy", inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
+            tools: [.init(name: "tool", parameters: [:])],
+            providerOptions: ["audio": .null, "model": .null, "instructions": .null, "tools": .null, "tool_choice": "required"]
+        )))
+        #expect(event == .some(["type": "session.update", "session": ["type": "realtime", "model": .null, "audio": .null, "instructions": .null, "tools": .null, "tool_choice": "required"]]))
+    }
+
+    @Test func errorBodyDecodesReplacementCharacters() async throws {
+        let model = OpenAIRealtimeModel(modelId: "gpt-realtime", config: .init(provider: "openai.realtime", baseURL: "https://api.openai.com/v1", headers: { [:] }, fetch: { request in
+            FetchResponse(body: .data(Data([0xef, 0xbb, 0xbf, 0xff])), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: [:])!)
+        }))
+        do {
+            _ = try await model.doCreateClientSecret(options: .init())
+            Issue.record("Expected HTTP failure")
+        } catch {
+            #expect(error.localizedDescription == "OpenAI realtime client secret request failed: 401 �")
+        }
+    }
+
+    @Test func malformedWireEventsDoNotInventEmptyFields() throws {
+        let model = OpenAIRealtimeModel(modelId: "gpt-realtime", config: .init(provider: "openai.realtime", baseURL: "https://api.openai.com/v1", headers: { [:] }))
+        #expect(throws: TypeValidationError.self) { try model.parseServerEvent(raw: .null) }
+        #expect(throws: TypeValidationError.self) { try model.parseServerEvent(raw: ["type": "response.output_audio.delta", "item_id": "item", "response_id": "response"]) }
+        let future: JSONValue = ["type": "future", "payload": .null]
+        #expect(try model.parseServerEvent(raw: future) == [.custom(rawType: "future", raw: future)])
+    }
+
+    @Test func explicitRealtimeSelectionMintsKnownLiveId() async throws {
+        let capture = OpenAIRealtimeRequestCapture()
+        let provider = try createOpenAIProvider(settings: .init(apiKey: "key", name: "custom", fetch: openAIRealtimeFetch(capture: capture)))
+        let model = try provider.experimental_realtime("gpt-live-1", options: .init(api: .realtime))
+        #expect(model.provider == "custom.realtime")
+        let token = try await provider.experimental_realtime.getToken(options: .init(model: "gpt-live-1"), api: .realtime)
+        #expect(token.token == "secret")
+        #expect(try openAIRealtimeRequestJSON(#require(await capture.first())) == ["session": ["type": "realtime", "model": "gpt-live-1"]])
+        #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try provider.experimental_realtime("future-model", options: .init(api: .live))
+        }
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await provider.experimental_realtime.getToken(options: .init(model: "future-model"), api: .live)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func clientSecretReleasesRetainedResponse(cancelled: Bool) async throws {
+        let body = RealtimeResponseBody()
+        let requested = AsyncStream<Void>.makeStream()
+        let model = OpenAIRealtimeModel(modelId: "gpt-realtime", config: .init(provider: "openai.realtime", baseURL: "https://api.openai.com/v1", headers: { [:] }, fetch: { request in
+            requested.continuation.yield(())
+            requested.continuation.finish()
+            let response: URLResponse = cancelled
+                ? HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+                : URLResponse(url: request.url!, mimeType: nil, expectedContentLength: 0, textEncodingName: nil)
+            return FetchResponse(body: .stream(body.stream), urlResponse: response)
+        }))
+        let call = Task { try await model.doCreateClientSecret(options: .init()) }
+        for await _ in requested.stream { break }
+        if cancelled { call.cancel() }
+        do { _ = try await call.value; Issue.record("Expected failure") }
+        catch {
+            if cancelled { #expect(error is CancellationError) }
+            else { #expect(error.localizedDescription == "OpenAI realtime client secret request failed: invalid response") }
+        }
+        #expect(body.isTerminated)
     }
 
     @Test("getToken creates client secret without expires_after by default")
@@ -247,6 +353,9 @@ struct OpenAIRealtimeModelTests {
             .error(message: "bad request", code: "invalid_request", raw: error)
         ])
 
+        let fallback: JSONValue = ["type": "error", "message": "top", "code": "fallback", "event_id": "server-id", "error": ["message": .null, "code": .null, "event_id": ""]]
+        #expect(try model.parseServerEvent(raw: fallback) == [.error(message: "top", code: "fallback", clientEventId: "", raw: fallback)])
+
         let custom: JSONValue = ["type": "rate_limits.updated", "payload": true]
         #expect(try model.parseServerEvent(raw: custom) == [
             .custom(rawType: "rate_limits.updated", raw: custom)
@@ -260,6 +369,8 @@ struct OpenAIRealtimeModelTests {
             config: .init(provider: "openai.realtime", baseURL: "https://api.openai.com/v1", headers: { [:] })
         )
 
+        #expect(try await model.serializeClientEvent(.inputAudioAppend(audio: "AA==", eventId: "")) == ["type": "input_audio_buffer.append", "audio": "AA==", "event_id": ""])
+        #expect(try await model.serializeClientEvent(.sessionUpdate(config: .init(), eventId: "")) == ["type": "session.update", "session": ["type": "realtime", "model": "gpt-realtime"], "event_id": ""])
         #expect(try await model.serializeClientEvent(.responseCreate(options: .init(
             modalities: ["text", "audio"],
             instructions: "Answer",

@@ -87,9 +87,9 @@ public struct GatewayTranscriptionFactoryGetTokenOptions: Sendable {
 public struct GatewayTranscriptionFactoryGetTokenResult: Sendable, Equatable {
     public let token: String
     public let url: String
-    public let expiresAt: Int?
+    public let expiresAt: Double?
 
-    public init(token: String, url: String, expiresAt: Int? = nil) {
+    public init(token: String, url: String, expiresAt: Double? = nil) {
         self.token = token
         self.url = url
         self.expiresAt = expiresAt

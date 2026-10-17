@@ -28,7 +28,7 @@ public final class GatewayRealtimeModel: RealtimeModelV4ClientSecretWebSocket {
         return [try JSONDecoder().decode(GatewayRealtimeServerEvent.self, from: data).event]
     }
 
-    public func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue {
+    public func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue? {
         var body: [String: JSONValue]
         var eventId: String?
         switch event {
@@ -121,7 +121,7 @@ public struct GatewayRealtimeFactory: RealtimeFactoryV4 {
 
 struct GatewayClientSecret: Decodable, Sendable {
     let token: String
-    let expiresAt: Int?
+    let expiresAt: Double?
 }
 
 struct GatewayClientSecrets: Sendable {

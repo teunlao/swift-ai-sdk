@@ -17,7 +17,8 @@ public protocol RealtimeModelV4: Sendable {
     /// `nil` means `parseServerEvent` is used directly.
     func createServerEventParser() -> (@Sendable (JSONValue) throws -> [RealtimeModelV4ServerEvent])?
 
-    func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue
+    /// nil skips sending; .some(.null) is a JSON null frame.
+    func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue?
     func buildSessionConfig(_ config: RealtimeModelV4SessionConfig) throws -> JSONValue
     func getHealthCheckResponse(raw: JSONValue) throws -> JSONValue?
 }
@@ -164,7 +165,7 @@ public struct RealtimeModelV4WebRTCSession: Sendable, Equatable {
 }
 
 public protocol RealtimeFactoryV4: Sendable {
-    func realtimeModel(modelId: String) -> any RealtimeModelV4
+    func realtimeModel(modelId: String) throws -> any RealtimeModelV4
     func getToken(options: RealtimeFactoryV4GetTokenOptions) async throws -> RealtimeFactoryV4GetTokenResult
 }
 
@@ -187,9 +188,9 @@ public struct RealtimeFactoryV4GetTokenOptions: Sendable, Equatable {
 public struct RealtimeFactoryV4GetTokenResult: Sendable, Equatable {
     public let token: String
     public let url: String
-    public let expiresAt: Int?
+    public let expiresAt: Double?
 
-    public init(token: String, url: String, expiresAt: Int? = nil) {
+    public init(token: String, url: String, expiresAt: Double? = nil) {
         self.token = token
         self.url = url
         self.expiresAt = expiresAt
@@ -209,9 +210,9 @@ public struct RealtimeModelV4ClientSecretOptions: Sendable, Equatable {
 public struct RealtimeModelV4ClientSecretResult: Sendable, Equatable {
     public let token: String
     public let url: String
-    public let expiresAt: Int?
+    public let expiresAt: Double?
 
-    public init(token: String, url: String, expiresAt: Int? = nil) {
+    public init(token: String, url: String, expiresAt: Double? = nil) {
         self.token = token
         self.url = url
         self.expiresAt = expiresAt

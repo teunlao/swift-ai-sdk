@@ -55,36 +55,41 @@ public final class OpenAIRealtimeModel: RealtimeModelV4ClientSecretWebSocket {
             ]
         }
 
-        var request = try URLRequest.openAIRealtimeRequest(
-            url: url,
-            headers: combineHeaders(
-                try config.headers(),
-                ["Content-Type": "application/json"]
-            ).compactMapValues { $0 },
-            body: .object(body)
-        )
+        try Task.checkCancellation()
+        guard let endpoint = URL(string: url) else {
+            throw InvalidArgumentError(argument: "url", message: "invalid OpenAI realtime client secret URL")
+        }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-
-        let fetch = config.fetch ?? openAIRealtimeDefaultFetch
+        request.timeoutInterval = 24 * 60 * 60
+        request.httpBody = Data(try openAIJSONStringify(.object(body)).utf8)
+        for (key, value) in combineHeaders(try config.headers(), ["Content-Type": "application/json"]).compactMapValues({ $0 }) {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        let fetch = config.fetch ?? defaultFetchFunction()
         let fetchResponse = try await fetch(request)
-        guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
-            throw OpenAIRealtimeClientSecretError(message: "OpenAI realtime client secret request failed: invalid response")
-        }
-
-        let responseBody = try await fetchResponse.body.collectData()
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let text = String(data: responseBody, encoding: .utf8) ?? ""
-            throw OpenAIRealtimeClientSecretError(
-                message: "OpenAI realtime client secret request failed: \(httpResponse.statusCode) \(text)"
+        do {
+            try Task.checkCancellation()
+            guard let httpResponse = fetchResponse.urlResponse as? HTTPURLResponse else {
+                throw OpenAIRealtimeClientSecretError(message: "OpenAI realtime client secret request failed: invalid response")
+            }
+            if !(200...299).contains(httpResponse.statusCode) {
+                let text = try await fetchResponse.body.collectText()
+                try Task.checkCancellation()
+                throw OpenAIRealtimeClientSecretError(message: "OpenAI realtime client secret request failed: \(httpResponse.statusCode) \(text)")
+            }
+            let responseBody = try await fetchResponse.body.collectData()
+            try Task.checkCancellation()
+            let decoded = try JSONDecoder().decode(OpenAIRealtimeClientSecretResponse.self, from: responseBody)
+            return RealtimeModelV4ClientSecretResult(
+                token: decoded.value,
+                url: try openAIRealtimeWebSocketURL(baseURL: config.baseURL, modelId: modelId),
+                expiresAt: decoded.expiresAt
             )
+        } catch {
+            if case .stream(let stream) = fetchResponse.body { await cancelStream(stream) }
+            throw error
         }
-
-        let decoded = try JSONDecoder().decode(OpenAIRealtimeClientSecretResponse.self, from: responseBody)
-        return RealtimeModelV4ClientSecretResult(
-            token: decoded.value,
-            url: try openAIRealtimeWebSocketURL(baseURL: config.baseURL, modelId: modelId),
-            expiresAt: decoded.expiresAt
-        )
     }
 
     public func getWebSocketConfig(options: RealtimeModelV4WebSocketOptions) throws -> RealtimeModelV4WebSocketConfig {
@@ -95,10 +100,10 @@ public final class OpenAIRealtimeModel: RealtimeModelV4ClientSecretWebSocket {
     }
 
     public func parseServerEvent(raw: JSONValue) throws -> [RealtimeModelV4ServerEvent] {
-        [openAIRealtimeServerEvent(raw)]
+        [try openAIRealtimeServerEvent(raw)]
     }
 
-    public func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue {
+    public func serializeClientEvent(_ event: RealtimeModelV4ClientEvent) async throws -> JSONValue? {
         try openAIRealtimeClientEvent(event, modelId: modelId)
     }
 
@@ -113,35 +118,49 @@ public final class OpenAIRealtimeModel: RealtimeModelV4ClientSecretWebSocket {
 
 public typealias Experimental_OpenAIRealtimeModel = OpenAIRealtimeModel
 
-final class OpenAIRealtimeFactory: RealtimeFactoryV4, @unchecked Sendable {
+public struct OpenAIRealtimeOptions: Sendable, Equatable {
+    public enum API: String, Sendable { case live, realtime }
+    public let api: API?
+
+    public init(api: API? = nil) { self.api = api }
+}
+
+public struct OpenAIRealtimeFactory: RealtimeFactoryV4 {
     private let config: OpenAIRealtimeModelConfig
 
-    init(config: OpenAIRealtimeModelConfig) {
-        self.config = config
+    init(config: OpenAIRealtimeModelConfig) { self.config = config }
+
+    public func callAsFunction(_ modelId: String, options: OpenAIRealtimeOptions = .init()) throws -> OpenAIRealtimeModel {
+        let api = options.api ?? (modelId == "gpt-live-1" ? .live : .realtime)
+        if api == .live { throw UnsupportedFunctionalityError(functionality: "OpenAI Live API") }
+        return OpenAIRealtimeModel(modelId: modelId, config: .init(
+            provider: "\(config.provider).realtime", baseURL: config.baseURL, headers: config.headers, fetch: config.fetch
+        ))
     }
 
-    func realtimeModel(modelId: String) -> any RealtimeModelV4 {
-        OpenAIRealtimeModel(modelId: modelId, config: config)
+    public func realtimeModel(modelId: String) throws -> any RealtimeModelV4 { try self(modelId) }
+
+    public func getToken(options: RealtimeFactoryV4GetTokenOptions) async throws -> RealtimeFactoryV4GetTokenResult {
+        try await mint(options, api: nil)
     }
 
-    func getToken(options: RealtimeFactoryV4GetTokenOptions) async throws -> RealtimeFactoryV4GetTokenResult {
-        let secret = try await OpenAIRealtimeModel(modelId: options.model, config: config).doCreateClientSecret(
-            options: .init(
-                expiresAfterSeconds: options.expiresAfterSeconds,
-                sessionConfig: options.sessionConfig
-            )
-        )
-        return RealtimeFactoryV4GetTokenResult(
-            token: secret.token,
-            url: secret.url,
-            expiresAt: secret.expiresAt
-        )
+    public func getToken(options: RealtimeFactoryV4GetTokenOptions, api: OpenAIRealtimeOptions.API) async throws -> RealtimeFactoryV4GetTokenResult {
+        try await mint(options, api: api)
+    }
+
+    private func mint(_ options: RealtimeFactoryV4GetTokenOptions, api: OpenAIRealtimeOptions.API?) async throws -> RealtimeFactoryV4GetTokenResult {
+        let model = try self(options.model, options: .init(api: api))
+        let secret = try await model.doCreateClientSecret(options: .init(expiresAfterSeconds: options.expiresAfterSeconds, sessionConfig: options.sessionConfig))
+        return .init(token: secret.token, url: secret.url, expiresAt: secret.expiresAt)
     }
 }
 
+public typealias Experimental_OpenAIRealtimeFactory = OpenAIRealtimeFactory
+public typealias Experimental_OpenAIRealtimeOptions = OpenAIRealtimeOptions
+
 private struct OpenAIRealtimeClientSecretResponse: Decodable, Sendable {
     let value: String
-    let expiresAt: Int?
+    let expiresAt: Double?
 
     enum CodingKeys: String, CodingKey {
         case value
@@ -156,163 +175,153 @@ private struct OpenAIRealtimeClientSecretError: Error, LocalizedError, CustomStr
     var description: String { message }
 }
 
-private func openAIRealtimeDefaultFetch(_ request: URLRequest) async throws -> FetchResponse {
-    let (data, response) = try await URLSession.shared.data(for: request)
-    return FetchResponse(body: .data(data), urlResponse: response)
-}
-
 private func openAIRealtimeWebSocketURL(baseURL: String, modelId: String) throws -> String {
-    guard let base = URL(string: baseURL), let host = base.host else {
+    guard let base = URL(string: baseURL), let scheme = base.scheme?.lowercased(), let host = base.host else {
         throw InvalidArgumentError(argument: "baseURL", message: "invalid OpenAI realtime baseURL")
     }
-
-    var components = URLComponents()
-    components.scheme = "wss"
-    components.host = host
-    components.port = base.port
-    components.path = "/v1/realtime"
-    components.queryItems = [URLQueryItem(name: "model", value: modelId)]
-
-    guard let url = components.url else {
-        throw InvalidArgumentError(argument: "baseURL", message: "invalid OpenAI realtime websocket URL")
+    let defaults = ["http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21]
+    var authority = host.contains(":") ? "[\(host.lowercased())]" : host.lowercased()
+    if let port = base.port, defaults[scheme] != port { authority += ":\(port)" }
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+    guard let model = modelId.addingPercentEncoding(withAllowedCharacters: allowed) else {
+        throw InvalidArgumentError(argument: "modelId", message: "invalid OpenAI realtime model ID")
     }
-    return url.absoluteString
+    return "wss://\(authority)/v1/realtime?model=\(model)"
 }
 
-private func openAIRealtimeServerEvent(_ raw: JSONValue) -> RealtimeModelV4ServerEvent {
+private func openAIRealtimeServerEvent(_ raw: JSONValue) throws -> RealtimeModelV4ServerEvent {
     guard case .object(let event) = raw else {
-        return .custom(rawType: "unknown", raw: raw)
+        throw TypeValidationError.wrap(value: raw, cause: SchemaValidationIssuesError(vendor: "openai", issues: "expected realtime event object"))
     }
-
-    let type = stringValue(event["type"]) ?? "unknown"
+    let type = try requiredString(event["type"], raw: raw)
     switch type {
     case "session.created":
-        return .sessionCreated(sessionId: stringValue(objectValue(event["session"])["id"]), raw: raw)
+        return .sessionCreated(sessionId: try stringValue(objectValue(event["session"])["id"]), raw: raw)
     case "session.updated":
         return .sessionUpdated(raw: raw)
     case "input_audio_buffer.speech_started":
-        return .speechStarted(itemId: stringValue(event["item_id"]), raw: raw)
+        return .speechStarted(itemId: try stringValue(event["item_id"]), raw: raw)
     case "input_audio_buffer.speech_stopped":
-        return .speechStopped(itemId: stringValue(event["item_id"]), raw: raw)
+        return .speechStopped(itemId: try stringValue(event["item_id"]), raw: raw)
     case "input_audio_buffer.committed":
         return .audioCommitted(
-            itemId: stringValue(event["item_id"]),
-            previousItemId: stringValue(event["previous_item_id"]),
+            itemId: try stringValue(event["item_id"]),
+            previousItemId: try stringValue(event["previous_item_id"]),
             raw: raw
         )
     case "conversation.item.added":
         let item = objectValue(event["item"])
         return .conversationItemAdded(
-            itemId: stringValue(item["id"]) ?? stringValue(event["item_id"]) ?? "",
-            item: event["item"] ?? .object([:]),
+            itemId: try requiredString(nullish(item["id"]) ?? event["item_id"], raw: raw),
+            item: try requiredValue(event["item"], raw: raw),
             raw: raw
         )
     case "conversation.item.input_audio_transcription.completed":
         return .inputTranscriptionCompleted(
-            itemId: stringValue(event["item_id"]) ?? "",
-            transcript: stringValue(event["transcript"]) ?? "",
+            itemId: try requiredString(event["item_id"], raw: raw),
+            transcript: try stringValue(event["transcript"]) ?? "",
             raw: raw
         )
     case "response.created":
         return .responseCreated(
-            responseId: stringValue(objectValue(event["response"])["id"]) ?? stringValue(event["response_id"]) ?? "",
+            responseId: try requiredString(nullish(objectValue(event["response"])["id"]) ?? event["response_id"], raw: raw),
             raw: raw
         )
     case "response.done":
         let response = objectValue(event["response"])
         return .responseDone(
-            responseId: stringValue(response["id"]) ?? stringValue(event["response_id"]) ?? "",
-            status: stringValue(response["status"]) ?? "completed",
+            responseId: try requiredString(nullish(response["id"]) ?? event["response_id"], raw: raw),
+            status: try stringValue(response["status"]) ?? "completed",
             raw: raw
         )
     case "response.output_item.added":
         return .outputItemAdded(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(objectValue(event["item"])["id"]) ?? stringValue(event["item_id"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(nullish(objectValue(event["item"])["id"]) ?? event["item_id"], raw: raw),
             raw: raw
         )
     case "response.output_item.done":
         return .outputItemDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(objectValue(event["item"])["id"]) ?? stringValue(event["item_id"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(nullish(objectValue(event["item"])["id"]) ?? event["item_id"], raw: raw),
             raw: raw
         )
     case "response.content_part.added":
         return .contentPartAdded(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
             raw: raw
         )
     case "response.content_part.done":
         return .contentPartDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
             raw: raw
         )
     case "response.output_audio.delta":
         return .audioDelta(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            delta: stringValue(event["delta"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            delta: try requiredString(event["delta"], raw: raw),
             raw: raw
         )
     case "response.output_audio.done":
         return .audioDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
             raw: raw
         )
     case "response.output_audio_transcript.delta":
         return .audioTranscriptDelta(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            delta: stringValue(event["delta"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            delta: try requiredString(event["delta"], raw: raw),
             raw: raw
         )
     case "response.output_audio_transcript.done":
         return .audioTranscriptDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            transcript: stringValue(event["transcript"]),
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            transcript: try stringValue(event["transcript"]),
             raw: raw
         )
     case "response.output_text.delta":
         return .textDelta(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            delta: stringValue(event["delta"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            delta: try requiredString(event["delta"], raw: raw),
             raw: raw
         )
     case "response.output_text.done":
         return .textDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            text: stringValue(event["text"]),
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            text: try stringValue(event["text"]),
             raw: raw
         )
     case "response.function_call_arguments.delta":
         return .functionCallArgumentsDelta(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            callId: stringValue(event["call_id"]) ?? "",
-            delta: stringValue(event["delta"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            callId: try requiredString(event["call_id"], raw: raw),
+            delta: try requiredString(event["delta"], raw: raw),
             raw: raw
         )
     case "response.function_call_arguments.done":
         return .functionCallArgumentsDone(
-            responseId: stringValue(event["response_id"]) ?? "",
-            itemId: stringValue(event["item_id"]) ?? "",
-            callId: stringValue(event["call_id"]) ?? "",
-            name: stringValue(event["name"]) ?? "",
-            arguments: stringValue(event["arguments"]) ?? "",
+            responseId: try requiredString(event["response_id"], raw: raw),
+            itemId: try requiredString(event["item_id"], raw: raw),
+            callId: try requiredString(event["call_id"], raw: raw),
+            name: try requiredString(event["name"], raw: raw),
+            arguments: try requiredString(event["arguments"], raw: raw),
             raw: raw
         )
     case "error":
         let error = objectValue(event["error"])
         return .error(
-            message: stringValue(error["message"]) ?? stringValue(event["message"]) ?? "Unknown error",
-            code: stringValue(error["code"]) ?? stringValue(event["code"]),
-            clientEventId: stringValue(error["event_id"]),
+            message: try stringValue(error["message"]) ?? stringValue(event["message"]) ?? "Unknown error",
+            code: try stringValue(error["code"]) ?? stringValue(event["code"]),
+            clientEventId: try stringValue(error["event_id"]),
             raw: raw
         )
     default:
@@ -320,7 +329,7 @@ private func openAIRealtimeServerEvent(_ raw: JSONValue) -> RealtimeModelV4Serve
     }
 }
 
-private func openAIRealtimeClientEvent(_ event: RealtimeModelV4ClientEvent, modelId: String) throws -> JSONValue {
+private func openAIRealtimeClientEvent(_ event: RealtimeModelV4ClientEvent, modelId: String) throws -> JSONValue? {
     switch event {
     case let .sessionUpdate(config, eventId):
         var payload: [String: JSONValue] = [
@@ -338,8 +347,7 @@ private func openAIRealtimeClientEvent(_ event: RealtimeModelV4ClientEvent, mode
         }
         return .object(payload)
     case .sessionStart, .sessionClose, .inputAudioMute, .inputAudioUnmute, .contextAppend:
-        // Upstream's OpenAI mapper has no wire form for these events and serializes nothing.
-        return .null
+        return nil
     case .inputAudioCommit:
         return ["type": "input_audio_buffer.commit"]
     case .inputAudioClear:
@@ -535,30 +543,28 @@ private func objectValue(_ value: JSONValue?) -> [String: JSONValue] {
     return object
 }
 
-private func stringValue(_ value: JSONValue?) -> String? {
+private func stringValue(_ value: JSONValue?) throws -> String? {
+    guard let value, value != .null else { return nil }
     guard case .string(let string) = value else {
-        return nil
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "expected realtime string field"))
     }
     return string
 }
 
-private extension URLRequest {
-    static func openAIRealtimeRequest(url: String, headers: [String: String], body: JSONValue) throws -> URLRequest {
-        guard let requestURL = URL(string: url) else {
-            throw InvalidArgumentError(argument: "url", message: "invalid OpenAI realtime client secret URL")
-        }
-
-        let foundation = jsonValueToFoundation(body)
-        guard JSONSerialization.isValidJSONObject(foundation) else {
-            throw InvalidArgumentError(argument: "body", message: "invalid OpenAI realtime client secret body")
-        }
-
-        var request = URLRequest(url: requestURL)
-        request.timeoutInterval = 24 * 60 * 60
-        request.httpBody = try JSONSerialization.data(withJSONObject: foundation, options: [.sortedKeys])
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-        return request
+private func requiredValue(_ value: JSONValue?, raw: JSONValue) throws -> JSONValue {
+    guard let value else {
+        throw TypeValidationError.wrap(value: raw, cause: SchemaValidationIssuesError(vendor: "openai", issues: "missing realtime field"))
     }
+    return value
+}
+
+private func requiredString(_ value: JSONValue?, raw: JSONValue) throws -> String {
+    guard let string = try stringValue(value) else {
+        throw TypeValidationError.wrap(value: raw, cause: SchemaValidationIssuesError(vendor: "openai", issues: "missing realtime string field"))
+    }
+    return string
+}
+
+private func nullish(_ value: JSONValue?) -> JSONValue? {
+    value == .null ? nil : value
 }
