@@ -3,10 +3,10 @@ import AISDKProvider
 
 struct MistralUsage: Codable, Sendable {
     let raw: JSONValue
-    let promptTokens: Int
-    let completionTokens: Int
-    let cacheReadTokens: Int
-    let noCacheTokens: Int
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let cacheReadTokens: Int?
+    let noCacheTokens: Int?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -24,14 +24,10 @@ struct MistralUsage: Codable, Sendable {
             }
             return number
         }
-        func tokenCount(_ number: Double, key: String) throws -> Int {
-            guard let count = Int(exactly: number) else {
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expected representable integer for \(key)")
-            }
-            return count
-        }
-        promptTokens = try tokenCount(number("prompt_tokens", in: value, required: true)!, key: "prompt_tokens")
-        completionTokens = try tokenCount(number("completion_tokens", in: value, required: true)!, key: "completion_tokens")
+        let prompt = try number("prompt_tokens", in: value, required: true)!
+        let completion = try number("completion_tokens", in: value, required: true)!
+        promptTokens = Int(exactly: prompt)
+        completionTokens = Int(exactly: completion)
         _ = try number("total_tokens", in: value, required: true)
         for key in ["prompt_audio_seconds", "request_count"] { _ = try number(key, in: value) }
         if let tier = value["service_tier"], tier != .null, case .string = tier {} else if value["service_tier"] != nil && value["service_tier"] != .null {
@@ -53,12 +49,12 @@ struct MistralUsage: Codable, Sendable {
                 }
             }
         }
-        cacheReadTokens = try tokenCount(cached ?? 0, key: "cached_tokens")
-        let noCache = promptTokens.subtractingReportingOverflow(cacheReadTokens)
-        guard !noCache.overflow else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Uncached token count exceeds the supported integer range")
-        }
-        noCacheTokens = noCache.partialValue
+        let read = cached ?? 0
+        cacheReadTokens = Int(exactly: read)
+        if let promptTokens, let cacheReadTokens {
+            let difference = promptTokens.subtractingReportingOverflow(cacheReadTokens)
+            noCacheTokens = difference.overflow ? nil : difference.partialValue
+        } else { noCacheTokens = Int(exactly: prompt - read) }
     }
 
     func encode(to encoder: Encoder) throws { try raw.encode(to: encoder) }

@@ -69,7 +69,9 @@ public final class MistralEmbeddingModel: EmbeddingModelV4 {
         )
 
         let embeddings = response.value.data.map { $0.embedding }
-        let usage = response.value.usage.map { EmbeddingModelV4Usage(tokens: $0.promptTokens) }
+        let usage = response.value.usage.flatMap { value in
+            Int(exactly: value.promptTokens).map { EmbeddingModelV4Usage(tokens: $0) }
+        }
 
         return EmbeddingModelV4Result(
             embeddings: embeddings,
@@ -88,7 +90,7 @@ private struct MistralEmbeddingResponse: Codable {
     }
 
     struct Usage: Codable {
-        let promptTokens: Int
+        let promptTokens: Double
 
         enum CodingKeys: String, CodingKey {
             case promptTokens = "prompt_tokens"

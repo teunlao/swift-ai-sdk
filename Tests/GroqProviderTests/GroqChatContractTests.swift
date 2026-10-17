@@ -116,6 +116,24 @@ struct GroqChatContractTests {
         await #expect(throws: InvalidResponseDataError.self) { try await model(response: #"{"choices":[]}"#).doGenerate(options: .init(prompt: prompt)) }
     }
 
+    @Test("numeric usage preserves success and projects each field independently", arguments: [false, true])
+    func numericUsage(huge: Bool) async throws {
+        let value = huge ? 1e100 : 1.5
+        let read = huge ? 1e100 : 0.5
+        let usage: JSONValue = ["prompt_tokens": .number(value), "completion_tokens": 1.5, "total_tokens": 4,
+                                "prompt_tokens_details": ["cached_tokens": .number(read)], "completion_tokens_details": ["reasoning_tokens": 0.5]]
+        let response: JSONValue = ["choices": [["index": 0, "message": ["content": "ok"], "finish_reason": "stop"]], "usage": usage]
+        let result = try await model(response: String(decoding: JSONEncoder().encode(response), as: UTF8.self)).doGenerate(options: .init(prompt: prompt))
+        #expect(result.content == [.text(.init(text: "ok"))])
+        #expect(result.usage.inputTokens.total == nil)
+        #expect(result.usage.inputTokens.cacheRead == nil)
+        #expect(result.usage.inputTokens.noCache == (huge ? 0 : 1))
+        #expect(result.usage.outputTokens.total == nil)
+        #expect(result.usage.outputTokens.reasoning == nil)
+        #expect(result.usage.outputTokens.text == 1)
+        #expect(result.usage.raw == usage)
+    }
+
     private func collect(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
         var parts: [LanguageModelV4StreamPart] = []
         for try await part in stream { parts.append(part) }

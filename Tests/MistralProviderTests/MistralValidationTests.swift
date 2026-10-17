@@ -46,21 +46,42 @@ struct MistralValidationTests {
         #expect(result.usage.raw == .object(usage))
     }
 
-    @Test("unrepresentable normalized token counts reject as typed API errors", arguments: [
-        ["prompt_tokens": JSONValue.number(1e100), "completion_tokens": .number(4), "total_tokens": .number(4)],
-        ["prompt_tokens": .number(10), "completion_tokens": .number(1e100), "total_tokens": .number(10)],
-        ["prompt_tokens": .number(10), "completion_tokens": .number(4), "total_tokens": .number(14), "num_cached_tokens": .number(1e100)],
-        ["prompt_tokens": .number(-9e18), "completion_tokens": .number(4), "total_tokens": .number(4), "num_cached_tokens": .number(9e18)]
+    struct CountCase: Sendable {
+        let prompt: Double
+        let completion: Double
+        let cached: Double
+        let input: Int?
+        let output: Int?
+        let read: Int?
+        let noCache: Int?
+    }
+
+    @Test("source-valid numeric usage preserves raw and projects representable fields independently", arguments: [
+        CountCase(prompt: 1e100, completion: 4, cached: 0, input: nil, output: 4, read: nil, noCache: nil),
+        CountCase(prompt: 10, completion: 1e100, cached: 0, input: 10, output: nil, read: nil, noCache: 10),
+        CountCase(prompt: 10, completion: 4, cached: 1e100, input: 10, output: 4, read: nil, noCache: nil),
+        CountCase(prompt: -9e18, completion: 4, cached: 9e18, input: -9_000_000_000_000_000_000, output: 4, read: 9_000_000_000_000_000_000, noCache: nil),
+        CountCase(prompt: 1.5, completion: 4, cached: 0.5, input: nil, output: 4, read: nil, noCache: 1),
+        CountCase(prompt: 1e100, completion: 4, cached: 1e100, input: nil, output: 4, read: nil, noCache: 0)
     ])
-    func invalidTokenCounts(usage: JSONObject) async throws {
-        do {
-            _ = try await provider(response: chatResponse(usage: usage)).chat(modelId: .mistralSmallLatest).doGenerate(options: .init(prompt: prompt))
-            Issue.record("Expected token count validation failure")
-        } catch let error as APICallError {
-            #expect(error.statusCode == 200)
-            #expect(error.message == "Invalid JSON response")
-            #expect(error.cause is TypeValidationError)
-        }
+    func numericUsage(value: CountCase) async throws {
+        let usage: JSONObject = ["prompt_tokens": .number(value.prompt), "completion_tokens": .number(value.completion), "total_tokens": 4, "num_cached_tokens": .number(value.cached)]
+        let result = try await provider(response: chatResponse(usage: usage)).chat(modelId: .mistralSmallLatest).doGenerate(options: .init(prompt: prompt))
+        #expect(result.content == [.text(.init(text: "Hello"))])
+        #expect(result.usage.inputTokens.total == value.input)
+        #expect(result.usage.inputTokens.cacheRead == value.read)
+        #expect(result.usage.inputTokens.noCache == value.noCache)
+        #expect(result.usage.outputTokens.total == value.output)
+        #expect(result.usage.raw == .object(usage))
+    }
+
+    @Test("embedding output survives unrepresentable usage while raw usage remains available")
+    func numericEmbeddingUsage() async throws {
+        let response: JSONValue = ["data": [["embedding": [1.0]]], "usage": ["prompt_tokens": .number(1e100)]]
+        let result = try await provider(response: response).embedding(.mistralEmbed).doEmbed(options: .init(values: ["text"]))
+        #expect(result.embeddings == [[1]])
+        #expect(result.usage == nil)
+        #expect(try jsonValue(from: #require(result.response?.body)) == response)
     }
 
     @Test("explicit null chat options reject as invalid arguments")

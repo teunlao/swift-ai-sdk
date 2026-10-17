@@ -271,38 +271,45 @@ private let groqChatStreamSchema = FlexibleSchema(Schema<GroqChatEvent>.codable(
 
 private struct GroqUsage: Decodable {
     let raw: JSONValue
-    let prompt: Int
-    let completion: Int
+    let prompt: Int?
+    let completion: Int?
     let cache: Int?
     let reasoning: Int?
-    let noCache: Int
-    let text: Int
+    let noCache: Int?
+    let text: Int?
     private enum Keys: String, CodingKey, CaseIterable {
         case prompt = "prompt_tokens", completion = "completion_tokens", total = "total_tokens"
         case promptDetails = "prompt_tokens_details", completionDetails = "completion_tokens_details"
     }
     private struct PromptDetails: Decodable {
-        let cached: Int?
+        let cached: Double?
         enum CodingKeys: String, CodingKey { case cached = "cached_tokens" }
     }
     private struct CompletionDetails: Decodable {
-        let reasoning: Int?
+        let reasoning: Double?
         enum CodingKeys: String, CodingKey { case reasoning = "reasoning_tokens" }
     }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
-        prompt = try container.decodeIfPresent(Int.self, forKey: .prompt) ?? 0
-        completion = try container.decodeIfPresent(Int.self, forKey: .completion) ?? 0
+        let inputValue = try container.decodeIfPresent(Double.self, forKey: .prompt) ?? 0
+        let outputValue = try container.decodeIfPresent(Double.self, forKey: .completion) ?? 0
         _ = try container.decodeIfPresent(Double.self, forKey: .total)
-        cache = try container.decodeIfPresent(PromptDetails.self, forKey: .promptDetails)?.cached
-        reasoning = try container.decodeIfPresent(CompletionDetails.self, forKey: .completionDetails)?.reasoning
-        let uncached = prompt.subtractingReportingOverflow(cache ?? 0)
-        let output = completion.subtractingReportingOverflow(reasoning ?? 0)
-        guard !uncached.overflow, !output.overflow || completion < (reasoning ?? 0) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Token count exceeds the supported integer range"))
+        let cacheValue = try container.decodeIfPresent(PromptDetails.self, forKey: .promptDetails)?.cached
+        let reasoningValue = try container.decodeIfPresent(CompletionDetails.self, forKey: .completionDetails)?.reasoning
+        prompt = Int(exactly: inputValue)
+        completion = Int(exactly: outputValue)
+        cache = cacheValue.flatMap(Int.init(exactly:))
+        reasoning = reasoningValue.flatMap(Int.init(exactly:))
+        func difference(_ lhs: Double, _ rhs: Double, clamp: Bool) -> Int? {
+            if let left = Int(exactly: lhs), let right = Int(exactly: rhs) {
+                let result = left.subtractingReportingOverflow(right)
+                if result.overflow { return clamp && left < right ? 0 : nil }
+                return clamp ? max(0, result.partialValue) : result.partialValue
+            }
+            return Int(exactly: clamp ? max(0, lhs - rhs) : lhs - rhs)
         }
-        noCache = uncached.partialValue
-        text = output.overflow ? 0 : reasoning == nil ? completion : max(0, output.partialValue)
+        noCache = difference(inputValue, cacheValue ?? 0, clamp: false)
+        text = reasoningValue.map { difference(outputValue, $0, clamp: true) } ?? completion
         var fields: JSONObject = [:]
         for key in Keys.allCases where container.contains(key) {
             var value = try container.decode(JSONValue.self, forKey: key)
