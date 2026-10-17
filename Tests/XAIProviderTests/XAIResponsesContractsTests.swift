@@ -3,6 +3,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 import XAIProvider
+import SwiftAISDK
 
 @Suite("xAI Responses V4 contracts")
 struct XAIResponsesContractsTests {
@@ -73,22 +74,54 @@ struct XAIResponsesContractsTests {
         #expect(result.content[3] == .toolResult(.init(toolCallId: "image", toolName: "paint", result: .object(["result": .string("AQID"), "prompt": .string("otter")]))))
     }
 
+    @Test("hosted search arguments validate through generation and streaming", arguments: [false, true])
+    func hostedToolArguments(_ streaming: Bool) async throws {
+        let call = #"{"type":"web_search_call","id":"search","status":"completed","arguments":"{\"query\":\"xAI\",\"num_results\":5}"}"#
+        let payload = streaming
+            ? "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":\(call)}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
+            : "{\"object\":\"response\",\"status\":\"completed\",\"output\":[\(call)]}"
+        let model = provider(payload, stream: streaming).responses("grok-4.6")
+        let tools: ToolSet = ["search": xaiTools.webSearch()]
+        let calls: [TypedToolCall]
+        if streaming {
+            calls = try await streamText(model: model, tools: tools, prompt: "Search xAI").toolCalls
+        } else {
+            calls = try await generateText(model: model, tools: tools, prompt: "Search xAI").toolCalls
+        }
+        let result = try #require(calls.first)
+        #expect(calls.count == 1)
+        #expect(result.providerExecuted == true)
+        #expect(result.input == .object([:]))
+        #expect(result.invalid == false)
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await validateTypes(ValidateTypesOptions(value: "not an object", schema: xaiTools.webSearch().inputSchema))
+        }
+    }
+
     @Test("provider tool parameters preserve search limits and image generation actions")
     func toolParameters() async throws {
         let provider = provider(#"{"object":"response","status":"completed","output":[]}"#) { request in
             guard case .object(let body) = try JSONDecoder().decode(JSONValue.self, from: request.httpBody!), case .array(let tools) = body["tools"] else { throw CancellationError() }
             #expect(tools[0] == .object(["type": .string("web_search"), "enable_image_search": .bool(true)]))
             #expect(tools[1] == .object(["type": .string("x_search"), "allowed_x_handles": .array((0..<20).map { .string("user\($0)") })]))
-            #expect(tools[2] == .object(["type": .string("file_search"), "vector_store_ids": .array([.string("store")]), "max_num_results": .number(2.5)]))
+            #expect(tools[2] == .object(["type": .string("file_search"), "vector_store_ids": .array([.string("store")]), "max_num_results": .number(2)]))
             #expect(tools[3] == .object(["type": .string("image_generation"), "action": .string("edit")]))
         }
         let tools: [LanguageModelV4Tool] = [
             .provider(.init(id: "xai.web_search", name: "web", args: ["enableImageSearch": .bool(true)])),
             .provider(.init(id: "xai.x_search", name: "x", args: ["allowedXHandles": .array((0..<20).map { .string("user\($0)") })])),
-            .provider(.init(id: "xai.file_search", name: "files", args: ["vectorStoreIds": .array([.string("store")]), "maxNumResults": .number(2.5)])),
+            .provider(.init(id: "xai.file_search", name: "files", args: ["vectorStoreIds": .array([.string("store")]), "maxNumResults": .number(2)])),
             .provider(.init(id: "xai.image_generation", name: "image", args: ["action": .string("edit")]))
         ]
         _ = try await provider.responses("grok-4.6").doGenerate(options: .init(prompt: [], tools: tools))
+    }
+
+    @Test("file search rejects fractional and unrepresentable result limits", arguments: [0.5, 1e20])
+    func invalidResultLimit(_ limit: Double) async throws {
+        let model = provider("").responses("grok-4.6")
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await model.doGenerate(options: .init(prompt: [], tools: [.provider(.init(id: "xai.file_search", name: "files", args: ["vectorStoreIds": .array([]), "maxNumResults": .number(limit)]))]))
+        }
     }
 
     @Test("invalid image detail is rejected as provider options before HTTP")

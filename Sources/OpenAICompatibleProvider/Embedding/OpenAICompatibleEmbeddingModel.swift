@@ -45,14 +45,14 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModelV4 {
                                                         schema: openAICompatibleEmbeddingProviderOptionsSchema)
         let specific = try await parseProviderOptions(provider: providerOptionsName, providerOptions: options.providerOptions,
                                                       schema: openAICompatibleEmbeddingProviderOptionsSchema)
-        let dimensions = specific?.dimensions ?? compatible?.dimensions ?? deprecated?.dimensions ?? options.dimensions.map(Double.init)
+        let dimensions = specific?.dimensions ?? compatible?.dimensions ?? deprecated?.dimensions ?? options.dimensions
         let user = specific?.user ?? compatible?.user ?? deprecated?.user
         let maximum = config.maxEmbeddingsPerCallOverride ?? 2048
         guard options.values.count <= maximum else {
             throw TooManyEmbeddingValuesForCallError(provider: provider, modelId: modelId, maxEmbeddingsPerCall: maximum, values: options.values.map { $0 as Any })
         }
         var body: [String: JSONValue] = ["model": .string(modelId), "input": .array(options.values.map(JSONValue.string)), "encoding_format": "float"]
-        if let dimensions { body["dimensions"] = .number(dimensions) }
+        if let dimensions { body["dimensions"] = .number(Double(dimensions)) }
         if let user { body["user"] = .string(user) }
         let headers = combineHeaders(try await config.headers().mapValues(Optional.some), options.headers?.mapValues(Optional.some)).compactMapValues { $0 }
         let response = try await postJsonToAPI(url: try config.url(.init(modelId: modelId, path: "/embeddings")), headers: headers,

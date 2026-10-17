@@ -41,6 +41,15 @@ struct OpenAIToolValidationTests {
         }
     }
 
+    @Test("Shell limits require representable integer inputs", arguments: [0.5, 1e20])
+    func integerShellLimits(_ limit: Double) async throws {
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await validateTypes(ValidateTypesOptions(value: JSONValue.object([
+                "action": .object(["commands": .array([.string("pwd")]), "maxOutputLength": .number(limit)])
+            ]), schema: openaiTools.shell().inputSchema))
+        }
+    }
+
     @Test("Tool validation rejects missing operation fields and explicit null optional fields")
     func invalidInputs() async throws {
         await #expect(throws: TypeValidationError.self) {

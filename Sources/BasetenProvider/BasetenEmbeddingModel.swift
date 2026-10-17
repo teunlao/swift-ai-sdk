@@ -24,12 +24,12 @@ final class BasetenEmbeddingModel: EmbeddingModelV4 {
     let specificationVersion = "v4"
     let provider = "baseten.embedding"
     let modelId: String
-    private let client: any BasetenPerformanceClient
+    private let client: @Sendable () throws -> any BasetenPerformanceClient
     var maxEmbeddingsPerCall: Int? { get async throws { nil } }
     var supportsParallelCalls: Bool { get async throws { true } }
-    init(modelId: String, client: any BasetenPerformanceClient) { self.modelId = modelId; self.client = client }
+    init(modelId: String, client: @escaping @Sendable () throws -> any BasetenPerformanceClient) { self.modelId = modelId; self.client = client }
     func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
-        let response = try await client.embed(input: options.values, model: modelId)
+        let response = try await client().embed(input: options.values, model: modelId)
         let body = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response))
         return .init(embeddings: response.data.map(\.embedding), usage: response.usage?.totalTokens.map { .init(tokens: $0) },
                      response: .init(headers: [:], body: body), warnings: [])

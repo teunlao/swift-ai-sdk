@@ -18,7 +18,7 @@ let xaiImageGenerationArgsSchema = FlexibleSchema(Schema<XAIImageGenerationArgs>
 
 let xaiImageGenerationToolFactory = createProviderExecutedToolFactory(
     id: "xai.image_generation", name: "image_generation",
-    inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object"), "properties": .object([:])]))),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(.object([
         "type": .string("object"), "required": .array([.string("result")]),
         "properties": .object(["result": .object(["type": .string("string")]), "prompt": .object(["type": .string("string")])])

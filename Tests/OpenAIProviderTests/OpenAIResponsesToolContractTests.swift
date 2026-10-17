@@ -245,22 +245,14 @@ struct OpenAIResponsesToolContractTests {
         }
     }
 
-    @Test("File search preserves numeric limits on the HTTP boundary", arguments: [2.5, 1e20])
+    @Test("File search requires representable integer limits", arguments: [2.5, 1e20])
     func fileSearchNumericLimit(limit: Double) async throws {
         let capture = Capture()
-        let result = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(
-            prompt: [.user(content: [.text(.init(text: "Search"))], providerOptions: nil)],
-            tools: [.provider(.init(id: "openai.file_search", name: "documents", args: [
+        await #expect(throws: TypeValidationError.self) {
+            _ = try await provider(capture).responses("gpt-4.1").doGenerate(options: .init(prompt: [], tools: [.provider(.init(id: "openai.file_search", name: "documents", args: [
                 "vectorStoreIds": .array([.string("vs_documents")]), "maxNumResults": .number(limit)
-            ]))]
-        ))
-        #expect(result.finishReason.unified == .stop)
-        let body = try #require(await capture.value())
-        guard case .object(let object) = body, case .array(let tools)? = object["tools"],
-              case .object(let tool)? = tools.first else { Issue.record("Missing file search wire tool"); return }
-        #expect(tool["type"] == .string("file_search"))
-        #expect(tool["max_num_results"] == .number(limit))
-        #expect(tool["vector_store_ids"] == .array([.string("vs_documents")]))
+            ]))]))
+        }
     }
 
     @Test("Fast service tier uses priority capabilities", arguments: ["gpt-4.1", "gpt-5-nano"])
@@ -378,8 +370,8 @@ struct OpenAIResponsesToolContractTests {
         let result = try await provider(capture).responses("gpt-6-astra").doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Compact this history"))], providerOptions: nil)],
             providerOptions: OpenAIProvider.responsesOptions(.init(
-                maxToolCalls: 3.5, promptCacheOptions: .init(ttl: .thirtyMinutes), promptCacheRetention: "24h",
-                contextManagement: [.init(compactThreshold: 2.5)], compactionTrigger: true
+                maxToolCalls: 3, promptCacheOptions: .init(ttl: .thirtyMinutes), promptCacheRetention: "24h",
+                contextManagement: [.init(compactThreshold: 2)], compactionTrigger: true
             ))
         ))
         guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"] else {
@@ -387,10 +379,10 @@ struct OpenAIResponsesToolContractTests {
         }
         #expect(input.count == 2)
         #expect(input.last == .object(["type": .string("compaction_trigger")]))
-        #expect(body["context_management"] == .array([.object(["type": .string("compaction"), "compact_threshold": .number(2.5)])]))
+        #expect(body["context_management"] == .array([.object(["type": .string("compaction"), "compact_threshold": .number(2)])]))
         #expect(body["prompt_cache_options"] == .object(["ttl": .string("30m")]))
         #expect(body["prompt_cache_retention"] == nil)
-        #expect(body["max_tool_calls"] == .number(3.5))
+        #expect(body["max_tool_calls"] == .number(3))
         #expect(result.warnings.contains { if case .unsupported("promptCacheRetention", _) = $0 { return true }; return false })
     }
 

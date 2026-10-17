@@ -2,7 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allowNull: Bool = false) throws -> Double? {
+private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allowNull: Bool = false) throws -> Int? {
     guard let value = dict[key] else { return nil }
     if value == .null {
         if allowNull {
@@ -11,11 +11,11 @@ private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allow
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
-    guard case .number(let number) = value, number.isFinite else {
+    guard case .number(let number) = value, let integer = Int(exactly: number) else {
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
-    return number
+    return integer
 }
 
 private func parseOptionalString(_ dict: [String: JSONValue], key: String, allowNull: Bool = false) throws -> String? {
@@ -35,10 +35,10 @@ private func parseOptionalString(_ dict: [String: JSONValue], key: String, allow
 }
 
 public struct OpenAIEmbeddingModelOptions: Sendable, Equatable {
-    public let dimensions: Double?
+    public let dimensions: Int?
     public let user: String?
 
-    public init(dimensions: Double? = nil, user: String? = nil) {
+    public init(dimensions: Int? = nil, user: String? = nil) {
         self.dimensions = dimensions
         self.user = user
     }
@@ -49,7 +49,7 @@ private let openaiEmbeddingProviderOptionsJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(true),
     "properties": .object([
         "dimensions": .object([
-            "type": .string("number")
+            "type": .string("integer")
         ]),
         "user": .object([
             "type": .string("string")

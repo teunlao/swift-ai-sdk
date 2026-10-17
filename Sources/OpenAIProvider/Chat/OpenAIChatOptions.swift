@@ -4,7 +4,7 @@ import AISDKProviderUtils
 
 public enum OpenAIChatLogprobsOption: Sendable, Equatable, Encodable {
     case bool(Bool)
-    case number(Double)
+    case number(Int)
 
     public func encode(to encoder: Encoder) throws { try jsonValue.encode(to: encoder) }
 
@@ -13,7 +13,7 @@ public enum OpenAIChatLogprobsOption: Sendable, Equatable, Encodable {
         case .bool(let flag):
             return .bool(flag)
         case .number(let value):
-            return .number(value)
+            return .number(Double(value))
         }
     }
 }
@@ -60,7 +60,7 @@ public struct OpenAILanguageModelChatOptions: Sendable, Equatable, Encodable {
     public var parallelToolCalls: Bool?
     public var user: String?
     public var reasoningEffort: OpenAIChatReasoningEffort?
-    public var maxCompletionTokens: Double?
+    public var maxCompletionTokens: Int?
     public var store: Bool?
     public var metadata: [String: String]?
     public var prediction: [String: JSONValue]?
@@ -80,7 +80,7 @@ public struct OpenAILanguageModelChatOptions: Sendable, Equatable, Encodable {
         parallelToolCalls: Bool? = nil,
         user: String? = nil,
         reasoningEffort: OpenAIChatReasoningEffort? = nil,
-        maxCompletionTokens: Double? = nil,
+        maxCompletionTokens: Int? = nil,
         store: Bool? = nil,
         metadata: [String: String]? = nil,
         prediction: [String: JSONValue]? = nil,
@@ -196,8 +196,8 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAILanguageModelChatOpti
                     switch logprobsValue {
                     case .bool(let flag):
                         result.logprobs = .bool(flag)
-                    case .number(let number) where number.isFinite:
-                        result.logprobs = .number(number)
+                    case .number(let number) where Int(exactly: number) != nil:
+                        result.logprobs = .number(Int(exactly: number)!)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
                         return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))
@@ -230,11 +230,11 @@ let openAIChatProviderOptionsSchema = FlexibleSchema<OpenAILanguageModelChatOpti
                 }
 
                 if let maxCompletionTokens = try field("maxCompletionTokens", message: "maxCompletionTokens must be a number") {
-                    guard case .number(let number) = maxCompletionTokens, number.isFinite else {
+                    guard case .number(let number) = maxCompletionTokens, let integer = Int(exactly: number) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "maxCompletionTokens must be a number")
                         return .failure(error: TypeValidationError.wrap(value: maxCompletionTokens, cause: error))
                     }
-                    result.maxCompletionTokens = number
+                    result.maxCompletionTokens = integer
                 }
 
                 if let storeValue = try field("store", message: "store must be a boolean") {

@@ -86,14 +86,13 @@ struct BasetenProviderTests {
 
     // MARK: - embeddingModel Tests
 
-    @Test("should throw error when no modelURL is provided")
-    func throwErrorWhenNoModelURLIsProvided() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        #expect(throws: (any Error).self) {
-            _ = try provider.embeddingModel()
+    @Test("missing embedding URL fails at request time", arguments: [false, true])
+    func missingEmbeddingURL(_ native: Bool) async throws {
+        let constructor: BasetenPerformanceClientConstructor = { _, _ in BasetenEmbeddingContractsTests.NativeClient() }
+        let provider = createBaseten(settings: .init(apiKey: "key", performanceClient: native ? constructor : nil))
+        let model = try provider.embeddingModel()
+        await #expect(throws: BasetenProviderError.self) {
+            _ = try await model.doEmbed(options: .init(values: ["hello"]))
         }
     }
 
@@ -551,17 +550,6 @@ struct BasetenProviderTests {
 
     // MARK: - Error handling Tests
 
-    @Test("should handle missing modelURL for embeddings gracefully")
-    func handleMissingModelURLForEmbeddingsGracefully() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        #expect(throws: (any Error).self) {
-            _ = try provider.embeddingModel()
-        }
-    }
-
     @Test("should handle unsupported image models")
     func handleUnsupportedImageModels() throws {
         let provider = createBaseten(settings: BasetenProviderSettings(
@@ -575,31 +563,28 @@ struct BasetenProviderTests {
 
     // MARK: - Provider interface Tests
 
-    @Test("should implement all required provider methods")
-    func implementAllRequiredProviderMethods() throws {
-        let provider = createBaseten(settings: BasetenProviderSettings(
-            apiKey: "test-api-key"
-        ))
-
-        // Provider should be callable
-        _ = try provider.chat()
-        _ = try provider("test-model")
-
-        // All methods should exist and be callable
-        _ = try provider.chatModel(modelId: "test-model")
-        _ = try provider.languageModel()
-
-        #expect(throws: (any Error).self) {
-            _ = try provider.embeddingModel()
-        }
-
-        #expect(throws: NoSuchModelError.self) {
-            _ = try provider.imageModel(modelId: "test")
-        }
-    }
-
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
+        @Test("native embedding credentials load when the request starts")
+        func nativeEmbeddingCredentials() async throws {
+            let original = getenv("BASETEN_API_KEY").flatMap { String(validatingCString: $0) }
+            defer {
+                if let original { setenv("BASETEN_API_KEY", original, 1) } else { unsetenv("BASETEN_API_KEY") }
+            }
+            unsetenv("BASETEN_API_KEY")
+            let provider = createBaseten(settings: .init(modelURL: "https://deployment.example.com/sync", performanceClient: { _, key in
+                #expect(key == "runtime-key")
+                return BasetenEmbeddingContractsTests.NativeClient()
+            }))
+            let model = try provider.embeddingModel()
+            await #expect(throws: LoadAPIKeyError.self) {
+                _ = try await model.doEmbed(options: .init(values: ["hello"]))
+            }
+            setenv("BASETEN_API_KEY", "runtime-key", 1)
+            let result = try await model.doEmbed(options: .init(values: ["hello"]))
+            #expect(result.embeddings == [[3, 4]])
+        }
+
         @Test("missing API key throws LoadAPIKeyError at request time")
         func missingAPIKeyThrowsAtRequestTime() async throws {
             actor RequestCapture {

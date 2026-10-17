@@ -169,7 +169,7 @@ let package = Package(
         .testTarget(name: "HumeProviderTests", dependencies: ["HumeProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "LumaProviderTests", dependencies: ["LumaProvider", "AISDKProvider", "AISDKProviderUtils"]),
         .testTarget(name: "AssemblyAIProviderTests", dependencies: ["AssemblyAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
-        .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils"]),
+        .testTarget(name: "XAIProviderTests", dependencies: ["XAIProvider", "AISDKProvider", "AISDKProviderUtils", "SwiftAISDK"]),
         .testTarget(name: "AzureProviderTests", dependencies: ["AzureProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAIProvider"]),
         .testTarget(name: "CerebrasProviderTests", dependencies: ["CerebrasProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .testTarget(name: "DeepSeekProviderTests", dependencies: ["DeepSeekProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),

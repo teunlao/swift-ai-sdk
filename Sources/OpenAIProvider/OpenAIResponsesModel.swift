@@ -524,6 +524,18 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             supportsAsyncToolCalling: modelCapabilities.supportsAsyncToolCalling
         )
 
+        let configurationUpdateUnsupportedReason: String?
+        if !modelCapabilities.supportsConfigurationUpdate {
+            configurationUpdateUnsupportedReason = "reasoningEffortUpdate is only supported by GPT-6 and later models"
+        } else if openAIOptions?.reasoningMode == .pro || openAIOptions?.contextManagement != nil || openAIOptions?.truncation == "auto" {
+            configurationUpdateUnsupportedReason = "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
+        } else { configurationUpdateUnsupportedReason = nil }
+
+        func updateEffortUnsupportedReason(_ effort: String) -> String? {
+            guard let supported = modelCapabilities.supportedReasoningEfforts, !supported.contains(effort) else { return nil }
+            return "\(modelId) only supports the following reasoning efforts: \(supported.joined(separator: ", "))"
+        }
+
         var (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: options.prompt,
             providerOptionsName: providerOptionsName,
@@ -542,9 +554,29 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             hasComputerTool: containsProviderTool(options.tools, id: "openai.computer"),
             explicitMessageItemType: config.explicitMessageItemType ?? false,
             isReasoningModel: isReasoningModel,
+            configurationUpdateUnsupportedReason: configurationUpdateUnsupportedReason,
             toolSearchToolName: toolSearchToolName
         )
         warnings.append(contentsOf: inputWarnings)
+        for item in input where item.objectValue?["type"] == .string("configuration_update") {
+            if let effort = item.objectValue?["reasoning"]?.objectValue?["effort"]?.stringValue,
+               let reason = updateEffortUnsupportedReason(effort) {
+                throw UnsupportedFunctionalityError(functionality: "Message-level reasoningEffortUpdate", message: reason)
+            }
+        }
+        if let effort = openAIOptions?.reasoningEffortUpdate {
+            if let reason = configurationUpdateUnsupportedReason ?? updateEffortUnsupportedReason(effort) {
+                addUnsupportedSetting("reasoningEffortUpdate", details: reason)
+            } else {
+                let update: JSONValue = .object(["type": .string("configuration_update"), "reasoning": .object(["effort": .string(effort)])])
+                if input.first != update { input.insert(update, at: 0) }
+            }
+        }
+        for (first, second) in zip(input, input.dropFirst()) {
+            if first.objectValue?["type"] == .string("configuration_update"), second.objectValue?["type"] == .string("configuration_update") {
+                throw UnsupportedFunctionalityError(functionality: "Adjacent reasoning effort configuration updates")
+            }
+        }
         if openAIOptions?.compactionTrigger == true { input.append(.object(["type": .string("compaction_trigger")])) }
 
         let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
@@ -556,11 +588,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             else if !include!.contains(value) { include!.append(value) }
         }
 
-        var topLogprobs: Double?
+        var topLogprobs: Int?
         if let logprobs = openAIOptions?.logprobs {
             switch logprobs {
             case .bool(let flag) where flag:
-                topLogprobs = Double(TOP_LOGPROBS_MAX)
+                topLogprobs = TOP_LOGPROBS_MAX
             case .bool:
                 break
             case .number(let value):
@@ -652,7 +684,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             contextManagement: openAIOptions?.contextManagement?.map { item in
                 .object([
                     "type": .string(item.type),
-                    "compact_threshold": .number(item.compactThreshold)
+                    "compact_threshold": .number(Double(item.compactThreshold))
                 ])
             },
             tools: preparedTools.tools,
@@ -675,7 +707,11 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         }
 
         if isReasoningModel {
-            let allowsNonReasoningParameters = resolvedReasoningEffort == "none"
+            var effectiveReasoningEffort = resolvedReasoningEffort
+            for item in input where item.objectValue?["type"] == .string("configuration_update") {
+                effectiveReasoningEffort = item.objectValue?["reasoning"]?.objectValue?["effort"]?.stringValue
+            }
+            let allowsNonReasoningParameters = effectiveReasoningEffort == "none"
                 && modelCapabilities.supportsNonReasoningParameters
 
             if !allowsNonReasoningParameters {
@@ -1347,6 +1383,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 )))
 
             case "apply_patch_call":
+                hasFunctionCall = true
                 guard let toolCallId = object["call_id"]?.stringValue,
                       let operation = object["operation"],
                       let itemId = object["id"]?.stringValue else {
@@ -2177,6 +2214,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             }
 
             if status == "completed" {
+                hasFunctionCall = true
                 let inputValue: JSONValue = .object([
                     "callId": .string(callId),
                     "operation": operation
@@ -2656,20 +2694,32 @@ private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?
 
     let inputTokens = usage.inputTokens
     let outputTokens = usage.outputTokens
-    let cachedTokens = usage.inputTokensDetails?.cachedTokens ?? 0
-    let cacheWriteTokens = usage.inputTokensDetails?.cacheWriteTokens
-    let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
+    func count(_ value: JSONValue?, missing: Int? = nil) -> Int? {
+        guard let value, value != .null else { return missing }
+        guard case .number(let number) = value else { return nil }
+        return Int(exactly: number)
+    }
+    func subtract(_ total: Int?, _ part: Int?) -> Int? {
+        guard let total, let part else { return nil }
+        let result = total.subtractingReportingOverflow(part)
+        return result.overflow ? nil : result.partialValue
+    }
+    let details = usage.rawValue.objectValue
+    let cachedTokens = count(details?["input_tokens_details"]?.objectValue?["cached_tokens"], missing: 0)
+    let cacheWriteValue = details?["input_tokens_details"]?.objectValue?["cache_write_tokens"]
+    let cacheWriteTokens = count(cacheWriteValue)
+    let reasoningTokens = count(details?["output_tokens_details"]?.objectValue?["reasoning_tokens"], missing: 0)
 
     return LanguageModelV4Usage(
         inputTokens: .init(
             total: inputTokens,
-            noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),
+            noCache: subtract(subtract(inputTokens, cachedTokens), count(cacheWriteValue, missing: 0)),
             cacheRead: cachedTokens,
             cacheWrite: cacheWriteTokens
         ),
         outputTokens: .init(
             total: outputTokens,
-            text: outputTokens - reasoningTokens,
+            text: subtract(outputTokens, reasoningTokens),
             reasoning: reasoningTokens
         ),
         raw: usage.rawValue

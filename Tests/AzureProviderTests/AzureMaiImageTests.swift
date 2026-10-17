@@ -179,14 +179,20 @@ struct AzureMaiImageTests {
         #expect(error?.argument == "providerOptions")
     }
 
-    @Test("Overflowing MAI usage is a typed response failure")
-    func usageOverflow() async throws {
+    @Test("Anomalous MAI usage preserves images and raw counts", arguments: ["5000000000000000000", "1e20", "0.5"])
+    func usageOverflow(_ count: String) async throws {
         let provider = try createAzure(settings: .init(resourceName: "resource", apiKey: "key", fetch: {
-            maiResponse($0, body: #"{"usage":{"num_input_text_tokens":5000000000000000000,"num_output_tokens":5000000000000000000},"data":[{"b64_json":"image"}]}"#)
+            maiResponse($0, body: "{\"usage\":{\"num_input_text_tokens\":\(count),\"num_output_tokens\":5000000000000000000},\"data\":[{\"b64_json\":\"image\"}]}")
         }))
-        _ = await #expect(throws: InvalidResponseDataError.self) {
-            try await provider.image("MAI-Image-2.6").doGenerate(options: .init(n: 1))
-        }
+        let result = try await provider.image("MAI-Image-2.6").doGenerate(options: .init(n: 1))
+        #expect(result.images == .base64(["image"]))
+        #expect(result.usage?.inputTokens == (count == "5000000000000000000" ? 5_000_000_000_000_000_000 : nil))
+        #expect(result.usage?.outputTokens == 5_000_000_000_000_000_000)
+        #expect(result.usage?.totalTokens == nil)
+        #expect(result.providerMetadata?["azure"]?.additionalData == .object(["usage": .array([.object([
+            "num_input_text_tokens": .number(try #require(Double(count))),
+            "num_output_tokens": .number(5e18)
+        ])])]))
     }
 
     @Test("Cancelling MAI generation releases its active API request", arguments: [false, true])

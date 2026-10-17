@@ -5,7 +5,7 @@ import AISDKProviderUtils
 public struct OpenAILocalShellAction: Codable, Sendable, Equatable {
     public let type: String
     public let command: [String]
-    public let timeoutMs: Double?
+    public let timeoutMs: Int?
     public let user: String?
     public let workingDirectory: String?
     public let env: [String: String]?
@@ -38,7 +38,7 @@ private let localShellInputJSONSchema: JSONValue = .object([
                     "items": .object(["type": .string("string")])
                 ]),
                 "timeoutMs": .object([
-                    "type": .string("number")
+                    "type": .string("integer")
                 ]),
                 "user": .object([
                     "type": .string("string")

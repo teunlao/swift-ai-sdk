@@ -130,14 +130,14 @@ public enum OpenAIResponsesReasoningContext: String, Sendable, Equatable {
 
 public enum OpenAIResponsesLogprobsOption: Sendable, Equatable {
     case bool(Bool)
-    case number(Double)
+    case number(Int)
 }
 
 public struct OpenAIResponsesContextManagement: Sendable, Equatable {
     public var type: String
-    public var compactThreshold: Double
+    public var compactThreshold: Int
 
-    public init(type: String = "compaction", compactThreshold: Double) {
+    public init(type: String = "compaction", compactThreshold: Int) {
         self.type = type
         self.compactThreshold = compactThreshold
     }
@@ -159,7 +159,7 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
     public var includeWebSearchSources: Bool?
     public var instructions: String?
     public var logprobs: OpenAIResponsesLogprobsOption?
-    public var maxToolCalls: Double?
+    public var maxToolCalls: Int?
     public var metadata: JSONValue?
     public var parallelToolCalls: Bool?
     public var previousResponseId: String?
@@ -167,6 +167,7 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
     public var promptCacheOptions: OpenAIPromptCacheOptions?
     public var promptCacheRetention: String?
     public var reasoningEffort: String?
+    public var reasoningEffortUpdate: String?
     public var reasoningMode: OpenAIResponsesReasoningMode?
     public var reasoningContext: OpenAIResponsesReasoningContext?
     public var reasoningSummary: String?
@@ -191,7 +192,7 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
         includeWebSearchSources: Bool? = nil,
         instructions: String? = nil,
         logprobs: OpenAIResponsesLogprobsOption? = nil,
-        maxToolCalls: Double? = nil,
+        maxToolCalls: Int? = nil,
         metadata: JSONValue? = nil,
         parallelToolCalls: Bool? = nil,
         previousResponseId: String? = nil,
@@ -199,6 +200,7 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
         promptCacheOptions: OpenAIPromptCacheOptions? = nil,
         promptCacheRetention: String? = nil,
         reasoningEffort: String? = nil,
+        reasoningEffortUpdate: String? = nil,
         reasoningMode: OpenAIResponsesReasoningMode? = nil,
         reasoningContext: OpenAIResponsesReasoningContext? = nil,
         reasoningSummary: String? = nil,
@@ -229,6 +231,7 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
         self.promptCacheOptions = promptCacheOptions
         self.promptCacheRetention = promptCacheRetention
         self.reasoningEffort = reasoningEffort
+        self.reasoningEffortUpdate = reasoningEffortUpdate
         self.reasoningMode = reasoningMode
         self.reasoningContext = reasoningContext
         self.reasoningSummary = reasoningSummary
@@ -247,6 +250,36 @@ public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
         self.allowedTools = allowedTools
     }
 }
+
+public struct OpenAIResponsesSystemMessageOptions: Sendable, Equatable {
+    public var reasoningEffortUpdate: String?
+    public init(reasoningEffortUpdate: String? = nil) { self.reasoningEffortUpdate = reasoningEffortUpdate }
+}
+
+private let reasoningEffortUpdateJSONSchema: JSONValue = .object([
+    "type": .string("string"),
+    "enum": .array(["none", "low", "medium", "high", "xhigh", "max"].map(JSONValue.string))
+])
+
+private func parseReasoningEffortUpdate(_ dict: JSONObject) throws -> String? {
+    guard let effort = try parseOptionalString(dict, key: "reasoningEffortUpdate", allowNull: false) else { return nil }
+    guard ["none", "low", "medium", "high", "xhigh", "max"].contains(effort) else {
+        throw InvalidArgumentError(argument: "reasoningEffortUpdate", message: "Unsupported reasoning effort update: \(effort)")
+    }
+    return effort
+}
+
+public let openAIResponsesSystemMessageOptionsSchema = FlexibleSchema<OpenAIResponsesSystemMessageOptions>(
+    jsonSchema(.object(["type": .string("object"), "properties": .object(["reasoningEffortUpdate": reasoningEffortUpdateJSONSchema])]), validate: { value in
+        do {
+            let json = try jsonValue(from: value)
+            guard case .object(let dict) = json else {
+                throw InvalidArgumentError(argument: "providerOptions", message: "Expected system message options object")
+            }
+            return .success(value: .init(reasoningEffortUpdate: try parseReasoningEffortUpdate(dict)))
+        } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+    })
+)
 
 private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -270,11 +303,11 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "logprobs": .object([
             "anyOf": .array([
                 .object(["type": .string("boolean")]),
-                .object(["type": .string("number"), "minimum": .number(1), "maximum": .number(Double(TOP_LOGPROBS_MAX))])
+                .object(["type": .string("integer"), "minimum": .number(1), "maximum": .number(Double(TOP_LOGPROBS_MAX))])
             ])
         ]),
         "maxToolCalls": .object([
-            "type": .array([.string("number"), .string("null")])
+            "type": .array([.string("integer"), .string("null")])
         ]),
         "metadata": .object([
             "type": .array([.string("object"), .string("array"), .string("string"), .string("number"), .string("boolean"), .string("null")])
@@ -301,6 +334,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
         "reasoningEffort": .object([
             "type": .array([.string("string"), .string("null")])
         ]),
+        "reasoningEffortUpdate": reasoningEffortUpdateJSONSchema,
         "reasoningMode": .object([
             "type": .string("string"),
             "enum": .array([.string("standard"), .string("pro")])
@@ -348,7 +382,7 @@ private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
                 "type": .string("object"),
                 "properties": .object([
                     "type": .object(["const": .string("compaction")]),
-                    "compactThreshold": .object(["type": .string("number")])
+                    "compactThreshold": .object(["type": .string("integer")])
                 ]),
                 "required": .array([.string("type"), .string("compactThreshold")])
             ])
@@ -445,6 +479,7 @@ private func parseResponsesOptions(dict: [String: JSONValue]) throws -> OpenAILa
         options.promptCacheRetention = retention
     }
     options.reasoningEffort = try parseOptionalString(dict, key: "reasoningEffort")
+    options.reasoningEffortUpdate = try parseReasoningEffortUpdate(dict)
     if let reasoningMode = try parseOptionalString(dict, key: "reasoningMode", allowNull: false) {
         guard let value = OpenAIResponsesReasoningMode(rawValue: reasoningMode) else {
             throw TypeValidationError.wrap(value: reasoningMode, cause: SchemaValidationIssuesError(vendor: "openai", issues: "invalid reasoningMode"))
@@ -525,10 +560,10 @@ private func parseResponsesOptions(dict: [String: JSONValue]) throws -> OpenAILa
         case .bool(let value):
             options.logprobs = .bool(value)
         case .number(let number):
-            if !number.isFinite || number < 1 || number > Double(TOP_LOGPROBS_MAX) {
+            guard let integer = Int(exactly: number), (1...TOP_LOGPROBS_MAX).contains(integer) else {
                 throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be between 1 and 20"))
             }
-            options.logprobs = .number(number)
+            options.logprobs = .number(integer)
         default:
             throw TypeValidationError.wrap(value: logprobsValue, cause: SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number"))
         }
@@ -551,7 +586,7 @@ private func parseContextManagement(_ value: JSONValue?) throws -> [OpenAIRespon
         guard case .string("compaction")? = object["type"] else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.type must be compaction"))
         }
-        guard case .number(let threshold)? = object["compactThreshold"], threshold.isFinite else {
+        guard case .number(let number)? = object["compactThreshold"], let threshold = Int(exactly: number) else {
             throw TypeValidationError.wrap(value: item, cause: SchemaValidationIssuesError(vendor: "openai", issues: "contextManagement.compactThreshold must be a number"))
         }
         return OpenAIResponsesContextManagement(compactThreshold: threshold)
@@ -617,7 +652,7 @@ private func parseOptionalBool(_ dict: [String: JSONValue], key: String, allowNu
     return boolValue
 }
 
-private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> Double? {
+private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allowNull: Bool = true) throws -> Int? {
     guard let value = dict[key] else { return nil }
     if value == .null {
         if allowNull {
@@ -625,8 +660,8 @@ private func parseOptionalNumber(_ dict: [String: JSONValue], key: String, allow
         }
         throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
     }
-    guard case .number(let number) = value, number.isFinite else {
-        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number"))
+    guard case .number(let number) = value, let integer = Int(exactly: number) else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a representable integer"))
     }
-    return number
+    return integer
 }

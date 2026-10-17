@@ -32,7 +32,7 @@ public final class OpenAIEmbeddingModel: EmbeddingModelV4, EmbeddingModelMaxInpu
             headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: OpenAIEmbeddingRequestBody(
                 model: modelId, input: options.values,
-                dimensions: openAIOptions?.dimensions ?? options.dimensions.map(Double.init),
+                dimensions: openAIOptions?.dimensions ?? options.dimensions,
                 user: openAIOptions?.user
             ),
             failedResponseHandler: openAIFailedResponseHandler,

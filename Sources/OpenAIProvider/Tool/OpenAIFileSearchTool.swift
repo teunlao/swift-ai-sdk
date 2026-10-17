@@ -13,11 +13,11 @@ public struct OpenAIFileSearchArgs: Codable, Sendable, Equatable {
     }
 
     public let vectorStoreIds: [String]
-    public let maxNumResults: Double?
+    public let maxNumResults: Int?
     public let ranking: RankingOptions?
     public let filters: JSONValue?
 
-    public init(vectorStoreIds: [String], maxNumResults: Double? = nil, ranking: RankingOptions? = nil, filters: JSONValue? = nil) {
+    public init(vectorStoreIds: [String], maxNumResults: Int? = nil, ranking: RankingOptions? = nil, filters: JSONValue? = nil) {
         self.vectorStoreIds = vectorStoreIds
         self.maxNumResults = maxNumResults
         self.ranking = ranking
@@ -56,7 +56,7 @@ private let fileSearchArgsJSONSchema: JSONValue = .object([
     "$defs": .object(["filter": fileSearchFilterSchema]),
     "properties": .object([
         "vectorStoreIds": fileSearchStrings,
-        "maxNumResults": .object(["type": .string("number")]),
+        "maxNumResults": .object(["type": .string("integer")]),
         "ranking": .object([
             "type": .string("object"), "additionalProperties": .bool(false),
             "properties": .object([
@@ -96,7 +96,7 @@ public let openaiFileSearchToolFactory = createProviderExecutedToolFactory(
 ) { (args: OpenAIFileSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args["vectorStoreIds"] = .array(args.vectorStoreIds.map(JSONValue.string))
-    if let value = args.maxNumResults { options.args["maxNumResults"] = .number(value) }
+    if let value = args.maxNumResults { options.args["maxNumResults"] = .number(Double(value)) }
     if let ranking = args.ranking {
         var payload: [String: JSONValue] = [:]
         if let value = ranking.ranker { payload["ranker"] = .string(value) }

@@ -5,8 +5,8 @@ import AISDKProviderUtils
 public struct OpenAIShellInput: Codable, Sendable, Equatable {
     public struct Action: Codable, Sendable, Equatable {
         public let commands: [String]
-        public let timeoutMs: Double?
-        public let maxOutputLength: Double?
+        public let timeoutMs: Int?
+        public let maxOutputLength: Int?
     }
     public let action: Action
 }
@@ -27,7 +27,7 @@ public struct OpenAIShellArgs: Codable, Sendable, Equatable {
 
 public enum OpenAIShellOutcome: Codable, Sendable, Equatable {
     case timeout
-    case exit(exitCode: Double)
+    case exit(exitCode: Int)
 
     private enum CodingKeys: String, CodingKey { case type, exitCode }
 
@@ -35,7 +35,7 @@ public enum OpenAIShellOutcome: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(String.self, forKey: .type) {
         case "timeout": self = .timeout
-        case "exit": self = .exit(exitCode: try container.decode(Double.self, forKey: .exitCode))
+        case "exit": self = .exit(exitCode: try container.decode(Int.self, forKey: .exitCode))
         default: throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown shell outcome type")
         }
     }
@@ -57,7 +57,7 @@ private let shellInputJSONSchema: JSONValue = .object([
     "properties": .object(["action": .object([
         "type": .string("object"), "additionalProperties": .bool(false), "required": .array([.string("commands")]),
         "properties": .object([
-            "commands": shellStrings, "timeoutMs": .object(["type": .string("number")]), "maxOutputLength": .object(["type": .string("number")])
+            "commands": shellStrings, "timeoutMs": .object(["type": .string("integer")]), "maxOutputLength": .object(["type": .string("integer")])
         ])
     ])])
 ])
@@ -72,7 +72,7 @@ private let shellOutputJSONSchema: JSONValue = .object([
                     .object(["type": .string("object"), "additionalProperties": .bool(false), "required": .array([.string("type")]),
                         "properties": .object(["type": .object(["enum": .array([.string("timeout")])])])]),
                     .object(["type": .string("object"), "additionalProperties": .bool(false), "required": .array([.string("type"), .string("exitCode")]),
-                        "properties": .object(["type": .object(["enum": .array([.string("exit")])]), "exitCode": .object(["type": .string("number")])])])
+                        "properties": .object(["type": .object(["enum": .array([.string("exit")])]), "exitCode": .object(["type": .string("integer")])])])
                 ])])
             ])
         ])

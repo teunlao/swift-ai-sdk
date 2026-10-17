@@ -104,12 +104,6 @@ public let xaiWebSearchArgsSchema = FlexibleSchema(
     )
 )
 
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
-
 private let webSearchOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "properties": .object([
@@ -136,7 +130,7 @@ private let webSearchOutputJSONSchema: JSONValue = .object([
 public let xaiWebSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.web_search",
     name: "web_search",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
 ) { (args: XAIWebSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()

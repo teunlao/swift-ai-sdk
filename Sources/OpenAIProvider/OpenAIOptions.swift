@@ -22,10 +22,10 @@ public struct OpenAIOptions: Sendable {
         if let field = options.logprobs {
             switch field {
             case .bool(let flag): value["logprobs"] = .bool(flag)
-            case .number(let number): value["logprobs"] = .number(number)
+            case .number(let number): value["logprobs"] = .number(Double(number))
             }
         }
-        if let field = options.maxToolCalls { value["maxToolCalls"] = .number(field) }
+        if let field = options.maxToolCalls { value["maxToolCalls"] = .number(Double(field)) }
         if let field = options.metadata { value["metadata"] = field }
         if let field = options.parallelToolCalls { value["parallelToolCalls"] = .bool(field) }
         if let field = options.previousResponseId { value["previousResponseId"] = .string(field) }
@@ -33,6 +33,7 @@ public struct OpenAIOptions: Sendable {
         if let field = options.promptCacheOptions { value["promptCacheOptions"] = field.jsonValue }
         if let field = options.promptCacheRetention { value["promptCacheRetention"] = .string(field) }
         if let field = options.reasoningEffort { value["reasoningEffort"] = .string(field) }
+        if let field = options.reasoningEffortUpdate { value["reasoningEffortUpdate"] = .string(field) }
         if let field = options.reasoningMode { value["reasoningMode"] = .string(field.rawValue) }
         if let field = options.reasoningContext { value["reasoningContext"] = .string(field.rawValue) }
         if let field = options.reasoningSummary { value["reasoningSummary"] = .string(field) }
@@ -54,7 +55,7 @@ public struct OpenAIOptions: Sendable {
         if let field = options.forceReasoning { value["forceReasoning"] = .bool(field) }
         if let field = options.contextManagement {
             value["contextManagement"] = .array(field.map {
-                .object(["type": .string($0.type), "compactThreshold": .number($0.compactThreshold)])
+                .object(["type": .string($0.type), "compactThreshold": .number(Double($0.compactThreshold))])
             })
         }
         if let field = options.compactionTrigger { value["compactionTrigger"] = .bool(field) }

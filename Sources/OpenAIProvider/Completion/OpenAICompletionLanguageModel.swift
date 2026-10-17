@@ -155,7 +155,7 @@ public final class OpenAICompletionLanguageModel: LanguageModelV4 {
             switch value {
             case .bool(true): body["logprobs"] = .number(0)
             case .bool(false): break
-            case .number(let number): body["logprobs"] = .number(number)
+            case .number(let number): body["logprobs"] = .number(Double(number))
             }
         }
         if let value = options.maxOutputTokens { body["max_tokens"] = .number(Double(value)) }

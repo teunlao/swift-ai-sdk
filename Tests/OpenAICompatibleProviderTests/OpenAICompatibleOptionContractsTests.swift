@@ -47,15 +47,11 @@ struct OpenAICompatibleOptionContractsTests {
         }
     }
 
-    @Test func providerDimensionsAreForwardedWithoutIntegerCoercion() async throws {
-        let fetch: FetchFunction = { request in
-            let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
-            guard case .object(let object) = body else { throw CancellationError() }
-            #expect(object["dimensions"] == 1.5)
-            return FetchResponse(body: .data(Data(#"{"data":[{"embedding":[1]}]}"#.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+    @Test(arguments: [1.5, 1e20])
+    func providerDimensionsRequireIntegers(_ dimensions: Double) async throws {
+        let model = try createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom")).embeddingModel(modelId: "model")
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doEmbed(options: .init(values: ["value"], providerOptions: ["custom": ["dimensions": .number(dimensions)]]))
         }
-        let model = try createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom", fetch: fetch)).embeddingModel(modelId: "model")
-        let result = try await model.doEmbed(options: .init(values: ["value"], providerOptions: ["custom": ["dimensions": 1.5]]))
-        #expect(result.embeddings == [[1]])
     }
 }

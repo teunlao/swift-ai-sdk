@@ -207,7 +207,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV4 {
             switch value {
             case .bool(true): body["logprobs"] = .bool(true); body["top_logprobs"] = .number(0)
             case .bool(false): break
-            case .number(let count): body["logprobs"] = .bool(true); body["top_logprobs"] = .number(count)
+            case .number(let count): body["logprobs"] = .bool(true); body["top_logprobs"] = .number(Double(count))
             }
         }
         if let value = openAI?.parallelToolCalls { body["parallel_tool_calls"] = .bool(value) }
@@ -220,7 +220,7 @@ public final class OpenAIChatLanguageModel: LanguageModelV4 {
         if let value = openAI?.safetyIdentifier { body["safety_identifier"] = .string(value) }
         if let value = openAI?.metadata { body["metadata"] = .object(value.mapValues(JSONValue.string)) }
         if let value = openAI?.prediction { body["prediction"] = .object(value) }
-        if let value = openAI?.maxCompletionTokens { body["max_completion_tokens"] = .number(value) }
+        if let value = openAI?.maxCompletionTokens { body["max_completion_tokens"] = .number(Double(value)) }
         if case .json(let schema, let name, let description) = options.responseFormat {
             if let schema {
                 let normalized = try normalizeOpenAIJsonSchema(schema)

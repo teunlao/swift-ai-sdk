@@ -9,20 +9,22 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Us
         return LanguageModelV4Usage(raw: usage)
     }
 
-    func intOrZero(_ value: JSONValue?) -> Int {
+    func intOrZero(_ value: JSONValue?) -> Int? {
         guard let value, value != .null else { return 0 }
-        switch value {
-        case .number(let number):
-            return Int(number)
-        default:
-            return 0
-        }
+        guard case .number(let number) = value else { return nil }
+        return Int(exactly: number)
+    }
+
+    func subtract(_ total: Int?, _ part: Int?) -> Int? {
+        guard let total, let part else { return nil }
+        let difference = total.subtractingReportingOverflow(part)
+        return difference.overflow ? nil : difference.partialValue
     }
 
     let promptTokens = intOrZero(dict["prompt_tokens"])
     let completionTokens = intOrZero(dict["completion_tokens"])
 
-    let cacheReadTokens: Int = {
+    let cacheReadTokens: Int? = {
         if let cached = dict["cached_tokens"], cached != .null { return intOrZero(cached) }
 
         if case .object(let promptDetails)? = dict["prompt_tokens_details"] {
@@ -32,7 +34,7 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Us
         return 0
     }()
 
-    let reasoningTokens: Int = {
+    let reasoningTokens: Int? = {
         if case .object(let completionDetails)? = dict["completion_tokens_details"] {
             return intOrZero(completionDetails["reasoning_tokens"])
         }
@@ -42,13 +44,13 @@ public func convertMoonshotAIChatUsage(_ usage: JSONValue?) -> LanguageModelV4Us
     return LanguageModelV4Usage(
         inputTokens: .init(
             total: promptTokens,
-            noCache: promptTokens - cacheReadTokens,
+            noCache: subtract(promptTokens, cacheReadTokens),
             cacheRead: cacheReadTokens,
             cacheWrite: nil
         ),
         outputTokens: .init(
             total: completionTokens,
-            text: max(0, completionTokens - reasoningTokens),
+            text: subtract(completionTokens, reasoningTokens).map { max(0, $0) },
             reasoning: reasoningTokens
         ),
         raw: usage

@@ -2,12 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
-
 private let viewImageOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "required": .array([.string("description")]),
@@ -24,7 +18,7 @@ private let viewImageOutputJSONSchema: JSONValue = .object([
 public let xaiViewImageToolFactory = createProviderExecutedToolFactory(
     id: "xai.view_image",
     name: "view_image",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(viewImageOutputJSONSchema))
 )
 

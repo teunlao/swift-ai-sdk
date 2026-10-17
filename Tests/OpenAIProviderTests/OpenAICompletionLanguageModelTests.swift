@@ -64,7 +64,7 @@ struct OpenAICompletionLanguageModelTests {
         let expected: JSONValue = .object([
             "model": .string("instruct"), "prompt": .string("System\n\nuser:\nHello\n\nassistant:\nPrior\n\nassistant:\n"),
             "stop": .array([.string("\nuser:"), .string("END")]),
-            "echo": .bool(false), "logit_bias": .object(["token": .number(-4)]), "logprobs": .number(1.5),
+            "echo": .bool(false), "logit_bias": .object(["token": .number(-4)]), "logprobs": .number(1),
             "suffix": .string(""), "user": .string("base-user"), "max_tokens": .number(12),
             "temperature": .number(0.5), "top_p": .number(0.8), "frequency_penalty": .number(0.2),
             "presence_penalty": .number(0.3), "seed": .number(7)
@@ -91,7 +91,7 @@ struct OpenAICompletionLanguageModelTests {
             headers: ["X-Override": "request"], reasoning: .high,
             providerOptions: [
                 "openai": ["echo": .bool(true), "logitBias": .object(["token": .number(-4)]), "suffix": .string("base"), "user": .string("base-user"), "logprobs": .bool(true)],
-                "custom": ["echo": .bool(false), "suffix": .string(""), "logprobs": .number(1.5)]
+                "custom": ["echo": .bool(false), "suffix": .string(""), "logprobs": .number(1)]
             ]
         ))
         let requestBody = try #require(result.request?.body)

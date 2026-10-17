@@ -9,7 +9,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var topP: Double?
     var maxOutputTokens: Int?
     var text: JSONValue?
-    var maxToolCalls: Double?
+    var maxToolCalls: Int?
     var metadata: JSONValue?
     var parallelToolCalls: Bool?
     var previousResponseId: String?
@@ -23,7 +23,7 @@ struct OpenAIResponsesRequestBody: Encodable, Sendable {
     var promptCacheOptions: OpenAIPromptCacheOptions?
     var promptCacheRetention: String?
     var safetyIdentifier: String?
-    var topLogprobs: Double?
+    var topLogprobs: Int?
     var reasoning: JSONValue?
     var truncation: String?
     var contextManagement: [JSONValue]?

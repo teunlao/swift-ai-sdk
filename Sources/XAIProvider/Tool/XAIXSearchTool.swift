@@ -148,12 +148,6 @@ public let xaiXSearchArgsSchema = FlexibleSchema(
     )
 )
 
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
-
 private let xSearchOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "required": .array([.string("query"), .string("posts")]),
@@ -180,7 +174,7 @@ private let xSearchOutputJSONSchema: JSONValue = .object([
 public let xaiXSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.x_search",
     name: "x_search",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(xSearchOutputJSONSchema))
 ) { (args: XAIXSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()

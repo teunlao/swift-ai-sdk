@@ -2,12 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
-
 private let viewXVideoOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "required": .array([.string("description")]),
@@ -22,7 +16,7 @@ private let viewXVideoOutputJSONSchema: JSONValue = .object([
 public let xaiViewXVideoToolFactory = createProviderExecutedToolFactory(
     id: "xai.view_x_video",
     name: "view_x_video",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(viewXVideoOutputJSONSchema))
 )
 

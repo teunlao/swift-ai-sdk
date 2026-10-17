@@ -11,9 +11,9 @@ struct OpenAIFilesConfig: Sendable {
 
 public struct OpenAIFilesOptions: Sendable, Equatable {
     public var purpose: String?
-    public var expiresAfter: Double?
+    public var expiresAfter: Int?
 
-    public init(purpose: String? = nil, expiresAfter: Double? = nil) {
+    public init(purpose: String? = nil, expiresAfter: Int? = nil) {
         self.purpose = purpose
         self.expiresAfter = expiresAfter
     }
@@ -23,7 +23,7 @@ private let openAIFilesOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "properties": .object([
         "purpose": .object(["type": .string("string")]),
-        "expiresAfter": .object(["type": .string("number")])
+        "expiresAfter": .object(["type": .string("integer")])
     ]),
     "additionalProperties": .bool(true)
 ])
@@ -47,7 +47,7 @@ let openAIFilesOptionsSchema = FlexibleSchema<OpenAIFilesOptions>(
                     options.purpose = purpose
                 }
                 if let expiresAfterValue = dict["expiresAfter"] {
-                    guard case .number(let expiresAfter) = expiresAfterValue, expiresAfter.isFinite else {
+                    guard case .number(let number) = expiresAfterValue, let expiresAfter = Int(exactly: number) else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "expiresAfter must be a finite number")
                         return .failure(error: TypeValidationError.wrap(value: expiresAfterValue, cause: error))
                     }
@@ -149,7 +149,7 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
             var parts: [MultipartStreamPart] = [.field(name: "purpose", value: purpose)]
             if let expiry = openAIOptions?.expiresAfter {
                 parts.append(.field(name: "expires_after[anchor]", value: "created_at"))
-                parts.append(.field(name: "expires_after[seconds]", value: jsNumberString(expiry)))
+                parts.append(.field(name: "expires_after[seconds]", value: String(expiry)))
             }
             parts.append(.file(name: "file", filename: options.filename, mediaType: options.mediaType, content: .stream(stream)))
             response = try await postMultipartStreamToAPI(
@@ -165,7 +165,7 @@ public final class OpenAIFiles: FilesV4MetadataReader, FilesV4Downloader, FilesV
             builder.appendField(name: "purpose", value: purpose)
             var values: [String: Any] = ["file": data, "purpose": purpose]
             if let expiry = openAIOptions?.expiresAfter {
-                let seconds = jsNumberString(expiry)
+                let seconds = String(expiry)
                 builder.appendField(name: "expires_after[anchor]", value: "created_at")
                 builder.appendField(name: "expires_after[seconds]", value: seconds)
                 values["expires_after[anchor]"] = "created_at"

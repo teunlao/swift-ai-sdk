@@ -2,6 +2,17 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+let hostedToolInputSchema = FlexibleSchema<JSONValue>(jsonSchema(.object([
+    "type": .string("object"), "properties": .object([:]), "additionalProperties": .bool(false)
+]), validate: { value in
+    do {
+        guard case .object = try jsonValue(from: value) else {
+            throw InvalidArgumentError(argument: "input", message: "Expected an object")
+        }
+        return .success(value: .object([:]))
+    } catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
+}))
+
 public struct XAITools: Sendable {
     public init() {}
 

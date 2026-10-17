@@ -18,6 +18,13 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
                 case orchestrationInputTokens = "orchestration_input_tokens"
                 case orchestrationInputCachedTokens = "orchestration_input_cached_tokens"
             }
+            public init(from decoder: Decoder) throws {
+                let fields = try decoder.container(keyedBy: CodingKeys.self)
+                cachedTokens = try fields.decodeIfPresent(Double.self, forKey: .cachedTokens).flatMap { Int(exactly: $0) }
+                cacheWriteTokens = try fields.decodeIfPresent(Double.self, forKey: .cacheWriteTokens).flatMap { Int(exactly: $0) }
+                orchestrationInputTokens = try fields.decodeIfPresent(Double.self, forKey: .orchestrationInputTokens)
+                orchestrationInputCachedTokens = try fields.decodeIfPresent(Double.self, forKey: .orchestrationInputCachedTokens)
+            }
         }
 
         public struct OutputTokensDetails: Codable, Sendable {
@@ -28,10 +35,15 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
                 case reasoningTokens = "reasoning_tokens"
                 case orchestrationOutputTokens = "orchestration_output_tokens"
             }
+            public init(from decoder: Decoder) throws {
+                let fields = try decoder.container(keyedBy: CodingKeys.self)
+                reasoningTokens = try fields.decodeIfPresent(Double.self, forKey: .reasoningTokens).flatMap { Int(exactly: $0) }
+                orchestrationOutputTokens = try fields.decodeIfPresent(Double.self, forKey: .orchestrationOutputTokens)
+            }
         }
 
-        public let inputTokens: Int
-        public let outputTokens: Int
+        public let inputTokens: Int?
+        public let outputTokens: Int?
         public let totalTokens: Double?
         public let inputTokensDetails: InputTokensDetails?
         public let outputTokensDetails: OutputTokensDetails?
@@ -48,17 +60,11 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
         public init(from decoder: Decoder) throws {
             rawValue = try JSONValue(from: decoder)
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-            outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+            inputTokens = Int(exactly: try container.decode(Double.self, forKey: .inputTokens))
+            outputTokens = Int(exactly: try container.decode(Double.self, forKey: .outputTokens))
             totalTokens = try container.decodeIfPresent(Double.self, forKey: .totalTokens)
             inputTokensDetails = try container.decodeIfPresent(InputTokensDetails.self, forKey: .inputTokensDetails)
             outputTokensDetails = try container.decodeIfPresent(OutputTokensDetails.self, forKey: .outputTokensDetails)
-            let (uncached, readOverflow) = inputTokens.subtractingReportingOverflow(inputTokensDetails?.cachedTokens ?? 0)
-            let (_, writeOverflow) = uncached.subtractingReportingOverflow(inputTokensDetails?.cacheWriteTokens ?? 0)
-            let (_, textOverflow) = outputTokens.subtractingReportingOverflow(outputTokensDetails?.reasoningTokens ?? 0)
-            guard !readOverflow && !writeOverflow && !textOverflow else {
-                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Usage counters exceed the core Int representation"))
-            }
         }
 
         public func encode(to encoder: Encoder) throws { try rawValue.encode(to: encoder) }

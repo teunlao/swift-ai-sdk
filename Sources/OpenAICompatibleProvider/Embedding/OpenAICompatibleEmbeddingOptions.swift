@@ -3,10 +3,10 @@ import AISDKProvider
 import AISDKProviderUtils
 
 public struct OpenAICompatibleEmbeddingModelOptions: Codable, Sendable, Equatable {
-    public var dimensions: Double?
+    public var dimensions: Int?
     public var user: String?
 
-    public init(dimensions: Double? = nil, user: String? = nil) {
+    public init(dimensions: Int? = nil, user: String? = nil) {
         self.dimensions = dimensions
         self.user = user
     }
@@ -31,11 +31,11 @@ public let openAICompatibleEmbeddingProviderOptionsSchema = FlexibleSchema(
                 var options = OpenAICompatibleEmbeddingModelOptions()
 
                 if let dimensionsValue = dict["dimensions"] {
-                    guard case .number(let number) = dimensionsValue, number.isFinite else {
+                    guard case .number(let number) = dimensionsValue, let integer = Int(exactly: number) else {
                         let error = SchemaValidationIssuesError(vendor: "openai-compatible", issues: "dimensions must be a number")
                         return .failure(error: TypeValidationError.wrap(value: dimensionsValue, cause: error))
                     }
-                    options.dimensions = number
+                    options.dimensions = integer
                 }
 
                 if let userValue = dict["user"] {

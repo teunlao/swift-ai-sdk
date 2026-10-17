@@ -153,12 +153,6 @@ public let xaiMcpServerArgsSchema = FlexibleSchema(
     )
 )
 
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
-
 private let mcpServerOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "required": .array([.string("name"), .string("arguments"), .string("result")]),
@@ -173,7 +167,7 @@ private let mcpServerOutputJSONSchema: JSONValue = .object([
 public let xaiMcpServerToolFactory = createProviderExecutedToolFactory(
     id: "xai.mcp",
     name: "mcp",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(mcpServerOutputJSONSchema))
 ) { (args: XAIMCPServerArgs) in
     var options = ProviderExecutedToolFactoryOptions()

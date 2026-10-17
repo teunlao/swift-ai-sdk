@@ -6,7 +6,7 @@ struct OpenAIEmbeddingRequestBody: Encodable, Sendable {
     let model: String
     let input: [String]
     let encodingFormat: String = "float"
-    let dimensions: Double?
+    let dimensions: Int?
     let user: String?
 
     enum CodingKeys: String, CodingKey {

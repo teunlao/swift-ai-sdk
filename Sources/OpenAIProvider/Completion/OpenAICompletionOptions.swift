@@ -4,14 +4,14 @@ import AISDKProviderUtils
 
 public enum OpenAICompletionLogprobsOption: Sendable, Equatable {
     case bool(Bool)
-    case number(Double)
+    case number(Int)
 
     var jsonValue: JSONValue {
         switch self {
         case .bool(let value):
             return .bool(value)
         case .number(let value):
-            return .number(value)
+            return .number(Double(value))
         }
     }
 }
@@ -102,8 +102,8 @@ let openAICompletionProviderOptionsSchema = FlexibleSchema<OpenAILanguageModelCo
                     switch logprobsValue {
                     case .bool(let flag):
                         options.logprobs = .bool(flag)
-                    case .number(let number) where number.isFinite:
-                        options.logprobs = .number(number)
+                    case .number(let number) where Int(exactly: number) != nil:
+                        options.logprobs = .number(Int(exactly: number)!)
                     default:
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "logprobs must be boolean or number")
                         return .failure(error: TypeValidationError.wrap(value: logprobsValue, cause: error))

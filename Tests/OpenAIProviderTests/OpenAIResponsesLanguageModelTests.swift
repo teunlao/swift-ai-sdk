@@ -3953,6 +3953,7 @@ struct OpenAIResponsesLanguageModelTests {
         }
 
         #expect(toolCalls.count == 1)
+        #expect(result.finishReason.unified == .toolCalls)
         #expect(toolCalls.first?.toolCallId == "call_apply")
         #expect(toolCalls.first?.toolName == "apply_patch")
         #expect(toolCalls.first?.providerMetadata?["openai"]?["itemId"] == .string("apc_1"))
@@ -4349,11 +4350,13 @@ struct OpenAIResponsesLanguageModelTests {
             ]),
             chunk([
                 "type": "response.apply_patch_call_operation_diff.delta",
+                "item_id": "apc_1",
                 "output_index": 0,
                 "delta": "+Hello"
             ]),
             chunk([
                 "type": "response.apply_patch_call_operation_diff.done",
+                "item_id": "apc_1",
                 "output_index": 0,
                 "diff": "+Hello"
             ]),
@@ -4419,6 +4422,7 @@ struct OpenAIResponsesLanguageModelTests {
         var inputDeltas: [String] = []
         var toolInputEnded = false
         var toolCall: LanguageModelV4ToolCall?
+        var finishReason: LanguageModelV4FinishReason?
 
         for try await part in streamResult.stream {
             switch part {
@@ -4432,11 +4436,14 @@ struct OpenAIResponsesLanguageModelTests {
                 if call.toolCallId == "call_apply" {
                     toolCall = call
                 }
+            case .finish(let reason, _, _):
+                finishReason = reason
             default:
                 break
             }
         }
 
+        #expect(finishReason?.unified == .toolCalls)
         #expect(toolInputEnded)
         #expect(toolCall?.toolName == "apply_patch")
         #expect(toolCall?.providerMetadata?["openai"]?["itemId"] == .string("apc_1"))

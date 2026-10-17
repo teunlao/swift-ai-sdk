@@ -164,18 +164,15 @@ struct OpenAIResponsesResponseContractTests {
         #expect(result.usage.outputTokens.reasoning == 1)
     }
 
-    @Test("Usage refuses values outside the core Int representation", arguments: [(1.5, 0.0), (1e20, 0.0), (-9e18, 9e18)])
+    @Test("Usage preserves raw counters outside the core Int representation", arguments: [(1.5, 0.0), (1e20, 0.0), (-9e18, 9e18)])
     func coreUsageBoundary(input: Double, cached: Double) async throws {
-        do {
-            _ = try await generate(.object(["output": .array([]), "usage": .object([
-                "input_tokens": .number(input), "output_tokens": .number(1),
-                "input_tokens_details": .object(["cached_tokens": .number(cached)])
-            ])]))
-            Issue.record("Expected core usage representation failure")
-        } catch let error as APICallError {
-            #expect(error.statusCode == 200)
-            #expect(error.cause is TypeValidationError)
-        }
+        let raw: JSONValue = .object(["input_tokens": .number(input), "output_tokens": .number(1), "input_tokens_details": .object(["cached_tokens": .number(cached)])])
+        let result = try await generate(.object(["output": .array([]), "usage": raw]))
+        #expect(result.finishReason.unified == .stop)
+        #expect(result.usage.inputTokens.total == Int(exactly: input))
+        #expect(result.usage.inputTokens.noCache == nil)
+        #expect(result.usage.outputTokens.total == 1)
+        #expect(result.usage.raw == raw)
     }
 
     @Test("Provider errors and missing output preserve raw response diagnostics", arguments: [true, false])

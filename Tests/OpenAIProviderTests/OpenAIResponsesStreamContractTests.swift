@@ -43,8 +43,7 @@ struct OpenAIResponsesStreamContractTests {
     @Test("Malformed known frames emit raw then typed error and an error finish", arguments: [
         JSONValue.object(["type": .string("response.output_text.delta"), "item_id": .string("msg"), "delta": .number(4)]),
         .object(["type": .string("response.output_item.added"), "output_index": .number(1), "item": .object(["type": .string("message")])]),
-        .object(["type": .string("response.output_item.added"), "output_index": .number(1), "item": .string("invalid")]),
-        .object(["type": .string("response.completed"), "response": .object(["usage": .object(["input_tokens": .number(1.5), "output_tokens": .number(1)])])])
+        .object(["type": .string("response.output_item.added"), "output_index": .number(1), "item": .string("invalid")])
     ])
     func malformedKnown(frame: JSONValue) async throws {
         let parts = try await collect([start, frame, completed])
@@ -54,6 +53,17 @@ struct OpenAIResponsesStreamContractTests {
         #expect(rawIndex < errorIndex && errorIndex < finishIndex)
         guard case .finish(let reason, _, _) = parts[finishIndex] else { return }
         #expect(reason.unified == .error)
+    }
+
+    @Test("Fractional usage does not interrupt a valid Responses stream")
+    func fractionalUsage() async throws {
+        let raw: JSONValue = .object(["input_tokens": .number(1.5), "output_tokens": .number(1)])
+        let parts = try await collect([.object(["type": .string("response.completed"), "response": .object(["usage": raw])])])
+        guard case .finish(let reason, let usage, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(usage.inputTokens.total == nil)
+        #expect(usage.outputTokens.total == 1)
+        #expect(usage.raw == raw)
     }
 
     @Test("Chat Completions frames surface a typed endpoint mismatch with HTTP context")

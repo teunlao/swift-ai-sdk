@@ -58,6 +58,30 @@ struct OpenAICompatibleChatContractsTests {
         #expect(order == ["text-start", "metadata", "text-end", "reasoning-start", "reasoning-end", "text-start", "text-end"])
     }
 
+    @Test func emptyToolDeltasKeepReasoningContinuous() async throws {
+        let events = [
+            #"{"choices":[{"delta":{"reasoning_content":"first","tool_calls":[]}}]}"#,
+            #"{"choices":[{"delta":{"reasoning_content":"second","tool_calls":[]},"finish_reason":"stop"}]}"#
+        ]
+        let bytes = Data(events.map { "data: \($0)\n\n" }.joined().utf8)
+        let model = createOpenAICompatible(settings: .init(baseURL: "https://api.example.com", name: "custom", fetch: { request in
+            FetchResponse(body: .data(bytes), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!)
+        }))("model")
+        var reasoning: [LanguageModelV4StreamPart] = []
+        for try await part in try await model.doStream(options: .init(prompt: [])).stream {
+            switch part {
+            case .reasoningStart, .reasoningDelta, .reasoningEnd: reasoning.append(part)
+            default: break
+            }
+        }
+        #expect(reasoning == [
+            .reasoningStart(id: "reasoning-0", providerMetadata: nil),
+            .reasoningDelta(id: "reasoning-0", delta: "first", providerMetadata: nil),
+            .reasoningDelta(id: "reasoning-0", delta: "second", providerMetadata: nil),
+            .reasoningEnd(id: "reasoning-0", providerMetadata: nil)
+        ])
+    }
+
     @Test func bufferedToolsKeepFirstExtraContentAndRealResponseIdentity() async throws {
         let chunks: [JSONValue] = [
             ["id": "", "model": "", "created": 0, "choices": [["delta": ["tool_calls": [["index": 5, "id": "call", "extra_content": .object([:]), "function": ["arguments": "{"]]]]]]],

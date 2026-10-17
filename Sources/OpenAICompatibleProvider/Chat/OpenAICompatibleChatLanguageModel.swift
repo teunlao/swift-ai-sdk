@@ -278,7 +278,7 @@ public final class OpenAICompatibleChatLanguageModel: LanguageModelV4 {
                                         }
                                     }
 
-                                    if let toolCallDeltas = delta.toolCalls {
+                                    if let toolCallDeltas = delta.toolCalls, !toolCallDeltas.isEmpty {
                                         if isActiveReasoning {
                                             isActiveReasoning = false
                                             continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))

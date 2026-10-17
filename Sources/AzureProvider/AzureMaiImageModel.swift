@@ -104,25 +104,28 @@ public final class AzureMaiImageModel: ImageModelV4 {
             for try await response in group { responses.append(response) }
             return responses.sorted { $0.index < $1.index }.map(\.response)
         }
-        var usage: ImageModelV4Usage?
+        var rawUsage: [JSONValue] = []
+        var inputCounts: [Double?] = []
+        var outputCounts: [Double?] = []
         var metadata: [JSONValue] = []
         for response in responses {
             let value = response.value
             if let counts = value.usage {
-                let input = try addTokens(counts.text, counts.image)
-                usage = try .init(inputTokens: addTokens(usage?.inputTokens, input),
-                    outputTokens: addTokens(usage?.outputTokens, counts.output),
-                    totalTokens: addTokens(usage?.totalTokens, addTokens(input, counts.output)))
+                inputCounts.append(contentsOf: [counts.text, counts.image])
+                outputCounts.append(counts.output)
+                rawUsage.append(counts.raw)
             }
             var entry: JSONObject = [:]
             if let created = value.created { entry["created"] = .number(created) }
             if let size = value.size { entry["size"] = .string(size) }
-            if let count = value.usage?.text { entry["textTokens"] = .number(Double(count)) }
-            if let count = value.usage?.image { entry["imageTokens"] = .number(Double(count)) }
+            if let count = value.usage?.text { entry["textTokens"] = .number(count) }
+            if let count = value.usage?.image { entry["imageTokens"] = .number(count) }
             metadata.append(contentsOf: value.data.map { _ in .object(entry) })
         }
+        let usage: ImageModelV4Usage? = rawUsage.isEmpty ? nil : .init(
+            inputTokens: addTokens(inputCounts), outputTokens: addTokens(outputCounts), totalTokens: addTokens(inputCounts + outputCounts))
         return .init(images: .base64(responses.flatMap { $0.value.data.map(\.b64JSON) }), warnings: warnings,
-            providerMetadata: ["azure": .init(images: metadata)],
+            providerMetadata: ["azure": .init(images: metadata, additionalData: rawUsage.isEmpty ? nil : .object(["usage": .array(rawUsage)]))],
             response: .init(timestamp: timestamp, modelId: modelId, headers: responses.first?.responseHeaders), usage: usage)
     }
 
@@ -184,13 +187,16 @@ public final class AzureMaiImageModel: ImageModelV4 {
     }
 }
 
-private func addTokens(_ first: Int?, _ second: Int?) throws -> Int? {
-    if first == nil && second == nil { return nil }
-    let sum = (first ?? 0).addingReportingOverflow(second ?? 0)
-    guard !sum.overflow else {
-        throw InvalidResponseDataError(data: [first, second], message: "MAI token usage exceeds the integer range.")
+private func addTokens(_ counts: [Double?]) -> Int? {
+    guard counts.contains(where: { $0 != nil }) else { return nil }
+    var total = 0
+    for count in counts.compactMap({ $0 }) {
+        guard let integer = Int(exactly: count) else { return nil }
+        let sum = total.addingReportingOverflow(integer)
+        guard !sum.overflow else { return nil }
+        total = sum.partialValue
     }
-    return sum.partialValue
+    return total
 }
 
 private struct Dimensions {
@@ -230,11 +236,19 @@ private struct MaiResponse: Decodable, Sendable {
         enum CodingKeys: String, CodingKey { case b64JSON = "b64_json" }
     }
     struct Usage: Decodable, Sendable {
-        let text: Int?
-        let image: Int?
-        let output: Int?
+        let text: Double?
+        let image: Double?
+        let output: Double?
+        let raw: JSONValue
         enum CodingKeys: String, CodingKey {
             case text = "num_input_text_tokens", image = "num_input_image_tokens", output = "num_output_tokens"
+        }
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            text = try fields.decodeIfPresent(Double.self, forKey: .text)
+            image = try fields.decodeIfPresent(Double.self, forKey: .image)
+            output = try fields.decodeIfPresent(Double.self, forKey: .output)
+            raw = try JSONValue(from: decoder)
         }
     }
     let created: Double?
@@ -268,9 +282,9 @@ private let maiResponseSchema = FlexibleSchema(Schema.codable(MaiResponse.self, 
         "created": ["type": ["number", "null"]], "size": ["type": ["string", "null"]],
         "data": ["type": "array", "items": ["type": "object", "required": ["b64_json"], "properties": ["b64_json": ["type": "string"]]]],
         "usage": ["type": ["object", "null"], "properties": [
-            "num_input_text_tokens": ["type": ["integer", "null"]],
-            "num_input_image_tokens": ["type": ["integer", "null"]],
-            "num_output_tokens": ["type": ["integer", "null"]]
+            "num_input_text_tokens": ["type": ["number", "null"]],
+            "num_input_image_tokens": ["type": ["number", "null"]],
+            "num_output_tokens": ["type": ["number", "null"]]
         ]]
     ]
 ]))

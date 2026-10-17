@@ -4,9 +4,9 @@ import AISDKProviderUtils
 
 public struct XAIFileSearchArgs: Sendable, Equatable {
     public var vectorStoreIds: [String]
-    public var maxNumResults: Double?
+    public var maxNumResults: Int?
 
-    public init(vectorStoreIds: [String], maxNumResults: Double? = nil) {
+    public init(vectorStoreIds: [String], maxNumResults: Int? = nil) {
         self.vectorStoreIds = vectorStoreIds
         self.maxNumResults = maxNumResults
     }
@@ -52,9 +52,9 @@ public let xaiFileSearchArgsSchema = FlexibleSchema(
                     vectorStoreIds.append(value)
                 }
 
-                var maxNumResults: Double? = nil
+                var maxNumResults: Int? = nil
                 if let rawMax = dict["maxNumResults"] {
-                    guard case .number(let value) = rawMax else {
+                    guard case .number(let number) = rawMax, let value = Int(exactly: number) else {
                         let error = SchemaValidationIssuesError(
                             vendor: "xai",
                             issues: "maxNumResults must be a number"
@@ -74,12 +74,6 @@ public let xaiFileSearchArgsSchema = FlexibleSchema(
         }
     )
 )
-
-private let emptyObjectJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([:])
-])
 
 private let fileSearchOutputJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -115,7 +109,7 @@ private let fileSearchOutputJSONSchema: JSONValue = .object([
 public let xaiFileSearchToolFactory = createProviderExecutedToolFactory(
     id: "xai.file_search",
     name: "file_search",
-    inputSchema: FlexibleSchema(jsonSchema(emptyObjectJSONSchema)),
+    inputSchema: hostedToolInputSchema,
     outputSchema: FlexibleSchema(jsonSchema(fileSearchOutputJSONSchema))
 ) { (args: XAIFileSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()

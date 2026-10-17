@@ -194,7 +194,7 @@ struct OpenAIFilesSkillsTests {
                 providerOptions: [
                     "openai": [
                         "purpose": .string("assistants"),
-                        "expiresAfter": .number(3600.5)
+                        "expiresAfter": .number(3600)
                     ]
                 ]
             )
@@ -229,7 +229,7 @@ struct OpenAIFilesSkillsTests {
         #expect(openAIMultipartFilename(filePart) == "input.bin")
         #expect(filePart.body == Data([1, 2, 3]))
         #expect(String(data: purposePart?.body ?? Data(), encoding: .utf8) == "assistants")
-        #expect(String(data: expiresAfterPart?.body ?? Data(), encoding: .utf8) == "3600.5")
+        #expect(String(data: expiresAfterPart?.body ?? Data(), encoding: .utf8) == "3600")
         #expect(String(data: anchorPart?.body ?? Data(), encoding: .utf8) == "created_at")
 
         #expect(result.providerReference["openai"] == "file-xyz789")

@@ -138,6 +138,17 @@ struct MoonshotAIChatContractsTests {
         #expect(result.response?.timestamp == Date(timeIntervalSince1970: 1234))
     }
 
+    @Test("anomalous usage remains raw without invalid integer counts", arguments: ["1e20", "0.5", "-9223372036854775808"])
+    func anomalousUsage(_ count: String) async throws {
+        let result = try await model(payload: "{\"choices\":[{\"message\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":\(count),\"cached_tokens\":1,\"completion_tokens\":1}}").doGenerate(options: .init(prompt: []))
+        #expect(result.content == [.text(.init(text: "answer"))])
+        #expect(result.usage.inputTokens.total == (count.hasPrefix("-") ? Int.min : nil))
+        #expect(result.usage.inputTokens.noCache == nil)
+        #expect(result.usage.outputTokens.total == 1)
+        guard case .object(let raw) = result.usage.raw else { Issue.record("Missing raw usage"); return }
+        #expect(raw["prompt_tokens"] == .number(try #require(Double(count))))
+    }
+
     @Test("streams indexless parallel tools by their array positions")
     func indexlessTools() async throws {
         let payload = stream([

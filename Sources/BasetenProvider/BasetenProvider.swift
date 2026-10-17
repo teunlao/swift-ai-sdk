@@ -46,21 +46,21 @@ public final class BasetenProvider: ProviderV4 {
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { try embeddingModel(.init(rawValue: modelId)) }
     public func embeddingModel(_ modelId: BasetenEmbeddingModelId? = nil) throws -> any EmbeddingModelV4 {
-        guard let modelURL = settings.modelURL else {
-            throw BasetenProviderError(message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")
-        }
-        guard modelURL.contains("/sync") else {
+        let modelURL = settings.modelURL
+        if let modelURL, !modelURL.contains("/sync") {
             throw BasetenProviderError(message: "Not supported. You must use a /sync or /sync/v1 endpoint for embeddings.")
         }
         let model = modelId?.rawValue ?? "embeddings"
         if let constructor = settings.performanceClient {
-            var url = modelURL
-            if let range = url.range(of: "/sync/v1") { url.replaceSubrange(range, with: "/sync") }
-            let client = try constructor(url, loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BASETEN_API_KEY", description: "Baseten API key"))
-            return BasetenEmbeddingModel(modelId: model, client: client)
+            let settings = self.settings
+            return BasetenEmbeddingModel(modelId: model, client: {
+                var url = try Self.embeddingURL(settings)
+                if let range = url.range(of: "/sync/v1") { url.replaceSubrange(range, with: "/sync") }
+                return try constructor(url, loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BASETEN_API_KEY", description: "Baseten API key"))
+            })
         }
         return OpenAICompatibleEmbeddingModel(modelId: .init(rawValue: model), config: .init(
-            provider: "baseten.embedding", url: urlFactory(customURL: modelURL, embedding: true), headers: headerFactory(),
+            provider: "baseten.embedding", url: urlFactory(customURL: modelURL, embedding: true), headers: headerFactory(embedding: true),
             fetch: settings.fetch, errorConfiguration: basetenErrorConfiguration, maxEmbeddingsPerCall: 128
         ))
     }
@@ -72,9 +72,16 @@ public final class BasetenProvider: ProviderV4 {
             return base + suffix + options.path
         }
     }
-    private func headerFactory() -> @Sendable () throws -> [String: String] {
+    private static func embeddingURL(_ settings: BasetenProviderSettings) throws -> String {
+        guard let url = settings.modelURL else {
+            throw BasetenProviderError(message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")
+        }
+        return url
+    }
+    private func headerFactory(embedding: Bool = false) -> @Sendable () throws -> [String: String] {
         let settings = self.settings
         return {
+            if embedding { _ = try Self.embeddingURL(settings) }
             let key = try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "BASETEN_API_KEY", description: "Baseten API key")
             let headers: [String: String?] = ["Authorization": "Bearer \(key)"]
             return withUserAgentSuffix(combineHeaders(headers, settings.headers?.mapValues(Optional.some)), "ai-sdk-baseten/\(BASETEN_PROVIDER_VERSION)")

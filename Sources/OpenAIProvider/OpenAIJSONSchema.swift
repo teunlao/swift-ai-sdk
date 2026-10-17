@@ -31,6 +31,9 @@ func openAIToolSchema<T: Decodable & Sendable>(_ type: T.Type, _ schema: JSONVal
 
 private func projectToolValue(_ value: JSONValue, schema: JSONValue, root: JSONValue) throws -> JSONValue {
     guard case .object(let shape) = schema else { return value }
+    if shape["type"] == .string("integer"), case .number(let number) = value, Int(exactly: number) == nil {
+        throw SchemaValidationIssuesError(vendor: "openai", issues: "Expected a representable integer tool argument")
+    }
     if case .string(let reference)? = shape["$ref"], reference.hasPrefix("#/") {
         var target = root
         for component in reference.dropFirst(2).components(separatedBy: "/") {

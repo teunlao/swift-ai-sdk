@@ -21,6 +21,7 @@ struct OpenAIResponsesInputBuilder {
         hasComputerTool: Bool = false,
         explicitMessageItemType: Bool = false,
         isReasoningModel: Bool = false,
+        configurationUpdateUnsupportedReason: String? = nil,
         toolSearchToolName: String? = nil
     ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV4Warning]) {
         var items: [JSONValue] = []
@@ -35,6 +36,17 @@ struct OpenAIResponsesInputBuilder {
         for message in prompt {
             switch message {
             case let .system(content, providerOptions):
+                var options = try await parseProviderOptions(provider: providerOptionsName, providerOptions: providerOptions, schema: openAIResponsesSystemMessageOptionsSchema)
+                if options == nil, providerOptionsName != "openai" {
+                    options = try await parseProviderOptions(provider: "openai", providerOptions: providerOptions, schema: openAIResponsesSystemMessageOptionsSchema)
+                }
+                if let effort = options?.reasoningEffortUpdate {
+                    if let reason = content.isEmpty ? configurationUpdateUnsupportedReason : "Message-level reasoningEffortUpdate requires empty system message content." {
+                        throw UnsupportedFunctionalityError(functionality: "Message-level reasoningEffortUpdate", message: reason)
+                    }
+                    items.append(.object(["type": .string("configuration_update"), "reasoning": .object(["effort": .string(effort)])]))
+                    continue
+                }
                 switch systemMessageMode {
                 case .system:
                     items.append(systemItem(
@@ -222,10 +234,10 @@ struct OpenAIResponsesInputBuilder {
                                 "commands": .array(parsed.action.commands.map(JSONValue.string))
                             ]
                             if let timeout = parsed.action.timeoutMs {
-                                action["timeout_ms"] = .number(timeout)
+                                action["timeout_ms"] = .number(Double(timeout))
                             }
                             if let maxOutputLength = parsed.action.maxOutputLength {
-                                action["max_output_length"] = .number(maxOutputLength)
+                                action["max_output_length"] = .number(Double(maxOutputLength))
                             }
 
                             var payload: [String: JSONValue] = [
@@ -405,7 +417,7 @@ struct OpenAIResponsesInputBuilder {
                                     case .exit(let exitCode):
                                         .object([
                                             "type": .string("exit"),
-                                            "exit_code": .number(exitCode)
+                                            "exit_code": .number(Double(exitCode))
                                         ])
                                     }
 
@@ -646,7 +658,7 @@ struct OpenAIResponsesInputBuilder {
                                     case .exit(let exitCode):
                                         .object([
                                             "type": .string("exit"),
-                                            "exit_code": .number(exitCode)
+                                            "exit_code": .number(Double(exitCode))
                                         ])
                                     }
 
