@@ -60,9 +60,9 @@ public final class AzureSpeechSpeechModel: SpeechModelV4 {
         let voice = resolved.name
         let voiceName = voice.contains(":") ? voice : "\(voice):\(maiVoiceModel(modelId) ?? modelId)"
         var content = Self.escape(options.text)
-        if let speed = options.speed { content = "<prosody rate=\"\(try Self.number(speed))\">\(content)</prosody>" }
+        if let speed = options.speed { content = "<prosody rate=\"\(jsNumberString(speed))\">\(content)</prosody>" }
         if let style = speechOptions.style {
-            let degree = try speechOptions.styleDegree.map { " styledegree=\"\(try Self.number($0))\"" } ?? ""
+            let degree = speechOptions.styleDegree.map { " styledegree=\"\(jsNumberString($0))\"" } ?? ""
             content = "<mstts:express-as style=\"\(Self.escape(style))\"\(degree)>\(content)</mstts:express-as>"
         }
         let locale = Self.locale(voice) ?? "en-US"
@@ -140,28 +140,6 @@ public final class AzureSpeechSpeechModel: SpeechModelV4 {
         }
     }
 
-    private static func number(_ value: Double) throws -> String {
-        if value.isNaN { return "NaN" }
-        if value == .infinity { return "Infinity" }
-        if value == -.infinity { return "-Infinity" }
-        if value == 0 { return "0" }
-        let raw = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-        guard let marker = raw.firstIndex(of: "e") else { return raw }
-        let mantissa = String(raw[..<marker])
-        let exponent = Int(raw[raw.index(after: marker)...])!
-        // SSML uses JS interpolation, which expands exponents from 1e-6 through 1e20.
-        if abs(value) >= 1e-6 && abs(value) < 1e21 {
-            let sign = value < 0 ? "-" : ""
-            let unsigned = value < 0 ? String(mantissa.dropFirst()) : mantissa
-            let decimal = unsigned.prefix { $0 != "." }.count + exponent
-            let digits = unsigned.replacingOccurrences(of: ".", with: "")
-            if decimal <= 0 { return sign + "0." + String(repeating: "0", count: -decimal) + digits }
-            if decimal >= digits.count { return sign + digits + String(repeating: "0", count: decimal - digits.count) }
-            let point = digits.index(digits.startIndex, offsetBy: decimal)
-            return sign + digits[..<point] + "." + digits[point...]
-        }
-        return mantissa + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
-    }
 }
 
 private struct SpeechError: Decodable, Sendable {

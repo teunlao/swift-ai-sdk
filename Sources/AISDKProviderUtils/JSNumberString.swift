@@ -1,6 +1,9 @@
 import Foundation
 
-func jsNumberString(_ number: Double) -> String {
+public func jsNumberString(_ number: Double) -> String {
+    if number.isNaN { return "NaN" }
+    if number == .infinity { return "Infinity" }
+    if number == -.infinity { return "-Infinity" }
     if number == 0 { return "0" }
     let sign = number < 0 ? "-" : ""
     let parts = String(abs(number)).lowercased().split(separator: "e")

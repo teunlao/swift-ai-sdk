@@ -1,5 +1,6 @@
 import Foundation
 import AISDKProvider
+import AISDKProviderUtils
 
 func openAIJSONStringify(_ value: JSONValue) throws -> String {
     let encoder = JSONEncoder()

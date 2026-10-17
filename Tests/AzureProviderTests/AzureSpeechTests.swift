@@ -181,7 +181,8 @@ struct AzureSpeechTests {
     }
 
     @Test("SSML speed uses SOURCE decimal and exponent spelling", arguments: [
-        (1e-7, "1e-7"), (1e-6, "0.000001"), (1e20, "100000000000000000000")
+        (1e-7, "1e-7"), (1e-6, "0.000001"), (1e20, "100000000000000000000"),
+        (-0.0, "0"), (.nan, "NaN"), (.infinity, "Infinity"), (-.infinity, "-Infinity")
     ])
     func numericSpeed(_ speed: Double, _ spelling: String) async throws {
         let provider = try createAzure(settings: .init(resourceName: "resource", apiKey: "key", fetch: { request in
