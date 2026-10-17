@@ -245,6 +245,7 @@ struct AlibabaVideoModelTests {
             Issue.record("Expected generation error")
         } catch let error as any AISDKError {
             #expect(error.name == "ALIBABA_VIDEO_GENERATION_ERROR")
+            #expect(hasMarker(error, marker: "vercel.ai.error"))
             #expect(error.message.contains(status ? "No video URL" : "No task_id"))
         }
     }

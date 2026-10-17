@@ -88,7 +88,7 @@ let videoTaskStatusSchema = FlexibleSchema(
 )
 
 struct VideoGenerationError: AISDKError, Sendable {
-    static let errorDomain = "alibaba.video.error"
+    static let errorDomain = "vercel.ai.error"
     let name = "ALIBABA_VIDEO_GENERATION_ERROR"
     let message: String
     let cause: (any Error)? = nil
