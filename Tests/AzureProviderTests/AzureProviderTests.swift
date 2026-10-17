@@ -31,37 +31,6 @@ struct AzureProviderTests {
         return try JSONSerialization.jsonObject(with: body) as! [String: Any]
     }
 
-    static func makeConfig(
-        provider: String,
-        fetch: FetchFunction? = nil,
-        fileIdPrefixes: [String]? = nil
-    ) -> OpenAIConfig {
-        let settings = AzureProviderSettings(
-            resourceName: "test-resource",
-            apiKey: "test-api-key",
-            fetch: fetch
-        )
-
-        let azureProvider = createAzure(settings: settings)
-
-        // Extract config from created model - we'll use a simple approach
-        let urlBuilder: @Sendable (OpenAIConfig.URLOptions) -> String = { options in
-            "https://test-resource.openai.azure.com/openai/v1\(options.path)?api-version=v1"
-        }
-
-        return OpenAIConfig(
-            provider: provider,
-            url: urlBuilder,
-            headers: {
-                [
-                    "api-key": "test-api-key"
-                ]
-            },
-            fetch: fetch,
-            fileIdPrefixes: fileIdPrefixes
-        )
-    }
-
     // MARK: - Chat Tests
 
     @Test("should set the correct default api version")
@@ -107,7 +76,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -169,7 +138,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch,
@@ -232,7 +201,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -298,7 +267,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             baseURL: "https://test-resource.openai.azure.com/openai",
             apiKey: "test-api-key",
             fetch: fetch
@@ -357,7 +326,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -416,7 +385,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -471,7 +440,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -524,7 +493,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch,
@@ -573,7 +542,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(audioData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -639,7 +608,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -702,7 +671,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -763,7 +732,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -822,7 +791,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch,
@@ -882,7 +851,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -943,7 +912,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             baseURL: "https://test-resource.openai.azure.com/openai",
             apiKey: "test-api-key",
             fetch: fetch
@@ -991,7 +960,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1046,7 +1015,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1072,20 +1041,6 @@ struct AzureProviderTests {
         #expect(requestBody["size"] as? String == "1024x1024")
         #expect(requestBody["style"] as? String == "natural")
         #expect(requestBody["response_format"] as? String == "b64_json")
-    }
-
-    @Test("imageModel method should create the same model as image method")
-    func imageModelMethodShouldCreateSameModelAsImageMethod() throws {
-        let provider = createAzure(settings: AzureProviderSettings(
-            resourceName: "test-resource",
-            apiKey: "test-api-key"
-        ))
-
-        let imageModel = try provider.imageModel(.init(rawValue: "dalle-deployment"))
-        let imageModelAlias = provider.image(.init(rawValue: "dalle-deployment"))
-
-        #expect(imageModel.provider == imageModelAlias.provider)
-        #expect(imageModel.modelId == imageModelAlias.modelId)
     }
 
     // MARK: - Responses Tests
@@ -1138,7 +1093,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1205,7 +1160,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -1276,7 +1231,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             baseURL: "https://test-resource.openai.azure.com/openai",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1341,7 +1296,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1412,7 +1367,7 @@ struct AzureProviderTests {
             FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1478,7 +1433,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1560,7 +1515,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1642,7 +1597,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1724,7 +1679,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1815,7 +1770,7 @@ struct AzureProviderTests {
             return FetchResponse(body: .data(responseData), urlResponse: response)
         }
 
-        let provider = createAzure(settings: AzureProviderSettings(
+        let provider = try createAzure(settings: AzureProviderSettings(
             resourceName: "test-resource",
             apiKey: "test-api-key",
             fetch: fetch
@@ -1843,6 +1798,38 @@ struct AzureProviderTests {
 
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
+        @Test("Environment credentials and resource names resolve after model creation")
+        func requestTimeEnvironment() async throws {
+            let names = ["AZURE_API_KEY", "AZURE_RESOURCE_NAME"]
+            let original = names.map { name in (name, getenv(name).flatMap { String(validatingCString: $0) }) }
+            defer {
+                for (name, value) in original {
+                    if let value { setenv(name, value, 1) } else { unsetenv(name) }
+                }
+            }
+            for name in names { unsetenv(name) }
+
+            actor Capture {
+                var request: URLRequest?
+                func store(_ value: URLRequest) { request = value }
+            }
+            let capture = Capture()
+            let provider = try createAzure(settings: .init(fetch: { request in
+                await capture.store(request)
+                return FetchResponse(
+                    body: .data(Data(#"{"id":"chat","created":0,"model":"deployment","choices":[{"index":0,"message":{"role":"assistant","content":"ready"},"finish_reason":"stop"}]}"#.utf8)),
+                    urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+                )
+            }))
+            let model = provider.chat("deployment")
+            setenv("AZURE_API_KEY", "late-key", 1)
+            setenv("AZURE_RESOURCE_NAME", "late-resource", 1)
+            _ = try await model.doGenerate(options: .init(prompt: []))
+            let request = try #require(await capture.request)
+            #expect(request.url?.absoluteString == "https://late-resource.openai.azure.com/openai/v1/chat/completions?api-version=v1")
+            #expect(request.value(forHTTPHeaderField: "api-key") == "late-key")
+        }
+
         @Test("missing API key throws LoadAPIKeyError at request time")
         func missingAPIKeyThrowsAtRequestTime() async throws {
             actor RequestCapture {
@@ -1874,7 +1861,7 @@ struct AzureProviderTests {
                 return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
             }
 
-            let provider = createAzure(settings: AzureProviderSettings(
+            let provider = try createAzure(settings: AzureProviderSettings(
                 resourceName: "test-resource",
                 fetch: fetch
             ))
@@ -1922,7 +1909,7 @@ struct AzureProviderTests {
                 return FetchResponse(body: .data(Data("{}".utf8)), urlResponse: response)
             }
 
-            let provider = createAzure(settings: AzureProviderSettings(
+            let provider = try createAzure(settings: AzureProviderSettings(
                 apiKey: "test-api-key",
                 fetch: fetch
             ))

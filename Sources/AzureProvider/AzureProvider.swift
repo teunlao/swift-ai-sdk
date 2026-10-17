@@ -9,6 +9,7 @@ public struct AzureProviderSettings: Sendable {
     public var resourceName: String?
     public var baseURL: String?
     public var apiKey: String?
+    public var tokenProvider: (@Sendable () async throws -> String)?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
     public var apiVersion: String?
@@ -18,6 +19,7 @@ public struct AzureProviderSettings: Sendable {
         resourceName: String? = nil,
         baseURL: String? = nil,
         apiKey: String? = nil,
+        tokenProvider: (@Sendable () async throws -> String)? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
         apiVersion: String? = nil,
@@ -26,6 +28,7 @@ public struct AzureProviderSettings: Sendable {
         self.resourceName = resourceName
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.tokenProvider = tokenProvider
         self.headers = headers
         self.fetch = fetch
         self.apiVersion = apiVersion
@@ -142,113 +145,94 @@ public final class AzureProvider: ProviderV4 {
     }
 }
 
-public func createAzureProvider(settings: AzureProviderSettings = .init()) -> AzureProvider {
-    func createAzureAuthFetch(
-        apiKey: String?,
-        resourceName: String?,
-        baseURL: String?,
-        customFetch: FetchFunction?
-    ) -> FetchFunction {
-        let baseFetch = customFetch ?? defaultFetchFunction()
-
-        return { request in
-            let requiresResourceName = {
-                guard let baseURL else { return true }
-                return baseURL.isEmpty
-            }()
-
-            if requiresResourceName {
-                _ = try loadSetting(
-                    settingValue: resourceName,
-                    environmentVariableName: "AZURE_RESOURCE_NAME",
-                    settingName: "resourceName",
-                    description: "Azure OpenAI resource name"
-                )
-            }
-
-            var modified = request
-            var headers = modified.allHTTPHeaderFields ?? [:]
-
-            let hasAPIKey = headers.keys.contains { $0.lowercased() == "api-key" }
-            if !hasAPIKey {
-                let resolved = try loadAPIKey(
-                    apiKey: apiKey,
-                    environmentVariableName: "AZURE_API_KEY",
-                    description: "Azure OpenAI"
-                )
-                headers["api-key"] = resolved
-                modified.allHTTPHeaderFields = headers
-            }
-
-            return try await baseFetch(modified)
-        }
+public func createAzureProvider(settings: AzureProviderSettings = .init()) throws -> AzureProvider {
+    if let apiKey = settings.apiKey, !apiKey.isEmpty, settings.tokenProvider != nil {
+        throw InvalidArgumentError(
+            argument: "apiKey/tokenProvider",
+            message: "Both apiKey and tokenProvider were provided. Please use only one authentication method."
+        )
     }
 
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var baseHeaders: [String: String?] = [:]
-
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                baseHeaders[key] = value
-            }
+    let endpoint = try Endpoint(baseURL: settings.baseURL)
+    let headers: @Sendable () throws -> [String: String?] = {
+        var authHeaders: [String: String?] = [:]
+        if settings.tokenProvider == nil {
+            authHeaders["api-key"] = try loadAPIKey(
+                apiKey: settings.apiKey,
+                environmentVariableName: "AZURE_API_KEY",
+                description: "Azure OpenAI"
+            )
         }
-
-        let withUA = withUserAgentSuffix(baseHeaders, "ai-sdk-azure/\(AZURE_PROVIDER_VERSION)")
-        return withUA.mapValues { Optional($0) }
+        let combined = combineHeaders(authHeaders, settings.headers?.mapValues { Optional($0) })
+        return withUserAgentSuffix(combined, "ai-sdk-azure/\(AZURE_PROVIDER_VERSION)").mapValues { Optional($0) }
     }
 
-    let apiVersion = settings.apiVersion ?? "v1"
-    let useDeploymentBasedUrls = settings.useDeploymentBasedUrls
-
-    let resolveBaseURLPrefix: @Sendable () -> String = {
-        if let base = settings.baseURL, !base.isEmpty {
-            return withoutTrailingSlash(base) ?? base
+    let fetch: FetchFunction?
+    if let tokenProvider = settings.tokenProvider {
+        let baseFetch = settings.fetch ?? defaultFetchFunction()
+        fetch = { request in
+            var request = request
+            if request.value(forHTTPHeaderField: "Authorization") == nil {
+                request.setValue("Bearer \(try await tokenProvider())", forHTTPHeaderField: "Authorization")
+            }
+            return try await baseFetch(request)
         }
+    } else {
+        fetch = settings.fetch
+    }
 
-        do {
+    let urlBuilder: @Sendable (OpenAIConfig.URLOptions) throws -> String = { options in
+        let basePrefix: String
+        if let baseURL = settings.baseURL {
+            basePrefix = withoutTrailingSlash(baseURL) ?? baseURL
+        } else {
             let resourceName = try loadSetting(
                 settingValue: settings.resourceName,
                 environmentVariableName: "AZURE_RESOURCE_NAME",
                 settingName: "resourceName",
                 description: "Azure OpenAI resource name"
             )
-            return "https://\(resourceName).openai.azure.com/openai"
-        } catch {
-            // Missing resource name is validated at request-time in the auth fetch wrapper.
-            return "https://openai.azure.com/openai"
-        }
-    }
-
-    let urlBuilder: @Sendable (OpenAIConfig.URLOptions) -> String = { options in
-        let basePrefix = resolveBaseURLPrefix()
-        let basePath: String
-        if useDeploymentBasedUrls {
-            basePath = "\(basePrefix)/deployments/\(options.modelId)\(options.path)"
-        } else {
-            basePath = "\(basePrefix)/v1\(options.path)"
-        }
-
-        if var components = URLComponents(string: basePath) {
-            var items = components.queryItems ?? []
-            items.removeAll { $0.name.caseInsensitiveCompare("api-version") == .orderedSame }
-            items.append(URLQueryItem(name: "api-version", value: apiVersion))
-            components.queryItems = items
-            if let urlString = components.string {
-                return urlString
+            guard isValidHostnamePart(resourceName) else {
+                throw InvalidArgumentError(
+                    argument: "resourceName",
+                    message: "Invalid Azure resource name. Expected a single DNS label (letters, digits, and hyphens). Use `baseURL` for custom endpoints."
+                )
             }
+            basePrefix = "https://\(resourceName).openai.azure.com/openai"
         }
 
-        let separator = basePath.contains("?") ? "&" : "?"
-        return "\(basePath)\(separator)api-version=\(apiVersion)"
-    }
+        let fullURL: String
+        if settings.useDeploymentBasedUrls {
+            fullURL = "\(basePrefix)/deployments/\(options.modelId)\(options.path)"
+        } else if !endpoint.isAzure || endpoint.isVersioned {
+            fullURL = basePrefix + options.path
+        } else {
+            fullURL = basePrefix + "/v1" + options.path
+        }
 
-    let headers = headersClosure
-    let fetch = createAzureAuthFetch(
-        apiKey: settings.apiKey,
-        resourceName: settings.resourceName,
-        baseURL: settings.baseURL,
-        customFetch: settings.fetch
-    )
+        guard var url = URLComponents(string: fullURL), url.host != nil, url.scheme != nil else {
+            throw InvalidArgumentError(argument: "baseURL", message: "Invalid Azure request URL.")
+        }
+        url.host = url.host?.lowercased()
+        url.scheme = url.scheme?.lowercased()
+        if settings.useDeploymentBasedUrls || (endpoint.isAzure && !endpoint.isVersioned && !endpoint.isFoundry) {
+            url.percentEncodedQuery = url.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%20")
+            var items = url.queryItems ?? []
+            if let index = items.firstIndex(where: { $0.name == "api-version" }) {
+                items[index] = URLQueryItem(name: "api-version", value: settings.apiVersion ?? "v1")
+                items = items.enumerated().filter { $0.offset == index || $0.element.name != "api-version" }.map(\.element)
+            } else {
+                items.append(URLQueryItem(name: "api-version", value: settings.apiVersion ?? "v1"))
+            }
+            url.percentEncodedQuery = items.map {
+                Endpoint.encodeQuery($0.name) + "=" + Endpoint.encodeQuery($0.value ?? "")
+            }.joined(separator: "&")
+        }
+        guard let result = url.string else {
+            throw InvalidArgumentError(argument: "baseURL", message: "Invalid Azure request URL.")
+        }
+        return result
+    }
 
     let chatConfig = OpenAIConfig(
         provider: "azure.chat",
@@ -259,6 +243,7 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
 
     let responsesConfig = OpenAIConfig(
         provider: "azure.responses",
+        explicitMessageItemType: endpoint.isFoundry,
         url: urlBuilder,
         headers: headers,
         fetch: fetch,
@@ -281,6 +266,7 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
 
     let imageConfig = OpenAIConfig(
         provider: "azure.image",
+        imageInputCapabilities: .init(),
         url: urlBuilder,
         headers: headers,
         fetch: fetch
@@ -362,9 +348,37 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
 }
 
 /// Alias to mirror TypeScript naming (`createAzure`).
-public func createAzure(settings: AzureProviderSettings = .init()) -> AzureProvider {
-    createAzureProvider(settings: settings)
+public func createAzure(settings: AzureProviderSettings = .init()) throws -> AzureProvider {
+    try createAzureProvider(settings: settings)
 }
 
 /// Default Azure provider instance (`export const azure = createAzure()`).
-public let azure: AzureProvider = createAzureProvider()
+public let azure: AzureProvider = try! createAzureProvider()
+
+private struct Endpoint: Sendable {
+    let isAzure: Bool
+    let isFoundry: Bool
+    let isVersioned: Bool
+
+    init(baseURL: String?) throws {
+        guard let baseURL else {
+            isAzure = true
+            isFoundry = false
+            isVersioned = false
+            return
+        }
+        guard let url = URLComponents(string: baseURL), let host = url.host?.lowercased(), !host.isEmpty, url.scheme != nil else {
+            throw InvalidArgumentError(argument: "baseURL", message: "Invalid Azure base URL.")
+        }
+        isAzure = [".openai.azure.com", ".services.ai.azure.com", ".cognitiveservices.azure.com"].contains { host.hasSuffix($0) }
+        var path = url.path
+        while path.hasSuffix("/") { path.removeLast() }
+        isFoundry = host.hasSuffix(".services.ai.azure.com") && path.hasPrefix("/api/projects/")
+        isVersioned = isAzure && path.lowercased().hasSuffix("/openai/v1")
+    }
+
+    static func encodeQuery(_ value: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*-._")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed)!.replacingOccurrences(of: "%20", with: "+")
+    }
+}
