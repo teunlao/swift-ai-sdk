@@ -2,40 +2,42 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public let openAIImageModelMaxImagesPerCall: [OpenAIImageModelId: Int] = [
+public let modelMaxImagesPerCall: [OpenAIImageModelId: Int] = [
     "dall-e-3": 1,
     "dall-e-2": 10,
     "gpt-image-1": 10,
     "gpt-image-1-mini": 10,
     "gpt-image-1.5": 10,
     "gpt-image-2": 10,
+    "gpt-image-2.5-flare": 10,
+    "gpt-image-2.5-flare-2026-09-08": 10,
+    "gpt-image-2.5-sunburst": 10,
+    "gpt-image-2.5-sunburst-2026-09-08": 10,
     "chatgpt-image-latest": 10
 ]
 
-private let openAIDefaultImageResponseFormatPrefixes: [String] = [
-    "chatgpt-image-",
-    "gpt-image-1-mini",
-    "gpt-image-1.5",
-    "gpt-image-1",
-    "gpt-image-2"
-]
+private let defaultResponseFormatPrefixes = ["chatgpt-image-", "gpt-image-"]
 
-func openAIImageHasDefaultResponseFormat(modelId: OpenAIImageModelId) -> Bool {
-    openAIDefaultImageResponseFormatPrefixes.contains { modelId.rawValue.hasPrefix($0) }
+public func hasDefaultResponseFormat(modelId: String) -> Bool {
+    defaultResponseFormatPrefixes.contains { modelId.hasPrefix($0) }
+}
+
+public func getMaxImagesPerCall(modelId: OpenAIImageModelId) -> Int {
+    modelMaxImagesPerCall[modelId] ?? (modelId.rawValue.hasPrefix("gpt-image-") ? 10 : 1)
 }
 
 public struct OpenAIImageModelOptions: Sendable, Equatable {
     public var quality: String?
     public var background: String?
     public var outputFormat: String?
-    public var outputCompression: Double?
+    public var outputCompression: Int?
     public var user: String?
 
     public init(
         quality: String? = nil,
         background: String? = nil,
         outputFormat: String? = nil,
-        outputCompression: Double? = nil,
+        outputCompression: Int? = nil,
         user: String? = nil
     ) {
         self.quality = quality
@@ -50,7 +52,7 @@ public struct OpenAIImageModelGenerationOptions: Sendable, Equatable {
     public var quality: String?
     public var background: String?
     public var outputFormat: String?
-    public var outputCompression: Double?
+    public var outputCompression: Int?
     public var user: String?
     public var style: String?
     public var moderation: String?
@@ -59,7 +61,7 @@ public struct OpenAIImageModelGenerationOptions: Sendable, Equatable {
         quality: String? = nil,
         background: String? = nil,
         outputFormat: String? = nil,
-        outputCompression: Double? = nil,
+        outputCompression: Int? = nil,
         user: String? = nil,
         style: String? = nil,
         moderation: String? = nil
@@ -78,7 +80,7 @@ public struct OpenAIImageModelEditOptions: Sendable, Equatable {
     public var quality: String?
     public var background: String?
     public var outputFormat: String?
-    public var outputCompression: Double?
+    public var outputCompression: Int?
     public var user: String?
     public var inputFidelity: String?
 
@@ -86,7 +88,7 @@ public struct OpenAIImageModelEditOptions: Sendable, Equatable {
         quality: String? = nil,
         background: String? = nil,
         outputFormat: String? = nil,
-        outputCompression: Double? = nil,
+        outputCompression: Int? = nil,
         user: String? = nil,
         inputFidelity: String? = nil
     ) {
@@ -99,7 +101,7 @@ public struct OpenAIImageModelEditOptions: Sendable, Equatable {
     }
 }
 
-private let qualityValues = ["standard", "hd", "low", "medium", "high", "auto"]
+private let qualityValues = ["standard", "hd", "low", "medium", "high", "xhigh", "max", "auto"]
 private let backgroundValues = ["transparent", "opaque", "auto"]
 private let outputFormatValues = ["png", "jpeg", "webp"]
 private let styleValues = ["vivid", "natural"]
@@ -180,7 +182,7 @@ private func parseImageOptionalInteger(
     key: String,
     min: Double,
     max: Double
-) throws -> Double? {
+) throws -> Int? {
     guard let value = try imageOptionsField(dict, key: key, message: "\(key) must be an integer") else {
         return nil
     }
@@ -188,7 +190,7 @@ private func parseImageOptionalInteger(
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be an integer")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
-    guard number.rounded(.towardZero) == number else {
+    guard number.isFinite, number.rounded(.towardZero) == number else {
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be an integer")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
@@ -196,8 +198,31 @@ private func parseImageOptionalInteger(
         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be between \(Int(min)) and \(Int(max))")
         throw TypeValidationError.wrap(value: value, cause: error)
     }
-    return number
+    return Int(number)
 }
+
+public let openAIImageModelOptionsSchema = FlexibleSchema<OpenAIImageModelOptions>(
+    Schema(
+        jsonSchemaResolver: { openAIImageOptionsJSONSchema(extraProperties: [:]) },
+        validator: { value in
+            do {
+                let json = try jsonValue(from: value)
+                guard case .object(let dict) = json else {
+                    throw SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
+                }
+                return .success(value: OpenAIImageModelOptions(
+                    quality: try parseImageOptionalEnum(dict, key: "quality", values: qualityValues),
+                    background: try parseImageOptionalEnum(dict, key: "background", values: backgroundValues),
+                    outputFormat: try parseImageOptionalEnum(dict, key: "outputFormat", values: outputFormatValues),
+                    outputCompression: try parseImageOptionalInteger(dict, key: "outputCompression", min: 0, max: 100),
+                    user: try parseImageOptionalString(dict, key: "user")
+                ))
+            } catch {
+                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+            }
+        }
+    )
+)
 
 private let openAIImageModelGenerationOptionsJSONSchema = openAIImageOptionsJSONSchema(extraProperties: [
     "style": enumSchema(styleValues),
@@ -208,7 +233,7 @@ private let openAIImageModelEditOptionsJSONSchema = openAIImageOptionsJSONSchema
     "inputFidelity": enumSchema(inputFidelityValues)
 ])
 
-let openAIImageModelGenerationOptionsSchema = FlexibleSchema<OpenAIImageModelGenerationOptions>(
+public let openAIImageModelGenerationOptionsSchema = FlexibleSchema<OpenAIImageModelGenerationOptions>(
     Schema(
         jsonSchemaResolver: { openAIImageModelGenerationOptionsJSONSchema },
         validator: { value in
@@ -237,7 +262,7 @@ let openAIImageModelGenerationOptionsSchema = FlexibleSchema<OpenAIImageModelGen
     )
 )
 
-let openAIImageModelEditOptionsSchema = FlexibleSchema<OpenAIImageModelEditOptions>(
+public let openAIImageModelEditOptionsSchema = FlexibleSchema<OpenAIImageModelEditOptions>(
     Schema(
         jsonSchemaResolver: { openAIImageModelEditOptionsJSONSchema },
         validator: { value in

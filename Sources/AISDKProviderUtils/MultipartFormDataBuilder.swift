@@ -13,6 +13,7 @@ public struct MultipartFormDataBuilder: Sendable {
     }
 
     public let boundary: String
+    public private(set) var values: [String: FormDataValue] = [:]
     private var parts: [Part] = []
 
     public init(boundary: String = MultipartFormDataBuilder.makeBoundary()) {
@@ -22,6 +23,7 @@ public struct MultipartFormDataBuilder: Sendable {
     /// Appends a simple text field to the multipart payload.
     public mutating func appendField(name: String, value: String) {
         guard let data = Self.normalizeLineBreaks(value).data(using: .utf8) else { return }
+        values[name] = .string(value)
         parts.append(Part(name: name, filename: nil, contentType: nil, data: data))
     }
 
@@ -31,9 +33,10 @@ public struct MultipartFormDataBuilder: Sendable {
             !type.isEmpty && type.utf8.allSatisfy { (0x20...0x7E).contains($0) }
                 ? type.lowercased()
                 : nil
-        } ?? "application/octet-stream"
+        }
+        values[name] = .data(data, filename: filename ?? "blob", contentType: mediaType)
         let partFilename: String? = filename == "" ? nil : (filename ?? "blob")
-        parts.append(Part(name: name, filename: partFilename, contentType: mediaType, data: data))
+        parts.append(Part(name: name, filename: partFilename, contentType: mediaType ?? "application/octet-stream", data: data))
     }
 
     /// Builds the multipart body data and returns it together with the Content-Type header value.

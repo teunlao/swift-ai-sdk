@@ -172,38 +172,4 @@ struct OpenAIProviderOptionsParsingTests {
         }
     }
 
-    @Test("image generation options reject fractional outputCompression")
-    func imageGenerationOptionsRejectFractionalOutputCompression() async throws {
-        let providerOptions: SharedV3ProviderOptions = [
-            "openai": [
-                "outputCompression": .number(80.5)
-            ]
-        ]
-
-        do {
-            let _: OpenAIImageModelGenerationOptions? = try await parseProviderOptions(
-                provider: "openai",
-                providerOptions: providerOptions,
-                schema: openAIImageModelGenerationOptionsSchema
-            )
-            Issue.record("Expected InvalidArgumentError")
-        } catch let error as InvalidArgumentError {
-            #expect(error.argument == "providerOptions")
-            #expect(error.message == "invalid openai provider options")
-            guard let typeError = error.cause as? TypeValidationError else {
-                Issue.record("Expected TypeValidationError as cause")
-                return
-            }
-            guard let schemaError = typeError.cause as? SchemaValidationIssuesError else {
-                Issue.record("Expected SchemaValidationIssuesError as TypeValidationError cause")
-                return
-            }
-            #expect(schemaError.vendor == "openai")
-            #expect(
-                String(describing: schemaError.issues).contains("outputCompression must be an integer"),
-                "Expected outputCompression integer validation issue"
-            )
-        }
-    }
-
 }

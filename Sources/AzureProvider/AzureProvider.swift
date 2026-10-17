@@ -45,7 +45,7 @@ public final class AzureProvider: ProviderV4 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
-    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
+    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
     public let tools: AzureProviderTools
@@ -56,7 +56,7 @@ public final class AzureProvider: ProviderV4 {
         responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
-        imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
+        imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
         speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
         tools: AzureProviderTools
@@ -136,11 +136,11 @@ public final class AzureProvider: ProviderV4 {
         embeddingFactory(modelId)
     }
 
-    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
         imageFactory(modelId)
     }
 
-    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
         imageFactory(modelId)
     }
 
@@ -335,8 +335,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
-    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4 = { modelId in
-        OpenAIImageModelV4(
+    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel = { modelId in
+        OpenAIImageModel(
             modelId: modelId,
             config: imageConfig
         )

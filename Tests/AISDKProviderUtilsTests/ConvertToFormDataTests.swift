@@ -8,9 +8,9 @@ struct ConvertToFormDataTests {
     func addsScalarValues() throws {
         let formData = convertToFormData(
             [
-                "model": .value("gpt-image-1"),
-                "prompt": .value("A cute cat"),
-                "n": 2,
+                ("model", .value("gpt-image-1")),
+                ("prompt", .value("A cute cat")),
+                ("n", 2),
             ],
             boundary: "test-boundary"
         )
@@ -25,6 +25,10 @@ struct ConvertToFormDataTests {
         #expect(body.contains("A cute cat"))
         #expect(body.contains("Content-Disposition: form-data; name=\"n\""))
         #expect(body.contains("2"))
+        let model = try #require(body.range(of: "name=\"model\""))
+        let prompt = try #require(body.range(of: "name=\"prompt\""))
+        let count = try #require(body.range(of: "name=\"n\""))
+        #expect(model.lowerBound < prompt.lowerBound && prompt.lowerBound < count.lowerBound)
     }
 
     @Test("skips nil and empty array values")

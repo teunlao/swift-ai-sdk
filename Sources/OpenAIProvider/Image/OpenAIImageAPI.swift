@@ -59,8 +59,25 @@ public struct OpenAIImageResponse: Codable, Sendable {
 public let openaiImageResponseSchema = FlexibleSchema(
     Schema.codable(
         OpenAIImageResponse.self,
-        jsonSchema: .object([
-            "type": .string("object")
-        ])
+        jsonSchema: [
+            "type": "object", "required": ["data"],
+            "properties": [
+                "created": ["type": ["number", "null"]],
+                "data": ["type": "array", "items": ["type": "object", "required": ["b64_json"],
+                    "properties": ["b64_json": ["type": "string"], "revised_prompt": ["type": ["string", "null"]]]]],
+                "background": ["type": ["string", "null"]],
+                "output_format": ["type": ["string", "null"]],
+                "size": ["type": ["string", "null"]],
+                "quality": ["type": ["string", "null"]],
+                "usage": ["type": ["object", "null"], "properties": [
+                    "input_tokens": ["type": ["number", "null"]],
+                    "output_tokens": ["type": ["number", "null"]],
+                    "total_tokens": ["type": ["number", "null"]],
+                    "input_tokens_details": ["type": ["object", "null"], "properties": [
+                        "image_tokens": ["type": ["number", "null"]], "text_tokens": ["type": ["number", "null"]]
+                    ]]
+                ]]
+            ]
+        ]
     )
 )

@@ -168,6 +168,22 @@ struct AzureRoutingTests {
         }
     }
 
+    @Test("image deployments retain unknown capabilities while using the native Image request")
+    func imageCapabilities() async throws {
+        let provider = try createAzure(settings: .init(resourceName: "resource", apiKey: "key", fetch: { request in
+            #expect(request.url?.path == "/openai/v1/images/edits")
+            #expect(request.value(forHTTPHeaderField: "api-key") == "key")
+            return FetchResponse(body: .data(Data(#"{"data":[{"b64_json":"azure-image"}]}"#.utf8)),
+                urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"])!)
+        }))
+        let model: any ImageModelV4 = provider.image("dall-e-2")
+        #expect(try await model.supportsFileInputs == nil)
+        #expect(try await model.supportsMaskInputs == nil)
+        let result = try await model.doGenerate(options: .init(n: 1, files: []))
+        #expect(result.images == .base64(["azure-image"]))
+    }
+
     private actor RequestCapture {
         var requests: [URLRequest] = []
 

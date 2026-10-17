@@ -37,7 +37,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
-    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
+    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
@@ -51,7 +51,7 @@ public final class OpenAIProvider: ProviderV4 {
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         chat: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
-        images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
+        images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
@@ -167,15 +167,15 @@ public final class OpenAIProvider: ProviderV4 {
         embedding(modelId: modelId)
     }
 
-    public func image(modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+    public func image(modelId: OpenAIImageModelId) -> OpenAIImageModel {
         imageFactory(modelId)
     }
 
-    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
         image(modelId: modelId)
     }
 
-    public func image(_ modelId: String) -> OpenAIImageModelV4 {
+    public func image(_ modelId: String) -> OpenAIImageModel {
         image(modelId: OpenAIImageModelId(rawValue: modelId))
     }
 
@@ -183,7 +183,7 @@ public final class OpenAIProvider: ProviderV4 {
         image(modelId)
     }
 
-    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModelV4 {
+    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
         image(modelId: modelId)
     }
 
@@ -258,7 +258,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         responses: { OpenAIResponsesLanguageModel(modelId: $0, config: responsesConfig) },
         chat: { OpenAIChatLanguageModel(modelId: $0, config: chatConfig) },
         embeddings: { OpenAIEmbeddingModel(modelId: $0, config: embeddingConfig) },
-        images: { OpenAIImageModelV4(modelId: $0, config: imageConfig) },
+        images: { OpenAIImageModel(modelId: $0, config: imageConfig) },
         completions: { OpenAICompletionLanguageModel(modelId: $0, config: completionConfig) },
         transcriptions: { OpenAITranscriptionModelV4(modelId: $0, config: transcriptionConfig) },
         speeches: { OpenAISpeechModelV4(modelId: $0, config: speechConfig) },

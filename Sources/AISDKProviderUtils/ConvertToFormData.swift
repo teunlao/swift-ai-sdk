@@ -79,6 +79,15 @@ public func convertToFormData(
     useArrayBrackets: Bool = true,
     boundary: String = MultipartFormDataBuilder.makeBoundary()
 ) -> MultipartFormDataBuilder {
+    convertToFormData(input.map { ($0.key, $0.value) }, useArrayBrackets: useArrayBrackets, boundary: boundary)
+}
+
+/// Preserves field insertion order when constructing multipart requests.
+public func convertToFormData(
+    _ input: [(String, FormDataInputValue?)],
+    useArrayBrackets: Bool = true,
+    boundary: String = MultipartFormDataBuilder.makeBoundary()
+) -> MultipartFormDataBuilder {
     var builder = MultipartFormDataBuilder(boundary: boundary)
 
     for (key, value) in input {
