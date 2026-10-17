@@ -66,13 +66,7 @@ struct PipeUIMessageStreamToResponseTests {
             try await pipeUIMessageStreamToResponse(response: response, stream: stream,
                 options: StreamTextUIResponseOptions<UIMessage>())
         }
-        let deadline = Task {
-            try await Task.sleep(for: .seconds(1))
-            pending.continuation.finish()
-            reading.reject(CancellationError())
-            pipe.cancel()
-        }
-        defer { deadline.cancel(); pending.continuation.finish() }
+        defer { pending.continuation.finish() }
         try await reading.task.value
         response.close()
         try await pipe.value
@@ -95,14 +89,7 @@ struct PipeUIMessageStreamToResponseTests {
             try await pipeUIMessageStreamToResponse(response: response, stream: source.stream,
                 options: StreamTextUIResponseOptions<UIMessage>())
         }
-        let deadline = Task {
-            try await Task.sleep(for: .seconds(1))
-            source.continuation.finish()
-            response.writeStarted.reject(CancellationError())
-            response.drain()
-            pipe.cancel()
-        }
-        defer { deadline.cancel(); source.continuation.finish() }
+        defer { source.continuation.finish(); response.drain() }
         try await response.writeStarted.task.value
         response.close()
         try await pipe.value
@@ -127,12 +114,7 @@ struct PipeUIMessageStreamToResponseTests {
             try await pipeUIMessageStreamToResponse(response: response, stream: stream,
                 options: StreamTextUIResponseOptions<UIMessage>())
         }
-        let deadline = Task {
-            try await Task.sleep(for: .seconds(1))
-            response.writeStarted.reject(CancellationError())
-            pipe.cancel()
-        }
-        defer { deadline.cancel(); response.drain() }
+        defer { response.drain() }
         try await response.writeStarted.task.value
         #expect(await source.reads == 1)
         #expect(!response.snapshot().ended)
@@ -154,11 +136,7 @@ struct PipeUIMessageStreamToResponseTests {
             if case .cancelled = reason { terminated.resolve(true) }
             else { terminated.resolve(false) }
         }
-        let deadline = Task {
-            try await Task.sleep(for: .seconds(1))
-            source.continuation.finish()
-        }
-        defer { deadline.cancel(); source.continuation.finish() }
+        defer { source.continuation.finish() }
         try await pipeUIMessageStreamToResponse(response: response, stream: source.stream,
             options: StreamTextUIResponseOptions<UIMessage>())
         #expect(try await terminated.task.value)
@@ -176,11 +154,7 @@ struct PipeUIMessageStreamToResponseTests {
             else { terminated.resolve(false) }
         }
         source.continuation.yield(.textStart(id: "1", providerMetadata: nil))
-        let deadline = Task {
-            try await Task.sleep(for: .seconds(1))
-            source.continuation.finish()
-        }
-        defer { deadline.cancel(); source.continuation.finish() }
+        defer { source.continuation.finish() }
         await #expect(throws: ResponseFailure.self) {
             try await pipeUIMessageStreamToResponse(response: response, stream: source.stream,
                 options: StreamTextUIResponseOptions<UIMessage>())
