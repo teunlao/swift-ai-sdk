@@ -271,11 +271,10 @@ struct GatewayImageModelTests {
                 "vertex": [
                     "images": [
                         ["revisedPrompt": "Revised prompt 1"],
-                        ["revisedPrompt": "Revised prompt 2"],
+                        NSNull(),
                     ],
                 ],
                 "gateway": [
-                    "images": [],
                     "routing": ["provider": "vertex"],
                     "cost": "0.08",
                 ],
@@ -288,8 +287,10 @@ struct GatewayImageModelTests {
             return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
         }
 
-        let model = makeModel(fetch: fetch)
+        let model = createGateway(settings: .init(apiKey: "key", fetch: fetch)).image(modelId: "google/imagen-4.0-generate-001")
         let result = try await model.doGenerate(options: .init(prompt: "Test", n: 1, providerOptions: [:]))
+        guard case .base64(let images) = result.images else { Issue.record("Expected base64 images"); return }
+        #expect(images == ["base64-1"])
 
         guard let metadata = result.providerMetadata else {
             Issue.record("Expected providerMetadata")
@@ -301,6 +302,7 @@ struct GatewayImageModelTests {
 
         let vertex = try #require(metadata["vertex"])
         #expect(vertex.images.count == 2)
+        #expect(vertex.images[1] == .null)
         if case .object(let first) = vertex.images[0] {
             #expect(first["revisedPrompt"] == .string("Revised prompt 1"))
         } else {
@@ -317,10 +319,9 @@ struct GatewayImageModelTests {
         }
     }
 
-    @Test("invalid image metadata is rejected at the response boundary", arguments: ["missing-images", "invalid-image"])
-    func malformedImageMetadata(_ kind: String) async throws {
-        let entry: JSONValue = kind == "missing-images" ? ["cost": "0.1"] : ["images": [.null]]
-        let body: JSONValue = ["images": ["AQ=="], "providerMetadata": ["vertex": entry]]
+    @Test("invalid image metadata is rejected at the response boundary")
+    func malformedImageMetadata() async throws {
+        let body: JSONValue = ["images": ["AQ=="], "providerMetadata": ["vertex": ["images": "not-an-array"]]]
         let data = try JSONEncoder().encode(body)
         let model = makeModel(fetch: { request in
             FetchResponse(body: .data(data), urlResponse: try httpResponse(for: request, headers: ["Content-Type": "application/json"]))

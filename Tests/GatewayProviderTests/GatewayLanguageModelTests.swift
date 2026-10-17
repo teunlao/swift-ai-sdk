@@ -70,6 +70,27 @@ struct GatewayLanguageModelTests {
         }
     }
 
+    @Test("public error messages preserve the server reason and generation id")
+    func publicErrorMessage() async throws {
+        let provider = createGateway(settings: .init(apiKey: "key", fetch: { request in
+            FetchResponse(
+                body: .data(Data(#"{"error":{"message":"Request quota exhausted","type":"rate_limit_exceeded"},"generationId":"gen_quota"}"#.utf8)),
+                urlResponse: try httpResponse(for: request, statusCode: 429, headers: ["Content-Type": "application/json"])
+            )
+        }))
+        let model = try provider.languageModel(modelId: "test-model")
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: []))
+            Issue.record("Expected rate limit error")
+        } catch let error as GatewayRateLimitError {
+            #expect(error.generationId == "gen_quota")
+            #expect(AISDKProvider.getErrorMessage(error).contains("Request quota exhausted"))
+            #expect(AISDKProvider.getErrorMessage(error).contains("gen_quota"))
+            #expect(error.localizedDescription.contains("Request quota exhausted"))
+            #expect(error.localizedDescription.contains("gen_quota"))
+        }
+    }
+
     @Test("doGenerate passes headers, strips abortSignal, and maps response")
     func doGenerateRequestAndResponseMapping() async throws {
         let capture = RequestCapture()
@@ -281,6 +302,70 @@ struct GatewayLanguageModelTests {
         }
 
         #expect(partsRaw.contains(where: { if case .raw = $0 { return true } else { return false } }) == true)
+    }
+
+    @Test("stream demand paces HTTP reads and cancellation releases a pending body read", .timeLimit(.minutes(1)))
+    func streamFlowControl() async throws {
+        let bytes = AsyncThrowingStream<Data, Error>.makeStream()
+        let cancelled = AsyncStream<Void>.makeStream()
+        bytes.continuation.onTermination = { reason in
+            if case .cancelled = reason { cancelled.continuation.yield(()) }
+        }
+        defer { bytes.continuation.finish(); cancelled.continuation.finish() }
+        bytes.continuation.yield(Data(#"data: {"type":"text-delta","id":"text","delta":"first"}"#.utf8) + Data("\n\n".utf8))
+        bytes.continuation.yield(Data(#"data: {"type":"text-delta","id":"text","delta":"second"}"#.utf8) + Data("\n\n".utf8))
+        let source = BodyReader(bytes.stream)
+        let provider = createGateway(settings: .init(apiKey: "key", fetch: { request in
+            FetchResponse(
+                body: .stream(AsyncThrowingStream { try await source.next() }),
+                urlResponse: try httpResponse(for: request, headers: ["Content-Type": "text/event-stream"])
+            )
+        }))
+        let model = try provider.languageModel(modelId: "test-model")
+        let result = try await model.doStream(options: .init(prompt: []))
+        var iterator = result.stream.makeAsyncIterator()
+        #expect(try await iterator.next() == .textDelta(id: "text", delta: "first", providerMetadata: nil))
+        let readAhead = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                var reads = source.readAhead.stream.makeAsyncIterator()
+                return await reads.next() != nil
+            }
+            group.addTask {
+                try? await Task.sleep(for: .milliseconds(50))
+                return false
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? false
+        }
+        #expect(readAhead == false)
+        #expect(try await iterator.next() == .textDelta(id: "text", delta: "second", providerMetadata: nil))
+        let consumer = Task {
+            var remainder = result.stream.makeAsyncIterator()
+            return try await remainder.next()
+        }
+        defer { consumer.cancel() }
+        var pending = source.pending.stream.makeAsyncIterator()
+        _ = await pending.next()
+        consumer.cancel()
+        _ = try? await consumer.value
+        var endings = cancelled.stream.makeAsyncIterator()
+        #expect(await endings.next() != nil)
+    }
+
+    private final class BodyReader: @unchecked Sendable {
+        private var iterator: AsyncThrowingStream<Data, Error>.Iterator
+        private var pulls = 0
+        let readAhead = AsyncStream<Void>.makeStream()
+        let pending = AsyncStream<Void>.makeStream()
+
+        init(_ stream: AsyncThrowingStream<Data, Error>) { iterator = stream.makeAsyncIterator() }
+
+        func next() async throws -> Data? {
+            pulls += 1
+            if pulls == 2 { readAhead.continuation.yield(()) }
+            if pulls == 3 { pending.continuation.yield(()) }
+            return try await iterator.next()
+        }
     }
 
     @Test("doStream converts response-metadata timestamp strings to Date")

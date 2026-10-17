@@ -10,7 +10,7 @@ import AISDKProviderUtils
 //===----------------------------------------------------------------------===//
 
 /// Base protocol for Gateway errors.
-public protocol GatewayError: Error, Sendable {
+public protocol GatewayError: LocalizedError, Sendable {
     var name: String { get }
     var type: String { get }
     var statusCode: Int { get }
@@ -31,6 +31,7 @@ func defaultRetryability(for statusCode: Int) -> Bool {
 protocol GatewayErrorMarker {}
 
 public extension GatewayError {
+    var errorDescription: String? { message.isEmpty ? name : "\(name): \(message)" }
     var generationId: String? { nil }
     var isRetryable: Bool { defaultRetryability(for: statusCode) }
 

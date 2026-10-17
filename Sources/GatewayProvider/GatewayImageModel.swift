@@ -165,8 +165,14 @@ private struct GatewayImageMetadata: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         var entry = try container.decode(JSONObject.self)
-        guard case .array(let images)? = entry.removeValue(forKey: "images"), images.allSatisfy({ if case .object = $0 { return true }; return false }) else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Image metadata must contain an array of image objects")
+        let images: [JSONValue]
+        if let imageMetadata = entry.removeValue(forKey: "images") {
+            guard case .array(let values) = imageMetadata else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Image metadata images must be an array")
+            }
+            images = values
+        } else {
+            images = []
         }
         value = .init(images: images, additionalData: entry.isEmpty ? nil : .object(entry))
     }

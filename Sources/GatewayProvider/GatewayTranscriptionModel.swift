@@ -183,6 +183,7 @@ private actor GatewayTranscriptionSession {
                     guard !finished, !audioStopped, !Task.isCancelled else { return }
                     let end = min(offset + 64 * 1024, bytes.count)
                     try await connection.send(.binary(bytes.subdata(in: offset..<end)))
+                    try await connection.waitForBufferDrain()
                     offset = end
                 }
             }

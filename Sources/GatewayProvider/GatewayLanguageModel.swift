@@ -56,25 +56,10 @@ public final class GatewayLanguageModel: LanguageModelV4 {
                 isAborted: options.abortSignal,
                 fetch: config.fetch
             )
-            let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
-                let task = Task {
-                    do {
-                        for try await chunk in response.value {
-                            switch chunk {
-                            case .success(let part, _):
-                                if case .raw = part, options.includeRawChunks != true { continue }
-                                continuation.yield(part)
-                            case .failure(let error, _):
-                                throw error
-                            }
-                        }
-                        continuation.finish()
-                    } catch {
-                        continuation.finish(throwing: error)
-                    }
-                }
-                continuation.onTermination = { _ in task.cancel() }
-            }
+            let reader = LanguageStreamReader(response.value, includeRawChunks: options.includeRawChunks == true)
+            let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error>(unfolding: {
+                try await reader.next()
+            })
             return LanguageModelV4StreamResult(
                 stream: stream,
                 request: .init(body: jsonValueToFoundation(body)),
@@ -100,6 +85,30 @@ public final class GatewayLanguageModel: LanguageModelV4 {
             ],
             try await config.o11yHeaders()
         ).compactMapValues { $0 }
+    }
+}
+
+private final class LanguageStreamReader: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<ParseJSONResult<LanguageModelV4StreamPart>, Error>.Iterator
+    private let includeRawChunks: Bool
+
+    init(_ stream: AsyncThrowingStream<ParseJSONResult<LanguageModelV4StreamPart>, Error>, includeRawChunks: Bool) {
+        iterator = stream.makeAsyncIterator()
+        self.includeRawChunks = includeRawChunks
+    }
+
+    // The unfolding stream serializes pulls in the consumer's task.
+    func next() async throws -> LanguageModelV4StreamPart? {
+        while let chunk = try await iterator.next() {
+            switch chunk {
+            case .success(let part, _):
+                if case .raw = part, !includeRawChunks { continue }
+                return part
+            case .failure(let error, _):
+                throw error
+            }
+        }
+        return nil
     }
 }
 

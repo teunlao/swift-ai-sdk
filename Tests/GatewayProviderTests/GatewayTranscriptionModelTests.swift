@@ -31,9 +31,9 @@ struct GatewayTranscriptionModelTests {
         #expect(result.warnings.contains { if case .unsupported(feature: "providerOptions.xai.diarize", _) = $0 { return true }; return false })
     }
 
-    @Test("streaming transcription sends its envelope and bounded binary frames, then parses ordered results")
+    @Test("streaming transcription drains each bounded audio frame before continuing and parses ordered results")
     func stream() async throws {
-        let socket = Socket()
+        let socket = Socket(holdDrain: true)
         let provider = createGateway(settings: .init(apiKey: "key", teamIdOrSlug: "team", webSocket: { request in
             #expect(request.url?.absoluteString == "wss://ai-gateway.vercel.sh/v4/ai/transcription-model?ai-model-id=openai%2Fgpt-realtime-whisper")
             let protocols = request.value(forHTTPHeaderField: "Sec-WebSocket-Protocol")
@@ -50,6 +50,14 @@ struct GatewayTranscriptionModelTests {
             audio: audio, inputAudioFormat: .init(type: "audio/pcm", rate: 16000),
             providerOptions: ["openai": ["language": "en"]], includeRawChunks: true
         ))
+        var progress = socket.drainProgress.stream.makeAsyncIterator()
+        for sizes in [[64 * 1024], [64 * 1024, 1]] {
+            #expect(await progress.next() == true)
+            let sent = socket.sent()
+            #expect(sent.compactMap { if case .binary(let bytes) = $0 { return bytes.count }; return nil } == sizes)
+            #expect(sent.count == sizes.count + 1)
+            socket.releaseDrain()
+        }
         var parts: [TranscriptionModelV4StreamPart] = []
         for try await part in result.stream { parts.append(part) }
         try #require(parts.count == 3)
@@ -169,11 +177,15 @@ struct GatewayTranscriptionModelTests {
         private let finishEarly: Bool
         private var closed = false
         private var audioSend: CheckedContinuation<Void, Error>?
+        private var drainWaiter: CheckedContinuation<Void, Error>?
+        private let holdDrain: Bool
+        let drainProgress = AsyncStream<Bool>.makeStream()
 
-        init(failure: Bool = false, holdAudio: Bool = false, finishEarly: Bool = false) {
+        init(failure: Bool = false, holdAudio: Bool = false, finishEarly: Bool = false, holdDrain: Bool = false) {
             self.failure = failure
             self.holdAudio = holdAudio
             self.finishEarly = finishEarly
+            self.holdDrain = holdDrain
             let pair = AsyncThrowingStream<WebSocketMessage, Error>.makeStream()
             messages = pair.stream
             continuation = pair.continuation
@@ -196,6 +208,8 @@ struct GatewayTranscriptionModelTests {
                 return
             }
             guard case .text(let text) = message, text.contains("transcription-stream.audio-done") else { return }
+            drainProgress.continuation.yield(false)
+            drainProgress.continuation.finish()
             if failure {
                 continuation.yield(.text(#"{"type":"error","error":{"message":"Slow down","type":"rate_limit_exceeded"}}"#))
             } else {
@@ -207,14 +221,39 @@ struct GatewayTranscriptionModelTests {
             continuation.finish()
         }
 
+        func waitForBufferDrain() async throws {
+            guard holdDrain else { return }
+            try await withCheckedThrowingContinuation { (waiting: CheckedContinuation<Void, Error>) in
+                let alreadyClosed = lock.withLock {
+                    if closed { return true }
+                    drainWaiter = waiting
+                    return false
+                }
+                if alreadyClosed { waiting.resume(throwing: CancellationError()) }
+                else { drainProgress.continuation.yield(true) }
+            }
+        }
+
+        func releaseDrain() {
+            let waiting = lock.withLock {
+                let waiting = drainWaiter
+                drainWaiter = nil
+                return waiting
+            }
+            waiting?.resume()
+        }
+
         func close(code: Int?) {
             let waiting = lock.withLock {
                 closed = true
-                let waiting = audioSend
+                let waiting = (audioSend, drainWaiter)
                 audioSend = nil
+                drainWaiter = nil
                 return waiting
             }
-            waiting?.resume(throwing: CancellationError())
+            waiting.0?.resume(throwing: CancellationError())
+            waiting.1?.resume(throwing: CancellationError())
+            drainProgress.continuation.finish()
             continuation.finish()
         }
         func serverClose() { continuation.finish() }
