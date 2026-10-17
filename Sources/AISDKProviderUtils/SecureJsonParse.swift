@@ -22,6 +22,7 @@
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import Foundation
+import AISDKProvider
 
 /// Error thrown when secure JSON parsing detects forbidden prototype properties.
 public struct SecureJsonParseError: Error, Equatable {
@@ -53,12 +54,12 @@ private let suspectConstructorRx = try! NSRegularExpression(pattern: #""(?:c|\\u
 ///
 /// Upstream reference: packages/provider-utils/src/secure-json-parse.ts
 public func secureJsonParse(_ text: String) throws -> Any {
-    // Parse normally using Foundation's JSONSerialization
     guard let data = text.data(using: .utf8) else {
         throw SecureJsonParseError(message: "Invalid UTF-8 string")
     }
 
-    let obj = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    // JSONSerialization strips leading U+FEFF from object keys and string values.
+    let obj = foundationValue(try JSONDecoder().decode(JSONValue.self, from: data))
 
     // Ignore null and non-objects
     guard obj is [String: Any] || obj is [Any] else {
@@ -77,6 +78,17 @@ public func secureJsonParse(_ text: String) throws -> Any {
     // Scan result for proto keys
     try filter(obj: obj)
     return obj
+}
+
+private func foundationValue(_ value: JSONValue) -> Any {
+    switch value {
+    case .null: NSNull()
+    case .bool(let value): NSNumber(value: value)
+    case .number(let value): NSNumber(value: value)
+    case .string(let value): value
+    case .array(let values): values.map(foundationValue)
+    case .object(let values): values.mapValues(foundationValue)
+    }
 }
 
 /// Recursively filters an object for forbidden prototype properties.

@@ -105,6 +105,16 @@ struct ParseJSONTests {
         #expect(value == .array([.number(0.03302002), .number(0.020904541)]))
     }
 
+    @Test("JSON parsing preserves leading FEFF in keys and values through schema validation and raw data")
+    func leadingFEFF() async throws {
+        let schema = FlexibleSchema(Schema<JSONObject>.codable(JSONObject.self, jsonSchema: ["type": "object"]))
+        let result = await safeParseJSON(ParseJSONWithSchemaOptions(text: #"{"\ufeffkey":"\ufeffvalue","list":["\ufeffitem"]}"#, schema: schema))
+        let expected: JSONObject = ["\u{FEFF}key": .string("\u{FEFF}value"), "list": [.string("\u{FEFF}item")]]
+        guard case .success(let value, let raw) = result else { Issue.record("Expected valid JSON"); return }
+        #expect(value == expected)
+        #expect(try jsonValue(from: raw) == .object(expected))
+    }
+
     @Test("parseJSON parses JSON with schema validation")
     func parseJSONWithSchema() async throws {
         let schema = userSchema()
