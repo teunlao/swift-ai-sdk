@@ -275,6 +275,72 @@ struct APIRequestContractTests {
         #expect(error?.requestBodyValues as? [String: String] == ["file": "<file:a.txt>"])
     }
 
+    #if canImport(ObjectiveC)
+    @Test("an early multipart response releases a blocked writer whose input was never opened")
+    func multipartEarlyResponseReleasesUnopenedInput() async throws {
+        final class InputLease: @unchecked Sendable {
+            private let lock = NSLock()
+            private var input: InputStream?
+            private var cancelled = false
+            func capture(_ input: InputStream) { lock.withLock { self.input = input } }
+            func recordCancellation() { lock.withLock { cancelled = true } }
+            var isCancelled: Bool { lock.withLock { cancelled } }
+            func release() {
+                let input = lock.withLock { self.input }
+                if input?.streamStatus == .notOpen { input?.open() }
+                input?.close()
+            }
+        }
+        let input = InputLease()
+        let marker = "dispose-\(UUID().uuidString)"
+        let write = try MultipartWrite(marker: marker)
+        defer { write.restore() }
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        producer.continuation.onTermination = { reason in
+            if case .cancelled = reason { input.recordCancellation() }
+        }
+        defer { producer.continuation.finish() }
+        let upload = Task {
+            try await postMultipartStreamToAPI(
+                url: "https://api.example.com/files",
+                parts: [
+                    .field(name: marker, value: String(repeating: "x", count: 128 << 10)),
+                    .file(name: "unread", content: .stream(producer.stream)),
+                ],
+                failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                successfulResponseHandler: createBinaryResponseHandler(),
+                fetch: { request in
+                    let stream = try #require(request.httpBodyStream)
+                    input.capture(stream)
+                    var writes = write.entered.stream.makeAsyncIterator()
+                    _ = await writes.next()
+                    #expect(stream.streamStatus == .notOpen)
+                    return Self.response(request, body: .data(Data("accepted".utf8)))
+                }
+            )
+        }
+        defer { upload.cancel(); input.release() }
+        let result = try await withThrowingTaskGroup(of: ResponseHandlerResult<Data>.self) { group in
+            group.addTask {
+                try await withTaskCancellationHandler {
+                    try await upload.value
+                } onCancel: {
+                    upload.cancel()
+                }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(2))
+                input.release()
+                throw URLError(.timedOut)
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
+        #expect(result.value == Data("accepted".utf8))
+        #expect(input.isCancelled)
+    }
+    #endif
+
     @Test("multipart validation releases an unopened file stream before returning an invalid URL error")
     func multipartInvalidURLReleasesSource() async {
         final class Lifetime: @unchecked Sendable {

@@ -278,7 +278,8 @@ private final class StreamingRequestBody: @unchecked Sendable {
     func dispose() async -> Error? {
         pump?.cancel()
         closeWriter()
-        // Closing the read end fails a write blocked on a reader that stopped reading.
+        // Closing a never-opened bound stream is a no-op on Darwin.
+        if inputStream.streamStatus == .notOpen { inputStream.open() }
         inputStream.close()
         await pump?.value
 
