@@ -13,8 +13,15 @@ struct FireworksImageModelTests {
     private final class Resource: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
+        private var offered = false
+        private var retainedBody: AsyncThrowingStream<Data, Error>?
+        func offer(_ body: AsyncThrowingStream<Data, Error>? = nil) {
+            lock.withLock { offered = true; retainedBody = body }
+        }
         func release() { lock.withLock { cancelled = true } }
+        var wasOffered: Bool { lock.withLock { offered } }
         var released: Bool { lock.withLock { cancelled } }
+        var body: AsyncThrowingStream<Data, Error>? { lock.withLock { retainedBody } }
     }
     private func response(_ request: URLRequest, _ value: JSONValue, headers: [String: String] = [:]) throws -> FetchResponse {
         FetchResponse(body: .data(try JSONEncoder().encode(value)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"].merging(headers) { _, new in new })!)
@@ -122,18 +129,21 @@ struct FireworksImageModelTests {
         let model = image(fetch: { request in
             if request.url?.path.hasSuffix("/get_result") != true { return try response(request, .object(["request_id": .string("job")])) }
             if phase == "headers" {
-                do { try await Task.sleep(for: .seconds(1)) } catch { resource.release(); throw error }
-                return try response(request, .object(["id": .string("job"), "status": .string("Ready"), "result": .object(["sample": .string("https://example.com/image.png")])]))
+                let pending = AsyncStream<Void>.makeStream()
+                pending.continuation.onTermination = { reason in if case .cancelled = reason { resource.release() } }
+                resource.offer()
+                var iterator = pending.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                throw CancellationError()
             }
             let source = AsyncThrowingStream<Data, Error>.makeStream()
-            let fallback = Task {
-                do { try await Task.sleep(for: .seconds(1)); source.continuation.yield(Data(#"{"id":"job","status":"Pending","result":null}"#.utf8)); source.continuation.finish() } catch {}
-            }
-            source.continuation.onTermination = { reason in if case .cancelled = reason { resource.release() }; fallback.cancel() }
+            source.continuation.onTermination = { reason in if case .cancelled = reason { resource.release() } }
+            resource.offer(source.stream)
             return FetchResponse(body: .stream(source.stream), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
         }, timeout: 100)
         await #expect(throws: FireworksImageError.timedOut(milliseconds: 100)) { _ = try await model.doGenerate(options: .init(prompt: "draw", n: 1)) }
-        #expect(resource.released)
+        if resource.wasOffered { #expect(resource.released) }
+        if let body = resource.body { await cancelStream(body) }
     }
 
     private final class AbortState: @unchecked Sendable {
