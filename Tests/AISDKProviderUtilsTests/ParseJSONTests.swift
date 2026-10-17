@@ -99,6 +99,12 @@ struct ParseJSONTests {
         #expect(result == expected)
     }
 
+    @Test("parseJSON preserves nearest-Double precision for decimal numbers")
+    func decimalPrecision() async throws {
+        let value = try await parseJSON(ParseJSONOptions(text: "[0.033020019999999997,0.020904541]"))
+        #expect(value == .array([.number(0.03302002), .number(0.020904541)]))
+    }
+
     @Test("parseJSON parses JSON with schema validation")
     func parseJSONWithSchema() async throws {
         let schema = userSchema()

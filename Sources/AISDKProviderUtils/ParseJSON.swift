@@ -137,6 +137,13 @@ public func jsonValue(from value: Any) throws -> JSONValue {
         if CFGetTypeID(number as CFTypeRef) == CFBooleanGetTypeID() {
             return .bool(number.boolValue)
         }
+        if let decimal = number as? NSDecimalNumber {
+            // Decimal.doubleValue can round twice; parse its decimal text once.
+            guard let value = Double(decimal.stringValue) else {
+                throw JSONParseError(text: decimal.stringValue, cause: SchemaJSONSerializationError(value: decimal))
+            }
+            return .number(value)
+        }
         return .number(number.doubleValue)
     }
 
