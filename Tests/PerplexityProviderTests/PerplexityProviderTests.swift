@@ -1,147 +1,49 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import PerplexityProvider
+import AISDKProvider
+import AISDKProviderUtils
+import PerplexityProvider
 
 @Suite("PerplexityProvider")
 struct PerplexityProviderTests {
-    private static func encodeJSON(_ dict: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: dict)
-    }
-
-    @Test("supports upstream createPerplexity alias")
-    func supportsCreatePerplexityAlias() throws {
-        let provider = createPerplexity(settings: PerplexityProviderSettings(apiKey: "test-key"))
-        let model = try provider.languageModel(modelId: PerplexityLanguageModelId.sonar.rawValue)
-        #expect(model.provider == "perplexity")
-    }
-
-    @Test("uses default upstream base URL for chat requests")
-    func usesDefaultBaseURLForChatRequests() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responseJSON: [String: Any] = [
-            "id": "pplx-1",
-            "created": 1_700_000_000,
-            "model": "sonar",
-            "choices": [[
-                "message": [
-                    "role": "assistant",
-                    "content": "ok",
-                ],
-                "finish_reason": "stop",
-            ]],
-            "usage": [
-                "prompt_tokens": 1,
-                "completion_tokens": 1,
-                "total_tokens": 2,
-            ],
-        ]
-
-        let responseData = Self.encodeJSON(responseJSON)
-        let response = HTTPURLResponse(
-            url: URL(string: "https://api.perplexity.ai/chat/completions")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: response)
-        }
-
-        let provider = createPerplexity(settings: PerplexityProviderSettings(apiKey: "test-key", fetch: fetch))
-        let model = try provider.languageModel(modelId: PerplexityLanguageModelId.sonar.rawValue)
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
-        ]
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-
-        guard let request = await capture.value() else {
-            Issue.record("Expected request capture")
-            return
-        }
-
-        #expect(request.url?.absoluteString == "https://api.perplexity.ai/chat/completions")
+    @Test("default Agent endpoint sends the integration header and lazy provider authentication")
+    func agentRequest() async throws {
+        let response = #"{"id":"agent-1","created_at":1700000000,"model":"perplexity/sonar","object":"response","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"status":"completed"}"#
+        let provider = createPerplexity(settings: .init(apiKey: "key", headers: ["X-Provider": "provider"], fetch: { request in
+            #expect(request.url?.absoluteString == "https://api.perplexity.ai/v1/agent")
+            #expect(request.httpMethod == "POST")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+            #expect(request.value(forHTTPHeaderField: "X-Pplx-Integration") == "vercel-ai-sdk")
+            #expect(request.value(forHTTPHeaderField: "X-Provider") == "provider")
+            #expect(request.value(forHTTPHeaderField: "X-Call") == "call")
+            #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-perplexity/") == true)
+            return FetchResponse(body: .data(Data(response.utf8)), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json", "X-Response": "response"])!)
+        }))
+        let result = try await provider.languageModel(.perplexitySonar).doGenerate(options: .init(
+            prompt: [.user(content: [.text(.init(text: "hello"))], providerOptions: nil)], headers: ["X-Call": "call"]
+        ))
+        #expect(result.content == [.text(.init(text: "ok"))])
+        #expect(result.response?.id == "agent-1")
+        #expect(result.response?.headers?["x-response"] == "response")
     }
 
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
-        @Test("missing API key throws LoadAPIKeyError at request time")
-        func missingAPIKeyThrowsAtRequestTime() async throws {
-            actor RequestCapture {
-                var request: URLRequest?
-                func store(_ request: URLRequest) { self.request = request }
-                func value() -> URLRequest? { request }
-            }
-
+        @Test("missing credentials fail only when a model operation is invoked")
+        func missingCredentials() async throws {
             let original = getenv("PERPLEXITY_API_KEY").flatMap { String(validatingCString: $0) }
             defer {
-                if let original {
-                    setenv("PERPLEXITY_API_KEY", original, 1)
-                } else {
-                    unsetenv("PERPLEXITY_API_KEY")
-                }
+                if let original { setenv("PERPLEXITY_API_KEY", original, 1) }
+                else { unsetenv("PERPLEXITY_API_KEY") }
             }
-
             unsetenv("PERPLEXITY_API_KEY")
-
-            let capture = RequestCapture()
-            let responseJSON: [String: Any] = [
-                "id": "pplx-1",
-                "created": 1_700_000_000,
-                "model": "sonar",
-                "choices": [[
-                    "message": [
-                        "role": "assistant",
-                        "content": "ok",
-                    ],
-                    "finish_reason": "stop",
-                ]],
-                "usage": [
-                    "prompt_tokens": 1,
-                    "completion_tokens": 1,
-                    "total_tokens": 2,
-                ],
-            ]
-
-            let responseData = PerplexityProviderTests.encodeJSON(responseJSON)
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.perplexity.ai/chat/completions")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-
-            let fetch: FetchFunction = { request in
-                await capture.store(request)
-                return FetchResponse(body: .data(responseData), urlResponse: response)
+            let provider = createPerplexity()
+            let language = provider.languageModel(.fast)
+            let embedding = provider.embedding(.pplxEmbedV106b)
+            await #expect(throws: LoadAPIKeyError.self) {
+                try await language.doGenerate(options: .init(prompt: [.user(content: [.text(.init(text: "hello"))], providerOptions: nil)]))
             }
-
-            let provider = createPerplexity(settings: PerplexityProviderSettings(fetch: fetch))
-            let model = try provider.languageModel(modelId: PerplexityLanguageModelId.sonar.rawValue)
-            let prompt: LanguageModelV3Prompt = [
-                .user(content: [.text(.init(text: "hello"))], providerOptions: nil),
-            ]
-
-            do {
-                _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
-                Issue.record("Expected missing API key error")
-            } catch let error as LoadAPIKeyError {
-                #expect(error.message.contains("PERPLEXITY_API_KEY environment variable"))
-            } catch {
-                Issue.record("Expected LoadAPIKeyError, got: \(error)")
-            }
-
-            #expect(await capture.value() == nil)
+            await #expect(throws: LoadAPIKeyError.self) { try await embedding.doEmbed(options: .init(values: ["hello"])) }
         }
     }
 }

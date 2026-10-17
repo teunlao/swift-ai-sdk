@@ -1,132 +1,50 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/perplexity/src/perplexity-provider.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
 
 public struct PerplexityProviderSettings: Sendable {
     public var baseURL: String?
     public var apiKey: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
-    public var generateId: IDGenerator?
 
-    public init(
-        baseURL: String? = nil,
-        apiKey: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil,
-        generateId: IDGenerator? = nil
-    ) {
+    public init(baseURL: String? = nil, apiKey: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.headers = headers
         self.fetch = fetch
-        self.generateId = generateId
     }
 }
 
-public final class PerplexityProvider: ProviderV3 {
-    private let languageModelFactory: @Sendable (PerplexityLanguageModelId) -> PerplexityLanguageModel
+public final class PerplexityProvider: ProviderV4 {
+    private let settings: PerplexityProviderSettings
+    private let baseURL: String
+    private let headers: @Sendable () throws -> [String: String?]
 
-    init(languageModelFactory: @escaping @Sendable (PerplexityLanguageModelId) -> PerplexityLanguageModel) {
-        self.languageModelFactory = languageModelFactory
+    init(settings: PerplexityProviderSettings) {
+        self.settings = settings
+        baseURL = withoutTrailingSlash(settings.baseURL ?? "https://api.perplexity.ai")!
+        headers = {
+            let headers = combineHeaders(
+                ["Authorization": "Bearer \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "PERPLEXITY_API_KEY", description: "Perplexity"))", "X-Pplx-Integration": "vercel-ai-sdk"],
+                settings.headers?.mapValues(Optional.some)
+            )
+            return withUserAgentSuffix(headers, "ai-sdk-perplexity/\(PERPLEXITY_VERSION)").mapValues(Optional.some)
+        }
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        languageModelFactory(PerplexityLanguageModelId(rawValue: modelId))
+    public func languageModel(modelId: String) -> any LanguageModelV4 { languageModel(.init(rawValue: modelId)) }
+    public func languageModel(_ modelId: PerplexityLanguageModelId) -> PerplexityLanguageModel {
+        .init(modelId: modelId, config: .init(baseURL: baseURL, headers: headers, fetch: settings.fetch, generateId: generateID))
     }
-
-    public func chatModel(modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
+    public func callAsFunction(_ modelId: PerplexityLanguageModelId) -> PerplexityLanguageModel { languageModel(modelId) }
+    public func embeddingModel(modelId: String) -> any EmbeddingModelV4 { embedding(.init(rawValue: modelId)) }
+    public func embedding(_ modelId: PerplexityEmbeddingModelId) -> PerplexityEmbeddingModel {
+        .init(modelId: modelId, config: .init(provider: "perplexity.embedding", baseURL: baseURL, headers: headers, fetch: settings.fetch))
     }
-
-    public func chat(modelId: PerplexityLanguageModelId) -> PerplexityLanguageModel {
-        languageModelFactory(modelId)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
-
-    public func callAsFunction(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
-    }
 }
 
-private func createPerplexityAuthFetch(
-    apiKey: String?,
-    customFetch: FetchFunction?
-) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let resolved = try loadAPIKey(
-            apiKey: apiKey,
-            environmentVariableName: "PERPLEXITY_API_KEY",
-            description: "Perplexity"
-        )
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            headers["Authorization"] = "Bearer \(resolved)"
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
-    }
-}
-
-public func createPerplexityProvider(settings: PerplexityProviderSettings = .init()) -> PerplexityProvider {
-    let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://api.perplexity.ai"
-
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        if let headers = settings.headers {
-            for (key, value) in headers {
-                computed[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(computed.compactMapValues { $0 }, "ai-sdk/perplexity/\(PERPLEXITY_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let fetch = createPerplexityAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let languageFactory: @Sendable (PerplexityLanguageModelId) -> PerplexityLanguageModel = { modelId in
-        PerplexityLanguageModel(
-            modelId: modelId,
-            config: PerplexityLanguageModel.Config(
-                baseURL: baseURL,
-                headers: headersClosure,
-                fetch: fetch,
-                generateId: settings.generateId ?? generateID
-            )
-        )
-    }
-
-    return PerplexityProvider(languageModelFactory: languageFactory)
-}
-
-/// Alias matching the upstream naming (`createPerplexity`).
-public func createPerplexity(settings: PerplexityProviderSettings = .init()) -> PerplexityProvider {
-    createPerplexityProvider(settings: settings)
-}
-
-public let perplexity = createPerplexityProvider()
+public func createPerplexity(settings: PerplexityProviderSettings = .init()) -> PerplexityProvider { .init(settings: settings) }
+public let perplexity = createPerplexity()

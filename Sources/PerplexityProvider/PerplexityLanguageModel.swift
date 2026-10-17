@@ -2,453 +2,155 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/perplexity/src/perplexity-language-model.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-public final class PerplexityLanguageModel: LanguageModelV3 {
+public final class PerplexityLanguageModel: LanguageModelV4 {
     struct Config: Sendable {
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
-        let generateId: @Sendable () -> String
+        let generateId: IDGenerator
     }
-
-    private struct PreparedRequest {
-        let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+    private struct Request {
+        let body: JSONObject
+        let warnings: [SharedV4Warning]
     }
-
     private let modelIdentifier: PerplexityLanguageModelId
     private let config: Config
+    private static let presets: Set<String> = ["fast", "low", "medium", "high", "xhigh"]
+    private static let imageRegex = try! NSRegularExpression(pattern: "^https?://.*$")
 
-    init(modelId: PerplexityLanguageModelId, config: Config) {
-        self.modelIdentifier = modelId
-        self.config = config
-    }
-
-    public let specificationVersion: String = "v3"
+    init(modelId: PerplexityLanguageModelId, config: Config) { modelIdentifier = modelId; self.config = config }
     public var provider: String { "perplexity" }
     public var modelId: String { modelIdentifier.rawValue }
+    public var supportedUrls: [String: [NSRegularExpression]] { ["image/*": [Self.imageRegex]] }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        let prepared = try await prepareRequest(options: options, stream: false)
-
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        let request = try await prepare(options)
+        let url = "\(config.baseURL)/v1/agent"
         let response = try await postJsonToAPI(
-            url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: JSONValue.object(prepared.body),
-            failedResponseHandler: perplexityFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: perplexityResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
+            url: url, headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(request.body), failedResponseHandler: perplexityFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: perplexityAgentResponseSchema),
+            isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        guard let choice = response.value.choices.first else {
-            throw APICallError(
-                message: "No choices returned from Perplexity",
-                url: "\(config.baseURL)/chat/completions",
-                requestBodyValues: prepared.body
-            )
+        let value = response.value
+        if value.error != nil || value.status == "failed" {
+            throw APICallError(message: value.error?.message ?? "Perplexity response failed", url: url,
+                               requestBodyValues: request.body, statusCode: 400, responseHeaders: response.responseHeaders,
+                               responseBody: try response.rawValue.map { try perplexityJSONString(jsonValue(from: $0)) }, isRetryable: false)
         }
-
-        var content: [LanguageModelV3Content] = []
-        if !choice.message.content.isEmpty {
-            content.append(.text(LanguageModelV3Text(text: choice.message.content)))
-        }
-
-        if let citations = response.value.citations {
-            for url in citations {
-                content.append(.source(.url(id: config.generateId(), url: url, title: nil, providerMetadata: nil)))
-            }
-        }
-
-        let metadata = perplexityResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
-        let providerMetadata = makePerplexityProviderMetadata(images: response.value.images, usage: response.value.usage)
-
-        return LanguageModelV3GenerateResult(
-            content: content,
-            finishReason: LanguageModelV3FinishReason(
-                unified: mapPerplexityFinishReason(choice.finishReason),
-                raw: choice.finishReason
-            ),
-            usage: convertPerplexityUsage(response.value.usage),
-            providerMetadata: providerMetadata,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
-                id: metadata.id,
-                timestamp: metadata.timestamp,
-                modelId: metadata.modelId,
-                headers: response.responseHeaders,
-                body: response.rawValue
-            ),
-            warnings: prepared.warnings
-        )
-    }
-
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        let prepared = try await prepareRequest(options: options, stream: true)
-
-        let response = try await postJsonToAPI(
-            url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: JSONValue.object(prepared.body),
-            failedResponseHandler: perplexityFailedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: perplexityChunkSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
-        )
-
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
-            continuation.yield(.streamStart(warnings: prepared.warnings))
-
-            Task {
-                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
-                var metadataAccumulator = PerplexityStreamingMetadata()
-                var isFirstChunk = true
-                var isActiveText = false
-
-                do {
-                    for try await parseResult in response.value {
-                        if options.includeRawChunks == true, let raw = parseResult.rawJSONValue {
-                            continuation.yield(.raw(rawValue: raw))
-                        }
-
-                        switch parseResult {
-                        case .failure(let error, _):
-                            continuation.yield(.error(error: .string(String(describing: error))))
-                            continue
-
-                        case .success(let chunk, _):
-                            if isFirstChunk {
-                                isFirstChunk = false
-                                let metadata = perplexityResponseMetadata(id: chunk.id, model: chunk.model, created: chunk.created)
-                                continuation.yield(.responseMetadata(id: metadata.id, modelId: metadata.modelId, timestamp: metadata.timestamp))
-
-                                chunk.citations?.forEach { url in
-                                    continuation.yield(.source(.url(id: config.generateId(), url: url, title: nil, providerMetadata: nil)))
-                                }
-                            }
-
-                            if let usageData = chunk.usage {
-                                usage = convertPerplexityUsage(usageData)
-                                metadataAccumulator.citationTokens = usageData.citationTokens
-                                metadataAccumulator.numSearchQueries = usageData.numSearchQueries
-                            }
-
-                            if let images = chunk.images, !images.isEmpty {
-                                metadataAccumulator.images = images
-                            }
-
-                            if let choice = chunk.choices.first {
-                                if let finish = choice.finishReason {
-                                    finishReason = LanguageModelV3FinishReason(
-                                        unified: mapPerplexityFinishReason(finish),
-                                        raw: finish
-                                    )
-                                }
-
-                                let text = choice.delta.content
-                                if !isActiveText {
-                                    isActiveText = true
-                                    continuation.yield(.textStart(id: "0", providerMetadata: nil))
-                                }
-
-                                continuation.yield(.textDelta(id: "0", delta: text, providerMetadata: nil))
-                            }
-                        }
-                    }
-
-                    if isActiveText {
-                        continuation.yield(.textEnd(id: "0", providerMetadata: nil))
-                    }
-
-                    continuation.yield(
-                        .finish(
-                            finishReason: finishReason,
-                            usage: usage,
-                            providerMetadata: metadataAccumulator.providerMetadata()
-                        )
-                    )
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        var content: [LanguageModelV4Content] = []
+        var sourceIndexes: [String: (index: Int, hasResultId: Bool)] = [:]
+        var hasFunctionCall = false
+        func addSource(_ source: PerplexitySource) {
+            if let previous = sourceIndexes[source.url] {
+                if source.resultId != nil && !previous.hasResultId {
+                    content[previous.index] = .source(source.value)
+                    sourceIndexes[source.url] = (previous.index, true)
                 }
+            } else {
+                sourceIndexes[source.url] = (content.count, source.resultId != nil)
+                content.append(.source(source.value))
             }
         }
-
-        return LanguageModelV3StreamResult(
-            stream: stream,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3StreamResponseInfo(headers: response.responseHeaders)
+        for item in value.output {
+            switch item {
+            case .message(_, let parts):
+                for part in parts ?? [] {
+                    if part.type == "output_text", let text = part.text { content.append(.text(.init(text: text))) }
+                    for annotation in part.annotations ?? [] {
+                        if let url = annotation.url { addSource(.init(annotation: annotation, url: url, generateId: config.generateId)) }
+                    }
+                }
+            case .searchResults, .fetchedContents:
+                for source in try perplexityOutputSources(item, generateId: config.generateId) { addSource(source) }
+            case .functionCall(let value):
+                if let call = perplexityToolCall(value) { hasFunctionCall = true; content.append(.toolCall(call)) }
+            case .unhandled: break
+            }
+        }
+        return .init(
+            content: content,
+            finishReason: .init(unified: mapPerplexityFinishReason(status: value.status, incompleteReason: value.incomplete?.reason, hasFunctionCall: hasFunctionCall), raw: value.incomplete?.reason ?? value.status),
+            usage: convertPerplexityUsage(value.usage), providerMetadata: perplexityProviderMetadata(value.usage),
+            request: .init(body: request.body),
+            response: .init(id: value.id, timestamp: Date(timeIntervalSince1970: value.createdAt), modelId: value.model, headers: response.responseHeaders, body: response.rawValue),
+            warnings: request.warnings
         )
     }
 
-    private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        let request = try await prepare(options)
+        var body = request.body
+        body["stream"] = true
+        let response = try await postJsonToAPI(
+            url: "\(config.baseURL)/v1/agent", headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(body), failedResponseHandler: perplexityFailedResponseHandler,
+            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: perplexityAgentChunkSchema),
+            isAborted: options.abortSignal, fetch: config.fetch
+        )
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
+            continuation.yield(.streamStart(warnings: request.warnings))
+            let task = Task {
+                var state = PerplexityAgentStream(generateId: config.generateId)
+                do {
+                    for try await parsed in response.value {
+                        if options.includeRawChunks == true {
+                            switch parsed {
+                            case .success(_, let raw): continuation.yield(.raw(rawValue: try jsonValue(from: raw)))
+                            case .failure(_, let raw): if let raw { continuation.yield(.raw(rawValue: try jsonValue(from: raw))) }
+                            }
+                        }
+                        switch parsed {
+                        case .failure(let error, _):
+                            state.parsingFailed()
+                            continuation.yield(.error(error: .error(error)))
+                        case .success(let chunk, _):
+                            for part in try state.process(chunk) { continuation.yield(part) }
+                        }
+                    }
+                    for part in state.flush() { continuation.yield(part) }
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+        return .init(stream: stream, request: .init(body: body), response: .init(headers: response.responseHeaders))
+    }
 
-        if options.topK != nil {
-            warnings.append(.unsupported(feature: "topK", details: nil))
+    private func prepare(_ call: LanguageModelV4CallOptions) async throws -> Request {
+        let options = try await parseProviderOptions(provider: "perplexity", providerOptions: call.providerOptions, schema: perplexityLanguageModelOptions)
+        var warnings: [SharedV4Warning] = []
+        for (name, present) in [("topK", call.topK != nil), ("frequencyPenalty", call.frequencyPenalty != nil), ("presencePenalty", call.presencePenalty != nil), ("stopSequences", call.stopSequences != nil), ("seed", call.seed != nil)] where present {
+            warnings.append(.unsupported(feature: name, details: nil))
         }
-        if options.stopSequences != nil {
-            warnings.append(.unsupported(feature: "stopSequences", details: nil))
+        let input = try convertToPerplexityInput(call.prompt)
+        warnings += input.warnings
+        let tools = preparePerplexityTools(tools: call.tools, toolChoice: call.toolChoice)
+        warnings += tools.warnings
+        var reasoning = options?.reasoning?.fields
+        if reasoning == nil, let effort = call.reasoning, isCustomReasoning(effort) {
+            if effort == .none { warnings.append(.unsupported(feature: "reasoning \"none\"", details: nil)) }
+            else if let value = mapReasoningToProviderEffort(reasoning: effort, effortMap: [.minimal: "minimal", .low: "low", .medium: "medium", .high: "high", .xhigh: "xhigh", .max: "xhigh"], warnings: &warnings) {
+                reasoning = ["effort": .string(value)]
+            }
         }
-        if options.seed != nil {
-            warnings.append(.unsupported(feature: "seed", details: nil))
-        }
-
-        var body: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue)
-        ]
-
-        if let frequencyPenalty = options.frequencyPenalty {
-            body["frequency_penalty"] = .number(frequencyPenalty)
-        }
-        if let maxTokens = options.maxOutputTokens {
-            body["max_tokens"] = .number(Double(maxTokens))
-        }
-        if let presencePenalty = options.presencePenalty {
-            body["presence_penalty"] = .number(presencePenalty)
-        }
-        if let temperature = options.temperature {
-            body["temperature"] = .number(temperature)
-        }
-        if let topK = options.topK {
-            body["top_k"] = .number(Double(topK))
-        }
-        if let topP = options.topP {
-            body["top_p"] = .number(topP)
-        }
-
-        if case let .json(schema, _, _) = options.responseFormat {
-            var schemaObject: [String: JSONValue] = [:]
+        var body = options?.fields ?? [:]
+        for name in ["input", "max_output_tokens", "temperature", "top_p", "reasoning", "response_format", "tools"] { body.removeValue(forKey: name) }
+        body[Self.presets.contains(modelId) ? "preset" : "model"] = .string(modelId)
+        body["input"] = .array(input.input)
+        if let max = call.maxOutputTokens { body["max_output_tokens"] = .number(Double(max)) }
+        if let temperature = call.temperature { body["temperature"] = .number(temperature) }
+        if let topP = call.topP { body["top_p"] = .number(topP) }
+        if let reasoning { body["reasoning"] = .object(reasoning) }
+        if case .json(let schema, let name, let description) = call.responseFormat {
             if let schema {
-                schemaObject["schema"] = schema
-            }
-            body["response_format"] = .object([
-                "type": .string("json_schema"),
-                "json_schema": .object(schemaObject)
-            ])
+                var value: JSONObject = ["name": .string(name ?? "response"), "schema": schema, "strict": true]
+                if let description { value["description"] = .string(description) }
+                body["response_format"] = ["type": "json_schema", "json_schema": .object(value)]
+            } else { warnings.append(.unsupported(feature: "JSON response format without a schema", details: nil)) }
         }
-
-        if let providerOptions = options.providerOptions?["perplexity"] {
-            for (key, value) in providerOptions {
-                body[key] = value
-            }
-        }
-
-        let messages = try convertToPerplexityMessages(options.prompt)
-        body["messages"] = try encodeMessages(messages)
-
-        if stream {
-            body["stream"] = .bool(true)
-        }
-
-        return PreparedRequest(body: body, warnings: warnings)
-    }
-}
-
-// MARK: - Provider Metadata
-
-private func makePerplexityProviderMetadata(images: [PerplexityImage]?, usage: PerplexityUsage?) -> SharedV3ProviderMetadata {
-    let imagesValue: JSONValue
-    if let images, !images.isEmpty {
-        imagesValue = .array(images.map { image in
-            .object([
-                "imageUrl": .string(image.imageURL),
-                "originUrl": .string(image.originURL),
-                "height": .number(Double(image.height)),
-                "width": .number(Double(image.width))
-            ])
-        })
-    } else {
-        imagesValue = .null
-    }
-
-    let usageValue: JSONValue = .object([
-        "citationTokens": usage?.citationTokens.map { .number(Double($0)) } ?? .null,
-        "numSearchQueries": usage?.numSearchQueries.map { .number(Double($0)) } ?? .null
-    ])
-
-    return [
-        "perplexity": [
-            "images": imagesValue,
-            "usage": usageValue
-        ]
-    ]
-}
-
-private struct PerplexityStreamingMetadata {
-    var citationTokens: Int?
-    var numSearchQueries: Int?
-    var images: [PerplexityImage]?
-
-    func providerMetadata() -> SharedV3ProviderMetadata {
-        makePerplexityProviderMetadata(images: images, usage: PerplexityUsage(
-            promptTokens: nil,
-            completionTokens: nil,
-            reasoningTokens: nil,
-            totalTokens: nil,
-            citationTokens: citationTokens,
-            numSearchQueries: numSearchQueries
-        ))
-    }
-}
-
-// MARK: - Encoding Helpers
-
-private func encodeMessages(_ messages: [PerplexityMessage]) throws -> JSONValue {
-    let encoder = JSONEncoder()
-    let data = try encoder.encode(messages)
-    let raw = try JSONSerialization.jsonObject(with: data, options: [])
-    return try jsonValue(from: raw)
-}
-
-private func perplexityResponseMetadata(id: String?, model: String?, created: Double?) -> (id: String?, modelId: String?, timestamp: Date?) {
-    let timestamp = created.map { Date(timeIntervalSince1970: $0) }
-    return (id: id, modelId: model, timestamp: timestamp)
-}
-
-private func convertPerplexityUsage(_ usage: PerplexityUsage?) -> LanguageModelV3Usage {
-    guard let usage else {
-        return LanguageModelV3Usage()
-    }
-
-    let promptTokens = usage.promptTokens ?? 0
-    let completionTokens = usage.completionTokens ?? 0
-    let reasoningTokens = usage.reasoningTokens ?? 0
-
-    return LanguageModelV3Usage(
-        inputTokens: .init(
-            total: promptTokens,
-            noCache: promptTokens
-        ),
-        outputTokens: .init(
-            total: completionTokens,
-            text: completionTokens - reasoningTokens,
-            reasoning: reasoningTokens
-        ),
-        raw: try? jsonValue(from: usage)
-    )
-}
-
-// MARK: - Schemas & Models
-
-private let genericJSONObjectSchema: JSONValue = .object([
-    "type": .string("object")
-])
-
-private let perplexityResponseSchema = FlexibleSchema(
-    Schema<PerplexityResponse>.codable(
-        PerplexityResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
-
-private let perplexityChunkSchema = FlexibleSchema(
-    Schema<PerplexityStreamChunk>.codable(
-        PerplexityStreamChunk.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
-
-private enum PerplexityAssistantRole: String, Codable, Sendable {
-    case assistant
-}
-
-private struct PerplexityResponse: Codable, Sendable {
-    struct Choice: Codable, Sendable {
-        struct Message: Codable, Sendable {
-            let role: PerplexityAssistantRole
-            let content: String
-        }
-
-        let message: Message
-        let finishReason: String?
-
-        enum CodingKeys: String, CodingKey {
-            case message
-            case finishReason = "finish_reason"
-        }
-    }
-
-    let id: String
-    let created: Double
-    let model: String
-    let choices: [Choice]
-    let citations: [String]?
-    let images: [PerplexityImage]?
-    let usage: PerplexityUsage?
-}
-
-private struct PerplexityStreamChunk: Codable, Sendable {
-    struct Choice: Codable, Sendable {
-        struct Delta: Codable, Sendable {
-            let role: PerplexityAssistantRole
-            let content: String
-        }
-
-        let delta: Delta
-        let finishReason: String?
-
-        enum CodingKeys: String, CodingKey {
-            case delta
-            case finishReason = "finish_reason"
-        }
-    }
-
-    let id: String
-    let created: Double
-    let model: String
-    let choices: [Choice]
-    let citations: [String]?
-    let images: [PerplexityImage]?
-    let usage: PerplexityUsage?
-}
-
-private struct PerplexityUsage: Codable, Sendable {
-    let promptTokens: Int?
-    let completionTokens: Int?
-    let reasoningTokens: Int?
-    let totalTokens: Int?
-    let citationTokens: Int?
-    let numSearchQueries: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case promptTokens = "prompt_tokens"
-        case completionTokens = "completion_tokens"
-        case reasoningTokens = "reasoning_tokens"
-        case totalTokens = "total_tokens"
-        case citationTokens = "citation_tokens"
-        case numSearchQueries = "num_search_queries"
-    }
-}
-
-private struct PerplexityImage: Codable, Sendable {
-    let imageURL: String
-    let originURL: String
-    let height: Int
-    let width: Int
-
-    enum CodingKeys: String, CodingKey {
-        case imageURL = "image_url"
-        case originURL = "origin_url"
-        case height
-        case width
-    }
-}
-
-private extension ParseJSONResult where Output == PerplexityStreamChunk {
-    var rawJSONValue: JSONValue? {
-        switch self {
-        case .success(_, let raw):
-            return try? jsonValue(from: raw)
-        case .failure(_, let raw):
-            return raw.flatMap { try? jsonValue(from: $0) }
-        }
+        let native = (options?.tools ?? []).map { JSONValue.object($0.fields) }
+        if !native.isEmpty || !tools.tools.isEmpty { body["tools"] = .array(native + tools.tools) }
+        return .init(body: body, warnings: warnings)
     }
 }

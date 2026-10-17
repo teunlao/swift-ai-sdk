@@ -1,0 +1,61 @@
+{
+  "background": false,
+  "completed_at": 1790374547,
+  "created_at": 1790374547,
+  "error": null,
+  "id": "resp_8762b9bb-2d06-44a4-b68c-412dc85b24db",
+  "incomplete_details": null,
+  "max_output_tokens": 1024,
+  "metadata": {},
+  "model": "openai/gpt-6-luna",
+  "object": "response",
+  "output": [
+    {
+      "queries": ["Find the official TypeScript website and describe TypeScript in one sentence with a citation."],
+      "results": [
+        {
+          "id": 7,
+          "last_updated": "2026-09-22",
+          "snippet": "TypeScript: JavaScript With Syntax For Types.\n# TypeScript is JavaScript with syntax for types.\nTypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale.\n- Editor Checks\n...\nTypeScript adds additional syntax to JavaScript to support a **tighter integration with your editor**.\nCatch errors early in your editor.\n...\nTypeScript code converts to JavaScript, which **runs anywhere JavaScript runs**: In a browser, on Node.js, Deno, Bun and in your apps.\n...\nTypeScript understands JavaScript and uses **type inference to give you great tooling** without additional code.",
+          "source": "web",
+          "title": "TypeScript: JavaScript With Syntax For Types.",
+          "url": "https://www.typescriptlang.org/"
+        }
+      ],
+      "type": "search_results"
+    },
+    {
+      "content": [
+        {
+          "annotations": [],
+          "text": "The official TypeScript website is **typescriptlang.org**; TypeScript is a strongly typed programming language that builds on JavaScript with syntax for types.[7]",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_944a7d76-2a88-40fa-9c78-213a372e8d24",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "status": "completed",
+  "store": false,
+  "usage": {
+    "cost": {
+      "cache_creation_cost": 0.00015,
+      "cache_read_cost": 0.00002,
+      "currency": "USD",
+      "input_cost": 0,
+      "output_cost": 0.00002,
+      "tool_calls_cost": 0.001,
+      "tool_calls_cost_details": {"search_web": 0.001},
+      "total_cost": 0.00119
+    },
+    "input_tokens": 3007,
+    "input_tokens_details": {"cache_creation_input_tokens": 1224, "cache_read_input_tokens": 1780, "cached_tokens": 1780},
+    "output_tokens": 36,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "tool_calls_details": {"search_web": {"cost_usd": 0.001, "invocation": 1}},
+    "total_tokens": 3043
+  }
+}
