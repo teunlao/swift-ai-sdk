@@ -94,10 +94,51 @@ struct AgentTests {
         #expect(system == "Address the user as Ada")
     }
 
+    @Test("respond passes call options to prepareCall and ends with the continued conversation")
+    @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
+    func respondUsesCallOptionsAndHistory() async throws {
+        struct CallOptions: Codable, Sendable { let userName: String }
+
+        let model = MockLanguageModelV4(doStream: .singleValue(textStream(" again")))
+        let agent = ToolLoopAgent<CallOptions, String, String>(ToolLoopAgentSettings(
+            model: model,
+            prepareCall: { call in
+                var call = call
+                call.instructions = .text("Address the user as \(call.options?.userName ?? "?")")
+                return call
+            }
+        ))
+        let history = [
+            UIMessage(id: "u1", role: .user, parts: [.text(TextUIPart(text: "Hi", state: .done))]),
+            UIMessage(id: "a1", role: .assistant, parts: [.text(TextUIPart(text: "Hello", state: .done))]),
+        ]
+        let ends = EventRecorder<UIMessageStreamEndEvent<UIMessage>>()
+
+        let response = try await agent.respond(
+            messages: history,
+            options: CallOptions(userName: "Ada"),
+            responseOptions: StreamTextUIResponseOptions(streamOptions: UIMessageStreamOptions(
+                onEnd: { event in ends.record(event) }
+            ))
+        )
+        for try await _ in response.stream {}
+
+        let call = try #require(model.doStreamCalls.first)
+        guard case .system(let system, _) = call.prompt.first else {
+            Issue.record("Expected prepared instructions as the first message")
+            return
+        }
+        #expect(system == "Address the user as Ada")
+        let end = try #require(ends.values.first)
+        #expect(end.isContinuation)
+        #expect(end.messages.map(\.id) == ["u1", "a1"])
+        #expect(end.responseMessage.parts.first == .text(TextUIPart(text: "Hello", state: .done)))
+    }
+
     @Test("settings and call callbacks both receive the end event")
     func callbacksAreMerged() async throws {
         let model = MockLanguageModelV4(doStream: .singleValue(textStream("streamed")))
-        let calls = CallRecorder()
+        let calls = EventRecorder<String>()
         let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(
             model: model,
             onEnd: { _ in calls.record("settings") }
@@ -128,13 +169,13 @@ struct AgentTests {
     }
 }
 
-private final class CallRecorder: @unchecked Sendable {
+private final class EventRecorder<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private var storage: [String] = []
+    private var storage: [Value] = []
 
-    var values: [String] { lock.withLock { storage } }
+    var values: [Value] { lock.withLock { storage } }
 
-    func record(_ value: String) {
+    func record(_ value: Value) {
         lock.withLock { storage.append(value) }
     }
 }

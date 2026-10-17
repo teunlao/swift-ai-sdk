@@ -177,12 +177,18 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
         )
     }
 
-    /// Converts UI messages to model messages and streams the agent output as a UI message stream response.
+    /**
+     Converts UI messages to model messages and streams the agent output as a UI message stream response.
+
+     The input messages are the stream's `originalMessages` unless `responseOptions` sets them,
+     so end callbacks receive the whole conversation and a trailing assistant message is continued.
+     */
     @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
     public func respond<Message: UIMessageConvertible>(
         messages: [Message],
+        options: CallOptions? = nil,
         ignoreIncompleteToolCalls: Bool = false,
-        options: StreamTextUIResponseOptions<Message>? = nil
+        responseOptions: StreamTextUIResponseOptions<Message>? = nil
     ) async throws -> UIMessageStreamResponse<Message> {
         let modelMessages = try await convertToModelMessages(
             messages: messages,
@@ -191,8 +197,13 @@ public final class ToolLoopAgent<CallOptions: Sendable, OutputValue: Sendable, P
                 ignoreIncompleteToolCalls: ignoreIncompleteToolCalls
             )
         )
-        let result = try await stream(messages: modelMessages)
-        return try result.toUIMessageStreamResponse(options: options)
+        let result = try await stream(messages: modelMessages, options: options)
+
+        var responseOptions = responseOptions ?? StreamTextUIResponseOptions()
+        var streamOptions = responseOptions.streamOptions ?? UIMessageStreamOptions()
+        streamOptions.originalMessages = streamOptions.originalMessages ?? messages
+        responseOptions.streamOptions = streamOptions
+        return try result.toUIMessageStreamResponse(options: responseOptions)
     }
 }
 
