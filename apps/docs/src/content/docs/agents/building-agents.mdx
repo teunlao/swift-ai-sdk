@@ -1,50 +1,50 @@
 ---
 title: Building Agents
-description: Complete guide to creating agents with the Agent class.
+description: Complete guide to creating agents with ToolLoopAgent.
 ---
 
 _This page adapts the original AI SDK documentation: [Building Agents](https://ai-sdk.dev/docs/agents/building-agents)._
 
 # Building Agents
 
-The Agent class provides a structured way to encapsulate LLM configuration, tools, and behavior into reusable components. It handles the agent loop for you, allowing the LLM to call tools multiple times in sequence to accomplish complex tasks. Define agents once and use them across your application.
+The `ToolLoopAgent` class provides a structured way to encapsulate LLM configuration, tools, and behavior into reusable components. It handles the agent loop for you, allowing the LLM to call tools multiple times in sequence to accomplish complex tasks. Define agents once and use them across your application.
 
-## Why Use the Agent Class?
+## Why Use ToolLoopAgent?
 
 When building AI applications, you often need to:
 
 - **Reuse configurations** - Same model settings, tools, and prompts across different parts of your application
 - **Maintain consistency** - Ensure the same behavior and capabilities throughout your codebase
 - **Simplify API routes** - Reduce boilerplate in your endpoints
-- **Type safety** - Get full TypeScript support for your agent's tools and outputs
+- **Type safety** - Use Swift types for your agent's call options, tools, and outputs
 
-The Agent class provides a single place to define your agent's behavior.
+The `ToolLoopAgent` class provides a single place to define your agent's behavior.
 
 ## Creating an Agent
 
-Define an agent by instantiating the Swift `Agent` with your configuration:
+`Agent` is the protocol for custom implementations. Use `ToolLoopAgent` for the built-in tool loop; `BasicAgent` is its `ToolLoopAgent<Never, String, String>` shorthand for text output without call options:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
-let myAgent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
+let myAgent = try BasicAgent(.init(
   instructions: "You are a helpful assistant.",
+  model: openai("gpt-4o"),
   tools: [:]
 ))
 ```
 
 ## Configuration Options
 
-The Agent class accepts all the same settings as `generateText` and `streamText`. Configure:
+Configure the model, instructions, tools, output, and lifecycle callbacks through `ToolLoopAgentSettings`:
 
 ### Model and System Prompt
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
-  instructions: "You are an expert software engineer."
+let agent = try BasicAgent(.init(
+  instructions: "You are an expert software engineer.",
+  model: openai("gpt-4o")
 ))
 ```
 
@@ -64,7 +64,7 @@ let runCode = tool(
   CodeResult(output: "Code executed successfully")
 }
 
-let codeAgent = Agent<Never, Never>(settings: .init(
+let codeAgent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: ["runCode": runCode.eraseToTool()]
 ))
@@ -77,7 +77,7 @@ By default, agents run for 20 steps (`stopWhen: isStepCount(20)`). In each step,
 To let agents call multiple tools in sequence, configure `stopWhen` to allow more steps. After each tool execution, the agent triggers a new generation where the model can call another tool or generate text:
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   stopWhen: [isStepCount(20)] // Allow up to 20 steps
 ))
@@ -91,7 +91,7 @@ Each step represents one generation (which results in either text or a tool call
 You can combine multiple conditions:
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   stopWhen: [
     isStepCount(20)
@@ -107,9 +107,9 @@ Learn more about [loop control and stop conditions](/docs/agents/loop-control).
 Control how the agent uses tools:
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
-  tools: [/* your tools */],
+  tools: ["runCode": runCode.eraseToTool()],
   toolChoice: .required // or .none / .auto (default)
 ))
 ```
@@ -117,7 +117,7 @@ let agent = Agent<Never, Never>(settings: .init(
 You can also force the use of a specific tool:
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: [
     "weather": weatherTool,
@@ -132,17 +132,19 @@ let agent = Agent<Never, Never>(settings: .init(
 Define structured output schemas:
 
 ```swift
-// Define your structured output spec (example):
-// let outputSpec = Output.Specification<MyOutput, Never>.object(...)
+struct FeedbackAnalysis: Codable, Sendable {
+  let summary: String
+  let priorities: [String]
+}
 
-let analysisAgent = Agent<MyOutput, Never>(settings: .init(
+let analysisAgent = try ToolLoopAgent<Never, FeedbackAnalysis, JSONValue>(.init(
   model: openai("gpt-4o"),
-  output: outputSpec,
-  stopWhen: [isStepCount(10)]
+  stopWhen: [isStepCount(10)],
+  output: Output.object(FeedbackAnalysis.self)
 ))
 
-let result: DefaultGenerateTextResult<MyOutput> = try await analysisAgent.generate(
-  prompt: .text("Analyze customer feedback from the last quarter")
+let result = try await analysisAgent.generate(
+  prompt: "Analyze customer feedback from the last quarter"
 )
 let output = try result.output
 ```
@@ -156,9 +158,9 @@ System prompts define your agent's behavior, personality, and constraints. They 
 Set the agent's role and expertise:
 
 ```swift
-let agent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
-  instructions: "You are an expert data analyst. You provide clear insights from complex data."
+let agent = try BasicAgent(.init(
+  instructions: "You are an expert data analyst. You provide clear insights from complex data.",
+  model: openai("gpt-4o")
 ))
 ```
 
@@ -167,8 +169,7 @@ let agent = Agent<Never, Never>(settings: .init(
 Provide specific guidelines for agent behavior:
 
 ```swift
-let codeReviewAgent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
+let codeReviewAgent = try BasicAgent(.init(
   instructions: """
   You are a senior software engineer conducting code reviews.
   
@@ -178,7 +179,8 @@ let codeReviewAgent = Agent<Never, Never>(settings: .init(
   - Suggest improvements for readability and maintainability
   - Be constructive and educational in your feedback
   - Always explain why something is an issue and how to fix it
-  """
+  """,
+  model: openai("gpt-4o")
 ))
 ```
 
@@ -187,8 +189,7 @@ let codeReviewAgent = Agent<Never, Never>(settings: .init(
 Set boundaries and ensure consistent behavior:
 
 ```swift
-let customerSupportAgent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
+let customerSupportAgent = try BasicAgent(.init(
   instructions: """
   You are a customer support specialist for an e-commerce platform.
 
@@ -199,6 +200,7 @@ let customerSupportAgent = Agent<Never, Never>(settings: .init(
   - Keep responses concise and actionable
   - Never share internal company information
   """,
+  model: openai("gpt-4o"),
   tools: [
     "checkOrderStatus": checkOrderStatus,
     "lookupPolicy": lookupPolicy,
@@ -212,8 +214,7 @@ let customerSupportAgent = Agent<Never, Never>(settings: .init(
 Guide how the agent should use available tools:
 
 ```swift
-let researchAgent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
+let researchAgent = try BasicAgent(.init(
   instructions: """
   You are a research assistant with access to search and document tools.
 
@@ -224,6 +225,7 @@ let researchAgent = Agent<Never, Never>(settings: .init(
   4. Cite your sources when presenting information
   5. If information conflicts, present both viewpoints
   """,
+  model: openai("gpt-4o"),
   tools: [
     "webSearch": webSearch,
     "analyzeDocument": analyzeDocument,
@@ -237,8 +239,7 @@ let researchAgent = Agent<Never, Never>(settings: .init(
 Control the output format and communication style:
 
 ```swift
-let technicalWriterAgent = Agent<Never, Never>(settings: .init(
-  model: openai("gpt-4o"),
+let technicalWriterAgent = try BasicAgent(.init(
   instructions: """
   You are a technical documentation writer.
 
@@ -250,7 +251,8 @@ let technicalWriterAgent = Agent<Never, Never>(settings: .init(
   - Write in second person ("you" instead of "the user")
 
   Always format responses in Markdown.
-  """
+  """,
+  model: openai("gpt-4o")
 ))
 ```
 
@@ -263,7 +265,7 @@ Once defined, you can use your agent in three ways:
 Use `generate()` for one-time text generation:
 
 ```swift
-let result = try await myAgent.generate(prompt: .text("What is the weather like?"))
+let result = try await myAgent.generate(prompt: "What is the weather like?")
 print(result.text)
 ```
 
@@ -272,7 +274,7 @@ print(result.text)
 Use `stream()` for streaming responses:
 
 ```swift
-let stream = try myAgent.stream(prompt: .text("Tell me a story"))
+let stream = try await myAgent.stream(prompt: "Tell me a story")
 for try await chunk in stream.textStream {
   print(chunk, terminator: "")
 }
@@ -284,9 +286,11 @@ print()
 Use `respond()` to produce a UI message stream response on the server:
 
 ```swift
-// Example concept for a server route handler
-let response = try myAgent.respond(messages: uiMessages)
-// Pipe to an HTTP response using `pipeUIMessageStreamToResponse` if desired
+let uiMessages: [UIMessage] = [
+  UIMessage(id: "user-1", role: .user, parts: [.text(TextUIPart(text: "Tell me a story"))])
+]
+let response = try await myAgent.respond(messages: uiMessages)
+// Return response.stream as SSE from your HTTP handler.
 ```
 
 > Note: React hook examples (`useChat`) are JS‑only and not part of the Swift AI SDK.

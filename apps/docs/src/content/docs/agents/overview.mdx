@@ -17,9 +17,9 @@ These components work together:
   - **Context management** - Maintaining conversation history and deciding what the model sees (input) at each step
   - **Stopping conditions** - Determining when the loop (task) is complete
 
-## Agent Class
+## ToolLoopAgent
 
-The Agent class handles these three components. Here's an agent that uses multiple tools in a loop to accomplish a task:
+The `ToolLoopAgent` class handles these three components. `BasicAgent` is its shorthand for text output without call options. Here's an agent that uses multiple tools in a loop to accomplish a task:
 
 ```swift
 import SwiftAISDK
@@ -40,7 +40,7 @@ let weather = tool(
   inputSchema: WeatherQuery.self
 ) { query, _ in
   let temp = Double(72 + Int.random(in: -10...10))
-  FahrenheitWeather(location: query.location, temperature: temp)
+  return FahrenheitWeather(location: query.location, temperature: temp)
 }
 
 // Tool: F → C
@@ -51,7 +51,7 @@ let toCelsius = tool(
   TemperatureCelsius(celsius: (reading.temperature - 32) * (5.0 / 9.0))
 }
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: [
     "weather": weather.eraseToTool(),
@@ -60,7 +60,7 @@ let agent = Agent<Never, Never>(settings: .init(
   // Default stopWhen is isStepCount(20)
 ))
 
-let result = try await agent.generate(prompt: .text("What is the weather in San Francisco in celsius?"))
+let result = try await agent.generate(prompt: "What is the weather in San Francisco in celsius?")
 print(result.text)  // final answer
 print(result.steps) // steps taken by the agent
 ```
@@ -71,17 +71,17 @@ The agent automatically:
 2. Calls `convertFahrenheitToCelsius` to convert it
 3. Generates a final text response with the result
 
-The Agent class handles the loop, context management, and stopping conditions.
+The `ToolLoopAgent` class handles the loop, context management, and stopping conditions.
 
-## Why Use the Agent Class?
+## Why Use ToolLoopAgent?
 
-The Agent class is the recommended approach for building agents with the AI SDK because it:
+The `ToolLoopAgent` class is the recommended approach for building agents with the AI SDK because it:
 
 - **Reduces boilerplate** - Manages loops and message arrays
 - **Improves reusability** - Define once, use throughout your application
 - **Simplifies maintenance** - Single place to update agent configuration
 
-For most use cases, start with the Agent class. Use core functions (`generateText`, `streamText`) when you need explicit control over each step for complex structured workflows.
+For most use cases, start with the `ToolLoopAgent` class. Use core functions (`generateText`, `streamText`) when you need explicit control over each step for complex structured workflows.
 
 ## Structured Workflows
 
@@ -96,6 +96,6 @@ Agents are flexible and powerful, but non-deterministic. When you need reliable,
 
 ## Next Steps
 
-- **[Building Agents](/docs/agents/building-agents)** - Guide to creating agents with the Agent class
+- **[Building Agents](/docs/agents/building-agents)** - Guide to creating agents with the `ToolLoopAgent` class
 - **[Workflow Patterns](/docs/agents/workflows)** - Structured patterns using core functions for complex workflows
 - **[Loop Control](/docs/agents/loop-control)** - Execution control with stopWhen and prepareStep

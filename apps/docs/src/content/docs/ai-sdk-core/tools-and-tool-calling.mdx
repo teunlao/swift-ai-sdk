@@ -32,7 +32,7 @@ let weatherTool = tool(
   inputSchema: WeatherQuery.self
 ) { query, _ in
   let temp = 72 + Int.random(in: -10...10)
-  WeatherReport(location: query.location, temperature: temp)
+  return WeatherReport(location: query.location, temperature: temp)
 }
 
 let result = try await generateText(
@@ -95,8 +95,8 @@ let weatherTool = tool(
 let out = try await generateText(
   model: openai("gpt-4o"),
   tools: ["weather": weatherTool.tool],
-  stopWhen: [isStepCount(5)], // stop after max 5 steps if tools were called
-  prompt: "What is the weather in San Francisco?"
+  prompt: "What is the weather in San Francisco?",
+  stopWhen: [isStepCount(5)]
 )
 print(out.text)
 ```
@@ -107,7 +107,7 @@ print(out.text)
 ### Steps
 
 To access intermediate tool calls and results, you can use the `steps` property in the result object
-or the `streamText` `onFinish` callback.
+or the `streamText` `onEnd` callback.
 It contains all the text, tool calls, tool results, and more from each step.
 
 #### Example: Extract tool results from all steps
@@ -163,17 +163,15 @@ let _ = try await generateText(
   prompt: "...",
   prepareStep: { options in
     if options.stepNumber == 0 {
-      return PrepareStepResult(
+      return try PrepareStepResult(
         model: openai("gpt-5-reasoner"),
         toolChoice: .tool(toolName: "tool1"),
-        // limit the tools that are available for this step:
-        activeTools: ['tool1'],
-      };
+        activeTools: ["tool1"]
+      )
     }
-
-    // when nothing is returned, the default settings are used
-  },
-});
+    return nil
+  }
+)
 ```
 
 #### Message Modification for Longer Agentic Loops
@@ -195,7 +193,7 @@ prepareStep: { options in
 Adding the generated assistant and tool messages to your conversation history is a common task,
 especially if you are using multi-step tool calls.
 
-Both `generateText` and `streamText` expose `response.messages`, which you can add back into your conversation history (it is also available inside the `onFinish` callback of `streamText`).
+Both `generateText` and `streamText` expose `response.messages`, which you can add back into your conversation history (it is also available inside the `onEnd` callback of `streamText`).
 
 The property returns an array of `ResponseMessage` values. Use the `+` operator (`messages = messages + response.messages`) or call `response.messages.asModelMessages()` if you explicitly need `[ModelMessage]`:
 
@@ -261,7 +259,7 @@ let result = try await generateText(
   ],
   onStepEnd: { step in
     for call in step.toolCalls {
-      if call.dynamic == true {
+      if call.isDynamic {
         // Dynamic tool: input is JSONValue; validate at runtime
         print("Dynamic:", call.toolName, call.input)
         continue
@@ -298,33 +296,35 @@ struct WeatherStatusUpdate: Codable, Sendable {
   let temperature: Int?
 }
 
-let weatherStreaming = tool(
+let weatherStreaming: TypedTool<WeatherQuery, WeatherStatusUpdate> = tool(
   description: "Get the current weather.",
-  inputSchema: WeatherQuery.self
-) { query, _ in
-  .stream(AsyncThrowingStream<WeatherStatusUpdate, Error> { continuation in
-    continuation.yield(
-      WeatherStatusUpdate(status: "loading", message: "Getting weather for \(query.location)...", temperature: nil)
-    )
+  inputSchema: WeatherQuery.self,
+  execute: { query, _ in
+    .stream(AsyncThrowingStream<WeatherStatusUpdate, Error> { continuation in
+      continuation.yield(
+        WeatherStatusUpdate(status: "loading", message: "Getting weather for \(query.location)...", temperature: nil)
+      )
 
-    Task {
-      do {
-        try await Task.sleep(nanoseconds: 3_000_000_000)
-        let temperature = 72 + Int.random(in: -10...10)
-        continuation.yield(
-          WeatherStatusUpdate(
-            status: "success",
-            message: "The weather in \(query.location) is \(temperature)°F",
-            temperature: temperature
+      let task = Task {
+        do {
+          try await Task.sleep(nanoseconds: 3_000_000_000)
+          let temperature = 72 + Int.random(in: -10...10)
+          continuation.yield(
+            WeatherStatusUpdate(
+              status: "success",
+              message: "The weather in \(query.location) is \(temperature)°F",
+              temperature: temperature
+            )
           )
-        )
-        continuation.finish()
-      } catch {
-        continuation.finish(throwing: error)
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
       }
-    }
-  })
-}
+      continuation.onTermination = { _ in task.cancel() }
+    })
+  }
+)
 ```
 
 ## Tool Choice
@@ -376,22 +376,18 @@ let progressTool = tool(
   description: "Report tool status",
   inputSchema: ProgressInput.self
 ) { input, ctx in
-  if let callId = ctx.toolCallId {
-    print("Tool call id:", callId, "status for", input.task)
-  }
+  print("Tool call id:", ctx.toolCallId, "status for", input.task)
   return ProgressResult(status: "in-progress")
 }
 
-// Pseudocode for forwarding toolCallId in a Swift server
-let stream = createUIMessageStream { writer in
-  let result = try streamText(
-    model: openai("gpt-4o"),
-    messages: messages,
-    tools: ["progress": progressTool.tool]
-  )
-  writer.merge(result.toUIMessageStream())
-}
-let response = createUIMessageStreamResponse(stream: stream)
+let result = try streamText(
+  model: openai("gpt-4o"),
+  tools: ["progress": progressTool.tool],
+  prompt: "Report progress on the current task."
+)
+let response = try result.toUIMessageStreamResponse(
+  options: StreamTextUIResponseOptions<UIMessage>()
+)
 ```
 
 ### Messages
@@ -408,12 +404,8 @@ let auditTool = tool(
   description: "Summarize the conversation so far",
   inputSchema: AuditRequest.self
 ) { request, ctx in
-  let transcript = ctx.messages
-    .map { message in "\(message.role.rawValue): \(message.content.debugDescription)" }
-    .joined(separator: "
-")
-  return AuditResult(summary: "Transcript for \(request.topic):
-" + transcript)
+  let transcript = String(decoding: try JSONEncoder().encode(ctx.messages), as: UTF8.self)
+  return AuditResult(summary: "Transcript for \(request.topic):\n" + transcript)
 }
 
 let _ = try await generateText(
@@ -451,7 +443,7 @@ let _ = try await generateText(
   model: openai("gpt-4.1"),
   tools: ["weather": cancellableWeather.tool],
   prompt: "What is the weather in San Francisco?",
-  settings: CallSettings(abortSignal: myAbortSignal)
+  settings: CallSettings(abortSignal: { Task.isCancelled })
 )
 ```
 
@@ -576,8 +568,8 @@ Tool execution errors are available in the result steps:
 let out2 = try await generateText(model: openai("gpt-4o"), prompt: "...")
 let steps2 = out2.steps
 let toolErrors = steps2.flatMap { step in
-  step.content.compactMap { part -> ToolErrorContentPart? in
-    if case .toolError(let err) = part { return err }
+  step.content.compactMap { part -> TypedToolError? in
+    if case .toolError(let err, _) = part { return err }
     return nil
   }
 }
@@ -604,7 +596,7 @@ let stream = try streamText(
   prompt: "..."
 )
 
-let response = stream.toUIMessageStreamResponse(options: StreamTextUIResponseOptions(
+let response = try stream.toUIMessageStreamResponse(options: StreamTextUIResponseOptions<UIMessage>(
   streamOptions: UIMessageStreamOptions(
     onError: { error in
       if error is NoSuchToolError {
@@ -754,21 +746,26 @@ struct ComputerResult: Codable, Sendable {
 let computer = tool(
   description: "Computer tool",
   inputSchema: ComputerInput.self,
-  toModelOutput: { (result: ComputerResult) in
-    switch result.kind {
+  execute: { input, _ in
+    if input.action == "screenshot" {
+      let pngBase64 = "..." // capture a screenshot
+      return ComputerResult(kind: .screenshot, payload: pngBase64)
+    }
+    return ComputerResult(kind: .text, payload: "Performed action: \(input.action)")
+  },
+  toModelOutput: { (options: TypedToolModelOutputOptions<ComputerInput, ComputerResult>) in
+    switch options.output.kind {
     case .text:
-      return .content([.text(.init(text: result.payload))])
+      return .content(value: [
+        .text(text: options.output.payload, providerOptions: nil)
+      ])
     case .screenshot:
-      return .content([.image(data: result.payload, mediaType: "image/png")])
+      return .content(value: [
+        .file(data: .base64(options.output.payload), mediaType: "image/png", filename: nil, providerOptions: nil)
+      ])
     }
   }
-) { input, _ in
-  if input.action == "screenshot" {
-    let pngBase64 = "..." // capture a screenshot
-    return ComputerResult(kind: .screenshot, payload: pngBase64)
-  }
-  return ComputerResult(kind: .text, payload: "Performed action: \(input.action)")
-}
+)
 
 let result = try await generateText(
   model: openai("gpt-4o"),

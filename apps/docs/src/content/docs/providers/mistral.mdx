@@ -89,10 +89,12 @@ import MistralProvider
 let result = try await generateText(
   model: mistral("mistral-large-latest"),
   prompt: "Write a vegetarian lasagna recipe for 4 people.",
-  providerOptions: MistralChatOptions(
-    safePrompt: true,              // optional safety prompt injection
-    parallelToolCalls: false        // disable parallel tool calls
-  )
+  providerOptions: [
+    "mistral": [
+      "safePrompt": .bool(true),
+      "parallelToolCalls": .bool(false)
+    ]
+  ]
 )
 ```
 
@@ -143,21 +145,20 @@ import Foundation
 let result = try await generateText(
   model: mistral("mistral-small-latest"),
   messages: [
-    .user(
-      content: [
-        .text(.init(text: "What is an embedding model according to this document?")),
-        .file(.init(
-          data: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/ai.pdf?raw=true")!),
-          mediaType: "application/pdf"
-        ))
-      ],
-      providerOptions: nil
-    )
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is an embedding model according to this document?")),
+      .file(FilePart(
+        data: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/ai.pdf?raw=true")!),
+        mediaType: "application/pdf"
+      ))
+    ])))
   ],
-  providerOptions: MistralChatOptions(
-    documentImageLimit: 8,
-    documentPageLimit: 64
-  )
+  providerOptions: [
+    "mistral": [
+      "documentImageLimit": .number(8),
+      "documentPageLimit": .number(64)
+    ]
+  ]
 )
 ```
 
@@ -177,7 +178,7 @@ import MistralProvider
 let result = try await generateText(
   model: wrapLanguageModel(
     model: mistral("magistral-small-2506"),
-    middleware: extractReasoningMiddleware(tagName: "think")
+    middleware: extractReasoningMiddleware(options: .init(tagName: "think"))
   ),
   prompt: "What is 15 * 24?"
 )
@@ -225,8 +226,8 @@ struct Recipe: Codable {
 let result = try await generateObject(
   model: mistral("mistral-large-latest"),
   schema: Recipe.self,
-  schemaName: "recipe",
-  prompt: "Generate a simple pasta recipe."
+  prompt: "Generate a simple pasta recipe.",
+  schemaName: "recipe"
 )
 
 print(result.object)
@@ -251,11 +252,9 @@ struct ShoppingList: Codable {
 let result = try await generateObject(
   model: mistral("mistral-large-latest"),
   schema: ShoppingList.self,
-  schemaName: "shopping_list",
   prompt: "Generate a small shopping list.",
-  providerOptions: MistralChatOptions(
-    strictJsonSchema: true  // reject outputs that don't strictly match the schema
-  )
+  schemaName: "shopping_list",
+  providerOptions: ["mistral": ["strictJsonSchema": .bool(true)]]
 )
 ```
 

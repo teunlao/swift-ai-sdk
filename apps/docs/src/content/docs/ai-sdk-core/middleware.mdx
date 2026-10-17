@@ -30,7 +30,7 @@ let wrappedLanguageModel = wrapLanguageModel(
 The wrapped language model can be used just like any other language model, e.g. in `streamText`:
 
 ```swift highlight="2"
-let result = try await streamText(
+let result = try streamText(
   model: wrappedLanguageModel,
   prompt: "What cities are in the United States?"
 )
@@ -197,7 +197,7 @@ func yourLogMiddleware() -> LanguageModelV4Middleware {
                 textBlocks[id] = existing + delta
                 generatedText += delta
 
-              case .textEnd(let id, _):
+              case .textEnd(let id, _, _):
                 print("Text block \(id) completed: \(textBlocks[id] ?? "")")
 
               default:
@@ -282,7 +282,7 @@ This example shows how to use RAG as middleware.
 import Foundation
 import AISDKProvider
 
-func yourRagMiddleware(findSources: @escaping (String) -> [String]) -> LanguageModelV4Middleware {
+func yourRagMiddleware(findSources: @escaping @Sendable (String) -> [String]) -> LanguageModelV4Middleware {
   LanguageModelV4Middleware(
     transformParams: { type, params, model in
       // Extract last user message

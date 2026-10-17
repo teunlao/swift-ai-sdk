@@ -331,24 +331,25 @@ let result = try await generateText(
 print(result.text)
 ```
 
-#### Custom Download Function (Experimental)
+#### Custom Download Function
 
 You can use custom download functions to implement throttling, retries, authentication, caching, and more.
 
 The default download implementation automatically downloads files in parallel when they are not supported by the model.
 
-Custom download function can be passed via the `experimental_download` property:
+Pass a custom download function through the `download` argument:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
+import Foundation
 
 let customDownload: DownloadFunction = { requests in
   return try await withThrowingTaskGroup(of: (Int, DownloadResult?).self) { group in
     for (i, req) in requests.enumerated() {
       group.addTask {
         if req.isUrlSupportedByModel { return (i, nil) }
-        let (data, mediaType) = try await download(req.url) // add auth/retries as needed
+        let (data, mediaType) = try await download(url: req.url) // add auth/retries as needed
         return (i, DownloadResult(data: data, mediaType: mediaType))
       }
     }
@@ -360,7 +361,6 @@ let customDownload: DownloadFunction = { requests in
 
 let result = try await generateText(
   model: openai("gpt-4o"),
-  experimentalDownload: customDownload,
   messages: [
     .user(UserModelMessage(content: .parts([
       .file(FilePart(
@@ -368,11 +368,12 @@ let result = try await generateText(
         mediaType: "application/pdf"
       ))
     ])))
-  ]
+  ],
+  download: customDownload
 )
 ```
 
-> Note: The `experimental_download` option is experimental and may change in future releases.
+> Note: The `download` hook can change in patch releases. Return results in request order; `nil` leaves a supported URL for the model to fetch.
 
 ### Assistant Messages
 

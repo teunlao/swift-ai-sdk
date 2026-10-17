@@ -87,7 +87,7 @@ import OpenAIProvider
 import AnthropicProvider
 import GoogleProvider
 
-let models: [LanguageModel] = try [
+let models: [any LanguageModelConvertible] = try [
   openai("gpt-5.6"),
   anthropic("claude-4.5-sonnet"),
   google("gemini-2.5-pro")
@@ -121,11 +121,11 @@ struct Release: Codable, Sendable {
 let summary = try await generateObject(
   model: openai("gpt-5.6"),
   schema: Release.self,
-  schemaName: "release_summary",
-  prompt: "Summarize Swift AI SDK 0.20.0: streaming + tools."
+  prompt: "Summarize Swift AI SDK 0.20.0: streaming + tools.",
+  schemaName: "release_summary"
 ).object
 
-print("Release: \\(summary.name) (\\(summary.version))")
+print("Release: \(summary.name) (\(summary.version))")
 summary.changes.forEach { print("- \($0)") }
 ```
 

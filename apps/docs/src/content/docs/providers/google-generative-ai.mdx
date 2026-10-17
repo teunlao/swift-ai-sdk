@@ -80,7 +80,7 @@ The first argument is the model id, e.g. `gemini-2.5-flash`.
 The models support tool calls and some have multi-modal capabilities.
 
 ```swift
-let model = google("gemini-2.5-flash")
+let model = try google("gemini-2.5-flash")
 ```
 
 You can use Google Generative AI language models to generate text with the `generateText` function:
@@ -103,7 +103,7 @@ Google Generative AI also supports some model specific settings that are not par
 You can pass them as an options argument:
 
 ```swift
-let model = google("gemini-2.5-flash")
+let model = try google("gemini-2.5-flash")
 
 try await generateText(
   model: model,
@@ -187,7 +187,7 @@ You can control thinking budgets and enable a thought summary by setting the `th
 import SwiftAISDK
 import GoogleProvider
 
-let model = google("gemini-2.5-flash")
+let model = try google("gemini-2.5-flash")
 
 let result = try await generateText(
   model: model,
@@ -214,24 +214,18 @@ The Google Generative AI provider supports file inputs, e.g. PDF files.
 ```swift
 import SwiftAISDK
 import GoogleProvider
+import Foundation
 
 let result = try await generateText(
   model: google("gemini-2.5-flash"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "What is an embedding model according to this document?"
-        ],
-        [
-          "type": "file",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf")),
-          "mediaType": "application/pdf"
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is an embedding model according to this document?")),
+      .file(FilePart(
+        data: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf"))),
+        mediaType: "application/pdf"
+      ))
+    ])))
   ]
 )
 ```
@@ -241,24 +235,18 @@ You can also use YouTube URLs directly:
 ```swift
 import SwiftAISDK
 import GoogleProvider
+import Foundation
 
 let result = try await generateText(
   model: google("gemini-2.5-flash"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "Summarize this video"
-        ],
-        [
-          "type": "file",
-          "data": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-          "mediaType": "video/mp4"
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Summarize this video")),
+      .file(FilePart(
+        data: .url(URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!),
+        mediaType: "video/mp4"
+      ))
+    ])))
   ]
 )
 ```
@@ -308,7 +296,7 @@ let meatLasagnaResult = try await generateText(
 )
 
 // Check cached token count in usage metadata
-print("Cached tokens:", meatLasagnaResult.providerMetadata?.google?.usageMetadata as Any)
+print("Cached tokens:", meatLasagnaResult.providerMetadata?["google"]?["usageMetadata"] as Any)
 // e.g.
 // {
 //   groundingMetadata: null,
@@ -337,30 +325,16 @@ For guaranteed cost savings, you can still use explicit caching with Gemini 2.5 
 import SwiftAISDK
 import GoogleProvider
 
-let cacheManager = GoogleAICacheManager(
-  apiKey: ProcessInfo.processInfo.environment["GOOGLE_GENERATIVE_AI_API_KEY"]!
-)
-
+// Create the cache through Google's caching API and use its returned resource name.
+let cachedContent = "cachedContents/your-cache-id"
 let model = "gemini-2.5-pro"
-
-let cache = try await cacheManager.create(
-  model: model,
-  contents: [
-    [
-      "role": "user",
-      "parts": [["text": "1000 Lasagna Recipes..."]]
-    ]
-  ],
-  ttlSeconds: 60 * 5
-)
-let cachedContent = cache.name
 
 let veggieLasagnaRecipe = try await generateText(
   model: google(model),
   prompt: "Write a vegetarian lasagna recipe for 4 people.",
   providerOptions: [
     "google": [
-      "cachedContent": cachedContent
+      "cachedContent": .string(cachedContent)
     ]
   ]
 )
@@ -370,7 +344,7 @@ let meatLasagnaRecipe = try await generateText(
   prompt: "Write a meat lasagna recipe for 12 people.",
   providerOptions: [
     "google": [
-      "cachedContent": cachedContent
+      "cachedContent": .string(cachedContent)
     ]
   ]
 )
@@ -420,9 +394,9 @@ let text = result.text
 let sources = result.sources
 
 // access the grounding metadata
-let metadata = result.providerMetadata?.google
-let groundingMetadata = metadata?.groundingMetadata
-let safetyRatings = metadata?.safetyRatings
+let metadata = result.providerMetadata?["google"]
+let groundingMetadata = metadata?["groundingMetadata"]
+let safetyRatings = metadata?["safetyRatings"]
 ```
 
 When Search Grounding is enabled, the model will include sources in the response.
@@ -485,17 +459,17 @@ import GoogleProvider
 
 let result = try await generateText(
   model: google("gemini-2.5-flash"),
-  prompt: "Based on the document: https://ai.google.dev/gemini-api/docs/url-context. Answer this question: How many links we can consume in one request?",
   tools: [
     "url_context": google.tools.urlContext()
-  ]
+  ],
+  prompt: "Based on the document: https://ai.google.dev/gemini-api/docs/url-context. Answer this question: How many links we can consume in one request?"
 )
 
 let text = result.text
 let sources = result.sources
-let metadata = result.providerMetadata?.google
-let groundingMetadata = metadata?.groundingMetadata
-let urlContextMetadata = metadata?.urlContextMetadata
+let metadata = result.providerMetadata?["google"]
+let groundingMetadata = metadata?["groundingMetadata"]
+let urlContextMetadata = metadata?["urlContextMetadata"]
 ```
 
 The URL context metadata includes detailed information about how the model used the URL context to generate the response. Here are the available fields:
@@ -565,18 +539,18 @@ import GoogleProvider
 
 let result = try await generateText(
   model: google("gemini-2.5-flash"),
-  prompt: "Based on this context: https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai, tell me how to use Gemini with AI SDK. Also, provide the latest news about AI SDK V5.",
   tools: [
     "google_search": google.tools.googleSearch(),
     "url_context": google.tools.urlContext()
-  ]
+  ],
+  prompt: "Based on this context: https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai, tell me how to use Gemini with AI SDK. Also, provide the latest news about AI SDK V5."
 )
 
 let text = result.text
 let sources = result.sources
-let metadata = result.providerMetadata?.google
-let groundingMetadata = metadata?.groundingMetadata
-let urlContextMetadata = metadata?.urlContextMetadata
+let metadata = result.providerMetadata?["google"]
+let groundingMetadata = metadata?["groundingMetadata"]
+let urlContextMetadata = metadata?["urlContextMetadata"]
 ```
 
 ### Image Outputs
@@ -658,11 +632,6 @@ You can disable structured outputs for object generation as a workaround:
 ```swift highlight="3,8"
 let result = try await generateObject(
   model: google("gemini-2.5-flash"),
-  providerOptions: [
-    "google": [
-      "structuredOutputs": false
-    ]
-  ],
   schema: FlexibleSchema(jsonSchema(
     .object([
       "type": .string("object"),
@@ -689,7 +658,8 @@ let result = try await generateObject(
       ])
     ])
   )),
-  prompt: "Generate an example person for testing."
+  prompt: "Generate an example person for testing.",
+  providerOptions: ["google": ["structuredOutputs": false]]
 )
 let object = result.object
 ```
@@ -813,7 +783,7 @@ import SwiftAISDK
 import GoogleProvider
 
 let result = try await generateImage(
-  model: google.image("imagen-3.0-generate-002"),
+  model: google.image(modelId: "imagen-3.0-generate-002"),
   prompt: "A futuristic cityscape at sunset",
   aspectRatio: "16:9"
 )
@@ -827,7 +797,8 @@ import SwiftAISDK
 import GoogleProvider
 
 let result = try await generateImage(
-  model: google.image("imagen-3.0-generate-002"),
+  model: google.image(modelId: "imagen-3.0-generate-002"),
+  prompt: "A futuristic cityscape at sunset",
   providerOptions: [
     "google": [
       "personGeneration": "dont_allow"

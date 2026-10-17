@@ -35,16 +35,16 @@ You can import the default provider instance `revai` from `RevAIProvider`:
 import SwiftAISDK
 import RevAIProvider
 
-let model = revai.transcription("machine")
+let model = revai.transcription(modelId: "machine")
 ```
 
-If you need a customized setup, you can use `createRevai` and create a provider instance with your settings:
+If you need a customized setup, you can use `createRevAI` and create a provider instance with your settings:
 
 ```swift
 import Foundation
 import RevAIProvider
 
-let revai = createRevai(settings: RevAIProviderSettings(
+let revai = createRevAI(settings: RevAIProviderSettings(
   apiKey: ProcessInfo.processInfo.environment["REVAI_API_KEY"],
   headers: ["X-Custom-Header": "value"]
 ))
@@ -75,7 +75,7 @@ The first argument is the model id e.g. `machine`.
 ```swift
 import RevAIProvider
 
-let model = revai.transcription("machine")
+let model = revai.transcription(modelId: "machine")
 ```
 
 You can also pass additional provider-specific options using the `providerOptions` argument. For example, supplying the input language in ISO-639-1 (e.g. `en`) format can sometimes improve transcription performance if known beforehand.
@@ -88,7 +88,7 @@ import RevAIProvider
 let audio = try Data(contentsOf: URL(fileURLWithPath: "audio.mp3"))
 
 let result = try await transcribe(
-  model: revai.transcription("machine"),
+  model: revai.transcription(modelId: "machine"),
   audio: .data(audio),
   providerOptions: [
     "revai": [

@@ -15,12 +15,12 @@ import OpenAIProvider
 
 let result = try await generateText(
   model: openai("gpt-4.1"),
+  prompt: "Invent a new holiday and describe its traditions.",
   settings: CallSettings(
     maxOutputTokens: 512,
     temperature: 0.3,
     maxRetries: 5
-  ),
-  prompt: "Invent a new holiday and describe its traditions."
+  )
 )
 ```
 
@@ -85,8 +85,8 @@ import OpenAIProvider
 
 let result = try await generateText(
   model: openai("gpt-4.1"),
-  settings: CallSettings(stopSequences: ["END", "DONE"]),
-  prompt: "Produce a three-step checklist that ends with DONE."
+  prompt: "Produce a three-step checklist that ends with DONE.",
+  settings: CallSettings(stopSequences: ["END", "DONE"])
 )
 ```
 
@@ -110,6 +110,7 @@ For example, you can forward UI cancellation or implement a timeout.
 ```swift
 import SwiftAISDK
 import OpenAIProvider
+import Foundation
 
 let deadline = Date().addingTimeInterval(5)
 

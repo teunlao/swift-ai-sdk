@@ -150,15 +150,15 @@ import SwiftAISDK
 import OpenAIProvider
 
 let result = try await generateText(
-  model: try openai("gpt-5"), // or openai.responses("gpt-5")
+  model: openai("gpt-5"), // or openai.responses("gpt-5")
+  prompt: "...",
   providerOptions: [
     "openai": [
       "parallelToolCalls": false,
       "store": false,
       "user": "user_123"
     ]
-  ],
-  prompt: "..."
+  ]
 )
 ```
 
@@ -277,7 +277,7 @@ let result = try await generateText(
   model: openai.responses("gpt-5")
 )
 
-let openaiMetadata = result.providerMetadata?.openai
+let openaiMetadata = result.providerMetadata?["openai"]
 ```
 
 The following OpenAI-specific metadata is returned:
@@ -316,9 +316,9 @@ let result = try streamText(
 
 for try await part in result.fullStream {
   switch part {
-  case .reasoning(let delta):
+  case .reasoningDelta(_, let delta, _):
     print("Reasoning: \(delta)")
-  case .textDelta(let delta):
+  case .textDelta(_, let delta, _):
     print(delta, terminator: "")
   default:
     break
@@ -342,7 +342,7 @@ let result = try await generateText(
   ]
 )
 
-print("Reasoning:", result.reasoning ?? "")
+print("Reasoning:", result.reasoningText ?? "")
 ```
 
 Learn more about reasoning summaries in the [OpenAI documentation](https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries).
@@ -379,7 +379,6 @@ The OpenAI responses API supports web search through the `openai.tools.webSearch
 ```swift
 let result = try await generateText(
   model: openai("gpt-5"),
-  prompt: "What happened in San Francisco last week?",
   tools: [
     "web_search": openai.tools.webSearch(
       OpenAIWebSearchArgs(
@@ -393,7 +392,8 @@ let result = try await generateText(
     )
   ],
   // Force web search tool (optional):
-  toolChoice: .tool(toolName: "web_search")
+  toolChoice: .tool(toolName: "web_search"),
+  prompt: "What happened in San Francisco last week?"
 )
 
 // URL sources
@@ -409,7 +409,6 @@ You can force the use of the file search tool by setting the `toolChoice` parame
 ```swift
 let result = try await generateText(
   model: openai("gpt-5"),
-  prompt: "What does the document say about user authentication?",
   tools: [
     "file_search": openai.tools.fileSearch(
       OpenAIFileSearchArgs(
@@ -427,6 +426,7 @@ let result = try await generateText(
       )
     )
   ],
+  prompt: "What does the document say about user authentication?",
   providerOptions: [
     "openai": [
       // optional: include results
@@ -455,17 +455,19 @@ import OpenAIProvider
 
 let result = try await generateText(
   model: openai("gpt-5"),
-  prompt: "Generate an image of an echidna swimming across the Mozambique channel.",
   tools: [
     "image_generation": openai.tools.imageGeneration(
       OpenAIImageGenerationArgs(outputFormat: "webp")
     )
-  ]
+  ],
+  prompt: "Generate an image of an echidna swimming across the Mozambique channel."
 )
 
 for toolResult in result.staticToolResults {
-  if toolResult.toolName == "image_generation" {
-    let base64Image = toolResult.output.result
+  if toolResult.toolName == "image_generation",
+     case .object(let output) = toolResult.output,
+     case .string(let base64Image) = output["result"] {
+    print(base64Image)
   }
 }
 ```
@@ -476,7 +478,6 @@ import OpenAIProvider
 
 let result = try streamText(
   model: openai("gpt-5"),
-  prompt: "Generate an image of an echidna swimming across the Mozambique channel.",
   tools: [
     "image_generation": openai.tools.imageGeneration(
       OpenAIImageGenerationArgs(
@@ -484,12 +485,17 @@ let result = try streamText(
         quality: "low"
       )
     )
-  ]
+  ],
+  prompt: "Generate an image of an echidna swimming across the Mozambique channel."
 )
 
 for try await part in result.fullStream {
-  if case .toolResult(let toolResult) = part, !toolResult.dynamic {
-    let base64Image = toolResult.output.result
+  if case .toolResult(let toolResult) = part,
+     !toolResult.isDynamic,
+     toolResult.toolName == "image_generation",
+     case .object(let output) = toolResult.output,
+     case .string(let base64Image) = output["result"] {
+    print(base64Image)
   }
 }
 ```
@@ -517,14 +523,14 @@ import OpenAIProvider
 
 let result = try await generateText(
   model: openai("gpt-5"),
-  prompt: "Write and run Python code to calculate the factorial of 10",
   tools: [
     "code_interpreter": openai.tools.codeInterpreter(
       OpenAICodeInterpreterArgs(
         container: .auto(fileIds: ["file-123", "file-456"])
       )
     )
-  ]
+  ],
+  prompt: "Write and run Python code to calculate the factorial of 10"
 )
 ```
 
@@ -566,7 +572,7 @@ let result = try await generateText(
     ))
   ],
   prompt: "List the files in my home directory.",
-  stopWhen: isStepCount(2)
+  stopWhen: [isStepCount(2)]
 )
 ```
 
@@ -650,7 +656,7 @@ let result = try await generateText(
     ))
   ],
   prompt: "Create a python file that calculates the factorial of a number",
-  stopWhen: isStepCount(5)
+  stopWhen: [isStepCount(5)]
 )
 ```
 
@@ -676,14 +682,14 @@ let mcp = openai.tools.mcp(OpenAIMCPArgs(
 
 let result = try streamText(
   model: openai.responses("gpt-5"),
-  prompt: "Shorten https://openai.com and return only the shortened URL.",
   tools: [
     "mcp": mcp
   ],
   toolChoice: .tool(toolName: "mcp"),
-  experimentalApprove: { _ in
-    // Approve (or deny) provider-executed MCP calls when OpenAI requests approval.
-    .approve
+  prompt: "Shorten https://openai.com and return only the shortened URL.",
+  toolApproval: .generic { _ in
+    // Replace this policy with your application's approval decision.
+    .approved()
   }
 )
 
@@ -704,45 +710,36 @@ The OpenAI Responses API supports Image inputs for appropriate models.
 You can pass Image files as part of the message content using the 'image' type:
 
 ```swift
+import Foundation
+
 let result = try await generateText(
   model: openai("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "Please describe the image."
-        ],
-        [
-          "type": "image",
-          "image": try Data(contentsOf: URL(fileURLWithPath: "./data/image.png"))
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Please describe the image.")),
+      .image(ImagePart(image: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/image.png")))))
+    ])))
   ]
 )
 ```
 
 The model will have access to the image and will respond to questions about it.
-The image should be passed using the `image` field.
+Pass an `ImagePart` inside `UserModelMessage(content: .parts(...))`.
 
 You can also pass a file-id from the OpenAI Files API.
 
 ```swift
-[
-  "type": "image",
-  "image": "file-8EFBcWHsQxZV7YGezBC1fq"
-]
+let image: UserContentPart = .image(ImagePart(
+  image: .reference(["openai": "file-8EFBcWHsQxZV7YGezBC1fq"])
+))
 ```
 
 You can also pass the URL of an image.
 
 ```swift
-[
-  "type": "image",
-  "image": "https://sample.edu/image.png"
-]
+let image: UserContentPart = .image(ImagePart(
+  image: .url(URL(string: "https://sample.edu/image.png")!)
+))
 ```
 
 #### PDF Inputs
@@ -751,24 +748,19 @@ The OpenAI Responses API supports reading PDF files.
 You can pass PDF files as part of the message content using the `file` type:
 
 ```swift
+import Foundation
+
 let result = try await generateText(
   model: openai("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "What is an embedding model?"
-        ],
-        [
-          "type": "file",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf")),
-          "mediaType": "application/pdf",
-          "filename": "ai.pdf" // optional
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is an embedding model?")),
+      .file(FilePart(
+        data: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf"))),
+        mediaType: "application/pdf",
+        filename: "ai.pdf"
+      ))
+    ])))
   ]
 )
 ```
@@ -776,28 +768,26 @@ let result = try await generateText(
 You can also pass a file-id from the OpenAI Files API.
 
 ```swift
-[
-  "type": "file",
-  "data": "file-8EFBcWHsQxZV7YGezBC1fq",
-  "mediaType": "application/pdf"
-]
+let pdf: UserContentPart = .file(FilePart(
+  data: .reference(["openai": "file-8EFBcWHsQxZV7YGezBC1fq"]),
+  mediaType: "application/pdf"
+))
 ```
 
 You can also pass the URL of a pdf.
 
 ```swift
-[
-  "type": "file",
-  "data": "https://sample.edu/example.pdf",
-  "mediaType": "application/pdf",
-  "filename": "ai.pdf" // optional
-]
+let pdf: UserContentPart = .file(FilePart(
+  data: .url(URL(string: "https://sample.edu/example.pdf")!),
+  mediaType: "application/pdf",
+  filename: "ai.pdf"
+))
 ```
 
 The model will have access to the contents of the PDF file and
 respond to questions about it.
-The PDF file should be passed using the `data` field,
-and the `mediaType` should be set to `'application/pdf'`.
+Pass a `FilePart` inside `UserModelMessage(content: .parts(...))`,
+with `mediaType: "application/pdf"`.
 
 #### Structured Outputs
 
@@ -1009,9 +999,10 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai.chat("gpt-5"),
   messages: [
-    ["role": "system", "content": "You are a helpful assistant."],
-    ["role": "user", "content": "Tell me a joke."]
+    .system(SystemModelMessage(content: "You are a helpful assistant.")),
+    .user("Tell me a joke.")
   ],
+  allowSystemInMessages: true,
   providerOptions: [
     "openai": [
       "systemMessageMode": "system"
@@ -1097,36 +1088,28 @@ The OpenAI Chat API supports Image inputs for appropriate models.
 You can pass Image files as part of the message content using the 'image' type:
 
 ```swift
+import Foundation
+
 let result = try await generateText(
   model: openai.chat("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "Please describe the image."
-        ],
-        [
-          "type": "image",
-          "image": try Data(contentsOf: URL(fileURLWithPath: "./data/image.png"))
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Please describe the image.")),
+      .image(ImagePart(image: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/image.png")))))
+    ])))
   ]
 )
 ```
 
 The model will have access to the image and will respond to questions about it.
-The image should be passed using the `image` field.
+Pass an `ImagePart` inside `UserModelMessage(content: .parts(...))`.
 
 You can also pass the URL of an image.
 
 ```swift
-[
-  "type": "image",
-  "image": "https://sample.edu/image.png"
-]
+let image: UserContentPart = .image(ImagePart(
+  image: .url(URL(string: "https://sample.edu/image.png")!)
+))
 ```
 
 #### PDF support
@@ -1135,52 +1118,45 @@ The OpenAI Chat API supports reading PDF files.
 You can pass PDF files as part of the message content using the `file` type:
 
 ```swift
+import Foundation
+
 let result = try await generateText(
   model: openai.chat("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        [
-          "type": "text",
-          "text": "What is an embedding model?"
-        ],
-        [
-          "type": "file",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf")),
-          "mediaType": "application/pdf",
-          "filename": "ai.pdf" // optional
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is an embedding model?")),
+      .file(FilePart(
+        data: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/ai.pdf"))),
+        mediaType: "application/pdf",
+        filename: "ai.pdf"
+      ))
+    ])))
   ]
 )
 ```
 
 The model will have access to the contents of the PDF file and
 respond to questions about it.
-The PDF file should be passed using the `data` field,
-and the `mediaType` should be set to `'application/pdf'`.
+Pass a `FilePart` inside `UserModelMessage(content: .parts(...))`,
+with `mediaType: "application/pdf"`.
 
 You can also pass a file-id from the OpenAI Files API.
 
 ```swift
-[
-  "type": "file",
-  "data": "file-8EFBcWHsQxZV7YGezBC1fq",
-  "mediaType": "application/pdf"
-]
+let pdf: UserContentPart = .file(FilePart(
+  data: .reference(["openai": "file-8EFBcWHsQxZV7YGezBC1fq"]),
+  mediaType: "application/pdf"
+))
 ```
 
 You can also pass the URL of a PDF.
 
 ```swift
-[
-  "type": "file",
-  "data": "https://sample.edu/example.pdf",
-  "mediaType": "application/pdf",
-  "filename": "ai.pdf" // optional
-]
+let pdf: UserContentPart = .file(FilePart(
+  data: .url(URL(string: "https://sample.edu/example.pdf")!),
+  mediaType: "application/pdf",
+  filename: "ai.pdf"
+))
 ```
 
 #### Predicted Outputs
@@ -1190,23 +1166,18 @@ Predicted outputs help you reduce latency by allowing you to specify a base text
 You can enable predicted outputs by adding the `prediction` option to the `providerOptions.openai` object:
 
 ```swift highlight="15-18"
+let existingCode = "struct Account { var username: String }"
 let result = try streamText(
   model: openai.chat("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": "Replace the Username property with an Email property."
-    ],
-    [
-      "role": "user",
-      "content": existingCode
-    ]
+    .user("Replace the Username property with an Email property."),
+    .user(existingCode)
   ],
   providerOptions: [
     "openai": [
       "prediction": [
         "type": "content",
-        "content": existingCode
+        "content": .string(existingCode)
       ]
     ]
   ]
@@ -1217,10 +1188,10 @@ OpenAI provides usage information for predicted outputs (`acceptedPredictionToke
 You can access it in the `providerMetadata` object.
 
 ```swift highlight="11"
-let openaiMetadata = try await result.providerMetadata?.openai
+let openaiMetadata = (try await result.providerMetadata)?["openai"]
 
-let acceptedPredictionTokens = openaiMetadata?.acceptedPredictionTokens
-let rejectedPredictionTokens = openaiMetadata?.rejectedPredictionTokens
+let acceptedPredictionTokens = openaiMetadata?["acceptedPredictionTokens"]
+let rejectedPredictionTokens = openaiMetadata?["rejectedPredictionTokens"]
 ```
 
 <Aside type="caution">
@@ -1237,21 +1208,13 @@ You can use the `openai` provider option to set the [image input detail](https:/
 let result = try await generateText(
   model: openai.chat("gpt-5"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        ["type": "text", "text": "Describe the image in detail."],
-        [
-          "type": "image",
-          "image": "https://github.com/vercel/ai/blob/main/examples/ai-core/data/comic-cat.png?raw=true",
-
-          // OpenAI specific options - image detail:
-          "providerOptions": [
-            "openai": ["imageDetail": "low"]
-          ]
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "Describe the image in detail.")),
+      .image(ImagePart(
+        image: .url(URL(string: "https://github.com/vercel/ai/blob/main/examples/ai-core/data/comic-cat.png?raw=true")!),
+        providerOptions: ["openai": ["imageDetail": "low"]]
+      ))
+    ])))
   ]
 )
 ```
@@ -1317,12 +1280,10 @@ let result = try await generateText(
   prompt: "A 1024-token or longer prompt..."
 )
 
-print("usage:", [
-  "promptTokens": result.usage.promptTokens,
-  "completionTokens": result.usage.completionTokens,
-  "totalTokens": result.usage.totalTokens,
-  "cachedPromptTokens": result.providerMetadata?.openai?.cachedPromptTokens as Any
-])
+print("Input tokens:", result.usage.inputTokens as Any)
+print("Output tokens:", result.usage.outputTokens as Any)
+print("Total tokens:", result.usage.totalTokens as Any)
+print("Cached input tokens:", result.usage.inputTokenDetails.cacheReadTokens as Any)
 ```
 
 To improve cache hit rates, you can manually control caching using the `promptCacheKey` option:
@@ -1341,12 +1302,10 @@ let result = try await generateText(
   ]
 )
 
-print("usage:", [
-  "promptTokens": result.usage.promptTokens,
-  "completionTokens": result.usage.completionTokens,
-  "totalTokens": result.usage.totalTokens,
-  "cachedPromptTokens": result.providerMetadata?.openai?.cachedPromptTokens as Any
-])
+print("Input tokens:", result.usage.inputTokens as Any)
+print("Output tokens:", result.usage.outputTokens as Any)
+print("Total tokens:", result.usage.totalTokens as Any)
+print("Cached input tokens:", result.usage.inputTokenDetails.cacheReadTokens as Any)
 ```
 
 GPT-5.6 also supports explicit cache control. Set `promptCacheOptions.mode` to `explicit` and mark each cache boundary with `promptCacheBreakpoint`:
@@ -1401,17 +1360,13 @@ import OpenAIProvider
 let result = try await generateText(
   model: openai.chat("gpt-4o-audio-preview"),
   messages: [
-    [
-      "role": "user",
-      "content": [
-        ["type": "text", "text": "What is the audio saying?"],
-        [
-          "type": "file",
-          "mediaType": "audio/mpeg",
-          "data": try Data(contentsOf: URL(fileURLWithPath: "./data/galileo.mp3"))
-        ]
-      ]
-    ]
+    .user(UserModelMessage(content: .parts([
+      .text(TextPart(text: "What is the audio saying?")),
+      .file(FilePart(
+        data: .data(try Data(contentsOf: URL(fileURLWithPath: "./data/galileo.mp3"))),
+        mediaType: "audio/mpeg"
+      ))
+    ])))
   ]
 )
 ```
@@ -1432,7 +1387,9 @@ You can pass them as an options argument:
 ```swift
 let model = openai.completion("gpt-3.5-turbo-instruct")
 
-try await model.doGenerate(
+let result = try await generateText(
+  model: model,
+  prompt: "Write a short greeting.",
   providerOptions: [
     "openai": [
       "echo": true, // optional, echo the prompt in addition to the completion
@@ -1637,10 +1594,11 @@ You can also pass additional provider-specific options using the `providerOption
 ```swift highlight="6"
 import SwiftAISDK
 import OpenAIProvider
+import Foundation
 
 let result = try await transcribe(
   model: openai.transcription("whisper-1"),
-  audio: Data([1, 2, 3, 4]),
+  audio: .data(Data([1, 2, 3, 4])),
   providerOptions: ["openai": ["language": "en"]]
 )
 ```
@@ -1650,10 +1608,11 @@ To get word-level timestamps, specify the granularity:
 ```swift highlight="8-9"
 import SwiftAISDK
 import OpenAIProvider
+import Foundation
 
 let result = try await transcribe(
   model: openai.transcription("whisper-1"),
-  audio: Data([1, 2, 3, 4]),
+  audio: .data(Data([1, 2, 3, 4])),
   providerOptions: [
     "openai": [
       //"timestampGranularities": ["word"],

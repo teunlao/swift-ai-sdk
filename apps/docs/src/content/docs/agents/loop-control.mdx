@@ -23,16 +23,14 @@ import OpenAIProvider
 // Tool set defined elsewhere
 let toolset: ToolSet = [:]
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: toolset,
-  // Default behaviour in Agent is isStepCount(20), shown here explicitly
+  // ToolLoopAgent defaults to isStepCount(20).
   stopWhen: [isStepCount(20)]
 ))
 
-let result = try await agent.generate(prompt: .text(
-  "Analyze this dataset and create a summary report"
-))
+let result = try await agent.generate(prompt: "Analyze this dataset and create a summary report")
 ```
 
 ### Combine Multiple Conditions
@@ -43,7 +41,7 @@ Combine multiple stopping conditions. The loop stops when it meets any condition
 import SwiftAISDK
 import OpenAIProvider
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: toolset,
   stopWhen: [
@@ -52,9 +50,7 @@ let agent = Agent<Never, Never>(settings: .init(
   ]
 ))
 
-let result = try await agent.generate(prompt: .text(
-  "Research and analyze the topic"
-))
+let result = try await agent.generate(prompt: "Research and analyze the topic")
 ```
 
 ### Create Custom Conditions
@@ -70,15 +66,13 @@ let hasAnswer: StopCondition = { steps in
   return steps.contains { $0.text.contains("ANSWER:") }
 }
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: toolset,
   stopWhen: [hasAnswer]
 ))
 
-let result = try await agent.generate(prompt: .text(
-  "Find the answer and respond with \"ANSWER: [your answer]\""
-))
+let result = try await agent.generate(prompt: "Find the answer and respond with \"ANSWER: [your answer]\"")
 ```
 
 Custom conditions receive step information across all steps:
@@ -109,20 +103,20 @@ Switch models based on step requirements:
 import SwiftAISDK
 import OpenAIProvider
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o-mini"), // Default model
   tools: toolset,
   prepareStep: { options in
     // Use a stronger model for complex reasoning after initial steps
     if options.stepNumber > 2 && options.messages.count > 10 {
-      return PrepareStepResult(model: openai("gpt-4o"))
+      return try PrepareStepResult(model: openai("gpt-4o"))
     }
     // Continue with default settings
     return nil
   }
 ))
 
-let result = try await agent.generate(prompt: .text("..."))
+let result = try await agent.generate(prompt: "...")
 ```
 
 ### Context Management
@@ -133,21 +127,21 @@ Manage growing conversation history in long-running loops:
 import SwiftAISDK
 import OpenAIProvider
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: toolset,
   prepareStep: { options in
     // Keep only recent messages to stay within context limits
     if options.messages.count > 20 {
-      var recent = Array(options.messages.suffix(10))
-      // Optionally keep system via `system:` override instead of first message
+      let recent = Array(options.messages.suffix(10))
+      // Preserve system context through the instructions override.
       return PrepareStepResult(messages: recent)
     }
     return nil
   }
 ))
 
-let result = try await agent.generate(prompt: .text("..."))
+let result = try await agent.generate(prompt: "...")
 ```
 
 ### Tool Selection
@@ -164,24 +158,24 @@ let tools: ToolSet = [
   "summarize": summarizeTool,
 ]
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: tools,
   prepareStep: { options in
     // Search phase (steps 0-2)
     if options.stepNumber <= 2 {
-      return PrepareStepResult(activeTools: ["search"], toolChoice: .required)
+      return PrepareStepResult(toolChoice: .required, activeTools: ["search"])
     }
     // Analysis phase (steps 3-5)
     if options.stepNumber <= 5 {
       return PrepareStepResult(activeTools: ["analyze"])
     }
     // Summary phase (step 6+)
-    return PrepareStepResult(activeTools: ["summarize"], toolChoice: .required)
+    return PrepareStepResult(toolChoice: .required, activeTools: ["summarize"])
   }
 ))
 
-let result = try await agent.generate(prompt: .text("..."))
+let result = try await agent.generate(prompt: "...")
 ```
 
 You can also force a specific tool to be used:
@@ -207,17 +201,17 @@ import SwiftAISDK
 import OpenAIProvider
 import AISDKProviderUtils
 
-func summarizeToolContent(_ parts: [ToolContentPart]) -> [ToolContentPart] {
-  // Replace with your summarization logic
-  return parts
+let summarizeToolContent: @Sendable ([ToolContentPart]) -> [ToolContentPart] = { parts in
+  // Replace with your summarization logic.
+  parts
 }
 
-let agent = Agent<Never, Never>(settings: .init(
+let agent = try BasicAgent(.init(
   model: openai("gpt-4o"),
   tools: toolset,
   prepareStep: { options in
     // Summarize large tool results to reduce token usage
-    let processed = options.messages.map { message in
+    let processed: [ModelMessage] = options.messages.map { message in
       switch message {
       case .tool(let tool):
         if tool.content.count > 1000 {
@@ -232,7 +226,7 @@ let agent = Agent<Never, Never>(settings: .init(
   }
 ))
 
-let result = try await agent.generate(prompt: .text("..."))
+let result = try await agent.generate(prompt: "...")
 ```
 
 ## Access Step Information
@@ -280,8 +274,8 @@ let maxSteps = 10
 while step < maxSteps {
   let result = try await generateText(
     model: openai("gpt-4o"),
-    messages: messages,
-    tools: toolset
+    tools: toolset,
+    messages: messages
   )
 
   // Append model responses (assistant/tool) back into the conversation

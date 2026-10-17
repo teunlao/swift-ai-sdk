@@ -34,7 +34,7 @@ Create an Open Responses provider instance using `createOpenResponses`:
 ```swift
 import OpenResponsesProvider
 
-let openResponses = createOpenResponses(options: OpenResponsesProviderSettings(
+let openResponses = try createOpenResponses(options: OpenResponsesProviderSettings(
   url: "http://localhost:1234/v1/responses",
   name: "aProvider"
 ))
@@ -69,7 +69,7 @@ You can use the following optional settings to customize the Open Responses prov
 Create a language model via `.languageModel(modelId:)`:
 
 ```swift
-let model = try openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning")
+let model = openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning")
 ```
 
 You can use Open Responses models with `generateText` and `streamText`,
@@ -81,13 +81,13 @@ and they support structured data generation with `generateObject` (see [AI SDK C
 import SwiftAISDK
 import OpenResponsesProvider
 
-let openResponses = createOpenResponses(options: OpenResponsesProviderSettings(
+let openResponses = try createOpenResponses(options: OpenResponsesProviderSettings(
   url: "http://localhost:1234/v1/responses",
   name: "aProvider"
 ))
 
 let result = try await generateText(
-  model: try openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning"),
+  model: openResponses.languageModel(modelId: "mistralai/ministral-3-14b-reasoning"),
   prompt: "Invent a new holiday and describe its traditions."
 )
 

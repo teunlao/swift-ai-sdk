@@ -44,58 +44,57 @@ let result = try await generateText(
 print(result.text)
 ```
 
-### Request objects (base + override) (v0.5.5+)
+### Reusing settings
 
-Swift requires passing function arguments in the declared order. When calls become large (tools, settings, provider options, callbacks), it can be hard to “override just one field” like in TypeScript.
-
-`GenerateTextRequest` lets you build a reusable base request and override only what changes per call:
+Pass options directly to `generateText`, in Swift's declared argument order. Reuse a model, `CallSettings`, and provider options across calls:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 let model = try openai("gpt-5")
+let settings = CallSettings(maxRetries: 2)
+let providerOptions: ProviderOptions = [
+  "openai": ["reasoningEffort": .string("low")]
+]
 
-let base = GenerateTextRequest(
+let a = try await generateText(
   model: model,
-  toolChoice: .auto,
-  providerOptions: ["openai": ["reasoningEffort": .string("low")]],
-  settings: CallSettings(maxRetries: 2)
+  prompt: "A",
+  providerOptions: providerOptions,
+  settings: settings
 )
-
-var r1 = base
-r1.prompt = "A"
-let a = try await generateText(r1)
-
-var r2 = base
-r2.prompt = "B"
-let b = try await generateText(r2)
+let b = try await generateText(
+  model: model,
+  prompt: "B",
+  providerOptions: providerOptions,
+  settings: settings
+)
 
 print(a.text)
 print(b.text)
 ```
 
-The existing `generateText(...)` overloads remain unchanged; this is a convenience wrapper around them.
+`generateText` returns its completed result. Structured `output` access can throw if parsing failed:
 
-The result object of `generateText` contains several promises that resolve when all required data is available:
-
-- `result.content`: The content that was generated in the last step.
-- `result.text`: The generated text.
+- `result.content`: The content generated across all steps.
+- `result.text`: Text generated in the final step.
 - `result.reasoning`: The full reasoning that the model has generated in the last step.
 - `result.reasoningText`: The reasoning text of the model (only available for some models).
-- `result.files`: The files that were generated in the last step.
-- `result.sources`: Sources that have been used as references in the last step (only available for some models).
-- `result.toolCalls`: The tool calls that were made in the last step.
-- `result.toolResults`: The results of the tool calls from the last step.
+- `result.files`: Files generated across all steps.
+- `result.sources`: Sources referenced across all steps (only available for some models).
+- `result.toolCalls`: Tool calls made across all steps.
+- `result.toolResults`: Tool results from all steps.
 - `result.finishReason`: The reason the model finished generating text.
-- `result.usage`: The usage of the model during the final step of text generation.
+- `result.usage`: Total usage across all steps, equal to `result.totalUsage`.
 - `result.totalUsage`: The total usage across all steps (for multi-step generations).
-- `result.warnings`: Warnings from the model provider (e.g. unsupported settings).
+- `result.warnings`: Provider warnings collected across all steps (e.g. unsupported settings).
 - `result.request`: Additional request information.
 - `result.response`: Additional response information, including response messages and body.
 - `result.providerMetadata`: Additional provider-specific metadata.
 - `result.steps`: Details for all steps, useful for getting information about intermediate steps.
 - `result.output`: The generated structured output (configured via `output:`).
+- `result.finalStep`: The last step; use its properties for final-step-only content, tool results, or usage.
 
 ### Inspecting the full result
 
@@ -142,7 +141,7 @@ let _ = try await generateText(
       model: openai("gpt-4o"),
       messages: event.response.messages.asModelMessages() + [.user("Summarize in 2 sentences.")]
     )
-    Logger.info(followUp.text)
+    print(followUp.text)
   }
 )
 ```
@@ -169,29 +168,30 @@ for try await textPart in result.textStream {
 }
 ```
 
-### Request objects (base + override) (v0.5.5+)
+### Reusing streaming settings
 
-`StreamTextRequest` works the same way. Build a reusable base request, then set `prompt` (or `messages`) right before streaming:
+Reuse configuration values and pass them directly to each `streamText` call:
 
 ```swift
 import SwiftAISDK
 import OpenAIProvider
 
 let model = try openai("gpt-5")
+let settings = CallSettings(maxRetries: 2)
+let providerOptions: ProviderOptions = [
+  "openai": ["reasoningEffort": .string("low")]
+]
 
-let base = StreamTextRequest(
+let result = try streamText(
   model: model,
-  providerOptions: ["openai": ["reasoningEffort": .string("low")]],
-  settings: CallSettings(maxRetries: 2)
+  prompt: "Invent a new holiday and describe its traditions.",
+  providerOptions: providerOptions,
+  onError: { error in
+    print("Stream error: \(error)")
+    return nil
+  },
+  settings: settings
 )
-
-var req = base
-req.prompt = "Invent a new holiday and describe its traditions."
-req.onError = { error in
-  print("Stream error: \(error)")
-}
-
-let result = try streamText(req)
 
 for try await textPart in result.textStream {
   print(textPart)
@@ -207,32 +207,33 @@ for try await textPart in result.textStream {
 You can use `streamText` on its own or integrate it with your Swift HTTP framework.
 The result object provides helpers for server responses:
 
-- `result.toUIMessageStreamResponse(...)`: Creates a UI Message stream HTTP response (includes tool calls) as a typed response value.
-- `result.pipeUIMessageStreamToResponse(...)`: Pipes UI Message stream deltas to any response conforming to `StreamTextResponseWriter` (e.g., a Vapor response adapter).
-- `result.toTextStreamResponse(...)`: Creates a simple text stream HTTP response.
+- `try result.toUIMessageStreamResponse(options: StreamTextUIResponseOptions<UIMessage>())`: Creates a typed UI message stream HTTP response, including tool calls.
+- `try await result.pipeUIMessageStreamToResponse(...)`: Pipes UI message stream deltas to a `StreamTextResponseWriter`, observing write failures and completion.
+- `result.toTextStreamResponse(init: nil)`: Creates a simple text stream HTTP response.
 - `result.pipeTextStreamToResponse(...)`: Pipes text deltas to any `StreamTextResponseWriter`.
 
 > Note
 > `streamText` uses backpressure and generates tokens as requested. You must consume the stream for it to finish.
 
-It also provides several promises that resolve when the stream is finished:
+Its completed-result properties are `async throws`; read them with `try await` after, or instead of, iterating the stream:
 
-- `result.content`: The content that was generated in the last step.
-- `result.text`: The generated text.
-- `result.reasoning`: The full reasoning that the model has generated.
+- `result.content`: The content generated across all steps.
+- `result.text`: Text generated in the final step.
+- `result.reasoning`: Reasoning generated in the final step.
 - `result.reasoningText`: The reasoning text of the model (only available for some models).
-- `result.files`: Files that have been generated by the model in the last step.
-- `result.sources`: Sources that have been used as references in the last step (only available for some models).
-- `result.toolCalls`: The tool calls that have been executed in the last step.
-- `result.toolResults`: The tool results that have been generated in the last step.
+- `result.files`: Files generated across all steps.
+- `result.sources`: Sources referenced across all steps (only available for some models).
+- `result.toolCalls`: Tool calls made across all steps.
+- `result.toolResults`: Tool results from all steps.
 - `result.finishReason`: The reason the model finished generating text.
-- `result.usage`: The usage of the model during the final step of text generation.
+- `result.usage`: Total usage across all steps, equal to `result.totalUsage`.
 - `result.totalUsage`: The total usage across all steps (for multi-step generations).
-- `result.warnings`: Warnings from the model provider (e.g. unsupported settings).
+- `result.warnings`: Provider warnings collected across all steps (e.g. unsupported settings).
 - `result.steps`: Details for all steps, useful for getting information about intermediate steps.
 - `result.request`: Additional request information from the last step.
 - `result.response`: Additional response information from the last step.
 - `result.providerMetadata`: Additional provider-specific metadata from the last step.
+- `result.finalStep`: The last step; for example, `(try await result.finalStep).usage` gives only that step's usage.
 
 ### `onError` callback
 
@@ -247,6 +248,7 @@ let _ = try streamText(
   prompt: "Invent a new holiday and describe its traditions.",
   onError: { error in
     print("Stream error: \(error)")
+    return nil
   }
 )
 ```
@@ -290,7 +292,7 @@ let _ = try streamText(
       model: openai("gpt-4o"),
       messages: event.response.messages.asModelMessages() + [.user("Summarize the plan in 2 sentences.")]
     )
-    Logger.info(followUp.text)
+    print(followUp.text)
   }
 )
 ```
@@ -348,17 +350,17 @@ for try await part in result.fullStream {
   case .source(let src):
     // handle source
     print(src)
-  case .file(let file):
+  case .file(let file, _), .reasoningFile(let file, _):
     // handle file
     print(file)
-  case .toolCall(let call, _):
+  case .toolCall(let call):
     if call.toolName == "cityAttractions" {
       // handle tool call
     }
   case .toolInputStart, .toolInputDelta, .toolInputEnd:
     // handle tool input phases
     break
-  case .toolResult(let result, _):
+  case .toolResult(let result):
     // handle tool result
     print(result)
   case .toolError(let err):
@@ -373,8 +375,11 @@ for try await part in result.fullStream {
   case .error(let error):
     // handle stream error
     print(error)
-  case .raw:
-    // handle raw
+  case .toolOutputDenied, .toolApprovalRequest, .toolApprovalResponse:
+    break
+  case .abort(let reason):
+    print("Aborted:", reason ?? "No reason provided")
+  case .custom, .raw:
     break
   }
 }
@@ -408,7 +413,7 @@ all text to uppercase:
 
 ```swift
 let upperCaseTransform: StreamTextTransform = { stream, _ in
-  createAsyncIterableStream(source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
+  AsyncThrowingStream<TextStreamPart, Error> { continuation in
     let task = Task {
       do {
         var it = stream.makeAsyncIterator()
@@ -423,7 +428,7 @@ let upperCaseTransform: StreamTextTransform = { stream, _ in
       } catch { continuation.finish(throwing: error) }
     }
     continuation.onTermination = { _ in task.cancel() }
-  })
+  }
 }
 ```
 
@@ -435,7 +440,7 @@ and all callbacks are invoked.
 
 ```swift
 let stopWordTransform: StreamTextTransform = { stream, opts in
-  createAsyncIterableStream(source: AsyncThrowingStream<TextStreamPart, Error> { continuation in
+  AsyncThrowingStream<TextStreamPart, Error> { continuation in
     let task = Task {
       do {
         var it = stream.makeAsyncIterator()
@@ -450,7 +455,7 @@ let stopWordTransform: StreamTextTransform = { stream, opts in
       } catch { continuation.finish(throwing: error) }
     }
     continuation.onTermination = { _ in task.cancel() }
-  })
+  }
 }
 ```
 
