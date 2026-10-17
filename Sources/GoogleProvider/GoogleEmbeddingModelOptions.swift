@@ -14,11 +14,11 @@ public enum GoogleEmbeddingTaskType: String, Sendable, Equatable {
 }
 
 public struct GoogleEmbeddingModelOptions: Sendable, Equatable {
-    public var outputDimensionality: Double?
+    public var outputDimensionality: Int?
     public var taskType: GoogleEmbeddingTaskType?
     public var content: [[JSONValue]?]?
 
-    public init(outputDimensionality: Double? = nil, taskType: GoogleEmbeddingTaskType? = nil, content: [[JSONValue]?]? = nil) {
+    public init(outputDimensionality: Int? = nil, taskType: GoogleEmbeddingTaskType? = nil, content: [[JSONValue]?]? = nil) {
         self.outputDimensionality = outputDimensionality
         self.taskType = taskType
         self.content = content
@@ -44,7 +44,7 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
                 }
 
-                var outputDimensionality: Double? = nil
+                var outputDimensionality: Int? = nil
                 if let dimensionalityValue = dict["outputDimensionality"] {
                     if dimensionalityValue == .null {
                         let error = SchemaValidationIssuesError(
@@ -61,7 +61,10 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
                         )
                         return .failure(error: TypeValidationError.wrap(value: dimensionalityValue, cause: error))
                     }
-                    outputDimensionality = number
+                    guard let integer = Int(exactly: number) else {
+                        throw SchemaValidationIssuesError(vendor: "google", issues: "outputDimensionality must be a representable integer")
+                    }
+                    outputDimensionality = integer
                 }
 
                 var taskType: GoogleEmbeddingTaskType? = nil
@@ -124,13 +127,16 @@ public let googleGenerativeAIEmbeddingProviderOptionsSchema = FlexibleSchema(
 )
 
 extension GoogleEmbeddingModelOptions {
-    public func toDictionary() -> [String: Any] {
-        var result: [String: Any] = [:]
+    public func toDictionary() -> JSONObject {
+        var result: JSONObject = [:]
         if let outputDimensionality {
-            result["outputDimensionality"] = outputDimensionality
+            result["outputDimensionality"] = .number(Double(outputDimensionality))
         }
         if let taskType {
-            result["taskType"] = taskType.rawValue
+            result["taskType"] = .string(taskType.rawValue)
+        }
+        if let content {
+            result["content"] = .array(content.map { $0.map(JSONValue.array) ?? .null })
         }
         return result
     }

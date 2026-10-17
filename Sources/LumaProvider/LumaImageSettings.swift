@@ -18,11 +18,11 @@ public struct LumaImageConfig: Sendable, Codable, Equatable {
 
 public struct LumaImageModelOptions: Sendable, Codable {
     public var pollIntervalMillis: Double?
-    public var maxPollAttempts: Double?
+    public var maxPollAttempts: Int?
     public var referenceType: LumaReferenceType?
     public var images: [LumaImageConfig]?
 
-    public init(pollIntervalMillis: Double? = nil, maxPollAttempts: Double? = nil, referenceType: LumaReferenceType? = nil, images: [LumaImageConfig]? = nil) {
+    public init(pollIntervalMillis: Double? = nil, maxPollAttempts: Int? = nil, referenceType: LumaReferenceType? = nil, images: [LumaImageConfig]? = nil) {
         self.pollIntervalMillis = pollIntervalMillis
         self.maxPollAttempts = maxPollAttempts
         self.referenceType = referenceType
@@ -35,7 +35,7 @@ let lumaImageModelOptionsSchema = FlexibleSchema(jsonSchema(.object([
     "additionalProperties": .bool(true),
     "properties": .object([
         "pollIntervalMillis": .object(["type": .array([.string("number"), .string("null")])]),
-        "maxPollAttempts": .object(["type": .array([.string("number"), .string("null")])]),
+        "maxPollAttempts": .object(["type": .array([.string("integer"), .string("null")])]),
         "referenceType": .object(["enum": .array([.string("image"), .string("style"), .string("character"), .string("modify_image"), .null])]),
         "images": .object([
             "type": .array([.string("array"), .string("null")]),

@@ -15,7 +15,7 @@ public final class GoogleVertexXaiProvider: ProviderV4 {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "googleVertex.xai.chat", headers: vertexCompatibleHeaders,
-            url: { "\(try config.baseURL(.xai))\($0.path)" }, fetch: config.fetch(),
+            url: { "\(try config.baseURL(.xai))\($0.path)" }, fetch: config.fetch(.xai),
             includeUsage: true, supportsStructuredOutputs: true,
             supportedUrls: { ["image/*": [try NSRegularExpression(pattern: "^https?://.*$")]] },
             transformRequestBody: { body, _ in

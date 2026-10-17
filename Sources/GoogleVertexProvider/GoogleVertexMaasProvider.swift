@@ -15,7 +15,7 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.chat", headers: vertexCompatibleHeaders,
-            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch(),
+            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch(.maas),
             transformRequestBody: { body, _ in
                 var result = body
                 if case .string(let model) = body["model"],
@@ -31,21 +31,21 @@ public final class GoogleVertexMaasProvider: ProviderV4 {
         let config = self.config
         return .init(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.completion", headers: vertexCompatibleHeaders,
-            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch()
+            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch(.maas)
         ))
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         let config = self.config
         return OpenAICompatibleEmbeddingModel(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.embedding", url: { "\(try config.baseURL(.maas))\($0.path)" },
-            headers: vertexCompatibleHeaders, fetch: config.fetch()
+            headers: vertexCompatibleHeaders, fetch: config.fetch(.maas)
         ))
     }
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
         let config = self.config
         return OpenAICompatibleImageModel(modelId: .init(rawValue: modelId), config: .init(
             provider: "vertex.maas.image", headers: vertexCompatibleHeaders,
-            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch()
+            url: { "\(try config.baseURL(.maas))\($0.path)" }, fetch: config.fetch(.maas)
         ))
     }
 }

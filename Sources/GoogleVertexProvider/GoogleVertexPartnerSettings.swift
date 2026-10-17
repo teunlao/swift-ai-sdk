@@ -33,8 +33,13 @@ struct VertexPartnerConfig: Sendable {
         tokens = GoogleVertexAccessTokenManager(credentials: settings.googleCredentials, fetch: settings.fetch)
     }
 
+    private func customBaseURL(_ api: API) -> String? {
+        guard let url = withoutTrailingSlash(settings.baseURL), api == .anthropic || !url.isEmpty else { return nil }
+        return url
+    }
+
     func baseURL(_ api: API) throws -> String {
-        if let url = withoutTrailingSlash(settings.baseURL) { return url }
+        if let url = customBaseURL(api) { return url }
         let project = try loadSetting(settingValue: settings.project, environmentVariableName: "GOOGLE_VERTEX_PROJECT", settingName: "project", description: "Google Vertex project")
         let location = try loadOptionalSetting(settingValue: settings.location, environmentVariableName: "GOOGLE_VERTEX_LOCATION") ?? {
             if api == .anthropic {
@@ -50,9 +55,9 @@ struct VertexPartnerConfig: Sendable {
         return "https://\(host)/v1/projects/\(project)/locations/\(location)/\(suffix)"
     }
 
-    func headers(callerOverridesAuth: Bool) async throws -> [String: String?] {
+    func headers(callerOverridesAuth: Bool, api: API) async throws -> [String: String?] {
         let configured = combineHeaders(settings.headers, try await settings.headersProvider?())
-        if withoutTrailingSlash(settings.baseURL) != nil && settings.googleCredentials == nil && settings.generateAuthToken == nil {
+        if customBaseURL(api) != nil && settings.googleCredentials == nil && settings.generateAuthToken == nil {
             return configured
         }
         let token: String?
@@ -62,11 +67,13 @@ struct VertexPartnerConfig: Sendable {
         return callerOverridesAuth ? combineHeaders(authorization, configured) : combineHeaders(configured, authorization)
     }
 
-    func fetch() -> FetchFunction {
+    func fetch(_ api: API) -> FetchFunction {
         let transport = settings.fetch ?? defaultFetchFunction()
         return { request in
+            // Partner API operations are POSTs; media GETs share only the bare transport.
+            guard request.httpMethod == "POST" else { return try await transport(request) }
             var authenticated = request
-            authenticated.allHTTPHeaderFields = combineHeaders(request.allHTTPHeaderFields, try await headers(callerOverridesAuth: false)).compactMapValues { $0 }
+            authenticated.allHTTPHeaderFields = combineHeaders(request.allHTTPHeaderFields, try await headers(callerOverridesAuth: false, api: api)).compactMapValues { $0 }
             return try await transport(authenticated)
         }
     }

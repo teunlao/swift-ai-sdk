@@ -78,6 +78,15 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
     public func doGenerate(options: ImageModelV4CallOptions) async throws -> ImageModelV4GenerateResult {
         let api = modelAPI
         let providerOptions = try await bflImageOptions(options.providerOptions, api: api, size: options.size)
+        func pollingValue(_ key: String, fallback: Int) throws -> Int {
+            guard let number = bflNumber(providerOptions[key]) else { return fallback }
+            guard let value = Int(exactly: number) else {
+                throw InvalidArgumentError(argument: "providerOptions", message: "Black Forest Labs polling values must be representable integers.")
+            }
+            return value
+        }
+        let interval = try pollingValue("pollIntervalMillis", fallback: config.pollIntervalMillis ?? 500)
+        let timeout = try pollingValue("pollTimeoutMillis", fallback: config.pollTimeoutMillis ?? 60_000)
         var warnings: [SharedV4Warning] = []
         let aspect = options.aspectRatio ?? options.size.flatMap(bflAspectRatio)
         if let size = options.size, !size.isEmpty, api != .latest {
@@ -140,8 +149,6 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
             isAborted: options.abortSignal, fetch: config.fetch
         )
         let url = try bflPollingURL(submit.value.polling_url, id: submit.value.id)
-        let interval = Int(bflNumber(providerOptions["pollIntervalMillis"]) ?? Double(config.pollIntervalMillis ?? 500))
-        let timeout = Int(bflNumber(providerOptions["pollTimeoutMillis"]) ?? Double(config.pollTimeoutMillis ?? 60_000))
         let result = try await poll(url: url, headers: headers, interval: interval, timeout: timeout, abortSignal: options.abortSignal)
         let image = try await getFromAPI(
             url: result.sample,

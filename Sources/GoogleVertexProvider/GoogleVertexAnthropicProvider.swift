@@ -52,7 +52,7 @@ public final class GoogleVertexAnthropicProvider: ProviderV4 {
             provider: "googleVertex.anthropic.messages", baseURL: config.settings.baseURL ?? "",
             headers: {
                 _ = try config.baseURL(.anthropic)
-                return try await config.headers(callerOverridesAuth: true)
+                return try await config.headers(callerOverridesAuth: true, api: .anthropic)
             }, fetch: config.settings.fetch,
             supportedUrls: { [:] },
             requestTransform: .init(

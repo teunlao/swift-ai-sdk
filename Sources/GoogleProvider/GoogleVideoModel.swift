@@ -123,16 +123,11 @@ public final class GoogleVideoModel: VideoModelV4Operations {
             let raw = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response.value))
             throw GoogleVideoModelError(message: "No videos in response. Response: \(try googleJSONString(raw))")
         }
-        let key = try config.headers()["x-goog-api-key"] ?? nil
         var videos: [VideoModelV4VideoData] = []
         var metadata: [JSONValue] = []
         for sample in samples {
             guard let uri = sample.video?.uri, !uri.isEmpty else { continue }
-            var url = uri
-            if let key, !key.isEmpty, let a = URL(string: uri), let b = URL(string: config.baseURL), a.scheme == b.scheme, a.host == b.host, a.port == b.port {
-                url += (uri.contains("?") ? "&" : "?") + "key=\(key)"
-            }
-            videos.append(.url(url: url, mediaType: "video/mp4"))
+            videos.append(.url(url: uri, mediaType: "video/mp4"))
             metadata.append(.object(["uri": .string(uri)]))
         }
         if videos.isEmpty { throw GoogleVideoModelError(message: "No valid videos in response") }

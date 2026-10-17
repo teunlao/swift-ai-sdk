@@ -5,7 +5,7 @@ import GoogleProvider
 
 @Suite("Google video V4 operations")
 struct GoogleVideoModelTests {
-    @Test("start maps frame inputs and status preserves provider-only download authentication")
+    @Test("start maps frame inputs and status preserves credential-free media URLs")
     func videoOperations() async throws {
         let transport = GoogleTransport([.init(try googleFixture("video-start.json")), .init(try googleFixture("video-start.json")), .init(try googleFixture("video-done.json"))])
         let model = await transport.provider().video(modelId: "veo-3.1-generate")
@@ -15,7 +15,7 @@ struct GoogleVideoModelTests {
         guard case .pending = pending else { Issue.record("expected pending operation"); return }
         let completed = try await model.doStatus(options: .init(operation: start.operation))
         guard case .completed(let videos, _, let metadata, _) = completed else { Issue.record("expected completed operation"); return }
-        #expect(videos == [.url(url: "https://provider.example/download/video.mp4?alt=media&key=test-key", mediaType: "video/mp4"), .url(url: "https://other.example/video.mp4", mediaType: "video/mp4")])
+        #expect(videos == [.url(url: "https://provider.example/download/video.mp4?alt=media", mediaType: "video/mp4"), .url(url: "https://other.example/video.mp4", mediaType: "video/mp4")])
         #expect(array(metadata?["google"]?["videos"]).count == 2)
         let requests = await transport.captured()
         let body = try googleBody(requests[0])

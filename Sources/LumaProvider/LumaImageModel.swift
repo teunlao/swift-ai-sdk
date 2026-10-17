@@ -48,6 +48,11 @@ public final class LumaImageModel: ImageModelV4 {
         if case .object(let values) = parsed { providerOptions = values }
         let interval = number(providerOptions.removeValue(forKey: "pollIntervalMillis")) ?? Double(pollIntervalMillis)
         let attempts = number(providerOptions.removeValue(forKey: "maxPollAttempts")) ?? Double(maxPollAttempts)
+        guard let intervalMillis = Int(exactly: interval.rounded(.towardZero)),
+              let attemptLimit = Int(exactly: attempts) else {
+            throw InvalidArgumentError(argument: "providerOptions", message: "Luma polling values exceed the supported range.")
+        }
+        let fractionalNanoseconds = UInt64(max(0, interval - Double(intervalMillis)) * 1_000_000)
         let referenceType: LumaReferenceType
         if case .string(let value) = providerOptions.removeValue(forKey: "referenceType") { referenceType = LumaReferenceType(rawValue: value)! }
         else { referenceType = .image }
@@ -68,7 +73,7 @@ public final class LumaImageModel: ImageModelV4 {
             successfulResponseHandler: createJsonResponseHandler(responseSchema: lumaGenerationResponseSchema),
             isAborted: options.abortSignal, fetch: config.fetch
         )
-        let imageURL = try await pollForImageURL(id: response.value.id, headers: headers, abortSignal: options.abortSignal, interval: interval, attempts: attempts)
+        let imageURL = try await pollForImageURL(id: response.value.id, headers: headers, abortSignal: options.abortSignal, interval: intervalMillis, fractionalNanoseconds: fractionalNanoseconds, attempts: attemptLimit)
         let image = try await getFromAPI(
             url: imageURL,
             failedResponseHandler: createStatusCodeErrorResponseHandler(),
@@ -79,9 +84,8 @@ public final class LumaImageModel: ImageModelV4 {
         return .init(images: .binary([image]), warnings: warnings, response: .init(timestamp: timestamp, modelId: modelId, headers: response.responseHeaders))
     }
 
-    private func pollForImageURL(id: String, headers: [String: String], abortSignal: (@Sendable () -> Bool)?, interval: Double, attempts: Double) async throws -> String {
-        var index = 0
-        while Double(index) < attempts {
+    private func pollForImageURL(id: String, headers: [String: String], abortSignal: (@Sendable () -> Bool)?, interval: Int, fractionalNanoseconds: UInt64, attempts: Int) async throws -> String {
+        for _ in 0..<max(0, attempts) {
             let result = try await getFromAPI(
                 url: generationsURL(id), headers: headers,
                 failedResponseHandler: lumaFailedResponseHandler,
@@ -95,9 +99,10 @@ public final class LumaImageModel: ImageModelV4 {
                 }
                 return image
             case .failed: throw InvalidResponseDataError(data: result, message: "Image generation failed.")
-            case .queued, .dreaming: try await delay(Int(interval), abortSignal: abortSignal)
+            case .queued, .dreaming:
+                try await delay(interval, abortSignal: abortSignal)
+                if fractionalNanoseconds > 0 { try await Task.sleep(nanoseconds: fractionalNanoseconds) }
             }
-            index += 1
         }
         throw LumaImageModelError(message: "Image generation timed out after \(maxPollAttempts) attempts.")
     }

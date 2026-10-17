@@ -734,8 +734,8 @@ struct ProdiaImageModelTests {
         ])
     }
 
-    @Test("warns on invalid size format")
-    func warnsOnInvalidSize() async throws {
+    @Test("warns and uses server defaults for invalid size", arguments: ["invalid", "x768", "1024x"])
+    func warnsOnInvalidSize(size: String) async throws {
         let multipart = try createMultipartResponse(jobResult: [
             "id": "job-456",
             "state": ["current": "completed"],
@@ -749,8 +749,15 @@ struct ProdiaImageModelTests {
             headerFields: ["Content-Type": multipart.contentType]
         )!
 
-        let fetch: FetchFunction = { _ in
-            FetchResponse(body: .data(multipart.body), urlResponse: httpResponse)
+        let fetch: FetchFunction = { request in
+            let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+            guard case .object(let fields) = body, case .object(let config) = fields["config"] else {
+                Issue.record("Missing image job config")
+                throw CancellationError()
+            }
+            #expect(config["width"] == nil)
+            #expect(config["height"] == nil)
+            return FetchResponse(body: .data(multipart.body), urlResponse: httpResponse)
         }
 
         let model = makeModel(fetch: fetch)
@@ -758,7 +765,7 @@ struct ProdiaImageModelTests {
             options: .init(
                 prompt: "p",
                 n: 1,
-                size: "invalid",
+                size: size,
                 aspectRatio: nil,
                 seed: nil,
                 providerOptions: [:]
@@ -768,7 +775,7 @@ struct ProdiaImageModelTests {
         #expect(result.warnings == [
             .unsupported(
                 feature: "size",
-                details: "Invalid size format: invalid. Expected format: WIDTHxHEIGHT (e.g., 1024x1024)"
+                details: "Invalid size format: \(size). Expected format: WIDTHxHEIGHT (e.g., 1024x1024)"
             )
         ])
     }

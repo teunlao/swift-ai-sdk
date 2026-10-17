@@ -36,7 +36,8 @@ struct GoogleEmbeddingModelTests {
         let data = try googleData(.object(["embedding": .object(["values": .array([.number(0.5)])])]))
         let transport = GoogleTransport([.init(data)])
         let model = try await transport.provider().embeddingModel(modelId: "gemini-embedding-001")
-        let result = try await model.doEmbed(options: .init(values: [""], dimensions: 12, providerOptions: ["google": ["outputDimensionality": .number(3), "taskType": .string("RETRIEVAL_DOCUMENT"), "content": .array([.array([.object(["inlineData": .object(["mimeType": .string("image/png"), "data": .string("AQID")])])])])]]))
+        let options = GoogleEmbeddingModelOptions(outputDimensionality: 3, taskType: .retrievalDocument, content: [[.object(["inlineData": .object(["mimeType": .string("image/png"), "data": .string("AQID")])])]])
+        let result = try await model.doEmbed(options: .init(values: [""], dimensions: 12, providerOptions: ["google": options.toDictionary()]))
         #expect(result.embeddings == [[0.5]])
         let request = try #require(await transport.captured().first)
         #expect(request.url?.path.hasSuffix("gemini-embedding-001:embedContent") == true)
@@ -44,6 +45,17 @@ struct GoogleEmbeddingModelTests {
         #expect(body["outputDimensionality"] == .number(3))
         #expect(body["taskType"] == .string("RETRIEVAL_DOCUMENT"))
         #expect(array(object(body["content"])["parts"]) == [.object(["inlineData": .object(["mimeType": .string("image/png"), "data": .string("AQID")])])])
+    }
+
+    @Test("embedding dimensions reject fractional and unrepresentable counts", arguments: [3.5, 1e20])
+    func invalidDimensions(value: Double) async throws {
+        let model = try createGoogle(settings: .init(apiKey: "key", fetch: { _ in
+            Issue.record("Invalid dimensions reached the API")
+            throw CancellationError()
+        })).embeddingModel(modelId: "gemini-embedding-2")
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doEmbed(options: .init(values: ["value"], providerOptions: ["google": ["outputDimensionality": .number(value)]]))
+        }
     }
 
     @Test("embedding rejects mismatched content and too many direct inputs")

@@ -34,8 +34,8 @@ public final class ProdiaImageModel: ImageModelV4 {
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
     public var maxImagesPerCall: ImageModelV4MaxImagesPerCall { .value(1) }
-    public var supportsFileInputs: Bool? { ["inference.flux-fast.schnell.txt2img.v2", "inference.flux.schnell.txt2img.v2"].contains(modelId) ? false : nil }
-    public var supportsMaskInputs: Bool? { supportsFileInputs == false ? false : nil }
+    public var supportsFileInputs: Bool? { false }
+    public var supportsMaskInputs: Bool? { false }
     private let modelIdentifier: ProdiaImageModelId
     private let config: ProdiaModelConfig
 
@@ -53,8 +53,8 @@ public final class ProdiaImageModel: ImageModelV4 {
         var job: [String: JSONValue] = [:]
         if let size = options.size, !size.isEmpty {
             let parts = size.components(separatedBy: "x")
-            let width = parts.first.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : Double($0) }
-            let height = parts.count > 1 ? (parts[1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : Double(parts[1])) : nil
+            let width = parts.first.flatMap { $0.isEmpty ? nil : $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : Double($0) }
+            let height = parts.count > 1 && !parts[1].isEmpty ? (parts[1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : Double(parts[1])) : nil
             if let width, let height, width.isFinite, height.isFinite {
                 job["width"] = .number(width)
                 job["height"] = .number(height)

@@ -37,6 +37,17 @@ struct ReplicateEditingTests {
         #expect(result.warnings.count == 1)
     }
 
+    @Test("unrepresentable polling options fail before creating a prediction", arguments: ["pollIntervalMillis", "maxPollAttempts"])
+    func pollingRange(_ field: String) async throws {
+        let model = createReplicate(settings: .init(apiToken: "token", fetch: { _ in
+            Issue.record("Invalid polling options created a prediction")
+            throw CancellationError()
+        })).image("black-forest-labs/flux-schnell")
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doGenerate(options: .init(n: 1, providerOptions: ["replicate": [field: .number(1e20)]]))
+        }
+    }
+
     @Test("unfinished synchronous predictions are polled before downloading")
     func polling() async throws {
         let requests = Requests()

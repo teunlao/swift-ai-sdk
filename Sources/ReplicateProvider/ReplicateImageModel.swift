@@ -94,8 +94,10 @@ public final class ReplicateImageModel: ImageModelV4 {
         var inputOptions: [String: JSONValue] = [:]
         if case .object(let value) = parsed { inputOptions = value }
         let wait = inputOptions.removeValue(forKey: "maxWaitTimeInSeconds")
-        let interval = replicateNumber(inputOptions.removeValue(forKey: "pollIntervalMillis")) ?? 500
-        let attempts = replicateNumber(inputOptions.removeValue(forKey: "maxPollAttempts")) ?? 240
+        guard let interval = Int(exactly: replicateNumber(inputOptions.removeValue(forKey: "pollIntervalMillis")) ?? 500),
+              let attempts = Int(exactly: replicateNumber(inputOptions.removeValue(forKey: "maxPollAttempts")) ?? 240) else {
+            throw InvalidArgumentError(argument: "providerOptions", message: "Replicate polling values must be representable integers.")
+        }
         let prefer = replicateNumber(wait).map { "wait=\(replicateNumberString($0))" } ?? "wait"
         let resolvedHeaders = try config.headers()
         let headers = combineHeaders(resolvedHeaders, options.headers?.mapValues { Optional($0) })
@@ -140,7 +142,7 @@ public final class ReplicateImageModel: ImageModelV4 {
             }
             return prediction.output != nil || prediction.status == .succeeded
         }
-        for index in 0..<Int(attempts) {
+        for index in 0..<attempts {
             if try completed(prediction) { break }
             let result = try await getFromAPI(
                 url: prediction.urls.get,
@@ -154,10 +156,10 @@ public final class ReplicateImageModel: ImageModelV4 {
                 trustedOrigin: config.baseURL
             )
             prediction = result.value
-            if index < Int(attempts) - 1 { try await delay(Int(interval), abortSignal: options.abortSignal) }
+            if index < attempts - 1 { try await delay(interval, abortSignal: options.abortSignal) }
         }
         guard try completed(prediction) else {
-            throw InvalidResponseDataError(data: prediction, message: "Replicate image generation did not complete after \(Int(attempts)) polling attempts.")
+            throw InvalidResponseDataError(data: prediction, message: "Replicate image generation did not complete after \(attempts) polling attempts.")
         }
         guard let output = prediction.output else {
             throw InvalidResponseDataError(data: prediction, message: "Replicate image generation completed without output.")

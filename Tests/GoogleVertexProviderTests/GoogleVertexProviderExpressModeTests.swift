@@ -19,6 +19,49 @@ struct GoogleVertexProviderExpressModeTests {
         #expect(request.value(forHTTPHeaderField: "x-goog-api-key") == "KEY")
     }
 
+    @Test("environment keys are resolved after model construction and between requests", .timeLimit(.minutes(1)))
+    func environmentKeyRotation() async throws {
+        let marker = "VERTEX_KEY_ROTATION_TEST_CHILD"
+        if ProcessInfo.processInfo.environment[marker] != "1" {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+            var arguments: [String] = []
+            var skip = false
+            for argument in CommandLine.arguments.dropFirst() {
+                if skip { skip = false; continue }
+                if argument == "--filter" || argument == "--skip" { skip = true; continue }
+                arguments.append(argument)
+            }
+            process.arguments = arguments + ["--filter", "environmentKeyRotation"]
+            var environment = ProcessInfo.processInfo.environment
+            environment[marker] = "1"
+            process.environment = environment
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0, "\(String(decoding: data, as: UTF8.self))")
+            return
+        }
+        unsetenv("GOOGLE_VERTEX_API_KEY")
+        let requests = VertexRequests()
+        let provider = createGoogleVertex(settings: .init(fetch: { request in
+            await requests.append(request)
+            return try vertexResponse(request, #"{"embedding":{"values":[0.5]}}"#)
+        }))
+        let model = try provider.embeddingModel(modelId: "gemini-embedding-2")
+        for key in ["first-key", "rotated-key"] {
+            setenv("GOOGLE_VERTEX_API_KEY", key, 1)
+            let result = try await model.doEmbed(options: .init(values: ["value"]))
+            #expect(result.embeddings == [[0.5]])
+            let request = try #require(await requests.last)
+            #expect(request.url?.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-embedding-2:embedContent")
+            #expect(request.value(forHTTPHeaderField: "x-goog-api-key") == key)
+        }
+    }
+
     @Test(arguments: ["evil.example.com/#", "user@localhost:8080/#", "us-central1\n", "-region", String(repeating: "a", count: 64)])
     func refusesInvalidLocation(location: String) async throws {
         let provider = createGoogleVertex(settings: .init(location: location, project: "project", fetch: { _ in throw CancellationError() }))

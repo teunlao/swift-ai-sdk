@@ -526,10 +526,12 @@ public final class GoogleVertexProvider: ProviderV4, VideoProviderV4 {
 }
 
 public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init()) -> GoogleVertexProvider {
-    let apiKey = loadOptionalSetting(
-        settingValue: settings.apiKey,
-        environmentVariableName: "GOOGLE_VERTEX_API_KEY"
-    ).flatMap { $0.isEmpty ? nil : $0 }
+    let loadAPIKey: @Sendable () -> String? = {
+        loadOptionalSetting(
+            settingValue: settings.apiKey,
+            environmentVariableName: "GOOGLE_VERTEX_API_KEY"
+        ).flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     let loadProject: @Sendable () throws -> String = {
         try loadSetting(
@@ -555,7 +557,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
 
     let loadBaseURL: @Sendable (Bool) throws -> String = { endpoint in
         if let baseURL = withoutTrailingSlash(settings.baseURL) { return baseURL }
-        if apiKey != nil { return GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL }
+        if loadAPIKey() != nil { return GOOGLE_VERTEX_EXPRESS_MODE_BASE_URL }
         let location = try loadLocation()
         let project = try loadProject()
         let host = vertexHost(location)
@@ -594,21 +596,20 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         if let provider = settings.accessTokenProvider { return try await provider() }
         return try await tokenManager.getToken()
     }
-    let authenticatedFetch: FetchFunction? = {
-        if let apiKey {
-            return createExpressModeFetch(apiKey: apiKey, customFetch: settings.fetch)
+    let authenticatedFetch: FetchFunction = { request in
+        if let apiKey = loadAPIKey() {
+            return try await createExpressModeFetch(apiKey: apiKey, customFetch: settings.fetch)(request)
         }
 
-        // Custom gateways may own authentication; explicit credentials still apply.
         if baseURLProvided && settings.googleCredentials == nil && settings.accessTokenProvider == nil {
-            return settings.fetch
+            return try await (settings.fetch ?? defaultFetchFunction())(request)
         }
 
-        return createBearerTokenFetch(accessToken: accessToken, customFetch: settings.fetch)
-    }()
+        return try await createBearerTokenFetch(accessToken: accessToken, customFetch: settings.fetch)(request)
+    }
 
     let fetch: FetchFunction? = settings.headersProvider.map { resolveHeaders in
-        let baseFetch = authenticatedFetch ?? defaultFetchFunction()
+        let baseFetch = authenticatedFetch
         return { request in
             let dynamicHeaders = try await resolveHeaders()
             var modified = request
@@ -628,7 +629,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
                 provider: "google.vertex.chat",
                 baseURL: resolvedBaseURL,
                 headers: {
-                    if endpoint && apiKey != nil {
+                    if endpoint && loadAPIKey() != nil {
                         throw InvalidArgumentError(argument: "modelId", message: "Google Vertex tuned models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
                     }
                     return try headersClosure()
@@ -686,7 +687,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
             return GoogleVertexCloudTTSSpeechModel(modelId: modelId, config: .init(
                 provider: "google.vertex.speech",
                 headers: {
-                    if apiKey != nil {
+                    if loadAPIKey() != nil {
                         throw InvalidArgumentError(argument: "modelId", message: "Google Vertex Chirp speech models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
                     }
                     return try headersClosure()
@@ -700,7 +701,7 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
     }
     let transcriptionFactory: @Sendable (String) -> any TranscriptionModelV4 = { modelId in
         let transcriptionHeaders: @Sendable () throws -> [String: String?] = {
-            if apiKey != nil {
+            if loadAPIKey() != nil {
                 throw InvalidArgumentError(argument: "modelId", message: "Google Vertex transcription models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
             }
             return try headersClosure()
@@ -724,14 +725,14 @@ public func createGoogleVertex(settings: GoogleVertexProviderSettings = .init())
         }
         return GoogleVertexTranscriptionModel(modelId: modelId, config: .init(
             provider: "google.vertex.transcription", project: loadProject, location: loadLocation,
-            headers: transcriptionHeaders, fetch: fetch, isExpressMode: apiKey != nil
+            headers: transcriptionHeaders, fetch: fetch
         ))
     }
     let interactionsFactory: @Sendable (GoogleInteractionsModelInput) -> GoogleInteractionsLanguageModel = { input in
         GoogleInteractionsLanguageModel(input: input, config: .init(
             provider: "google.vertex.interactions", baseURL: resolvedBaseURL,
             headers: {
-                if apiKey != nil {
+                if loadAPIKey() != nil {
                     throw InvalidArgumentError(argument: "modelId", message: "Google Vertex Interactions models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
                 }
                 return try headersClosure()

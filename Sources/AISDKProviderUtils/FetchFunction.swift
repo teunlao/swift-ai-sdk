@@ -306,8 +306,18 @@ private final class FetchTaskDelegate: NSObject, URLSessionDataDelegate, @unchec
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
-        // Without a followed redirect, the redirect response itself is delivered.
-        completionHandler(redirectMode == .follow ? request : nil)
+        guard redirectMode == .follow else {
+            completionHandler(nil)
+            return
+        }
+        var redirected = request
+        if !isSameOrigin(response.url?.absoluteString ?? "", request.url?.absoluteString ?? "") {
+            // allHTTPHeaderFields merges on Darwin, so omitted keys must be removed explicitly.
+            for name in (request.allHTTPHeaderFields ?? [:]).keys where name.lowercased() != "user-agent" {
+                redirected.setValue(nil, forHTTPHeaderField: name)
+            }
+        }
+        completionHandler(redirected)
     }
 
     func urlSession(

@@ -26,7 +26,7 @@ struct LumaImageModelTests {
         let model = createLuma(settings: .init(apiKey: "token", fetch: fetch)).image(modelId: .photon1)
         let result = try await model.doGenerate(options: .init(prompt: "Edit", n: 1, aspectRatio: "16:9",
             files: [.url(url: "https://example.com/source.png", providerOptions: nil)],
-            providerOptions: ["luma": ["referenceType": .string(mode), "images": .array([.object(["weight": .number(0.6), "id": .string("identity1")])]), "pollIntervalMillis": .number(1), "maxPollAttempts": .number(1), "custom": .bool(true)]]
+            providerOptions: ["luma": ["referenceType": .string(mode), "images": .array([.object(["weight": .number(0.6), "id": .string("identity1")])]), "pollIntervalMillis": .number(0.5), "maxPollAttempts": .number(1), "custom": .bool(true)]]
         ))
         let request = try #require(await capture.value())
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token")
@@ -89,6 +89,17 @@ struct LumaImageModelTests {
             else { valid = false }
             #expect(error.statusCode == 400)
             #expect(error.message == (valid ? "Invalid prompt" : HTTPURLResponse.localizedString(forStatusCode: 400).capitalized))
+        }
+    }
+
+    @Test("unrepresentable polling options fail before creating a generation", arguments: ["pollIntervalMillis", "maxPollAttempts"])
+    func pollingRange(_ field: String) async throws {
+        let model = createLuma(settings: .init(apiKey: "token", fetch: { _ in
+            Issue.record("Invalid polling options created a generation")
+            throw CancellationError()
+        })).image(modelId: .photon1)
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doGenerate(options: .init(n: 1, providerOptions: ["luma": [field: .number(1e20)]]))
         }
     }
 

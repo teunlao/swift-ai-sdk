@@ -106,6 +106,55 @@ struct GoogleVertexPartnerTests {
         #expect(captured.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == nil })
     }
 
+    @Test("MaaS media and redirect downloads receive only User-Agent", arguments: [true, false])
+    func maasMediaCredentials(oauth: Bool) async throws {
+        let requests = VertexRequests()
+        let provider = createGoogleVertexMaas(settings: .init(
+            baseURL: "https://proxy.example/openapi", headers: ["X-Secret": "static"],
+            headersProvider: { ["X-Dynamic-Secret": "dynamic"] }, fetch: { request in
+                await requests.append(request)
+                if request.httpMethod == "POST" {
+                    return try vertexResponse(request, #"{"data":[{"url":"https://proxy.example/assets/image"}]}"#)
+                }
+                if request.url?.host == "proxy.example" {
+                    return .init(body: .data(Data()), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: nil, headerFields: ["Location": "https://media.example/image"])!)
+                }
+                return .init(body: .data(Data([1, 2, 3])), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+            }, generateAuthToken: oauth ? { @Sendable in "oauth" } : nil
+        ))
+        let result = try await provider.imageModel(modelId: "image").doGenerate(options: .init(n: 1, headers: ["X-Caller-Secret": "caller", "X-Secret": "request", "Authorization": "Bearer caller"]))
+        #expect(result.images == .binary([Data([1, 2, 3])]))
+        let captured = await requests.values
+        let api = try #require(captured.first)
+        #expect(api.value(forHTTPHeaderField: "Authorization") == (oauth ? "Bearer oauth" : "Bearer caller"))
+        #expect(api.value(forHTTPHeaderField: "X-Secret") == "static")
+        #expect(api.value(forHTTPHeaderField: "X-Dynamic-Secret") == "dynamic")
+        #expect(api.value(forHTTPHeaderField: "X-Caller-Secret") == "caller")
+        #expect(captured.count == 3)
+        for media in captured.dropFirst() {
+            #expect(media.httpMethod == "GET")
+            #expect(media.allHTTPHeaderFields?.keys.map { $0.lowercased() } == ["user-agent"])
+        }
+    }
+
+    @Test("empty MaaS and xAI endpoints use the authenticated default", arguments: ["", "/"])
+    func emptyPartnerEndpoint(baseURL: String) async throws {
+        let requests = VertexRequests()
+        let fixture = try vertexFixture("openai-partner.json")
+        let settings = GoogleVertexPartnerSettings(project: "project", baseURL: baseURL, fetch: { request in
+            await requests.append(request)
+            return try vertexResponse(request, fixture)
+        }, generateAuthToken: { "oauth" })
+        let providers: [any ProviderV4] = [createGoogleVertexMaas(settings: settings), createGoogleVertexXai(settings: settings)]
+        for provider in providers {
+            _ = try await provider.languageModel(modelId: "model").doGenerate(options: .init(prompt: prompt))
+        }
+        let captured = await requests.values
+        #expect(captured.count == 2)
+        #expect(captured.allSatisfy { $0.url?.absoluteString == "https://aiplatform.googleapis.com/v1/projects/project/locations/global/endpoints/openapi/chat/completions" })
+        #expect(captured.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer oauth" })
+    }
+
     @Test func xaiRequestCapabilitiesAndUsage() async throws {
         let requests = VertexRequests()
         let fixture = try vertexFixture("openai-partner.json")

@@ -59,6 +59,17 @@ struct BlackForestLabsV4Tests {
         }
     }
 
+    @Test("unrepresentable polling options fail before creating a generation", arguments: ["pollIntervalMillis", "pollTimeoutMillis"])
+    func pollingRange(_ field: String) async throws {
+        let model = createBlackForestLabs(settings: .init(apiKey: "token", fetch: { _ in
+            Issue.record("Invalid polling options created a generation")
+            throw CancellationError()
+        })).image(.flux3Image)
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model.doGenerate(options: .init(n: 1, providerOptions: ["blackForestLabs": [field: .number(1e20)]]))
+        }
+    }
+
     @Test("latest image dimensions and masks are validated at the public boundary")
     func rejectsDimensionsAndMasks() async throws {
         let model = createBlackForestLabs(settings: .init(apiKey: "token")).image(.flux3ImageKlein)

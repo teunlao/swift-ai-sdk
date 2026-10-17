@@ -94,7 +94,7 @@ final class GoogleEmbeddingModel: EmbeddingModelV4, EmbeddingModelProviderOption
         }
 
         try validateContentCount(googleOptions?.content?.count, values: options.values)
-        let dimensionality = googleOptions?.outputDimensionality ?? options.dimensions.map(Double.init)
+        let dimensionality = googleOptions?.outputDimensionality ?? options.dimensions
         func parts(_ value: String, index: Int) -> [JSONValue] {
             guard let content = googleOptions?.content?[index] else { return [.object(["text": .string(value)])] }
             return (value.isEmpty ? [] : [.object(["text": .string(value)])]) + content
@@ -114,7 +114,7 @@ final class GoogleEmbeddingModel: EmbeddingModelV4, EmbeddingModelProviderOption
             ]
 
             if let dimensionality {
-                bodyObject["outputDimensionality"] = .number(dimensionality)
+                bodyObject["outputDimensionality"] = .number(Double(dimensionality))
             }
 
             if let taskType = googleOptions?.taskType {
@@ -156,7 +156,7 @@ final class GoogleEmbeddingModel: EmbeddingModelV4, EmbeddingModelProviderOption
             ]
 
             if let dimensionality {
-                requestObject["outputDimensionality"] = .number(dimensionality)
+                requestObject["outputDimensionality"] = .number(Double(dimensionality))
             }
 
             if let taskType = googleOptions?.taskType {
