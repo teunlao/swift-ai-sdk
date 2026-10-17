@@ -20,12 +20,24 @@ import Foundation
  */
 public func convertBase64ToData(_ base64String: String) throws -> Data {
     // Convert base64url to standard base64
-    let base64Standard = base64String
+    let scalars = base64String.unicodeScalars.filter { ![9, 10, 12, 13, 32].contains($0.value) }
+    var base64Standard = String(String.UnicodeScalarView(scalars))
         .replacingOccurrences(of: "-", with: "+")
         .replacingOccurrences(of: "_", with: "/")
+    if base64Standard.utf8.count.isMultiple(of: 4) {
+        if base64Standard.hasSuffix("==") { base64Standard.removeLast(2) }
+        else if base64Standard.hasSuffix("=") { base64Standard.removeLast() }
+    }
+    let remainder = base64Standard.utf8.count % 4
+    let valid = remainder != 1 && base64Standard.utf8.allSatisfy {
+        (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 43 || $0 == 47
+    }
+    if remainder == 2 || remainder == 3 {
+        base64Standard += String(repeating: "=", count: 4 - remainder)
+    }
 
-    // Decode base64
-    guard let data = Data(base64Encoded: base64Standard) else {
+    // Foundation accepts malformed padding that atob rejects.
+    guard valid, let data = Data(base64Encoded: base64Standard) else {
         throw DecodingError.dataCorrupted(
             DecodingError.Context(
                 codingPath: [],

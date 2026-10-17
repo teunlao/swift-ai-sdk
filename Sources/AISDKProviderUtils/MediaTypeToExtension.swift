@@ -23,7 +23,7 @@ import Foundation
  - SeeAlso: [MDN Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types)
  */
 public func mediaTypeToExtension(_ mediaType: String) -> String {
-    let parts = mediaType.lowercased().split(separator: "/", maxSplits: 1)
+    let parts = mediaType.lowercased().split(separator: "/", omittingEmptySubsequences: false)
     let subtype = parts.count > 1 ? String(parts[1]) : ""
 
     // Map common audio subtypes to their extensions

@@ -29,6 +29,9 @@ struct MediaTypeToExtensionTests {
             ("AUDIO/MP3", "mp3"),
             // Invalid
             ("nope", ""),
+            ("/mpeg", "mp3"),
+            ("audio//ignored", ""),
+            ("audio/wav/ignored", "wav"),
         ]
     )
     func mapsMediaTypeToExtension(mediaType: String, expectedExtension: String) {
