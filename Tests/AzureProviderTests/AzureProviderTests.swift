@@ -1798,8 +1798,8 @@ struct AzureProviderTests {
 
     @Suite("auth behavior", .serialized)
     struct AuthBehaviorTests {
-        @Test("Environment credentials and resource names resolve after model creation", arguments: [false, true])
-        func requestTimeEnvironment(deepseek: Bool) async throws {
+        @Test("Environment credentials and resource names resolve after model creation", arguments: ["chat", "deepseek", "speech"])
+        func requestTimeEnvironment(service: String) async throws {
             let names = ["AZURE_API_KEY", "AZURE_RESOURCE_NAME"]
             let original = names.map { name in (name, getenv(name).flatMap { String(validatingCString: $0) }) }
             defer {
@@ -1817,18 +1817,26 @@ struct AzureProviderTests {
             let provider = try createAzure(settings: .init(fetch: { request in
                 await capture.store(request)
                 return FetchResponse(
-                    body: .data(Data(#"{"id":"chat","created":0,"model":"deployment","choices":[{"index":0,"message":{"role":"assistant","content":"ready"},"finish_reason":"stop"}]}"#.utf8)),
+                    body: .data(service == "speech" ? Data([0xff, 0xf3]) : Data(#"{"id":"chat","created":0,"model":"deployment","choices":[{"index":0,"message":{"role":"assistant","content":"ready"},"finish_reason":"stop"}]}"#.utf8)),
                     urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                 )
             }))
-            let model: any LanguageModelV4
-            if deepseek { model = provider.deepseek("deployment") } else { model = provider.chat("deployment") }
+            let generate: @Sendable () async throws -> Void
+            if service == "speech" {
+                let model = provider.speech("MAI-Voice-2")
+                generate = { _ = try await model.doGenerate(options: .init(text: "Hi")) }
+            } else {
+                let model: any LanguageModelV4 = service == "deepseek" ? provider.deepseek("deployment") : provider.chat("deployment")
+                generate = { _ = try await model.doGenerate(options: .init(prompt: [])) }
+            }
             setenv("AZURE_API_KEY", "late-key", 1)
             setenv("AZURE_RESOURCE_NAME", "late-resource", 1)
-            _ = try await model.doGenerate(options: .init(prompt: []))
+            try await generate()
             let request = try #require(await capture.request)
-            #expect(request.url?.absoluteString == "https://late-resource.openai.azure.com/openai/v1/chat/completions?api-version=v1")
-            #expect(request.value(forHTTPHeaderField: "api-key") == "late-key")
+            #expect(request.url?.absoluteString == (service == "speech"
+                ? "https://late-resource.cognitiveservices.azure.com/tts/cognitiveservices/v1"
+                : "https://late-resource.openai.azure.com/openai/v1/chat/completions?api-version=v1"))
+            #expect(request.value(forHTTPHeaderField: service == "speech" ? "Ocp-Apim-Subscription-Key" : "api-key") == "late-key")
         }
 
         @Test("missing API key throws LoadAPIKeyError at request time")

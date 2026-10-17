@@ -10,6 +10,7 @@ public struct AzureProviderSettings: Sendable {
     public var resourceName: String?
     public var baseURL: String?
     public var maiBaseURL: String?
+    public var speechBaseURL: String?
     public var apiKey: String?
     public var tokenProvider: (@Sendable () async throws -> String)?
     public var headers: [String: String]?
@@ -21,6 +22,7 @@ public struct AzureProviderSettings: Sendable {
         resourceName: String? = nil,
         baseURL: String? = nil,
         maiBaseURL: String? = nil,
+        speechBaseURL: String? = nil,
         apiKey: String? = nil,
         tokenProvider: (@Sendable () async throws -> String)? = nil,
         headers: [String: String]? = nil,
@@ -31,6 +33,7 @@ public struct AzureProviderSettings: Sendable {
         self.resourceName = resourceName
         self.baseURL = baseURL
         self.maiBaseURL = maiBaseURL
+        self.speechBaseURL = speechBaseURL
         self.apiKey = apiKey
         self.tokenProvider = tokenProvider
         self.headers = headers
@@ -50,7 +53,7 @@ public final class AzureProvider: ProviderV4 {
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (String) -> AzureImageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
-    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
+    private let speechFactory: @Sendable (String) -> AzureSpeechModel
     public let tools: AzureProviderTools
 
     init(
@@ -61,7 +64,7 @@ public final class AzureProvider: ProviderV4 {
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (String) -> AzureImageModel,
         transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
-        speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
+        speechFactory: @escaping @Sendable (String) -> AzureSpeechModel,
         tools: AzureProviderTools
     ) {
         self.chatFactory = chatFactory
@@ -104,7 +107,7 @@ public final class AzureProvider: ProviderV4 {
     }
 
     public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
-        speechFactory(OpenAISpeechModelId(rawValue: modelId))
+        speechFactory(modelId)
     }
 
     public func callAsFunction(_ modelId: String) throws -> any LanguageModelV4 {
@@ -151,7 +154,11 @@ public final class AzureProvider: ProviderV4 {
         transcriptionFactory(modelId)
     }
 
-    public func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
+    public func speech(_ modelId: String) -> AzureSpeechModel {
+        speechFactory(modelId)
+    }
+
+    public func speechModel(_ modelId: String) -> AzureSpeechModel {
         speechFactory(modelId)
     }
 }
@@ -165,20 +172,20 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
     }
 
     let endpoint = try Endpoint(baseURL: settings.baseURL)
-    let getHeaders: @Sendable (String) throws -> [String: String?] = { description in
+    let getHeaders: @Sendable (API) throws -> [String: String?] = { api in
         var authHeaders: [String: String?] = [:]
         if settings.tokenProvider == nil {
-            authHeaders["api-key"] = try loadAPIKey(
+            authHeaders[api == .speech ? "Ocp-Apim-Subscription-Key" : "api-key"] = try loadAPIKey(
                 apiKey: settings.apiKey,
                 environmentVariableName: "AZURE_API_KEY",
-                description: description
+                description: api.description
             )
         }
         let combined = combineHeaders(authHeaders, settings.headers?.mapValues { Optional($0) })
         return withUserAgentSuffix(combined, "ai-sdk-azure/\(AZURE_PROVIDER_VERSION)").mapValues { Optional($0) }
     }
 
-    let headers: @Sendable () throws -> [String: String?] = { try getHeaders("Azure OpenAI") }
+    let headers: @Sendable () throws -> [String: String?] = { try getHeaders(.openai) }
 
     let fetch: FetchFunction?
     if let tokenProvider = settings.tokenProvider {
@@ -350,7 +357,7 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
                 ?? "https://\(getResourceName()).services.ai.azure.com/mai/v1"
             return base + path
         },
-        headers: { try getHeaders("Azure MAI") },
+        headers: { try getHeaders(.mai) },
         fetch: fetch
     )
     let imageFactory: @Sendable (String) -> AzureImageModel = { modelId in
@@ -366,11 +373,19 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
-    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel = { modelId in
-        OpenAISpeechModel(
-            modelId: modelId,
-            config: speechConfig
-        )
+    let speechAPIConfig = AzureSpeechSpeechConfig(
+        url: {
+            let base = try withoutTrailingSlash(settings.speechBaseURL)
+                ?? "https://\(getResourceName()).cognitiveservices.azure.com"
+            return base + "/tts/cognitiveservices/v1"
+        },
+        headers: { try getHeaders(.speech) },
+        fetch: fetch
+    )
+    let speechFactory: @Sendable (String) -> AzureSpeechModel = { modelId in
+        AzureSpeechModel(modelId: modelId,
+            openai: OpenAISpeechModel(modelId: .init(rawValue: modelId), config: speechConfig),
+            speech: AzureSpeechSpeechModel(modelId: modelId, config: speechAPIConfig))
     }
 
     return AzureProvider(
@@ -393,6 +408,18 @@ public func createAzure(settings: AzureProviderSettings = .init()) throws -> Azu
 
 /// Default Azure provider instance (`export const azure = createAzure()`).
 public let azure: AzureProvider = try! createAzureProvider()
+
+private enum API: Sendable {
+    case openai, speech, mai
+
+    var description: String {
+        switch self {
+        case .openai: "Azure OpenAI"
+        case .speech: "Azure Speech"
+        case .mai: "Azure MAI"
+        }
+    }
+}
 
 private struct Endpoint: Sendable {
     let isAzure: Bool
