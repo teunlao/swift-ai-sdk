@@ -127,6 +127,49 @@ struct HTTPResponseBodyLifetimeTests {
         withExtendedLifetime((response, producer)) {}
     }
 
+    @Test("abort at response handoff cancels an externally retained body before returning")
+    func abortAtBodyHandoff() async throws {
+        let flag = AbortFlag()
+        let cancelled = ResponseCancellation()
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        producer.continuation.onTermination = { reason in if case .cancelled = reason { cancelled.record() } }
+        defer { producer.continuation.finish() }
+        await #expect(throws: CancellationError.self) {
+            _ = try await getFromAPI(url: "https://api.example.com/file", failedResponseHandler: createStatusCodeErrorResponseHandler(), successfulResponseHandler: createBinaryResponseHandler(), isAborted: { flag.isAborted }, fetch: { request in
+                flag.abort()
+                return FetchResponse(body: .stream(producer.stream), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+        }
+        #expect(cancelled.observed)
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("a response returned after fetch cancellation is cancelled before the request ends", arguments: [false, true])
+    func discardLateBody(cancelTask: Bool) async throws {
+        let flag = AbortFlag()
+        let cancelled = ResponseCancellation()
+        let started = AsyncStream<Void>.makeStream()
+        let pending = AsyncStream<Void>.makeStream()
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        producer.continuation.onTermination = { reason in if case .cancelled = reason { cancelled.record() } }
+        defer { producer.continuation.finish(); started.continuation.finish(); pending.continuation.finish() }
+        let request = Task {
+            try await getFromAPI(url: "https://api.example.com/file", failedResponseHandler: createStatusCodeErrorResponseHandler(), successfulResponseHandler: createBinaryResponseHandler(), isAborted: { flag.isAborted }, fetch: { request in
+                started.continuation.yield(())
+                var iterator = pending.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return FetchResponse(body: .stream(producer.stream), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+        }
+        defer { request.cancel() }
+        var starts = started.stream.makeAsyncIterator()
+        _ = await starts.next()
+        if cancelTask { request.cancel() } else { flag.abort() }
+        await #expect(throws: CancellationError.self) { _ = try await request.value }
+        #expect(cancelled.observed)
+        withExtendedLifetime(producer) {}
+    }
+
     @Test("EOF releases the source and abort observation while the result stays alive")
     func eofReleasesResources() async throws {
         let sourceReleased = AsyncStream<Void>.makeStream()
@@ -221,6 +264,13 @@ private final class BodyChunks: @unchecked Sendable {
     func next() -> Data? {
         lock.withLock { chunks.popFirst() }
     }
+}
+
+private final class ResponseCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    func record() { lock.withLock { cancelled = true } }
+    var observed: Bool { lock.withLock { cancelled } }
 }
 
 private final class AbortFlag: @unchecked Sendable {

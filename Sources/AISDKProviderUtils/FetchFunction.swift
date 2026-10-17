@@ -101,16 +101,21 @@ func fetchWithAbortCheck(
             }
 
             group.cancelAll()
-            while let _ = try? await group.next() {}
+            while let completion = await group.nextResult() {
+                if case .success(let discarded) = completion { await cancelDiscardedResponse(discarded) }
+            }
             return result
         } catch {
             group.cancelAll()
-            while let _ = try? await group.next() {}
+            while let completion = await group.nextResult() {
+                if case .success(let discarded) = completion { await cancelDiscardedResponse(discarded) }
+            }
             throw error
         }
     }
 
-    if isAborted() {
+    if isAborted() || Task.isCancelled {
+        await cancelDiscardedResponse(response)
         throw CancellationError()
     }
     guard case .stream(let stream) = response.body else {
@@ -122,6 +127,10 @@ func fetchWithAbortCheck(
         body: .stream(AsyncThrowingStream { try await body.next() }),
         urlResponse: response.urlResponse
     )
+}
+
+private func cancelDiscardedResponse(_ response: FetchResponse) async {
+    if case .stream(let stream) = response.body { await cancelStream(stream) }
 }
 
 private final class AbortableResponseBody: @unchecked Sendable {

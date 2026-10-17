@@ -136,6 +136,31 @@ struct FireworksImageModelTests {
         #expect(resource.released)
     }
 
+    private final class AbortState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var aborted = false
+        func abort() { lock.withLock { aborted = true } }
+        var requested: Bool { lock.withLock { aborted } }
+    }
+
+    @Test("caller abort at response handoff releases the returned body")
+    func abortedResponseHandoff() async throws {
+        let abort = AbortState()
+        let resource = Resource()
+        let source = AsyncThrowingStream<Data, Error>.makeStream()
+        source.continuation.onTermination = { reason in if case .cancelled = reason { resource.release() } }
+        defer { source.continuation.finish() }
+        let model = image(fetch: { request in
+            if request.url?.path.hasSuffix("/get_result") == true {
+                abort.abort()
+                return FetchResponse(body: .stream(source.stream), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+            }
+            return try response(request, .object(["request_id": .string("job")]))
+        })
+        await #expect(throws: CancellationError.self) { _ = try await model.doGenerate(options: .init(prompt: "draw", n: 1, abortSignal: { abort.requested })) }
+        #expect(resource.released)
+    }
+
     @Test("returned image redirects cannot reach an untrusted private host")
     func privateRedirect() async throws {
         let provider = createFireworks(settings: .init(apiKey: "key", baseURL: "https://api.example.com", headers: ["Cookie": "secret"], fetch: { request in
