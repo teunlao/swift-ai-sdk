@@ -1,30 +1,34 @@
 import Foundation
-import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/deepgram/src/deepgram-speech-model.ts (provider options schema)
-// Upstream commit: 73d5c5920e0fea7633027fdd87374adc9ba49743
-//===----------------------------------------------------------------------===//
-
-public struct DeepgramSpeechOptions: Sendable, Equatable {
-    public enum BitRate: Sendable, Equatable {
+public struct DeepgramSpeechModelOptions: Codable, Sendable, Equatable {
+    public enum BitRate: Codable, Sendable, Equatable {
         case number(Double)
         case string(String)
+        public init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer()
+            if let number = try? value.decode(Double.self) { self = .number(number) }
+            else { self = .string(try value.decode(String.self)) }
+        }
+        public func encode(to encoder: Encoder) throws {
+            var value = encoder.singleValueContainer()
+            switch self { case .number(let number): try value.encode(number); case .string(let string): try value.encode(string) }
+        }
     }
-
-    public enum CallbackMethod: String, Sendable, Equatable, Codable {
-        case post = "POST"
-        case put = "PUT"
-    }
-
-    public enum Tag: Sendable, Equatable {
+    public enum CallbackMethod: String, Codable, Sendable { case post = "POST", put = "PUT" }
+    public enum Tag: Codable, Sendable, Equatable {
         case single(String)
         case multiple([String])
+        public init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer()
+            if let string = try? value.decode(String.self) { self = .single(string) }
+            else { self = .multiple(try value.decode([String].self)) }
+        }
+        public func encode(to encoder: Encoder) throws {
+            var value = encoder.singleValueContainer()
+            switch self { case .single(let string): try value.encode(string); case .multiple(let strings): try value.encode(strings) }
+        }
     }
-
     public var bitRate: BitRate?
     public var container: String?
     public var encoding: String?
@@ -33,119 +37,27 @@ public struct DeepgramSpeechOptions: Sendable, Equatable {
     public var callbackMethod: CallbackMethod?
     public var mipOptOut: Bool?
     public var tag: Tag?
-
     public init() {}
-}
-
-private let deepgramSpeechOptionsSchemaJSON: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(true)
-])
-
-public let deepgramSpeechOptionsSchema = FlexibleSchema(
-    Schema<DeepgramSpeechOptions>(
-        jsonSchemaResolver: { deepgramSpeechOptionsSchemaJSON },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "provider options must be an object")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                var options = DeepgramSpeechOptions()
-
-                if let bitRateValue = dict["bitRate"], bitRateValue != .null {
-                    switch bitRateValue {
-                    case .number(let number):
-                        options.bitRate = .number(number)
-                    case .string(let string):
-                        options.bitRate = .string(string)
-                    default:
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "bitRate must be a number or string")
-                        return .failure(error: TypeValidationError.wrap(value: bitRateValue, cause: error))
-                    }
-                }
-
-                if let containerValue = dict["container"], containerValue != .null {
-                    guard case .string(let container) = containerValue else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "container must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: containerValue, cause: error))
-                    }
-                    options.container = container
-                }
-
-                if let encodingValue = dict["encoding"], encodingValue != .null {
-                    guard case .string(let encoding) = encodingValue else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "encoding must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: encodingValue, cause: error))
-                    }
-                    options.encoding = encoding
-                }
-
-                if let sampleRateValue = dict["sampleRate"], sampleRateValue != .null {
-                    guard case .number(let sampleRate) = sampleRateValue else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "sampleRate must be a number")
-                        return .failure(error: TypeValidationError.wrap(value: sampleRateValue, cause: error))
-                    }
-                    options.sampleRate = sampleRate
-                }
-
-                if let callbackValue = dict["callback"], callbackValue != .null {
-                    guard case .string(let callback) = callbackValue else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "callback must be a string URL")
-                        return .failure(error: TypeValidationError.wrap(value: callbackValue, cause: error))
-                    }
-
-                    guard let url = URL(string: callback), url.scheme != nil, url.host != nil else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "callback must be a valid URL")
-                        return .failure(error: TypeValidationError.wrap(value: callbackValue, cause: error))
-                    }
-                    options.callback = callback
-                }
-
-                if let callbackMethodValue = dict["callbackMethod"], callbackMethodValue != .null {
-                    guard case .string(let method) = callbackMethodValue,
-                          let parsedMethod = DeepgramSpeechOptions.CallbackMethod(rawValue: method)
-                    else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "callbackMethod must be POST or PUT")
-                        return .failure(error: TypeValidationError.wrap(value: callbackMethodValue, cause: error))
-                    }
-                    options.callbackMethod = parsedMethod
-                }
-
-                if let mipOptOutValue = dict["mipOptOut"], mipOptOutValue != .null {
-                    guard case .bool(let mipOptOut) = mipOptOutValue else {
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "mipOptOut must be a boolean")
-                        return .failure(error: TypeValidationError.wrap(value: mipOptOutValue, cause: error))
-                    }
-                    options.mipOptOut = mipOptOut
-                }
-
-                if let tagValue = dict["tag"], tagValue != .null {
-                    switch tagValue {
-                    case .string(let tag):
-                        options.tag = .single(tag)
-                    case .array(let values):
-                        var tags: [String] = []
-                        for value in values {
-                            guard case .string(let tag) = value else {
-                                let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "tag array must contain only strings")
-                                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                            }
-                            tags.append(tag)
-                        }
-                        options.tag = .multiple(tags)
-                    default:
-                        let error = SchemaValidationIssuesError(vendor: "deepgram", issues: "tag must be a string or array of strings")
-                        return .failure(error: TypeValidationError.wrap(value: tagValue, cause: error))
-                    }
-                }
-
-                return .success(value: options)
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+    private enum CodingKeys: String, CodingKey { case bitRate, container, encoding, sampleRate, callback, callbackMethod, mipOptOut, tag }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bitRate = try values.decodeIfPresent(BitRate.self, forKey: .bitRate)
+        container = try values.decodeIfPresent(String.self, forKey: .container)
+        encoding = try values.decodeIfPresent(String.self, forKey: .encoding)
+        sampleRate = try values.decodeIfPresent(Double.self, forKey: .sampleRate)
+        callback = try values.decodeIfPresent(String.self, forKey: .callback)
+        callbackMethod = try values.decodeIfPresent(CallbackMethod.self, forKey: .callbackMethod)
+        mipOptOut = try values.decodeIfPresent(Bool.self, forKey: .mipOptOut)
+        tag = try values.decodeIfPresent(Tag.self, forKey: .tag)
+        if let callback {
+            guard let url = URL(string: callback), let scheme = url.scheme, !scheme.isEmpty,
+                  !["http", "https", "ftp", "ws", "wss"].contains(scheme.lowercased()) || url.host?.isEmpty == false else {
+                throw DecodingError.dataCorruptedError(forKey: .callback, in: values, debugDescription: "Expected a URL")
             }
         }
-    )
+    }
+}
+
+let deepgramSpeechModelOptionsSchema = FlexibleSchema(
+    Schema<DeepgramSpeechModelOptions>.codable(DeepgramSpeechModelOptions.self, jsonSchema: ["type": "object"])
 )

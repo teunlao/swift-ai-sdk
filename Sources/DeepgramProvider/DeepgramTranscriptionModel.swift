@@ -2,261 +2,82 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/deepgram/src/deepgram-transcription-model.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-public final class DeepgramTranscriptionModel: TranscriptionModelV3 {
-    struct Config: Sendable {
-        struct RequestOptions: Sendable {
-            let modelId: DeepgramTranscriptionModelId
-            let path: String
-        }
-
-        let provider: String
-        let url: @Sendable (RequestOptions) -> String
-        let headers: @Sendable () -> [String: String?]
-        let fetch: FetchFunction?
-        let currentDate: @Sendable () -> Date
-    }
-
-    private struct PreparedRequest {
-        let url: String
-        let headers: [String: String]
-        let body: Data
-        let warnings: [SharedV3Warning]
-    }
-
-    private let modelIdentifier: DeepgramTranscriptionModelId
-    private let config: Config
-
-    init(modelId: DeepgramTranscriptionModelId, config: Config) {
-        self.modelIdentifier = modelId
-        self.config = config
-    }
-
+public final class DeepgramTranscriptionModel: TranscriptionModelV4 {
+    private let identifier: DeepgramTranscriptionModelId
+    private let config: DeepgramConfig
+    init(modelId: DeepgramTranscriptionModelId, config: DeepgramConfig) { identifier = modelId; self.config = config }
     public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    public var modelId: String { identifier.rawValue }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
-        let prepared = try await prepareRequest(options: options)
-
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        let now = config.currentDate()
+        let settings = try await parseProviderOptions(provider: "deepgram", providerOptions: options.providerOptions, schema: deepgramTranscriptionModelOptionsSchema)
+        var query = QueryParameters()
+        query["model"] = modelId
+        if let settings {
+            query["detect_entities"] = settings.detectEntities.map(String.init)
+            query["detect_language"] = settings.detectLanguage.map(String.init)
+            query["diarize"] = settings.diarize.map(String.init)
+            query["filler_words"] = settings.fillerWords.map(String.init)
+            query["intents"] = settings.intents.map(String.init)
+            query["keyterm"] = settings.keyterm
+            query["language"] = settings.language
+            query["paragraphs"] = settings.paragraphs.map(String.init)
+            query["punctuate"] = settings.punctuate.map(String.init)
+            if let redact = settings.redact {
+                switch redact { case .single(let string): query["redact"] = string; case .multiple(let strings): query["redact"] = strings.joined(separator: ",") }
+            }
+            query["replace"] = settings.replace
+            query["search"] = settings.search
+            query["sentiment"] = settings.sentiment.map(String.init)
+            query["smart_format"] = settings.smartFormat.map(String.init)
+            if let summarize = settings.summarize { query["summarize"] = summarize == .v2 ? "v2" : "false" }
+            query["topics"] = settings.topics.map(String.init)
+            query["utterances"] = settings.utterances.map(String.init)
+            query["utt_split"] = settings.uttSplit.map(numberString)
+        }
+        let audio: Data
+        switch options.audio {
+        case .binary(let value): audio = value
+        case .base64(let value): audio = try convertBase64ToData(value)
+        }
         let response = try await postToAPI(
-            url: prepared.url,
-            headers: prepared.headers,
-            body: PostBody(content: .data(prepared.body), values: nil),
+            url: query.url("https://api.deepgram.com/v1/listen"),
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some), ["Content-Type": options.mediaType]).compactMapValues { $0 },
+            body: .init(content: .data(audio), values: audio),
             failedResponseHandler: deepgramFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: deepgramTranscriptionResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
+            isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        let transcriptText = response.value.results?.channels.first?.alternatives.first?.transcript ?? ""
-        let words = response.value.results?.channels.first?.alternatives.first?.words ?? []
-        let segments = words.map {
-            TranscriptionModelV3Result.Segment(text: $0.word, startSecond: $0.start, endSecond: $0.end)
-        }
-
-        let timestamp = config.currentDate()
+        let channel = response.value.results?.channels.first
+        let alternative = channel?.alternatives.first
         let duration = response.value.metadata?.duration
-
-        return TranscriptionModelV3Result(
-            text: transcriptText,
-            segments: segments,
-            language: nil,
-            durationInSeconds: duration,
-            warnings: prepared.warnings,
-            request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
-                timestamp: timestamp,
-                modelId: modelIdentifier.rawValue,
-                headers: response.responseHeaders,
-                body: response.rawValue
-            ),
-            providerMetadata: nil
-        )
-    }
-
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let deepgramOptions = try await parseProviderOptions(
-            provider: "deepgram",
-            providerOptions: options.providerOptions,
-            schema: deepgramTranscriptionOptionsSchema
-        )
-
-        let audioData: Data
-        switch options.audio {
-        case .binary(let data):
-            audioData = data
-        case .base64(let base64):
-            audioData = try convertBase64ToData(base64)
-        }
-
-        let baseURL = config.url(.init(modelId: modelIdentifier, path: "/v1/listen"))
-        var queryItems: [URLQueryItem] = []
-
-        func append(_ name: String, value: String) {
-            queryItems.append(URLQueryItem(name: name, value: value))
-        }
-
-        func append(_ name: String, bool value: Bool) {
-            append(name, value: value ? "true" : "false")
-        }
-
-        func append(_ name: String, double value: Double) {
-            var formatted = String(value)
-            if formatted.contains("e") || formatted.contains("E") {
-                formatted = String(format: "%g", value)
-            }
-            append(name, value: formatted)
-        }
-
-        append("model", value: modelIdentifier.rawValue)
-
-        let diarizeDefault = deepgramOptions?.diarize ?? true
-        append("diarize", bool: diarizeDefault)
-
-        if let language = deepgramOptions?.language {
-            append("language", value: language)
-        }
-
-        if let smartFormat = deepgramOptions?.smartFormat {
-            append("smart_format", bool: smartFormat)
-        }
-
-        if let punctuate = deepgramOptions?.punctuate {
-            append("punctuate", bool: punctuate)
-        }
-
-        if let paragraphs = deepgramOptions?.paragraphs {
-            append("paragraphs", bool: paragraphs)
-        }
-
-        if let summarize = deepgramOptions?.summarize {
-            switch summarize {
-            case .v2:
-                append("summarize", value: "v2")
-            case .disabled:
-                append("summarize", value: "false")
-            }
-        }
-
-        if let topics = deepgramOptions?.topics {
-            append("topics", bool: topics)
-        }
-
-        if let intents = deepgramOptions?.intents {
-            append("intents", bool: intents)
-        }
-
-        if let sentiment = deepgramOptions?.sentiment {
-            append("sentiment", bool: sentiment)
-        }
-
-        if let detectEntities = deepgramOptions?.detectEntities {
-            append("detect_entities", bool: detectEntities)
-        }
-
-        if let redact = deepgramOptions?.redact {
-            switch redact {
-            case .single(let value):
-                append("redact", value: value)
-            case .multiple(let values):
-                append("redact", value: values.joined(separator: ","))
-            }
-        }
-
-        if let replace = deepgramOptions?.replace {
-            append("replace", value: replace)
-        }
-
-        if let search = deepgramOptions?.search {
-            append("search", value: search)
-        }
-
-        if let keyterm = deepgramOptions?.keyterm {
-            append("keyterm", value: keyterm)
-        }
-
-        if let utterances = deepgramOptions?.utterances {
-            append("utterances", bool: utterances)
-        }
-
-        if let uttSplit = deepgramOptions?.uttSplit {
-            append("utt_split", double: uttSplit)
-        }
-
-        if let fillerWords = deepgramOptions?.fillerWords {
-            append("filler_words", bool: fillerWords)
-        }
-
-        let queryString: String
-        if queryItems.isEmpty {
-            queryString = ""
-        } else {
-            var allowed = CharacterSet.urlQueryAllowed
-            allowed.remove(charactersIn: "&=?")
-            let encoded = queryItems.compactMap { item -> String? in
-                guard let value = item.value else { return nil }
-                guard let keyEncoded = item.name.addingPercentEncoding(withAllowedCharacters: allowed),
-                      let valueEncoded = value.addingPercentEncoding(withAllowedCharacters: allowed) else {
-                    return nil
-                }
-                return "\(keyEncoded)=\(valueEncoded)"
-            }
-            queryString = encoded.joined(separator: "&")
-        }
-
-        let finalURL = queryString.isEmpty ? baseURL : "\(baseURL)?\(queryString)"
-
-        var headers = combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
-        headers["Content-Type"] = options.mediaType
-
-        return PreparedRequest(
-            url: finalURL,
-            headers: headers,
-            body: audioData,
-            warnings: []
-        )
+        return .init(text: alternative?.transcript ?? "",
+                     segments: alternative?.words.map { .init(text: $0.word, startSecond: $0.start, endSecond: $0.end) } ?? [],
+                     language: channel?.detectedLanguage, durationInSeconds: duration,
+                     usage: duration.map { ["seconds": .number($0)] },
+                     response: .init(timestamp: now, modelId: modelId, headers: response.responseHeaders, body: response.rawValue))
     }
 }
 
-private struct DeepgramTranscriptionResponse: Codable {
-    struct Metadata: Codable {
-        let duration: Double?
-    }
-
-    struct Results: Codable {
-        struct Channel: Codable {
-            struct Alternative: Codable {
-                struct Word: Codable {
-                    let word: String
-                    let start: Double
-                    let end: Double
-                }
-
+private struct DeepgramTranscriptionResponse: Decodable {
+    struct Metadata: Decodable { let duration: Double }
+    struct Results: Decodable {
+        struct Channel: Decodable {
+            struct Alternative: Decodable {
+                struct Word: Decodable { let word: String; let start: Double; let end: Double }
                 let transcript: String
-                let words: [Word]?
+                let words: [Word]
             }
-
+            let detectedLanguage: String?
             let alternatives: [Alternative]
+            enum CodingKeys: String, CodingKey { case alternatives; case detectedLanguage = "detected_language" }
         }
-
         let channels: [Channel]
     }
-
     let metadata: Metadata?
     let results: Results?
 }
-
-private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
-
 private let deepgramTranscriptionResponseSchema = FlexibleSchema(
-    Schema<DeepgramTranscriptionResponse>.codable(
-        DeepgramTranscriptionResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
+    Schema<DeepgramTranscriptionResponse>.codable(DeepgramTranscriptionResponse.self, jsonSchema: ["type": "object"])
 )

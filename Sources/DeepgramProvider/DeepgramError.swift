@@ -1,33 +1,25 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/deepgram/src/deepgram-error.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-public struct DeepgramErrorData: Codable, Sendable {
-    public struct ErrorBody: Codable, Sendable {
-        public let message: String
-        public let code: Int
+public struct DeepgramErrorData: Codable, Sendable, Equatable {
+    public let errCode: String
+    public let errMsg: String
+    public let requestId: String?
+    public init(errCode: String, errMsg: String, requestId: String? = nil) {
+        self.errCode = errCode
+        self.errMsg = errMsg
+        self.requestId = requestId
     }
-
-    public let error: ErrorBody
+    private enum CodingKeys: String, CodingKey { case errCode = "err_code", errMsg = "err_msg", requestId = "request_id" }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        errCode = try values.decode(String.self, forKey: .errCode)
+        errMsg = try values.decode(String.self, forKey: .errMsg)
+        requestId = values.contains(.requestId) ? try values.decode(String.self, forKey: .requestId) : nil
+    }
 }
 
-private let genericJSONObjectSchema: JSONValue = .object([
-    "type": .string("object")
-])
-
-public let deepgramFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
-    errorSchema: FlexibleSchema(
-        Schema<DeepgramErrorData>.codable(
-            DeepgramErrorData.self,
-            jsonSchema: genericJSONObjectSchema
-        )
-    ),
-    errorToMessage: { $0.error.message }
+let deepgramFailedResponseHandler = createJsonErrorResponseHandler(
+    errorSchema: FlexibleSchema(Schema<DeepgramErrorData>.codable(DeepgramErrorData.self, jsonSchema: ["type": "object"])),
+    errorToMessage: { $0.errMsg }
 )

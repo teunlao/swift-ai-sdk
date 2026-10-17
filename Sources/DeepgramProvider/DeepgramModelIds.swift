@@ -68,12 +68,6 @@ public struct DeepgramSpeechModelId: RawRepresentable, Hashable, Sendable, Expre
 }
 
 public extension DeepgramSpeechModelId {
-    static let auraAsteriaEn: Self = "aura-asteria-en"
-    static let aura2AsteriaEn: Self = "aura-2-asteria-en"
-    static let aura2ThaliaEn: Self = "aura-2-thalia-en"
-    static let aura2HelenaEn: Self = "aura-2-helena-en"
-    static let aura2OrpheusEn: Self = "aura-2-orpheus-en"
-    static let aura2ZeusEn: Self = "aura-2-zeus-en"
-    static let auraLunaEn: Self = "aura-luna-en"
-    static let auraStellaEn: Self = "aura-stella-en"
+    static let aura: Self = "aura"
+    static let aura2: Self = "aura-2"
 }

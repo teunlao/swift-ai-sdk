@@ -2,13 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/deepgram/src/deepgram-provider.ts
-// Upstream commit: 73d5c5920
-//===----------------------------------------------------------------------===//
-
 public struct DeepgramProviderSettings: Sendable {
     public var apiKey: String?
     public var headers: [String: String]?
@@ -21,130 +14,51 @@ public struct DeepgramProviderSettings: Sendable {
     }
 }
 
-public final class DeepgramProvider: ProviderV3 {
-    private let transcriptionFactory: @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel
-    private let speechFactory: @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel
-
-    init(
-        transcriptionFactory: @escaping @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel,
-        speechFactory: @escaping @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel
-    ) {
-        self.transcriptionFactory = transcriptionFactory
-        self.speechFactory = speechFactory
+public final class DeepgramProvider: ProviderV4 {
+    public struct Models: Sendable {
+        public let transcription: DeepgramTranscriptionModel
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
+    private let transcriptionConfig: DeepgramConfig
+    private let speechConfig: DeepgramConfig
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-
-    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
-        transcription(modelId: DeepgramTranscriptionModelId(rawValue: modelId))
-    }
-
-    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
-        speech(modelId: DeepgramSpeechModelId(rawValue: modelId))
+    init(settings: DeepgramProviderSettings) {
+        let headers: @Sendable () throws -> [String: String?] = {
+            let combined = combineHeaders(
+                ["authorization": "Token \(try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "DEEPGRAM_API_KEY", description: "Deepgram"))"],
+                settings.headers?.mapValues(Optional.some)
+            )
+            return withUserAgentSuffix(combined, "ai-sdk-deepgram/\(DEEPGRAM_VERSION)").mapValues(Optional.some)
+        }
+        transcriptionConfig = .init(provider: "deepgram.transcription", headers: headers, fetch: settings.fetch)
+        speechConfig = .init(provider: "deepgram.speech", headers: headers, fetch: settings.fetch)
     }
 
     public func transcription(modelId: DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel {
-        transcriptionFactory(modelId)
+        .init(modelId: modelId, config: transcriptionConfig)
     }
-
     public func speech(modelId: DeepgramSpeechModelId) -> DeepgramSpeechModel {
-        speechFactory(modelId)
+        .init(modelId: modelId, config: speechConfig)
     }
-
-    public func callAsFunction(_ modelId: DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel {
-        transcription(modelId: modelId)
+    public func callAsFunction(_ modelId: DeepgramTranscriptionModelId) -> Models {
+        .init(transcription: transcription(modelId: modelId))
     }
-}
-
-private func createDeepgramAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            let resolved = try loadAPIKey(
-                apiKey: apiKey,
-                environmentVariableName: "DEEPGRAM_API_KEY",
-                description: "Deepgram"
-            )
-            headers["Authorization"] = "Token \(resolved)"
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
+    public func transcriptionModel(modelId: String) -> (any TranscriptionModelV4)? {
+        transcription(modelId: .init(rawValue: modelId))
+    }
+    public func speechModel(modelId: String) -> (any SpeechModelV4)? {
+        speech(modelId: .init(rawValue: modelId))
+    }
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .languageModel, message: "Deepgram does not provide language models")
+    }
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel, message: "Deepgram does not provide text embedding models")
+    }
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
+        throw NoSuchModelError(modelId: modelId, modelType: .imageModel, message: "Deepgram does not provide image models")
     }
 }
 
-public func createDeepgramProvider(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider {
-    let fetch = createDeepgramAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                computed[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(computed.compactMapValues { $0 }, "ai-sdk/deepgram/\(DEEPGRAM_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let transcriptionFactory: @Sendable (DeepgramTranscriptionModelId) -> DeepgramTranscriptionModel = { modelId in
-        DeepgramTranscriptionModel(
-            modelId: modelId,
-            config: DeepgramTranscriptionModel.Config(
-                provider: "deepgram.transcription",
-                url: { options in
-                    "https://api.deepgram.com\(options.path)"
-                },
-                headers: headersClosure,
-                fetch: fetch,
-                currentDate: { Date() }
-            )
-        )
-    }
-
-    let speechFactory: @Sendable (DeepgramSpeechModelId) -> DeepgramSpeechModel = { modelId in
-        DeepgramSpeechModel(
-            modelId: modelId,
-            config: DeepgramSpeechModel.Config(
-                provider: "deepgram.speech",
-                url: { options in
-                    "https://api.deepgram.com\(options.path)"
-                },
-                headers: headersClosure,
-                fetch: fetch,
-                currentDate: { Date() }
-            )
-        )
-    }
-
-    return DeepgramProvider(
-        transcriptionFactory: transcriptionFactory,
-        speechFactory: speechFactory
-    )
-}
-
-/// Alias matching upstream naming (`createDeepgram`).
-public func createDeepgram(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider {
-    createDeepgramProvider(settings: settings)
-}
-
-public let deepgram = createDeepgramProvider()
+public func createDeepgram(settings: DeepgramProviderSettings = .init()) -> DeepgramProvider { .init(settings: settings) }
+public let deepgram = createDeepgram()
