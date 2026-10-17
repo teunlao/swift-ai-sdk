@@ -40,7 +40,7 @@ struct GenerateTextOpenAIMultiStepExample: Example {
         ],
         prompt: "What is the weather in my current location?",
         stopWhen: [isStepCount(5)],
-        onStepFinish: { step in
+        onStepEnd: { step in
           let index = await stepCounter.next()
           Logger.section("Step \(index)")
           if let json = encodeStep(step, index: index) {

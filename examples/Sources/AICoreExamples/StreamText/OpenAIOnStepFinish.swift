@@ -4,7 +4,7 @@ import SwiftAISDK
 
 struct StreamTextOpenAIOnStepFinishExample: Example {
   static let name = "stream-text/openai-on-step-finish"
-  static let description = "Log each step via onStepFinish with a local weather tool."
+  static let description = "Log each step via onStepEnd with a local weather tool."
 
   struct WeatherQuery: Codable, Sendable { let location: String }
   struct WeatherReport: Codable, Sendable { let temperature: Int }
@@ -21,10 +21,10 @@ struct StreamTextOpenAIOnStepFinishExample: Example {
     do {
       let result = try streamText(
         model: openai("gpt-4o"),
-        prompt: "What is the current weather in San Francisco?",
         tools: ["weather": weather.tool],
+        prompt: "What is the current weather in San Francisco?",
         stopWhen: [isStepCount(5)],
-        onStepFinish: { step in
+        onStepEnd: { step in
           Logger.section("Step Finished")
           Logger.info("finishReason=\(step.finishReason)")
           Logger.info("usage.total=\(step.usage.totalTokens ?? 0)")

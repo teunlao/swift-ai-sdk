@@ -5,7 +5,7 @@ import SwiftAISDK
 
 struct GenerateTextOpenAIOnFinishExample: Example {
   static let name = "generate-text/openai-on-finish"
-  static let description = "Shows how to inspect the finish event emitted by generateText(onFinish:)."
+  static let description = "Shows how to inspect the finish event emitted by generateText(onEnd:)."
 
   static func run() async throws {
     do {
@@ -15,9 +15,9 @@ struct GenerateTextOpenAIOnFinishExample: Example {
       let result = try await generateText(
         model: openai("gpt-4o"),
         prompt: "Invent a new holiday and describe its traditions.",
-        onFinish: { event in
+        onEnd: { event in
           if let json = FinishEventLogger.encode(event: event) {
-            Logger.section("onFinish Event")
+            Logger.section("onEnd Event")
             Logger.info(json)
           }
         }

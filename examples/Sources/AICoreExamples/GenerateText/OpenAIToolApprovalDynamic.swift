@@ -65,7 +65,7 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
         let result = try await generateText(
           model: openai("gpt-4.1-mini"),
           tools: tools,
-          system:
+          instructions:
             "When a tool execution is not approved by the user, do not retry it. Just say that the tool execution was not approved.",
           messages: messages,
           stopWhen: [isStepCount(5)]
@@ -74,7 +74,7 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
         Logger.section("Assistant")
         for part in result.content {
           switch part {
-          case .text(let text, _):
+          case .text(let text, _, _):
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
               Logger.info(text)
             }
@@ -88,7 +88,7 @@ struct GenerateTextOpenAIToolApprovalDynamicExample: Example {
         }
 
         Logger.separator()
-        messages = messages + result.response.messages
+        messages += result.response.messages.asModelMessages()
       } catch {
         Logger.warning("Skipping network call due to error: \(error.localizedDescription)")
         break

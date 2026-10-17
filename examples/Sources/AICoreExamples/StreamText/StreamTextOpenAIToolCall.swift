@@ -20,8 +20,8 @@ struct StreamTextOpenAIToolCallExample: Example {
 
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Use the weather tool to get the weather for San Francisco.",
-        tools: ["weather": weather.tool]
+        tools: ["weather": weather.tool],
+        prompt: "Use the weather tool to get the weather for San Francisco."
       )
 
       for try await part in result.fullStream {

@@ -7,7 +7,7 @@ import Foundation
 
 struct MathAgentExample: Example {
   static let name = "complex/math-agent"
-  static let description = "Multi-step math with a calculate tool and onStepFinish."
+  static let description = "Multi-step math with a calculate tool and onStepEnd."
 
   private struct CalcInput: Codable, Sendable { let expression: String }
 
@@ -45,16 +45,16 @@ struct MathAgentExample: Example {
     let result = try await generateText(
       model: openai("gpt-4o"),
       tools: ["calculate": calculate.tool],
-      instructions: [
+      instructions: .text([
         "You are solving math problems.",
         "Reason step by step.",
         "Use the calculator when necessary.",
         "The calculator can only do basic arithmetic.",
         "When you give the final answer, explain how you got it.",
-      ].joined(separator: " "),
+      ].joined(separator: " ")),
       prompt: prompt,
       stopWhen: [isStepCount(10)],
-      onStepFinish: { step in
+      onStepEnd: { step in
         if !step.toolResults.isEmpty {
           Logger.info("STEP RESULTS count: \(step.toolResults.count)")
         }
@@ -113,16 +113,16 @@ struct MathAgentRequiredToolChoiceExample: Example {
         "answer": answerTool.tool
       ],
       toolChoice: .required,
-      instructions: [
+      instructions: .text([
         "You are solving math problems.",
         "Reason step by step.",
         "Use the calculator when necessary.",
         "The calculator can only do basic arithmetic.",
         "When you give the final answer, explain how you got it.",
-      ].joined(separator: " "),
+      ].joined(separator: " ")),
       prompt: prompt,
       stopWhen: [isStepCount(10)],
-      onStepFinish: { step in
+      onStepEnd: { step in
         if !step.toolResults.isEmpty {
           Logger.info("STEP RESULTS count: \(step.toolResults.count)")
         }

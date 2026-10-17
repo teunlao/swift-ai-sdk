@@ -12,7 +12,7 @@ struct StreamTextOpenAICachedPromptTokensExample: Example {
 
     do {
       let start = Date()
-      let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
+      let result = try streamText(
         model: openai("gpt-4o-mini"),
         instructions: nil,
         messages: [

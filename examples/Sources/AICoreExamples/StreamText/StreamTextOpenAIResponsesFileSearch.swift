@@ -29,10 +29,8 @@ struct StreamTextOpenAIResponsesFileSearchExample: Example {
 
       let result = try streamText(
         model: openai.responses("gpt-4o-mini"),
+        tools: ["file_search": fileSearch],
         prompt: "Find facts about Swift Package Manager from the vector store and summarize in 2 bullets.",
-        tools: [
-          "file_search": fileSearch
-        ],
         providerOptions: providerOptions
       )
 

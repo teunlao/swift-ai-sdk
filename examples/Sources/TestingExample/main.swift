@@ -19,14 +19,14 @@ struct TestingExample: CLIExample {
   static func run() async throws {
     // Example 1: generateText with Mock
     Logger.section("Example 1: generateText with Mock")
-    Logger.info("Using MockLanguageModelV3 to simulate text generation...")
+    Logger.info("Using MockLanguageModelV4 to simulate text generation...")
 
-    let mockModel1 = MockLanguageModelV3(
+    let mockModel1 = MockLanguageModelV4(
       doGenerate: .function { _ in
-        LanguageModelV3GenerateResult(
-          content: [.text(LanguageModelV3Text(text: "Hello, world!"))],
-          finishReason: LanguageModelV3FinishReason(unified: .stop),
-          usage: LanguageModelV3Usage(
+        LanguageModelV4GenerateResult(
+          content: [.text(LanguageModelV4Text(text: "Hello, world!"))],
+          finishReason: LanguageModelV4FinishReason(unified: .stop),
+          usage: LanguageModelV4Usage(
             inputTokens: .init(total: 10),
             outputTokens: .init(total: 20)
           )
@@ -44,11 +44,11 @@ struct TestingExample: CLIExample {
 
     // Example 2: streamText with Mock
     Logger.section("Example 2: streamText with Mock")
-    Logger.info("Using MockLanguageModelV3 to simulate streaming...")
+    Logger.info("Using MockLanguageModelV4 to simulate streaming...")
 
-    let mockModel2 = MockLanguageModelV3(
+    let mockModel2 = MockLanguageModelV4(
       doStream: .function { _ in
-        LanguageModelV3StreamResult(
+        LanguageModelV4StreamResult(
           stream: simulateReadableStream(
             chunks: [
               .textStart(id: "text-1", providerMetadata: nil),
@@ -57,8 +57,8 @@ struct TestingExample: CLIExample {
               .textDelta(id: "text-1", delta: "world!", providerMetadata: nil),
               .textEnd(id: "text-1", providerMetadata: nil),
               .finish(
-                finishReason: LanguageModelV3FinishReason(unified: .stop),
-                usage: LanguageModelV3Usage(
+                finishReason: LanguageModelV4FinishReason(unified: .stop),
+                usage: LanguageModelV4Usage(
                   inputTokens: .init(total: 3),
                   outputTokens: .init(total: 10)
                 ),
@@ -85,14 +85,14 @@ struct TestingExample: CLIExample {
 
     // Example 3: Recording Calls
     Logger.section("Example 3: Recording Calls")
-    Logger.info("MockLanguageModelV3 records all calls for verification...")
+    Logger.info("MockLanguageModelV4 records all calls for verification...")
 
-    let mockModel3 = MockLanguageModelV3(
+    let mockModel3 = MockLanguageModelV4(
       doGenerate: .function { _ in
-        LanguageModelV3GenerateResult(
-          content: [.text(LanguageModelV3Text(text: "Response"))],
-          finishReason: LanguageModelV3FinishReason(unified: .stop),
-          usage: LanguageModelV3Usage(inputTokens: .init(total: 5), outputTokens: .init(total: 5))
+        LanguageModelV4GenerateResult(
+          content: [.text(LanguageModelV4Text(text: "Response"))],
+          finishReason: LanguageModelV4FinishReason(unified: .stop),
+          usage: LanguageModelV4Usage(inputTokens: .init(total: 5), outputTokens: .init(total: 5))
         )
       }
     )
@@ -112,22 +112,22 @@ struct TestingExample: CLIExample {
     Logger.section("Example 4: Different Finish Reasons")
     Logger.info("Simulating different completion scenarios...")
 
-    let stopModel = MockLanguageModelV3(
+    let stopModel = MockLanguageModelV4(
       doGenerate: .function { _ in
-        LanguageModelV3GenerateResult(
-          content: [.text(LanguageModelV3Text(text: "Complete"))],
-          finishReason: LanguageModelV3FinishReason(unified: .stop),
-          usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2))
+        LanguageModelV4GenerateResult(
+          content: [.text(LanguageModelV4Text(text: "Complete"))],
+          finishReason: LanguageModelV4FinishReason(unified: .stop),
+          usage: LanguageModelV4Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2))
         )
       }
     )
 
-    let lengthModel = MockLanguageModelV3(
+    let lengthModel = MockLanguageModelV4(
       doGenerate: .function { _ in
-        LanguageModelV3GenerateResult(
-          content: [.text(LanguageModelV3Text(text: "Truncated..."))],
-          finishReason: LanguageModelV3FinishReason(unified: .length),
-          usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 100))
+        LanguageModelV4GenerateResult(
+          content: [.text(LanguageModelV4Text(text: "Truncated..."))],
+          finishReason: LanguageModelV4FinishReason(unified: .length),
+          usage: LanguageModelV4Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 100))
         )
       }
     )
@@ -145,19 +145,19 @@ struct TestingExample: CLIExample {
     Logger.info("Using mockValues to return different responses per call...")
 
     let mockResponses = mockValues(
-      LanguageModelV3GenerateResult(
-        content: [.text(LanguageModelV3Text(text: "First response"))],
-        finishReason: LanguageModelV3FinishReason(unified: .stop),
-        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+      LanguageModelV4GenerateResult(
+        content: [.text(LanguageModelV4Text(text: "First response"))],
+        finishReason: LanguageModelV4FinishReason(unified: .stop),
+        usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
       ),
-      LanguageModelV3GenerateResult(
-        content: [.text(LanguageModelV3Text(text: "Second response"))],
-        finishReason: LanguageModelV3FinishReason(unified: .stop),
-        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+      LanguageModelV4GenerateResult(
+        content: [.text(LanguageModelV4Text(text: "Second response"))],
+        finishReason: LanguageModelV4FinishReason(unified: .stop),
+        usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
       )
     )
 
-    let mockModel5 = MockLanguageModelV3(
+    let mockModel5 = MockLanguageModelV4(
       doGenerate: .function { _ in mockResponses() }
     )
 
@@ -179,9 +179,9 @@ struct TestingExample: CLIExample {
     Logger.section("Example 6: Simulating Delays")
     Logger.info("Using simulateReadableStream with delays...")
 
-    let mockModel6 = MockLanguageModelV3(
+    let mockModel6 = MockLanguageModelV4(
       doStream: .function { _ in
-        LanguageModelV3StreamResult(
+        LanguageModelV4StreamResult(
           stream: simulateReadableStream(
             chunks: [
               .textStart(id: "text-1", providerMetadata: nil),
@@ -189,8 +189,8 @@ struct TestingExample: CLIExample {
               .textDelta(id: "text-1", delta: " stream", providerMetadata: nil),
               .textEnd(id: "text-1", providerMetadata: nil),
               .finish(
-                finishReason: LanguageModelV3FinishReason(unified: .stop),
-                usage: LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2)),
+                finishReason: LanguageModelV4FinishReason(unified: .stop),
+                usage: LanguageModelV4Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 2)),
                 providerMetadata: nil
               )
             ],
@@ -220,7 +220,7 @@ struct TestingExample: CLIExample {
     Logger.separator()
     Logger.info("Testing examples complete!")
     Logger.info("Key concepts:")
-    Logger.info("  • MockLanguageModelV3 for controllable test behavior")
+    Logger.info("  • MockLanguageModelV4 for controllable test behavior")
     Logger.info("  • simulateReadableStream for streaming tests")
     Logger.info("  • mockValues for multi-call scenarios")
     Logger.info("  • Delays for realistic timing tests")

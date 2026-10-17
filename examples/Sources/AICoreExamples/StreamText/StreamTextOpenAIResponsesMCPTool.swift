@@ -25,21 +25,20 @@ struct StreamTextOpenAIResponsesMCPToolExample: Example {
 
       let result = try streamText(
         model: openai.responses("gpt-5"),
-        system:
+        tools: ["mcp": mcp],
+        toolChoice: .tool(toolName: "mcp"),
+        instructions: .text(
           "You are a helpful assistant that can shorten links. " +
           "Use the MCP tools available to you to shorten links when needed. " +
           "When a tool execution is not approved by the user, do not retry it. " +
-          "Just say that the tool execution was not approved.",
+          "Just say that the tool execution was not approved."
+        ),
         prompt: "Shorten https://openai.com and return only the shortened URL.",
-        tools: [
-          "mcp": mcp
-        ],
-        toolChoice: .tool(toolName: "mcp"),
-        experimentalApprove: { request in
+        stopWhen: [isStepCount(4)],
+        toolApproval: .generic { request in
           Logger.info("approve MCP tool: \(request.toolCall.toolName)")
-          return .approve
-        },
-        stopWhen: [isStepCount(4)]
+          return .approved()
+        }
       )
 
       for try await part in result.fullStream {
@@ -55,7 +54,7 @@ struct StreamTextOpenAIResponsesMCPToolExample: Example {
           Logger.section("TOOL RESULT \(result.toolName)")
           Helpers.printJSON(result.output)
 
-        case .finishStep(_, let usage, let finishReason, _, _):
+        case .finishStep(_, let usage, _, let finishReason, _, _):
           Logger.section("STEP FINISH")
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Helpers.printJSON(usage)

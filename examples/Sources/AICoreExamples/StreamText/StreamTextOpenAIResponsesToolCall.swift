@@ -35,13 +35,13 @@ struct StreamTextOpenAIResponsesToolCallExample: Example {
 
       let result = try streamText(
         model: openai.responses("gpt-4o-mini"),
-        prompt: "What is the weather in my current location and in Rome?",
         tools: [
           "currentLocation": currentLocationTool.tool,
           "weather": weatherTool.tool
         ],
-        providerOptions: openai.options.responses(.init(parallelToolCalls: false)),
-        stopWhen: [isStepCount(5)]
+        prompt: "What is the weather in my current location and in Rome?",
+        stopWhen: [isStepCount(5)],
+        providerOptions: openai.options.responses(.init(parallelToolCalls: false))
       )
 
       for try await part in result.fullStream {
@@ -57,7 +57,7 @@ struct StreamTextOpenAIResponsesToolCallExample: Example {
           Logger.section("TOOL RESULT \(result.toolName)")
           Helpers.printJSON(result.output)
 
-        case .finishStep(_, let usage, let finishReason, _, _):
+        case .finishStep(_, let usage, _, let finishReason, _, _):
           Logger.section("STEP FINISH")
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Helpers.printJSON(usage)

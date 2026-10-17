@@ -9,15 +9,15 @@ struct AgentOpenAIStreamExample: Example {
   static func run() async throws {
     do {
       let model = try openai("gpt-5")
-      let settings = BasicAgentSettings(
+      let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant.",
-        model: model
+        model: .v4(model)
       )
-      let agent = BasicAgent(settings: settings)
+      let agent = ToolLoopAgent(settings)
 
-      let result = try agent.stream(prompt: Prompt.text(
-        "Invent a new holiday and describe its traditions."
-      ))
+      let result = try await agent.stream(
+        prompt: "Invent a new holiday and describe its traditions."
+      )
 
       for try await delta in result.textStream { print(delta, terminator: "") }
       print("")

@@ -30,8 +30,8 @@ struct StreamTextOpenAILocalShellToolExample: Example {
       ))
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Use the local_shell tool to run 'date -u +%Y-%m-%dT%H:%M:%SZ' and print the result.",
-        tools: ["local_shell": shell]
+        tools: ["local_shell": shell],
+        prompt: "Use the local_shell tool to run 'date -u +%Y-%m-%dT%H:%M:%SZ' and print the result."
       )
 
       for try await part in result.fullStream {

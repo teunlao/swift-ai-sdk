@@ -4,7 +4,7 @@ import SwiftAISDK
 
 struct StreamTextOpenAIOnFinishStepsExample: Example {
   static let name = "stream-text/openai-on-finish-steps"
-  static let description = "Inspect each step in onFinish (finishReason/usage/text)."
+  static let description = "Inspect each step in onEnd (finishReason/usage/text)."
 
   static func run() async throws {
     do {
@@ -12,9 +12,9 @@ struct StreamTextOpenAIOnFinishStepsExample: Example {
         model: openai("gpt-4o"),
         prompt: "Give me a 3-step plan to learn Swift.",
         stopWhen: [isStepCount(3)],
-        onFinish: { _, steps, _, _ in
+        onEnd: { event in
           Logger.section("steps summary")
-          for (i, step) in steps.enumerated() {
+          for (i, step) in event.steps.enumerated() {
             Logger.info("#\(i+1) reason=\(step.finishReason) tokens=\(step.usage.totalTokens ?? 0)")
             Logger.info(Helpers.truncate(step.text, to: 160))
           }

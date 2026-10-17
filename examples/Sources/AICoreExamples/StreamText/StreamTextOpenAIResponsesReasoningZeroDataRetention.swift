@@ -53,6 +53,7 @@ struct StreamTextOpenAIResponsesReasoningZeroDataRetentionExample: Example {
             Logger.section("Second request — errored body")
             Logger.info(String(describing: values))
           }
+          return nil
         }
       )
 

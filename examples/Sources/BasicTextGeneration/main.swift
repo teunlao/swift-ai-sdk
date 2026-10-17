@@ -47,24 +47,23 @@ struct BasicTextGeneration: CLIExample {
     print(creative.text)
 
 
-    // Example 4: Request objects (base + override)
-    Logger.section("Example 4: Request Objects (Base + Override)")
+    Logger.section("Example 4: Reusing Call Settings")
 
-    let requestModel = try openai("gpt-4o")
-    let baseRequest = GenerateTextRequest(
-      model: requestModel,
-      providerOptions: ["openai": ["reasoningEffort": .string("low")]],
-      settings: CallSettings(maxRetries: 2)
+    let model = try openai("gpt-4o")
+    let settings = CallSettings(maxRetries: 2)
+
+    let a = try await generateText(
+      model: model,
+      prompt: "Write a one-line tagline for the Swift AI SDK.",
+      settings: settings
     )
-
-    var reqA = baseRequest
-    reqA.prompt = "Write a one-line tagline for the Swift AI SDK."
-    let a = try await generateText(reqA)
     print(a.text)
 
-    var reqB = baseRequest
-    reqB.prompt = "Write a one-line tagline for the TypeScript AI SDK."
-    let b = try await generateText(reqB)
+    let b = try await generateText(
+      model: model,
+      prompt: "Write a one-line tagline for the TypeScript AI SDK.",
+      settings: settings
+    )
     print(b.text)
 
     // Show usage stats

@@ -15,8 +15,8 @@ struct StreamTextOpenAIWebSearchToolExample: Example {
 
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Find 2 recent Swift language updates and summarize in one paragraph.",
-        tools: ["web_search": web]
+        tools: ["web_search": web],
+        prompt: "Find 2 recent Swift language updates and summarize in one paragraph."
       )
 
       for try await part in result.fullStream {

@@ -13,13 +13,13 @@ struct AgentOpenAIStreamJSONExample: Example {
   static func run() async throws {
     do {
       let outputSpec = Output.object(Recipe.self, name: "recipe", description: "Lasagna recipe")
-      let settings = AgentSettings<Recipe, JSONValue>(
+      let settings = ToolLoopAgentSettings<Never, Recipe, JSONValue>(
         instructions: "You are a helpful assistant.",
-        model: try openai("gpt-4o"),
+        model: .v4(try openai("gpt-4o")),
         output: outputSpec
       )
-      let agent = Agent(settings: settings)
-      let result = try agent.stream(prompt: Prompt.text("Generate a lasagna recipe."))
+      let agent = ToolLoopAgent(settings)
+      let result = try await agent.stream(prompt: "Generate a lasagna recipe.")
 
       Logger.section("Partial JSON stream (first 3 events)")
       var count = 0

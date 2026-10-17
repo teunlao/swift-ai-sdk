@@ -26,7 +26,7 @@ struct StreamingExample: CLIExample {
     let stream = try streamText(
       model: openai("gpt-4o"),
       prompt: prompt,
-      onFinish: { event in
+      onEnd: { event in
         // Called when streaming completes
         Logger.separator()
         Logger.info("Streaming complete")

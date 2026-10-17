@@ -12,8 +12,8 @@ struct StreamTextOpenAIImageGenerationToolExample: Example {
 
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Create a simple monochrome sketch of a paper airplane using the image_generation tool, then describe it in one sentence.",
-        tools: ["image_generation": imageTool]
+        tools: ["image_generation": imageTool],
+        prompt: "Create a simple monochrome sketch of a paper airplane using the image_generation tool, then describe it in one sentence."
       )
 
       for try await part in result.fullStream {

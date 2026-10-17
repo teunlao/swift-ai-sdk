@@ -14,8 +14,8 @@ struct StreamTextOpenAIResponsesReasoningWebSearchExample: Example {
 
       let result = try streamText(
         model: openai.responses("gpt-5-mini"),
-        prompt: "What happened in the world today?",
         tools: ["web_search": openai.tools.webSearch()],
+        prompt: "What happened in the world today?",
         providerOptions: providerOptions
       )
 
@@ -42,7 +42,7 @@ struct StreamTextOpenAIResponsesReasoningWebSearchExample: Example {
 
       let followUp = try await generateText(
         model: openai.responses("gpt-5-mini"),
-        messages: response.messages + [.user("Summarize in 2 sentences.")]
+        messages: response.messages.asModelMessages() + [.user("Summarize in 2 sentences.")]
       )
 
       Logger.section("Follow-up summary")

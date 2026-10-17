@@ -38,7 +38,7 @@ async function runTests() {
 async function buildAll() {
   console.log(chalk.bold.green('\n🔨 Building all examples...\n'));
 
-  const buildProcess = spawn('swift', ['build'], {
+  const buildProcess = spawn('swift', ['build', '--jobs', '3'], {
     cwd: examplesDir,
     stdio: 'inherit',
   });

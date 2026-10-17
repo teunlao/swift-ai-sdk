@@ -22,19 +22,16 @@ struct StreamingExample: CLIExample {
     Logger.info("Prompt: \(prompt)")
     Logger.separator()
 
-    // Stream text - request objects let you build a reusable base config.
-    let model = try openai("gpt-4o")
-    var request = StreamTextRequest(model: model)
-    request.prompt = prompt
-    request.onFinish = { finalStep, steps, totalUsage, finishReason in
-      // Called when streaming completes
-      Logger.separator()
-      Logger.info("Streaming complete")
-      Logger.info("Total tokens: \(totalUsage.totalTokens ?? 0)")
-      Logger.info("Finish reason: \(finishReason)")
-    }
-
-    let stream = try streamText(request)
+    let stream = try streamText(
+      model: openai("gpt-4o"),
+      prompt: prompt,
+      onEnd: { event in
+        Logger.separator()
+        Logger.info("Streaming complete")
+        Logger.info("Total tokens: \(event.totalUsage.totalTokens ?? 0)")
+        Logger.info("Finish reason: \(event.finishReason)")
+      }
+    )
 
     // Iterate over text deltas
     Logger.section("Streamed Output")

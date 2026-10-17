@@ -173,14 +173,14 @@ let result = try await generateText(
 
 ### Example: Use Text Embedding Models
 
-You can access text embedding models by using the `textEmbeddingModel` method on the registry.
+You can access text embedding models by using the `embeddingModel` method on the registry.
 The provider id will become the prefix of the model id: `providerId:modelId`.
 
 ```swift
 import SwiftAISDK
 
 let result = try await embed(
-  model: try registry.textEmbeddingModel(id: "openai:text-embedding-3-small"),
+  model: try registry.embeddingModel(id: "openai:text-embedding-3-small"),
   value: "sunny day at the beach"
 )
 ```

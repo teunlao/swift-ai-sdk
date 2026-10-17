@@ -23,10 +23,10 @@ struct StreamTextOpenAIOutputObjectExample: Example {
         instructions: nil,
         messages: [.user(UserModelMessage(content: .text("Return a JSON object with name, version, and 3 short changes for 'Swift AI SDK'.")))],
         output: outputSpec,
-        onFinish: { finalStep, _, usage, reason in
-          Logger.section("onFinish")
-          Logger.info("finishReason: \(reason)")
-          Logger.info("tokens: \(usage.totalTokens ?? 0)")
+        onEnd: { event in
+          Logger.section("onEnd")
+          Logger.info("finishReason: \(event.finishReason)")
+          Logger.info("tokens: \(event.totalUsage.totalTokens ?? 0)")
         }
       )
 

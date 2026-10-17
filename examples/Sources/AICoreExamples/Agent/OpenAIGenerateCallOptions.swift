@@ -18,15 +18,15 @@ struct AgentOpenAIGenerateCallOptionsExample: Example {
         "openai": ["strictJsonSchema": true]
       ]
 
-      let settings = AgentSettings<Recipe, JSONValue>(
+      let settings = ToolLoopAgentSettings<Never, Recipe, JSONValue>(
         instructions: "You are a helpful assistant.",
-        model: try openai("gpt-4o"),
+        model: .v4(try openai("gpt-4o")),
         output: outputSpec,
         providerOptions: providerOptions
       )
 
-      let agent = Agent(settings: settings)
-      let result = try await agent.generate(prompt: Prompt.text("Generate a lasagna recipe."))
+      let agent = ToolLoopAgent(settings)
+      let result = try await agent.generate(prompt: "Generate a lasagna recipe.")
       let recipe = try result.output
       Logger.section("Strict JSON parsed")
       Logger.info("Recipe: \(recipe.name) (\(recipe.ingredients.count) ingredients)")

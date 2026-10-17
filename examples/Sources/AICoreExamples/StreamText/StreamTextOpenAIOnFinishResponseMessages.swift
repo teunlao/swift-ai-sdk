@@ -4,16 +4,16 @@ import SwiftAISDK
 
 struct StreamTextOpenAIOnFinishResponseMessagesExample: Example {
   static let name = "stream-text/openai-on-finish-response-messages"
-  static let description = "Print response.messages from final step in onFinish."
+  static let description = "Print response.messages from final step in onEnd."
 
   static func run() async throws {
     do {
       let result = try streamText(
         model: openai("gpt-4o"),
         prompt: "Say hello and explain what response messages are.",
-        onFinish: { finalStep, _, _, _ in
+        onEnd: { event in
           Logger.section("response.messages")
-          Helpers.printJSON(finalStep.response.messages.map { $0.describe() })
+          Helpers.printJSON(event.response.messages.map { $0.describe() })
         }
       )
       for try await _ in result.textStream { }

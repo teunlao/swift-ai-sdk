@@ -96,18 +96,15 @@ struct ErrorHandlingExample: CLIExample {
     Logger.section("Example 4: onAbort Callback")
     Logger.info("Setting up onAbort callback (stream completes normally here)...")
 
-    var abortCalled = false
-
     let result = try await streamText(
       model: openai("gpt-4o"),
       prompt: "Count to 5",
-      onFinish: { _, _, _, _ in
-        Logger.info("✅ onFinish called (normal completion)")
+      onEnd: { _ in
+        Logger.info("onEnd called (normal completion)")
       },
-      onAbort: { steps in
-        abortCalled = true
-        Logger.info("⚠️  onAbort would be called if stream was aborted")
-        Logger.info("    Steps completed: \(steps.count)")
+      onAbort: { event in
+        Logger.info("onAbort would be called if stream was aborted")
+        Logger.info("Steps completed: \(event.steps.count)")
       }
     )
 
@@ -118,7 +115,7 @@ struct ErrorHandlingExample: CLIExample {
     }
     print()
 
-    Logger.info("Abort called: \(abortCalled) (false = normal completion)")
+    Logger.info("Finish reason: \(try await result.finishReason)")
     Logger.info("Note: onAbort is called only when stream is aborted externally")
 
     // Example 5: Specific Error Type Handling

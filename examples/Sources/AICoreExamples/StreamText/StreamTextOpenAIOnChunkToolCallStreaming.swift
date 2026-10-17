@@ -28,11 +28,11 @@ struct StreamTextOpenAIOnChunkToolCallStreamingExample: Example {
       Logger.section("Streaming with tool call chunks")
       let result = try streamText(
         model: openai("gpt-4o"),
-        prompt: "Use the weather tool to get the weather for San Francisco and summarize it in one sentence.",
         tools: ["weather": weather.tool],
+        prompt: "Use the weather tool to get the weather for San Francisco and summarize it in one sentence.",
         onChunk: { part in
           switch part {
-          case .toolInputStart(let id, let toolName, _, _, _, _):
+          case .toolInputStart(let id, let toolName, _, _, _, _, _, _):
             Logger.info("toolInputStart id=\(id) tool=\(toolName)")
           case .toolInputDelta(let id, let delta, _):
             Logger.info("toolInputDelta id=\(id) delta=\(delta.prefix(60))...")
@@ -46,10 +46,10 @@ struct StreamTextOpenAIOnChunkToolCallStreamingExample: Example {
             break
           }
         },
-        onFinish: { finalStep, _, usage, reason in
+        onEnd: { event in
           Logger.section("Finish")
-          Logger.info("finishReason: \(reason)")
-          Logger.info("totalTokens: \(usage.totalTokens ?? 0)")
+          Logger.info("finishReason: \(event.finishReason)")
+          Logger.info("totalTokens: \(event.totalUsage.totalTokens ?? 0)")
         }
       )
 

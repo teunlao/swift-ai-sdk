@@ -20,14 +20,14 @@ struct AgentOpenAIStreamToolsExample: Example {
       }
 
       let model = try openai("gpt-5")
-      let settings = BasicAgentSettings(
+      let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant that answers questions about the weather.",
-        model: model,
+        model: .v4(model),
         tools: ["weather": weather.tool]
       )
-      let agent = BasicAgent(settings: settings)
+      let agent = ToolLoopAgent(settings)
 
-      let result = try agent.stream(prompt: Prompt.text("What is the weather in Tokyo?"))
+      let result = try await agent.stream(prompt: "What is the weather in Tokyo?")
       for try await delta in result.textStream { print(delta, terminator: "") }
       print("")
     } catch {

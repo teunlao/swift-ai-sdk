@@ -39,8 +39,8 @@ struct StreamTextOpenAIToolOutputStreamExample: Example {
       Logger.section("Streaming tool output via onChunk")
       let result = try streamText(
         model: openai("gpt-4o"),
-        prompt: "Use the synStream tool to stream 3-5 synonyms for the word 'swift' and summarize.",
         tools: ["synStream": synStream.tool],
+        prompt: "Use the synStream tool to stream 3-5 synonyms for the word 'swift' and summarize.",
         onChunk: { part in
           switch part {
           case .toolResult(let res):
@@ -50,10 +50,10 @@ struct StreamTextOpenAIToolOutputStreamExample: Example {
             break
           }
         },
-        onFinish: { _, _, usage, reason in
+        onEnd: { event in
           Logger.section("Finish")
-          Logger.info("finishReason: \(reason)")
-          Logger.info("totalTokens: \(usage.totalTokens ?? 0)")
+          Logger.info("finishReason: \(event.finishReason)")
+          Logger.info("totalTokens: \(event.totalUsage.totalTokens ?? 0)")
         }
       )
 

@@ -12,8 +12,8 @@ struct StreamTextOpenAICodeInterpreterToolExample: Example {
 
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Use the code interpreter to compute the first 5 squares and print them as a JSON array.",
-        tools: ["code_interpreter": codeTool]
+        tools: ["code_interpreter": codeTool],
+        prompt: "Use the code interpreter to compute the first 5 squares and print them as a JSON array."
       )
 
       for try await part in result.fullStream {

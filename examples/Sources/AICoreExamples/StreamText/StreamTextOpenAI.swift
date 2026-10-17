@@ -4,18 +4,18 @@ import SwiftAISDK
 
 struct StreamTextOpenAIExample: Example {
   static let name = "stream-text/openai"
-  static let description = "Basic text streaming with OpenAI gpt-5-mini and onFinish."
+  static let description = "Basic text streaming with OpenAI gpt-5-mini and onEnd."
 
   static func run() async throws {
     do {
       let result = try streamText(
         model: openai("gpt-5-mini"),
         prompt: "Invent a new holiday and describe its traditions.",
-        onFinish: { finalStep, steps, totalUsage, finishReason in
+        onEnd: { event in
           Logger.section("Finish")
-          Logger.info("finishReason: \(finishReason)")
+          Logger.info("finishReason: \(event.finishReason)")
           Logger.section("Usage")
-          Helpers.printJSON(totalUsage)
+          Helpers.printJSON(event.totalUsage)
         }
       )
 

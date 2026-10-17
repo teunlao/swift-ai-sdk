@@ -58,14 +58,15 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
 
       let result = try streamText(
         model: openai.responses("o3-mini"),
-        instructions: "If you encounter a function call error, you should retry 3 times before giving up.",
-        prompt: "Generate two texts of 1024 characters each. Count the number of \"a\" in the first text, and the number of \"b\" in the second text.",
         tools: [
           "generateRandomText": generateRandomText.tool,
           "countChar": countChar.tool
         ],
+        instructions: "If you encounter a function call error, you should retry 3 times before giving up.",
+        prompt: "Generate two texts of 1024 characters each. Count the number of \"a\" in the first text, and the number of \"b\" in the second text.",
+        stopWhen: [isStepCount(10)],
         providerOptions: providerOptions,
-        stopWhen: [isStepCount(10)]
+        include: .init(requestBody: true)
       )
 
       for try await part in result.fullStream {
@@ -89,7 +90,7 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
         case .reasoningEnd:
           print("\u{001B}[0m")
 
-        case .toolInputStart(_, let toolName, _, _, _, _):
+        case .toolInputStart(_, let toolName, _, _, _, _, _, _):
           print("\u{001B}[33mTool call: \(toolName)")
           print("Tool args: ", terminator: "")
         case .toolInputDelta(_, let delta, _):
@@ -112,7 +113,7 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
         case .textEnd:
           print("\u{001B}[0m")
 
-        case .finishStep(_, let usage, let finishReason, _, _):
+        case .finishStep(_, let usage, _, let finishReason, _, _):
           Logger.info("Finish reason: \(finishReason.rawValue)")
           Logger.info("Usage:")
           Helpers.printJSON(usage)

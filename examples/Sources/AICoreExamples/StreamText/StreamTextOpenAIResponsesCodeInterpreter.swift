@@ -12,12 +12,12 @@ struct StreamTextOpenAIResponsesCodeInterpreterExample: Example {
 
       let result = try streamText(
         model: openai.responses("gpt-4.1-mini"),
+        tools: [
+          "code_interpreter": codeTool
+        ],
         instructions: "Use the code interpreter when math or CSV processing is needed.",
         messages: [
           .user(UserModelMessage(content: .text("Generate the first 10 squares and return their sum using python.")))
-        ],
-        tools: [
-          "code_interpreter": codeTool
         ]
       )
 

@@ -5,7 +5,7 @@ import SwiftAISDK
 
 struct GenerateTextOpenAIToolCallWithContextExample: Example {
   static let name = "generate-text/openai-tool-call-with-context"
-  static let description = "Passes experimentalContext into tool execution and decodes it."
+  static let description = "Passes toolsContext into tool execution and validates it."
 
   private struct WeatherQuery: Codable, Sendable { let location: String }
   private struct WeatherReport: Codable, Sendable {
@@ -22,7 +22,10 @@ struct GenerateTextOpenAIToolCallWithContextExample: Example {
       description: "Get the weather in a location",
       inputSchema: WeatherQuery.self
     ) { query, options in
-      let context = try options.decodeExperimentalContext(WeatherContext.self)
+      let context = try await validateTypes(ValidateTypesOptions(
+        value: JSONValue.object(options.context ?? [:]),
+        schema: FlexibleSchema.auto(WeatherContext.self)
+      ))
       Logger.info("Weather tool received context key prefix: \(context.weatherApiKey.prefix(3))...")
 
       return WeatherReport(
@@ -39,7 +42,7 @@ struct GenerateTextOpenAIToolCallWithContextExample: Example {
         model: openai("gpt-4o-mini"),
         tools: ["weather": weatherTool.tool],
         prompt: "What is the weather in San Francisco?",
-        experimentalContext: ["weatherApiKey": "123"]
+        toolsContext: ["weather": ["weatherApiKey": "123"]]
       )
 
       Logger.section("Tool Calls")

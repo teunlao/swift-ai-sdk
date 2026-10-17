@@ -43,8 +43,8 @@ struct StreamTextOpenAIToolCallRawJSONSchemaExample: Example {
 
       let result = try streamText(
         model: try openai("gpt-5-mini"),
-        prompt: "Use the uppercase tool to transform 'swift ai sdk' into uppercase.",
-        tools: ["uppercase": uppercase]
+        tools: ["uppercase": uppercase],
+        prompt: "Use the uppercase tool to transform 'swift ai sdk' into uppercase."
       )
 
       for try await part in result.fullStream {
