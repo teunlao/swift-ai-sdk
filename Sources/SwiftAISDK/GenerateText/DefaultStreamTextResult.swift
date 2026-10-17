@@ -834,7 +834,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
         step: StreamStepState,
         callLanguageModel: @escaping @Sendable () async throws -> LanguageModelCallStream
     ) -> AsyncThrowingStream<StepStreamPart, Error> {
-        let reader = RetryingStreamReader(stream: step.initialCall.stream)
+        let reader = RetryingStreamReader(call: step.initialCall)
         let shouldBufferToolParts = streamRetries > 0 || canRetryStreamViaOnError
 
         return pullTransform(AsyncThrowingStream(unfolding: { [self] () async throws -> [StepStreamPart]? in
@@ -957,6 +957,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
                     reader.callbackRetryCount += 1
                 }
 
+                await reader.cancel()
                 reader.buffered = []
                 for id in reader.openTextParts {
                     output.append(.part(.textEnd(id: id, providerMetadata: nil)))
@@ -977,7 +978,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
                 }
                 step.request = retryCall.request
                 step.response = retryCall.response
-                reader.replace(stream: retryCall.stream)
+                reader.replace(call: retryCall)
                 firstChunkTimer?.arm(getFirstChunkTimeoutMs(configuration.settings.timeout))
                 reader.enqueueBoundary = true
             }
@@ -1489,17 +1490,8 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
         guard let controller = abortController else {
             return try await source.next()
         }
-        return try await withThrowingTaskGroup(of: InternalStreamPart?.self) { group in
-            group.addTask { try await source.next() }
-            // The abort waiter must end on cancellation, or the group outlives the read.
-            group.addTask {
-                await controller.waitForAbort()
-                return nil
-            }
-            let first = try await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        // An abort releases the read without waiting for a provider or tool that ignores cancellation.
+        return try await raceAbort({ try await source.next() }, abort: { await controller.waitForAbort() }) ?? nil
     }
 
     private func abortPart() async -> InternalStreamPart {
@@ -2038,6 +2030,7 @@ final class SharedIterator<Element: Sendable>: @unchecked Sendable {
 /// The model stream of a step, replaceable on retry.
 private final class RetryingStreamReader: @unchecked Sendable {
     private var iterator: AsyncThrowingStream<StepStreamPart, Error>.AsyncIterator
+    private var cancelCall: @Sendable () async -> Void
     var buffered: [StepStreamPart] = []
     var openTextParts: [String] = []
     var openReasoningParts: [String] = []
@@ -2046,16 +2039,23 @@ private final class RetryingStreamReader: @unchecked Sendable {
     var callbackRetryCount = 0
     var done = false
 
-    init(stream: AsyncThrowingStream<StepStreamPart, Error>) {
-        self.iterator = stream.makeAsyncIterator()
+    init(call: LanguageModelCallStream) {
+        self.iterator = call.stream.makeAsyncIterator()
+        self.cancelCall = call.cancel
     }
 
     func next() async throws -> StepStreamPart? {
         try await iterator.next()
     }
 
-    func replace(stream: AsyncThrowingStream<StepStreamPart, Error>) {
-        iterator = stream.makeAsyncIterator()
+    /// Ends the current provider stream, so a retry never runs beside the attempt it replaces.
+    func cancel() async {
+        await cancelCall()
+    }
+
+    func replace(call: LanguageModelCallStream) {
+        iterator = call.stream.makeAsyncIterator()
+        cancelCall = call.cancel
     }
 }
 

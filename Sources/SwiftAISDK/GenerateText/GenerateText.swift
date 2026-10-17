@@ -374,7 +374,8 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             let promptMessages = try await convertToLanguageModelPrompt(
                 prompt: StandardizedPrompt(instructions: stepInstructions, messages: stepMessages),
                 supportedUrls: try await stepModel.supportedUrls,
-                download: download
+                download: download,
+                abortSignal: mergedAbortSignal
             )
 
             let stepProviderOptions = mergeProviderOptions(providerOptions, prepareStepResult?.providerOptions)

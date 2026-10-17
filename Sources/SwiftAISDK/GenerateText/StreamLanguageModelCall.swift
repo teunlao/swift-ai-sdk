@@ -52,6 +52,8 @@ struct LanguageModelCallStream: Sendable {
     let stream: AsyncThrowingStream<StepStreamPart, Error>
     let request: LanguageModelV4RequestInfo?
     let response: LanguageModelV4StreamResponseInfo?
+    /// Cancels the provider stream, ending its request.
+    let cancel: @Sendable () async -> Void
 }
 
 /**
@@ -93,7 +95,8 @@ func streamLanguageModelCall(
     let promptMessages = try await convertToLanguageModelPrompt(
         prompt: StandardizedPrompt(instructions: instructions, messages: messages),
         supportedUrls: try await model.supportedUrls,
-        download: download
+        download: download,
+        abortSignal: abortSignal
     )
 
     let stepTools = try await prepareTools(tools: modelTools, toolOrder: toolOrder, toolsContext: toolsContext)
@@ -157,10 +160,12 @@ func streamLanguageModelCall(
         onLanguageModelCallEnd: onLanguageModelCallEnd
     )
 
+    let providerStream = result.stream
     return LanguageModelCallStream(
-        stream: pullTransform(result.stream) { chunk in try await state.transform(chunk) },
+        stream: pullTransform(providerStream) { chunk in try await state.transform(chunk) },
         request: result.request,
-        response: result.response
+        response: result.response,
+        cancel: { await cancelStream(providerStream) }
     )
 }
 

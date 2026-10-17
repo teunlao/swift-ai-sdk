@@ -49,6 +49,95 @@ func createMockDownload(_ results: [(url: URL, data: Data, mediaType: String?)]?
 @Suite("ConvertToLanguageModelPrompt")
 struct ConvertToLanguageModelPromptTests {
 
+    // MARK: - File conversion
+
+    private static let pngBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D])
+
+    private func userFile(_ data: DataContentOrURL, mediaType: String) -> ModelMessage {
+        .user(UserModelMessage(content: .parts([.file(FilePart(data: data, mediaType: mediaType))])))
+    }
+
+    private func convertedFiles(
+        _ messages: [ModelMessage],
+        download: DownloadFunction?
+    ) async throws -> [LanguageModelV4FilePart] {
+        let prompt = try await convertToLanguageModelPrompt(
+            prompt: StandardizedPrompt(instructions: nil, messages: messages),
+            supportedUrls: [:],
+            download: download
+        )
+        return prompt.flatMap { message -> [LanguageModelV4FilePart] in
+            switch message {
+            case .user(let content, _):
+                return content.compactMap { if case .file(let file) = $0 { return file } else { return nil } }
+            case .tool(let content, _):
+                return content.flatMap { part -> [LanguageModelV4FilePart] in
+                    guard case .toolResult(let result) = part, case .content(let items) = result.output else { return [] }
+                    return items.compactMap { item in
+                        guard case let .file(data, mediaType, filename, providerOptions) = item else { return nil }
+                        return LanguageModelV4FilePart(data: data, mediaType: mediaType, filename: filename,
+                                                       providerOptions: providerOptions)
+                    }
+                }
+            default:
+                return []
+            }
+        }
+    }
+
+    @Test("a file part's media type is completed from its image bytes and from the download's Content-Type")
+    func filePartMediaTypeIsRefined() async throws {
+        let url = URL(string: "https://example.com/picture")!
+        let files = try await convertedFiles(
+            [
+                userFile(.data(Self.pngBytes), mediaType: "image"),
+                userFile(.data(Self.pngBytes), mediaType: "image/jpeg"),
+                userFile(.url(url), mediaType: "application")
+            ],
+            download: createMockDownload([(url: url, data: Data("%PDF".utf8), mediaType: "application/pdf")])
+        )
+
+        #expect(files.map(\.mediaType) == ["image/png", "image/png", "application/pdf"])
+    }
+
+    @Test("files in tool results are downloaded when the model cannot fetch their URL")
+    func toolResultFilesAreDownloaded() async throws {
+        let url = URL(string: "https://example.com/chart.png")!
+        let messages: [ModelMessage] = [
+            .assistant(AssistantModelMessage(content: .parts([
+                .toolCall(ToolCallPart(toolCallId: "call-1", toolName: "chart", input: [:]))
+            ]))),
+            .tool(ToolModelMessage(content: [.toolResult(ToolResultPart(
+                toolCallId: "call-1",
+                toolName: "chart",
+                output: .content(value: [.file(data: .url(url), mediaType: "image", filename: nil, providerOptions: nil)])
+            ))]))
+        ]
+
+        let files = try await convertedFiles(
+            messages,
+            download: createMockDownload([(url: url, data: Self.pngBytes, mediaType: nil)])
+        )
+
+        #expect(files.map(\.mediaType) == ["image/png"])
+        #expect(files.map(\.data) == [.data(Self.pngBytes)])
+    }
+
+    @Test("a nil download keeps the URL and an empty download is empty data")
+    func downloadResultsAreTakenAsReturned() async throws {
+        let passedThrough = URL(string: "https://example.com/kept.pdf")!
+        let empty = URL(string: "https://example.com/empty.txt")!
+        let files = try await convertedFiles(
+            [
+                userFile(.url(passedThrough), mediaType: "application/pdf"),
+                userFile(.url(empty), mediaType: "text/plain")
+            ],
+            download: createMockDownload([(url: empty, data: Data(), mediaType: "text/plain")])
+        )
+
+        #expect(files.map(\.data) == [.url(passedThrough), .data(Data())])
+    }
+
     // MARK: - User Message - Image Parts
 
     @Test("should download images for user image parts with URLs when model does not support image URLs")

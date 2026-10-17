@@ -106,12 +106,12 @@ public typealias DownloadFunction = @Sendable ([DownloadRequest]) async throws -
  Downloads the file if it is not supported by the model.
 
  - Parameter downloadImpl: The download implementation to use. Defaults to the built-in `download` function.
+ - Parameter abortSignal: Handed to every download, so an aborted call stops its pending downloads.
  - Returns: A download function that processes an array of download requests.
  */
 public func createDefaultDownloadFunction(
-    downloadImpl: @escaping @Sendable (URL) async throws -> (data: Data, mediaType: String?) = { url in
-        try await download(url: url)
-    }
+    downloadImpl: @escaping DownloadFileFunction = createDownload(),
+    abortSignal: (@Sendable () -> Bool)? = nil
 ) -> DownloadFunction {
     return { requestedDownloads in
         // Process all downloads concurrently using TaskGroup
@@ -125,11 +125,10 @@ public func createDefaultDownloadFunction(
                     }
 
                     // Otherwise, download the file
-                    let result = try await downloadImpl(requestedDownload.url)
-                    return (
-                        index,
-                        DownloadResult(data: result.data, mediaType: result.mediaType)
+                    let result = try await downloadImpl(
+                        DownloadFileRequest(url: requestedDownload.url, abortSignal: abortSignal)
                     )
+                    return (index, result)
                 }
             }
 

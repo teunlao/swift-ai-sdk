@@ -43,7 +43,7 @@ public func parseToolCall(
             let repairedToolCall: LanguageModelV4ToolCall?
             do {
                 try checkAbort(abortSignal)
-                repairedToolCall = try await repairToolCall(ToolCallRepairOptions(
+                let options = ToolCallRepairOptions(
                     instructions: instructions,
                     messages: messages,
                     toolCall: toolCall,
@@ -56,7 +56,19 @@ public func parseToolCall(
                     },
                     error: error,
                     abortSignal: abortSignal
-                ))
+                )
+                if let abortSignal {
+                    // An abort ends the wait even when the repair function ignores it.
+                    guard let repaired = try await raceAbort(
+                        { try await repairToolCall(options) },
+                        abort: { await waitForAbortSignal(abortSignal) }
+                    ) else {
+                        throw CancellationError()
+                    }
+                    repairedToolCall = repaired
+                } else {
+                    repairedToolCall = try await repairToolCall(options)
+                }
             } catch let repairError {
                 try checkAbort(abortSignal)
                 let originalError: ToolCallOriginalError
