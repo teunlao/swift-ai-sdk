@@ -4,6 +4,71 @@ import AISDKProviderUtils
 
 @Suite("HTTP response body lifetime", .timeLimit(.minutes(1)))
 struct HTTPResponseBodyLifetimeTests {
+    @Test("task cancellation cannot turn a native response prefix into a complete result", arguments: [false, true])
+    func cancelledAggregateRejectsPrefix(asJSON: Bool) async throws {
+        let pending = AsyncStream<Void>.makeStream()
+        let cancelled = ResponseCancellation()
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        producer.continuation.yield(asJSON ? Data("{}".utf8) : Data([1, 2, 3]))
+        producer.continuation.onTermination = { reason in
+            if case .cancelled = reason { cancelled.record() }
+        }
+        defer { producer.continuation.finish() }
+        let reader = NativeBodyReader(stream: producer.stream, pending: pending.continuation)
+        let fetch = bodyFetch { AsyncThrowingStream { try await reader.next() } }
+        let request = Task {
+            if asJSON {
+                _ = try await postJsonToAPI(
+                    url: "https://api.example.com/json", body: ["request": true],
+                    failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                    successfulResponseHandler: createJsonResponseHandler(responseSchema: FlexibleSchema(jsonSchema(["type": "object"]))),
+                    fetch: fetch
+                )
+            } else {
+                _ = try await postJsonToAPI(
+                    url: "https://api.example.com/audio", body: ["request": true],
+                    failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                    successfulResponseHandler: createBinaryResponseHandler(), fetch: fetch
+                )
+            }
+        }
+        defer { request.cancel() }
+        var starts = pending.stream.makeAsyncIterator()
+        _ = await starts.next()
+        request.cancel()
+        await #expect(throws: CancellationError.self) { try await request.value }
+        #expect(cancelled.observed)
+    }
+
+    @Test("already cancelled collectors reject every body kind and release unopened streams", arguments: [false, true], ["none", "data", "stream"])
+    func cancelledCollectorEntry(sizeLimited: Bool, bodyKind: String) async throws {
+        let cancelled = ResponseCancellation()
+        let producer = AsyncThrowingStream<Data, Error>.makeStream()
+        producer.continuation.onTermination = { reason in
+            if case .cancelled = reason { cancelled.record() }
+        }
+        defer { producer.continuation.finish() }
+        let body: ProviderHTTPResponseBody = switch bodyKind {
+        case "none": .none
+        case "data": .data(Data([1]))
+        default: .stream(producer.stream)
+        }
+        let request = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            if sizeLimited {
+                let url = URL(string: "https://api.example.com/file")!
+                return try await readResponseWithSizeLimit(
+                    response: ProviderHTTPResponse(url: url, httpResponse: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, body: body),
+                    url: url.absoluteString
+                )
+            }
+            return try await body.collectData()
+        }
+        await #expect(throws: CancellationError.self) { _ = try await request.value }
+        if bodyKind == "stream" { #expect(cancelled.observed) }
+        withExtendedLifetime(producer) {}
+    }
+
     @Test("closure abort cancels a pending binary response body after headers")
     func abortPendingBody() async throws {
         let flag = AbortFlag()
@@ -281,6 +346,24 @@ private final class AbortFlag: @unchecked Sendable {
 
     func abort() {
         lock.withLock { value = true }
+    }
+}
+
+private final class NativeBodyReader: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<Data, Error>.AsyncIterator
+    private let pending: AsyncStream<Void>.Continuation
+    private var hasPrefix = false
+
+    init(stream: AsyncThrowingStream<Data, Error>, pending: AsyncStream<Void>.Continuation) {
+        iterator = stream.makeAsyncIterator()
+        self.pending = pending
+    }
+
+    func next() async throws -> Data? {
+        if hasPrefix { pending.yield() }
+        let chunk = try await iterator.next()
+        hasPrefix = true
+        return chunk
     }
 }
 

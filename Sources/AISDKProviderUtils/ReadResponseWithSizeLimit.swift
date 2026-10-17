@@ -9,6 +9,10 @@ public func readResponseWithSizeLimit(
     url: String,
     maxBytes: Int = DEFAULT_MAX_DOWNLOAD_SIZE
 ) async throws -> Data {
+    if Task.isCancelled {
+        if case .stream(let stream) = response.body { await cancelStream(stream) }
+        throw CancellationError()
+    }
     if let contentLengthValue = response.httpResponse.value(forHTTPHeaderField: "Content-Length"),
        let contentLength = Int(contentLengthValue),
        contentLength > maxBytes {
@@ -32,5 +36,6 @@ public func readResponseWithSizeLimit(
         }
     }
 
+    try Task.checkCancellation()
     return result
 }

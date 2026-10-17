@@ -27,18 +27,25 @@ public enum ProviderHTTPResponseBody: Sendable {
 
     /// Collects the body into a single `Data` object.
     public func collectData() async throws -> Data {
+        if Task.isCancelled {
+            if case .stream(let stream) = self { await cancelStream(stream) }
+            throw CancellationError()
+        }
+        let result: Data
         switch self {
         case .none:
-            return Data()
+            result = Data()
         case .data(let data):
-            return data
+            result = data
         case .stream(let stream):
             var buffer = Data()
             for try await chunk in stream {
                 buffer.append(chunk)
             }
-            return buffer
+            result = buffer
         }
+        try Task.checkCancellation()
+        return result
     }
 
     public func collectText() async throws -> String {
