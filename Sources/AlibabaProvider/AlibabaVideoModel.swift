@@ -2,165 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/alibaba/src/alibaba-video-model.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
-public struct AlibabaVideoModelOptions: Sendable, Equatable {
-    /// Negative prompt to specify what to avoid (max 500 chars).
-    public var negativePrompt: String?
-
-    /// URL to audio file for audio-video sync (WAV/MP3, 3-30s, max 15MB).
-    public var audioUrl: String?
-
-    /// Enable prompt extension/rewriting for better generation. Defaults to true.
-    public var promptExtend: Bool?
-
-    /// Shot type: 'single' for single-shot or 'multi' for multi-shot narrative.
-    public var shotType: ShotType?
-
-    /// Whether to add watermark to generated video. Defaults to false.
-    public var watermark: Bool?
-
-    /// Enable audio generation (for I2V/R2V models).
-    public var audio: Bool?
-
-    /// Reference URLs for reference-to-video mode.
-    public var referenceUrls: [String]?
-
-    /// Polling interval in milliseconds. Defaults to 5000 (5 seconds).
-    public var pollIntervalMs: Double?
-
-    /// Maximum wait time in milliseconds for video generation. Defaults to 600000 (10 minutes).
-    public var pollTimeoutMs: Double?
-
-    public init(
-        negativePrompt: String? = nil,
-        audioUrl: String? = nil,
-        promptExtend: Bool? = nil,
-        shotType: ShotType? = nil,
-        watermark: Bool? = nil,
-        audio: Bool? = nil,
-        referenceUrls: [String]? = nil,
-        pollIntervalMs: Double? = nil,
-        pollTimeoutMs: Double? = nil
-    ) {
-        self.negativePrompt = negativePrompt
-        self.audioUrl = audioUrl
-        self.promptExtend = promptExtend
-        self.shotType = shotType
-        self.watermark = watermark
-        self.audio = audio
-        self.referenceUrls = referenceUrls
-        self.pollIntervalMs = pollIntervalMs
-        self.pollTimeoutMs = pollTimeoutMs
-    }
-
-    public enum ShotType: String, Sendable, Equatable {
-        case single
-        case multi
-    }
-}
-
-private let alibabaVideoModelOptionsSchema = FlexibleSchema(
-    Schema<AlibabaVideoModelOptions>(
-        jsonSchemaResolver: {
-            .object([
-                "type": .string("object"),
-                "additionalProperties": .bool(true),
-            ])
-        },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "provider options must be an object")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                func stringNullish(_ key: String) -> Result<String?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
-                    guard case .string(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be a string")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(value)
-                }
-
-                func boolNullish(_ key: String) -> Result<Bool?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
-                    guard case .bool(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be a boolean")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(value)
-                }
-
-                func stringArrayNullish(_ key: String) -> Result<[String]?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
-                    guard case .array(let values) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be an array of strings")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    var strings: [String] = []
-                    strings.reserveCapacity(values.count)
-                    for value in values {
-                        guard case .string(let entry) = value else {
-                            let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be an array of strings")
-                            return .failure(TypeValidationError.wrap(value: value, cause: error))
-                        }
-                        strings.append(entry)
-                    }
-                    return .success(strings)
-                }
-
-                func positiveNumberNullish(_ key: String) -> Result<Double?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
-                    guard case .number(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be a positive number")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    guard value > 0 else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be a positive number")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(value)
-                }
-
-                func shotTypeNullish(_ key: String) -> Result<AlibabaVideoModelOptions.ShotType?, TypeValidationError> {
-                    guard let raw = dict[key], raw != .null else { return .success(nil) }
-                    guard case .string(let value) = raw else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be 'single' or 'multi'")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    guard let shotType = AlibabaVideoModelOptions.ShotType(rawValue: value) else {
-                        let error = SchemaValidationIssuesError(vendor: "alibaba", issues: "\(key) must be 'single' or 'multi'")
-                        return .failure(TypeValidationError.wrap(value: raw, cause: error))
-                    }
-                    return .success(shotType)
-                }
-
-                return .success(value: AlibabaVideoModelOptions(
-                    negativePrompt: try stringNullish("negativePrompt").get(),
-                    audioUrl: try stringNullish("audioUrl").get(),
-                    promptExtend: try boolNullish("promptExtend").get(),
-                    shotType: try shotTypeNullish("shotType").get(),
-                    watermark: try boolNullish("watermark").get(),
-                    audio: try boolNullish("audio").get(),
-                    referenceUrls: try stringArrayNullish("referenceUrls").get(),
-                    pollIntervalMs: try positiveNumberNullish("pollIntervalMs").get(),
-                    pollTimeoutMs: try positiveNumberNullish("pollTimeoutMs").get()
-                ))
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
-)
-
 struct AlibabaVideoModelConfig: Sendable {
     let provider: String
     let baseURL: String
@@ -183,400 +24,265 @@ struct AlibabaVideoModelConfig: Sendable {
     }
 }
 
-// DashScope native API error format (different from OpenAI-compatible endpoint)
-private struct AlibabaVideoErrorData: Codable {
-    let code: String?
-    let message: String
-    let requestId: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case code
-        case message
-        case requestId = "request_id"
-    }
-}
-
-private let genericJSONObjectSchema: JSONValue = .object(["type": .string("object")])
-
-private let alibabaVideoErrorSchema = FlexibleSchema(
-    Schema<AlibabaVideoErrorData>.codable(
-        AlibabaVideoErrorData.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
-
-private let alibabaVideoFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
-    errorSchema: alibabaVideoErrorSchema,
-    errorToMessage: { $0.message }
-)
-
-private struct AlibabaVideoCreateTaskResponse: Codable {
-    struct Output: Codable {
-        let taskStatus: String?
-        let taskId: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case taskStatus = "task_status"
-            case taskId = "task_id"
-        }
-    }
-
-    let output: Output?
-    let requestId: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case output
-        case requestId = "request_id"
-    }
-}
-
-private let alibabaVideoCreateTaskResponseSchema = FlexibleSchema(
-    Schema<AlibabaVideoCreateTaskResponse>.codable(
-        AlibabaVideoCreateTaskResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
-
-private struct AlibabaVideoTaskStatusResponse: Codable {
-    struct Output: Codable {
-        let taskId: String?
-        let taskStatus: String?
-        let videoUrl: String?
-        let submitTime: String?
-        let scheduledTime: String?
-        let endTime: String?
-        let origPrompt: String?
-        let actualPrompt: String?
-        let code: String?
-        let message: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case taskId = "task_id"
-            case taskStatus = "task_status"
-            case videoUrl = "video_url"
-            case submitTime = "submit_time"
-            case scheduledTime = "scheduled_time"
-            case endTime = "end_time"
-            case origPrompt = "orig_prompt"
-            case actualPrompt = "actual_prompt"
-            case code
-            case message
-        }
-    }
-
-    struct Usage: Codable {
-        let duration: Double?
-        let outputVideoDuration: Double?
-        let resolution: Double?
-        let size: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case duration
-            case outputVideoDuration = "output_video_duration"
-            case resolution = "SR"
-            case size
-        }
-    }
-
-    let output: Output?
-    let usage: Usage?
-    let requestId: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case output
-        case usage
-        case requestId = "request_id"
-    }
-}
-
-private let alibabaVideoTaskStatusResponseSchema = FlexibleSchema(
-    Schema<AlibabaVideoTaskStatusResponse>.codable(
-        AlibabaVideoTaskStatusResponse.self,
-        jsonSchema: genericJSONObjectSchema
-    )
-)
-
-private func detectMode(modelId: String) -> String {
-    if modelId.contains("-i2v") { return "i2v" }
-    if modelId.contains("-r2v") { return "r2v" }
-    return "t2v"
-}
-
-public final class AlibabaVideoModel: VideoModelV3 {
-    public var specificationVersion: String { "v3" }
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(1) }
-
+public final class AlibabaVideoModel: VideoModelV4Operations {
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(1) }
     public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
-
-    private let modelIdentifier: AlibabaVideoModelId
+    public var modelId: String { identifier.rawValue }
+    private let identifier: AlibabaVideoModelId
     private let config: AlibabaVideoModelConfig
 
     init(modelId: AlibabaVideoModelId, config: AlibabaVideoModelConfig) {
-        self.modelIdentifier = modelId
+        identifier = modelId
         self.config = config
     }
 
-    public func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
-        let currentDate = config.currentDate()
-        var warnings: [SharedV3Warning] = []
-        let mode = detectMode(modelId: modelIdentifier.rawValue)
-
-        let alibabaOptions = try await parseProviderOptions(
-            provider: "alibaba",
-            providerOptions: options.providerOptions,
-            schema: alibabaVideoModelOptionsSchema
-        )
-
-        // Build input object
-        var input: [String: JSONValue] = [:]
-
-        if let prompt = options.prompt {
-            input["prompt"] = .string(prompt)
-        }
-
-        if let negativePrompt = alibabaOptions?.negativePrompt {
-            input["negative_prompt"] = .string(negativePrompt)
-        }
-
-        if let audioUrl = alibabaOptions?.audioUrl {
-            input["audio_url"] = .string(audioUrl)
-        }
-
-        // Handle image input for I2V mode
-        if mode == "i2v", let image = options.image {
-            switch image {
-            case .url(let url, _):
-                input["img_url"] = .string(url)
-            case .file(_, let data, _):
-                switch data {
-                case .base64(let base64):
-                    input["img_url"] = .string(base64)
-                case .binary(let bytes):
-                    input["img_url"] = .string(convertToBase64(.data(bytes)))
-                }
-            }
-        }
-
-        // Handle reference URLs for R2V mode
-        if mode == "r2v", let referenceUrls = alibabaOptions?.referenceUrls {
-            input["reference_urls"] = .array(referenceUrls.map { JSONValue.string($0) })
-        }
-
-        // Build parameters object
-        var parameters: [String: JSONValue] = [:]
-
-        if let duration = options.duration {
-            parameters["duration"] = .number(Double(duration))
-        }
-
-        if let seed = options.seed {
-            parameters["seed"] = .number(Double(seed))
-        }
-
-        if let resolution = options.resolution {
-            if mode == "i2v" {
-                let resolutionMap: [String: String] = [
-                    "1280x720": "720P",
-                    "720x1280": "720P",
-                    "960x960": "720P",
-                    "1088x832": "720P",
-                    "832x1088": "720P",
-                    "1920x1080": "1080P",
-                    "1080x1920": "1080P",
-                    "1440x1440": "1080P",
-                    "1632x1248": "1080P",
-                    "1248x1632": "1080P",
-                    "832x480": "480P",
-                    "480x832": "480P",
-                    "624x624": "480P",
-                ]
-                parameters["resolution"] = .string(resolutionMap[resolution] ?? resolution)
-            } else {
-                parameters["size"] = .string(resolution.replacingOccurrences(of: "x", with: "*"))
-            }
-        }
-
-        if let promptExtend = alibabaOptions?.promptExtend {
-            parameters["prompt_extend"] = .bool(promptExtend)
-        }
-        if let shotType = alibabaOptions?.shotType {
-            parameters["shot_type"] = .string(shotType.rawValue)
-        }
-        if let watermark = alibabaOptions?.watermark {
-            parameters["watermark"] = .bool(watermark)
-        }
-        if let audio = alibabaOptions?.audio {
-            parameters["audio"] = .bool(audio)
-        }
-
-        // Warn about unsupported standard options
-        if options.aspectRatio != nil {
-            warnings.append(.unsupported(
-                feature: "aspectRatio",
-                details: "Alibaba video models use explicit size/resolution dimensions. Use the resolution option or providerOptions.alibaba for size control."
-            ))
-        }
-        if options.fps != nil {
-            warnings.append(.unsupported(
-                feature: "fps",
-                details: "Alibaba video models do not support custom FPS."
-            ))
-        }
-        if options.n > 1 {
-            warnings.append(.unsupported(
-                feature: "n",
-                details: "Alibaba video models only support generating 1 video per call."
-            ))
-        }
-
-        // Step 1: Create task
-        let createURL = "\(config.baseURL)/api/v1/services/aigc/video-generation/video-synthesis"
-        let createHeaders = combineHeaders(
-            try config.headers(),
-            options.headers?.mapValues { Optional($0) },
-            ["X-DashScope-Async": "enable"]
-        ).compactMapValues { $0 }
-
-        let createBody: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "input": .object(input),
-            "parameters": .object(parameters),
-        ]
-
-        let createResponse = try await postJsonToAPI(
-            url: createURL,
-            headers: createHeaders,
-            body: JSONValue.object(createBody),
-            failedResponseHandler: alibabaVideoFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: alibabaVideoCreateTaskResponseSchema),
+    public func doStart(options: VideoModelV4CallOptions, webhookUrl: String? = nil) async throws -> VideoModelV4OperationStartResult {
+        let now = config.currentDate()
+        let (body, warnings) = try await buildRequest(options)
+        let response = try await postJsonToAPI(
+            url: "\(config.baseURL)/api/v1/services/aigc/video-generation/video-synthesis",
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some), ["X-DashScope-Async": "enable"]).compactMapValues { $0 },
+            body: JSONValue.object(body),
+            failedResponseHandler: videoFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: videoCreateTaskSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
-
-        guard let taskId = createResponse.value.output?.taskId, !taskId.isEmpty else {
-            throw AlibabaVideoModelError(
-                name: "ALIBABA_VIDEO_GENERATION_ERROR",
-                message: "No task_id returned from Alibaba API. Response: \(encodeJSONString(createResponse.value))"
-            )
+        guard let taskId = response.value.output?.taskId, !taskId.isEmpty else {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.withoutEscapingSlashes]
+            let json = String(decoding: try encoder.encode(response.value.raw), as: UTF8.self)
+            throw VideoGenerationError(message: "No task_id returned from Alibaba API. Response: \(json)")
         }
+        return .init(operation: ["taskId": .string(taskId)], warnings: warnings,
+                     response: .init(timestamp: now, modelId: modelId, headers: response.responseHeaders))
+    }
 
-        // Step 2: Poll for task completion
-        let pollIntervalMs = alibabaOptions?.pollIntervalMs ?? 5000
-        let pollTimeoutMs = alibabaOptions?.pollTimeoutMs ?? 600000
-        let startTime = Date()
-
-        var finalResponse: AlibabaVideoTaskStatusResponse? = nil
-        var responseHeaders: [String: String]? = nil
-
-        while true {
-            try await delay(Int(pollIntervalMs.rounded(.towardZero)), abortSignal: options.abortSignal)
-
-            let elapsedMs = Date().timeIntervalSince(startTime) * 1000
-            if elapsedMs > pollTimeoutMs {
-                throw AlibabaVideoModelError(
-                    name: "ALIBABA_VIDEO_GENERATION_TIMEOUT",
-                    message: "Video generation timed out after \(pollTimeoutMs)ms"
-                )
-            }
-
-            let statusURL = "\(config.baseURL)/api/v1/tasks/\(taskId)"
-            let statusHeaders = combineHeaders(
-                try config.headers(),
-                options.headers?.mapValues { Optional($0) }
-            ).compactMapValues { $0 }
-
-            let statusResponse = try await getFromAPI(
-                url: statusURL,
-                headers: statusHeaders,
-                failedResponseHandler: alibabaVideoFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: alibabaVideoTaskStatusResponseSchema),
-                isAborted: options.abortSignal,
-                fetch: config.fetch
-            )
-
-            responseHeaders = statusResponse.responseHeaders
-            let taskStatus = statusResponse.value.output?.taskStatus
-
-            if taskStatus == "SUCCEEDED" {
-                finalResponse = statusResponse.value
-                break
-            }
-
-            if taskStatus == "FAILED" || taskStatus == "CANCELED" {
-                let message = statusResponse.value.output?.message ?? ""
-                throw AlibabaVideoModelError(
-                    name: "ALIBABA_VIDEO_GENERATION_FAILED",
-                    message: "Video generation \(taskStatus?.lowercased() ?? "failed"). Task ID: \(taskId). \(message)"
-                )
-            }
-
-            // Continue polling for PENDING, RUNNING, UNKNOWN statuses
+    public func doStatus(options: VideoModelV4StatusCallOptions) async throws -> VideoModelV4OperationStatusResult {
+        let now = config.currentDate()
+        guard case .object(let operation) = options.operation, case .string(let taskId) = operation["taskId"] else {
+            throw InvalidArgumentError(argument: "operation", message: "Invalid Alibaba video operation")
         }
-
-        guard let videoUrl = finalResponse?.output?.videoUrl, !videoUrl.isEmpty else {
-            throw AlibabaVideoModelError(
-                name: "ALIBABA_VIDEO_GENERATION_ERROR",
-                message: "No video URL in response. Task ID: \(taskId)"
-            )
-        }
-
-        var alibabaMetadata: [String: JSONValue] = [
-            "taskId": .string(taskId),
-            "videoUrl": .string(videoUrl),
-        ]
-
-        if let actualPrompt = finalResponse?.output?.actualPrompt, !actualPrompt.isEmpty {
-            alibabaMetadata["actualPrompt"] = .string(actualPrompt)
-        }
-
-        if let usage = finalResponse?.usage {
-            alibabaMetadata["usage"] = .object([
-                "duration": usage.duration.map(JSONValue.number) ?? .null,
-                "outputVideoDuration": usage.outputVideoDuration.map(JSONValue.number) ?? .null,
-                "resolution": usage.resolution.map(JSONValue.number) ?? .null,
-                "size": usage.size.map(JSONValue.string) ?? .null,
-            ])
-        }
-
-        return VideoModelV3GenerateResult(
-            videos: [
-                .url(url: videoUrl, mediaType: "video/mp4")
-            ],
-            warnings: warnings,
-            providerMetadata: [
-                "alibaba": alibabaMetadata
-            ],
-            response: VideoModelV3ResponseInfo(
-                timestamp: currentDate,
-                modelId: modelIdentifier.rawValue,
-                headers: responseHeaders
-            )
+        let response = try await getFromAPI(
+            url: "\(config.baseURL)/api/v1/tasks/\(taskId)",
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            failedResponseHandler: videoFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: videoTaskStatusSchema),
+            isAborted: options.abortSignal,
+            fetch: config.fetch,
+            validateUrl: false
         )
+        let info = VideoModelV4ResponseInfo(timestamp: now, modelId: modelId, headers: response.responseHeaders)
+        let status = response.value
+        if status.output?.taskStatus == "SUCCEEDED" {
+            guard let output = status.output, let videoUrl = output.videoUrl, !videoUrl.isEmpty else {
+                throw VideoGenerationError(message: "No video URL in response. Task ID: \(status.output?.taskId ?? "undefined")")
+            }
+            var metadata: JSONObject = ["taskId": .string(output.taskId), "videoUrl": .string(videoUrl)]
+            if let prompt = output.actualPrompt, !prompt.isEmpty { metadata["actualPrompt"] = .string(prompt) }
+            if let usage = status.usage {
+                var values: JSONObject = [:]
+                for (wire, field) in [("duration", "duration"), ("output_video_duration", "outputVideoDuration"), ("SR", "resolution"), ("size", "size")] {
+                    values[field] = usage.fields[wire]
+                }
+                for (wire, field) in [("input_video_duration", "inputVideoDuration"), ("fps", "fps"), ("ratio", "ratio")] {
+                    if let value = usage.fields[wire], value != .null { values[field] = value }
+                }
+                metadata["usage"] = .object(values)
+            }
+            return .completed(videos: [.url(url: videoUrl, mediaType: "video/mp4")], warnings: [],
+                              providerMetadata: ["alibaba": metadata], response: info)
+        }
+        if let taskStatus = status.output?.taskStatus, taskStatus == "FAILED" || taskStatus == "CANCELED" {
+            let error = "Video generation \(taskStatus.lowercased()). Task ID: \(taskId). \(status.output?.message ?? "")"
+            return .error(error: error.trimmingCharacters(in: videoWhitespace), providerMetadata: nil, response: info)
+        }
+        return .pending(warnings: nil, providerMetadata: nil, response: info)
+    }
+
+    private func buildRequest(_ options: VideoModelV4CallOptions) async throws -> (JSONObject, [SharedV4Warning]) {
+        let settings = try await parseProviderOptions(provider: "alibaba", providerOptions: options.providerOptions, schema: alibabaVideoModelOptionsSchema)
+        let mode = VideoMode(modelId)
+        let wire = VideoProtocol(modelId)
+        let tiered = wire != .sizeAndReferences
+        let supportsRatio = wire == .allInOneMedia || (wire == .tieredMedia && mode != .i2v)
+        let firstFrame = options.frameImages?.first { $0.frameType == .firstFrame }?.image
+        let lastFrame = options.frameImages?.first { $0.frameType == .lastFrame }?.image
+        let startImage = firstFrame ?? options.image
+        var warnings: [SharedV4Warning] = []
+        var input: JSONObject = [:]
+        if let prompt = options.prompt { input["prompt"] = .string(prompt) }
+        if let prompt = settings?.negativePrompt { input["negative_prompt"] = .string(prompt) }
+        if let url = settings?.audioUrl { input["audio_url"] = .string(url) }
+        if wire != .allInOneMedia, mode == .i2v, let startImage {
+            input["img_url"] = .string(imageString(startImage))
+        }
+        if wire == .allInOneMedia {
+            if let media = resolveMedia(options, settings, first: startImage, last: lastFrame, warnings: &warnings) { input["media"] = .array(media) }
+        } else if mode == .r2v {
+            if wire == .tieredMedia {
+                if let media = resolveMedia(options, settings, first: firstFrame, last: nil, warnings: &warnings) { input["media"] = .array(media) }
+            } else if let references = resolveReferenceUrls(options, settings, warnings: &warnings), !references.isEmpty {
+                input["reference_urls"] = .array(references.map(JSONValue.string))
+            }
+        }
+        if lastFrame != nil, wire != .allInOneMedia {
+            warnings.append(.unsupported(feature: "frameImages", details: "This model does not support last_frame. The last frame image was ignored."))
+        }
+        if options.inputReferences?.isEmpty == false, mode != .r2v, wire != .allInOneMedia {
+            warnings.append(.unsupported(feature: "inputReferences", details: "Alibaba only supports inputReferences (reference-to-video) on reference-to-video models. The reference images were ignored."))
+        }
+        var parameters: JSONObject = [:]
+        if let duration = options.duration { parameters["duration"] = .number(Double(duration)) }
+        if let seed = options.seed { parameters["seed"] = .number(Double(seed)) }
+        if let resolution = options.resolution {
+            if mode == .i2v || tiered {
+                let tier = resolutionTiers[resolution] ?? resolution
+                let supported = wire == .allInOneMedia ? ["480P", "720P", "1080P"] : ["720P", "1080P"]
+                if tiered, !supported.contains(tier) {
+                    let name = wire == .allInOneMedia ? "wan3" : "wan2.7"
+                    warnings.append(.unsupported(feature: "resolution", details: "\(name) models only support the \(supported.joined(separator: ", ")) resolution tiers. The resolution \"\(resolution)\" was ignored."))
+                } else { parameters["resolution"] = .string(tier) }
+            } else {
+                var size = resolution
+                if let range = size.range(of: "x") { size.replaceSubrange(range, with: "*") }
+                parameters["size"] = .string(size)
+            }
+        }
+        if supportsRatio, let ratio = settings?.ratio?.rawValue ?? options.aspectRatio ?? options.resolution.flatMap(deriveRatio) {
+            parameters["ratio"] = .string(ratio)
+        }
+        if let extend = settings?.promptExtend { parameters["prompt_extend"] = .bool(extend) }
+        if let shot = settings?.shotType {
+            if tiered {
+                let name = wire == .allInOneMedia ? "wan3" : "wan2.7"
+                warnings.append(.unsupported(feature: "shotType", details: "\(name) models do not support the shotType option. Describe the shot structure in the prompt instead."))
+            } else { parameters["shot_type"] = .string(shot.rawValue) }
+        }
+        if let watermark = settings?.watermark { parameters["watermark"] = .bool(watermark) }
+        if let audio = options.generateAudio ?? settings?.audio {
+            if wire == .tieredMedia {
+                warnings.append(.unsupported(feature: "generateAudio", details: "wan2.7 models always generate audio. The audio option was ignored."))
+            } else { parameters["audio"] = .bool(audio) }
+        }
+        if let ratio = options.aspectRatio, !ratio.isEmpty, !supportsRatio {
+            warnings.append(.unsupported(feature: "aspectRatio", details: "Alibaba video models use explicit size/resolution dimensions. Use the resolution option or providerOptions.alibaba for size control."))
+        }
+        if let fps = options.fps, fps != 0 {
+            warnings.append(.unsupported(feature: "fps", details: "Alibaba video models do not support custom FPS."))
+        }
+        if options.n > 1 {
+            warnings.append(.unsupported(feature: "n", details: "Alibaba video models only support generating 1 video per call."))
+        }
+        return (["model": .string(modelId), "input": .object(input), "parameters": .object(parameters)], warnings)
     }
 }
 
-private struct AlibabaVideoModelError: AISDKError, Sendable {
-    static let errorDomain = "alibaba.video.error"
-
-    let name: String
-    let message: String
-    let cause: (any Error)?
-
-    init(name: String, message: String, cause: (any Error)? = nil) {
-        self.name = name
-        self.message = message
-        self.cause = cause
+private enum VideoMode {
+    case t2v, i2v, r2v
+    init(_ id: String) {
+        self = id.contains("-i2v") ? .i2v : id.contains("-r2v") ? .r2v : .t2v
     }
 }
 
-private func encodeJSONString<T: Encodable>(_ value: T) -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    do {
-        let data = try encoder.encode(value)
-        return String(data: data, encoding: .utf8) ?? "{}"
-    } catch {
-        return "{}"
+private enum VideoProtocol {
+    case sizeAndReferences, tieredMedia, allInOneMedia
+    private static let version = try! NSRegularExpression(pattern: "^wanx?(\\d+)(?:\\.(\\d+))?(?=[.-]|$)")
+    init(_ id: String) {
+        guard let match = Self.version.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)),
+              let majorRange = Range(match.range(at: 1), in: id), let major = Double(id[majorRange]) else {
+            self = .allInOneMedia; return
+        }
+        let minor = Range(match.range(at: 2), in: id).flatMap { Double(id[$0]) } ?? 0
+        self = major < 2 || (major == 2 && minor < 7) ? .sizeAndReferences : major == 2 ? .tieredMedia : .allInOneMedia
     }
 }
+
+private let resolutionTiers = [
+    "1280x720": "720P", "720x1280": "720P", "960x960": "720P", "1088x832": "720P", "832x1088": "720P",
+    "1920x1080": "1080P", "1080x1920": "1080P", "1440x1440": "1080P", "1632x1248": "1080P", "1248x1632": "1080P",
+    "832x480": "480P", "480x832": "480P", "624x624": "480P"
+]
+
+private func deriveRatio(_ resolution: String) -> String? {
+    let parts = resolution.components(separatedBy: "x")
+    guard parts.count >= 2,
+          let width = Double(parts[0].trimmingCharacters(in: videoWhitespace)),
+          let height = Double(parts[1].trimmingCharacters(in: videoWhitespace)),
+          width.isFinite, height.isFinite, width.rounded() == width, height.rounded() == height, width > 0, height > 0 else { return nil }
+    var a = width
+    var b = height
+    while b != 0 { (a, b) = (b, a.truncatingRemainder(dividingBy: b)) }
+    let numerator = width / a
+    let denominator = height / a
+    for (left, right, ratio) in [(16.0, 9.0, "16:9"), (9, 16, "9:16"), (1, 1, "1:1"), (4, 3, "4:3"), (3, 4, "3:4")] {
+        if numerator == left, denominator == right { return ratio }
+    }
+    return nil
+}
+
+private func imageString(_ file: VideoModelV4File) -> String {
+    switch file {
+    case .url(let url, _, _): url
+    case .file(_, .base64(let value), _): value
+    case .file(_, .binary(let value), _): value.base64EncodedString()
+    }
+}
+
+private func imageDataURI(_ file: VideoModelV4File) -> String {
+    let image: ImageModelV4File
+    switch file {
+    case .url(let url, _, let options): image = .url(url: url, providerOptions: options)
+    case .file(let type, .base64(let data), let options): image = .file(mediaType: type, data: .base64(data), providerOptions: options)
+    case .file(let type, .binary(let data), let options): image = .file(mediaType: type, data: .binary(data), providerOptions: options)
+    }
+    return convertImageModelFileToDataURI(image)
+}
+
+private let videoURLPattern = try! NSRegularExpression(pattern: "\\.(mp4|mov)([?#]|$)", options: .caseInsensitive)
+
+private func resolveMedia(
+    _ options: VideoModelV4CallOptions,
+    _ settings: AlibabaVideoModelOptions?,
+    first: VideoModelV4File?, last: VideoModelV4File?, warnings: inout [SharedV4Warning]
+) -> [JSONValue]? {
+    if let media = settings?.media, !media.isEmpty {
+        return media.map { item in
+            var result: JSONObject = ["type": .string(item.type.rawValue), "url": .string(item.url)]
+            if let voice = item.referenceVoice { result["reference_voice"] = .string(voice) }
+            return .object(result)
+        }
+    }
+    var media: [JSONValue] = []
+    for reference in options.inputReferences ?? [] {
+        switch reference {
+        case .url(let url, _, _):
+            let isVideo = videoURLPattern.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil
+            media.append(["type": .string(isVideo ? "reference_video" : "reference_image"), "url": .string(url)])
+        case .file(let type, _, _) where type.hasPrefix("image/"):
+            media.append(["type": "reference_image", "url": .string(imageDataURI(reference))])
+        default:
+            warnings.append(.unsupported(feature: "inputReferences", details: "Alibaba reference-to-video requires URL references for videos. Non-URL video reference was skipped."))
+        }
+    }
+    if let first { media.append(["type": "first_frame", "url": .string(imageDataURI(first))]) }
+    if let last { media.append(["type": "last_frame", "url": .string(imageDataURI(last))]) }
+    return media.isEmpty ? nil : media
+}
+
+private func resolveReferenceUrls(
+    _ options: VideoModelV4CallOptions, _ settings: AlibabaVideoModelOptions?, warnings: inout [SharedV4Warning]
+) -> [String]? {
+    if options.frameImages?.isEmpty == false { return nil }
+    if let references = options.inputReferences, !references.isEmpty {
+        var urls: [String] = []
+        for reference in references {
+            if case .url(let url, _, _) = reference { urls.append(url) }
+            else { warnings.append(.unsupported(feature: "inputReferences", details: "Alibaba reference-to-video requires URL references. Non-URL reference was skipped.")) }
+        }
+        return urls.isEmpty ? nil : urls
+    }
+    return settings?.referenceUrls
+}
+
+private let videoWhitespace = CharacterSet(charactersIn: "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")

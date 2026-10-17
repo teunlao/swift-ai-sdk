@@ -2,237 +2,88 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/alibaba/src/convert-to-alibaba-chat-messages.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
-private func formatImageUrl(data: LanguageModelV3DataContent, mediaType: String) -> String {
-    switch data {
-    case .url(let url):
-        return url.absoluteString
-    case .base64(let base64):
-        return "data:\(mediaType);base64,\(convertToBase64(.string(base64)))"
-    case .data(let bytes):
-        return "data:\(mediaType);base64,\(convertToBase64(.data(bytes)))"
-    }
-}
-
-func convertToAlibabaChatMessages(
-    prompt: LanguageModelV3Prompt,
-    cacheControlValidator: CacheControlValidator? = nil
-) throws -> [JSONValue] {
+func convertToAlibabaChatMessages(prompt: LanguageModelV4Prompt, cacheControlValidator: CacheControlValidator? = nil, preserveThinking: Bool = false) throws -> [JSONValue] {
+    let lastUser = prompt.lastIndex { if case .user = $0 { true } else { false } } ?? -1
     var messages: [JSONValue] = []
-    messages.reserveCapacity(prompt.count)
-
-    for message in prompt {
+    for (index, message) in prompt.enumerated() {
+        let options: SharedV4ProviderOptions?
         switch message {
-        case .system(let content, let providerOptions):
-            let messageCacheControl = cacheControlValidator?.getCacheControl(providerOptions)
-            if let messageCacheControl {
-                messages.append(.object([
-                    "role": .string("system"),
-                    "content": .array([
-                        .object([
-                            "type": .string("text"),
-                            "text": .string(content),
-                            "cache_control": messageCacheControl,
-                        ])
-                    ])
-                ]))
-            } else {
-                messages.append(.object([
-                    "role": .string("system"),
-                    "content": .string(content),
-                ]))
-            }
-
-        case .user(let parts, let providerOptions):
-            let messageCacheControl = cacheControlValidator?.getCacheControl(providerOptions)
-            let isSinglePart = parts.count == 1
-
-            if isSinglePart,
-               case .text(let textPart) = parts[0],
-               messageCacheControl == nil {
-                messages.append(.object([
-                    "role": .string("user"),
-                    "content": .string(textPart.text),
-                ]))
-                continue
-            }
-
-            var contentParts: [JSONValue] = []
-            contentParts.reserveCapacity(parts.count)
-
-            for part in parts {
-                let partCacheControl: JSONValue? = {
-                    if isSinglePart {
-                        return messageCacheControl
-                    }
-                    switch part {
-                    case .text(let textPart):
-                        return cacheControlValidator?.getCacheControl(textPart.providerOptions)
-                    case .file(let filePart):
-                        return cacheControlValidator?.getCacheControl(filePart.providerOptions)
-                    }
-                }()
-
+        case .system(_, let value), .user(_, let value), .assistant(_, let value), .tool(_, let value): options = value
+        }
+        let messageCache = cacheControlValidator?.getCacheControl(options)
+        switch message {
+        case .system(let text, _):
+            messages.append(["role": "system", "content": messageCache.map { [["type": "text", "text": .string(text), "cache_control": $0]] } ?? .string(text)])
+        case .user(let parts, _):
+            let content = try parts.enumerated().map { position, part -> JSONValue in
+                let options: SharedV4ProviderOptions?
+                switch part { case .text(let value): options = value.providerOptions; case .file(let value): options = value.providerOptions }
+                let cache = cacheControlValidator?.getCacheControl(options) ?? (position == parts.count - 1 ? messageCache : Optional<JSONValue>.none)
+                var value: JSONObject
                 switch part {
-                case .text(let textPart):
-                    var payload: [String: JSONValue] = [
-                        "type": .string("text"),
-                        "text": .string(textPart.text),
-                    ]
-                    if let partCacheControl {
-                        payload["cache_control"] = partCacheControl
+                case .text(let text): value = ["type": "text", "text": .string(text.text)]
+                case .file(let file):
+                    switch file.data {
+                    case .reference: throw UnsupportedFunctionalityError(functionality: "file parts with provider references")
+                    case .text: throw UnsupportedFunctionalityError(functionality: "text file parts")
+                    case .url, .data, .base64: break
                     }
-                    contentParts.append(.object(payload))
-
-                case .file(let filePart):
-                    guard filePart.mediaType.hasPrefix("image/") else {
-                        throw UnsupportedFunctionalityError(functionality: "Only image file parts are supported")
+                    guard getTopLevelMediaType(file.mediaType) == "image" else { throw UnsupportedFunctionalityError(functionality: "Only image file parts are supported") }
+                    let url: String
+                    switch file.data {
+                    case .url(let value, let original): url = original ?? value.absoluteString
+                    case .data(let value): url = "data:\(try resolveFullMediaType(part: file));base64,\(value.base64EncodedString())"
+                    case .base64(let value): url = "data:\(try resolveFullMediaType(part: file));base64,\(value)"
+                    case .reference, .text: throw UnsupportedFunctionalityError(functionality: "file data type")
                     }
-
-                    let mediaType = filePart.mediaType == "image/*" ? "image/jpeg" : filePart.mediaType
-                    let url = formatImageUrl(data: filePart.data, mediaType: mediaType)
-
-                    var payload: [String: JSONValue] = [
-                        "type": .string("image_url"),
-                        "image_url": .object([
-                            "url": .string(url),
-                        ]),
-                    ]
-                    if let partCacheControl {
-                        payload["cache_control"] = partCacheControl
-                    }
-                    contentParts.append(.object(payload))
+                    value = ["type": "image_url", "image_url": ["url": .string(url)]]
                 }
+                if let cache { value["cache_control"] = cache }
+                return .object(value)
             }
-
-            messages.append(.object([
-                "role": .string("user"),
-                "content": .array(contentParts),
-            ]))
-
-        case .assistant(let parts, let providerOptions):
-            let messageCacheControl = cacheControlValidator?.getCacheControl(providerOptions)
-
+            messages.append(["role": "user", "content": .array(content)])
+        case .assistant(let parts, _):
             var text = ""
-            var toolCalls: [JSONValue] = []
-
+            var reasoning = ""
+            var tools: [JSONValue] = []
             for part in parts {
                 switch part {
-                case .text(let textPart):
-                    text.append(contentsOf: textPart.text)
-
-                case .toolCall(let toolCallPart):
-                    toolCalls.append(.object([
-                        "id": .string(toolCallPart.toolCallId),
-                        "type": .string("function"),
-                        "function": .object([
-                            "name": .string(toolCallPart.toolName),
-                            "arguments": .string(jsonStringify(toolCallPart.input) ?? "{}"),
-                        ]),
-                    ]))
-
-                case .reasoning(let reasoningPart):
-                    // Reasoning content can appear in assistant messages during multi-turn conversations.
-                    text.append(contentsOf: reasoningPart.text)
-
-                case .file, .toolResult, .custom:
-                    // Mirror upstream behavior: silently ignore unsupported part types for this prompt conversion.
-                    break
+                case .text(let value): text += value.text
+                case .reasoning(let value): if preserveThinking || index > lastUser { reasoning += value.text }
+                case .toolCall(let call): tools.append(["id": .string(call.toolCallId), "type": "function", "function": ["name": .string(call.toolName), "arguments": .string(try alibabaJSONString(call.input))]])
+                case .file, .toolResult, .reasoningFile, .custom: break
                 }
             }
-
-            var payload: [String: JSONValue] = [
-                "role": .string("assistant"),
-            ]
-
-            if let messageCacheControl {
-                payload["content"] = .array([
-                    .object([
-                        "type": .string("text"),
-                        "text": .string(text),
-                        "cache_control": messageCacheControl,
-                    ])
-                ])
-            } else {
-                payload["content"] = text.isEmpty ? .null : .string(text)
-            }
-
-            if !toolCalls.isEmpty {
-                payload["tool_calls"] = .array(toolCalls)
-            }
-
-            messages.append(.object(payload))
-
-        case .tool(let parts, let providerOptions):
-            let messageCacheControl = cacheControlValidator?.getCacheControl(providerOptions)
-
-            let toolResponses: [LanguageModelV3ToolResultPart] = parts.compactMap { part in
-                switch part {
-                case .toolResult(let result):
-                    return result
-                case .toolApprovalResponse:
-                    return nil
+            guard !text.isEmpty || !tools.isEmpty || !reasoning.isEmpty else { continue }
+            let content: JSONValue
+            if text.isEmpty && tools.isEmpty && !reasoning.isEmpty { content = .null }
+            else if let cache = messageCache { content = [["type": "text", "text": .string(text), "cache_control": cache]] }
+            else { content = text.isEmpty ? .null : .string(text) }
+            var value: JSONObject = ["role": "assistant", "content": content]
+            if !reasoning.isEmpty { value["reasoning_content"] = .string(reasoning) }
+            if !tools.isEmpty { value["tool_calls"] = .array(tools) }
+            messages.append(.object(value))
+        case .tool(let parts, _):
+            let results = parts.compactMap { part -> LanguageModelV4ToolResultPart? in if case .toolResult(let value) = part { value } else { nil } }
+            for (position, result) in results.enumerated() {
+                let cache = cacheControlValidator?.getCacheControl(result.providerOptions) ?? (position == results.count - 1 ? messageCache : Optional<JSONValue>.none)
+                let output: String
+                switch result.output {
+                case .text(let value, _), .errorText(let value, _): output = value
+                case .executionDenied(let reason, _): output = reason ?? "Tool call execution denied."
+                case .json(let value, _), .errorJson(let value, _): output = try alibabaJSONString(value)
+                case .content(let value): output = try alibabaJSONString(value)
                 }
-            }
-
-            let isSinglePart = toolResponses.count == 1
-
-            for toolResponse in toolResponses {
-                let partCacheControl: JSONValue? = {
-                    if isSinglePart {
-                        return messageCacheControl
-                    }
-                    return cacheControlValidator?.getCacheControl(toolResponse.providerOptions)
-                }()
-
-                let contentValue: String
-                switch toolResponse.output {
-                case .text(let value, _), .errorText(let value, _):
-                    contentValue = value
-                case .executionDenied(let reason, _):
-                    contentValue = reason ?? "Tool execution denied."
-                case .json(let value, _), .errorJson(let value, _):
-                    contentValue = jsonStringify(value) ?? "{}"
-                case .content(let value, _):
-                    contentValue = jsonStringify(value) ?? "[]"
-                }
-
-                let content: JSONValue
-                if let partCacheControl {
-                    content = .array([
-                        .object([
-                            "type": .string("text"),
-                            "text": .string(contentValue),
-                            "cache_control": partCacheControl,
-                        ])
-                    ])
-                } else {
-                    content = .string(contentValue)
-                }
-
-                messages.append(.object([
-                    "role": .string("tool"),
-                    "tool_call_id": .string(toolResponse.toolCallId),
-                    "content": content,
-                ]))
+                let content: JSONValue = cache.map { [["type": "text", "text": .string(output), "cache_control": $0]] } ?? .string(output)
+                messages.append(["role": "tool", "tool_call_id": .string(result.toolCallId), "content": content])
             }
         }
     }
-
     return messages
 }
 
-private func jsonStringify<T: Encodable>(_ value: T) -> String? {
-    do {
-        let data = try JSONEncoder().encode(value)
-        return String(data: data, encoding: .utf8)
-    } catch {
-        return nil
-    }
+func alibabaJSONString<Value: Encodable>(_ value: Value) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    return String(decoding: try encoder.encode(value), as: UTF8.self)
 }

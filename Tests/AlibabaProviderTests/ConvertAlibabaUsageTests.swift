@@ -1,24 +1,27 @@
 import Testing
-@testable import AlibabaProvider
+import AISDKProvider
+import AlibabaProvider
 
-@Suite("convertAlibabaUsage")
+@Suite("Alibaba usage HTTP boundary")
 struct ConvertAlibabaUsageTests {
-    @Test("calculates token distribution with cache tokens")
-    func calculatesCacheTokens() {
-        let result = convertAlibabaUsage(AlibabaUsage(
-            promptTokens: 200,
-            completionTokens: 75,
-            promptTokensDetails: .init(
-                cachedTokens: 120,
-                cacheCreationInputTokens: 50
-            ),
-            completionTokensDetails: .init(reasoningTokens: 25)
-        ))
-
-        #expect(result.inputTokens.total == 200)
-        #expect(result.inputTokens.cacheRead == 120)
-        #expect(result.inputTokens.cacheWrite == 50)
-        #expect(result.inputTokens.noCache == 30)
+    @Test("fractional and huge counts retain success raw and independent projections", arguments: [false, true])
+    func numericUsage(huge: Bool) async throws {
+        let value = huge ? 1e100 : 1.5
+        let cached = huge ? 1e100 : 0.5
+        let usage: JSONValue = ["prompt_tokens": .number(value), "completion_tokens": 1.5, "total_tokens": .number(1e100),
+                                "prompt_tokens_details": ["cached_tokens": .number(cached), "cache_type": "explicit", "extra": true],
+                                "completion_tokens_details": ["reasoning_tokens": 0.5], "future": 1.5]
+        var response = alibabaTestResponse
+        response["usage"] = usage
+        let result = try await alibabaTestModel(AlibabaTestEndpoint(.object(response))).doGenerate(options: .init(prompt: alibabaTestPrompt))
+        #expect(result.content == [.text(.init(text: "Answer"))])
+        #expect(result.usage.inputTokens.total == nil)
+        #expect(result.usage.inputTokens.cacheRead == nil)
+        #expect(result.usage.inputTokens.noCache == (huge ? 0 : 1))
+        #expect(result.usage.inputTokens.cacheWrite == 0)
+        #expect(result.usage.outputTokens.total == nil)
+        #expect(result.usage.outputTokens.text == 1)
+        #expect(result.usage.outputTokens.reasoning == nil)
+        #expect(result.usage.raw == usage)
     }
 }
-

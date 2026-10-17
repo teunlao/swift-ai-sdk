@@ -1,126 +1,103 @@
 import Foundation
 import AISDKProvider
-import AISDKProviderUtils
-
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/alibaba/src/convert-alibaba-usage.ts
-// Ported from packages/openai-compatible/src/chat/convert-openai-compatible-chat-usage.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
 
 public struct AlibabaUsage: Sendable, Equatable, Codable {
     public struct PromptTokensDetails: Sendable, Equatable, Codable {
-        public let cachedTokens: Int?
-        public let cacheCreationInputTokens: Int?
-
-        public init(
-            cachedTokens: Int? = nil,
-            cacheCreationInputTokens: Int? = nil
-        ) {
-            self.cachedTokens = cachedTokens
-            self.cacheCreationInputTokens = cacheCreationInputTokens
+        public let cachedTokens: Double?
+        public let cacheCreationInputTokens: Double?
+        public let cacheType: String?
+        private let original: JSONObject?
+        public init(cachedTokens: Double? = nil, cacheCreationInputTokens: Double? = nil, cacheType: String? = nil) {
+            self.cachedTokens = cachedTokens; self.cacheCreationInputTokens = cacheCreationInputTokens; self.cacheType = cacheType
+            original = nil
         }
-
-        private enum CodingKeys: String, CodingKey {
-            case cachedTokens = "cached_tokens"
-            case cacheCreationInputTokens = "cache_creation_input_tokens"
+        private enum Keys: String, CodingKey { case cachedTokens = "cached_tokens", cacheCreationInputTokens = "cache_creation_input_tokens", cacheType = "cache_type" }
+        public init(from decoder: Decoder) throws {
+            original = try decoder.singleValueContainer().decode(JSONObject.self)
+            let values = try decoder.container(keyedBy: Keys.self)
+            cachedTokens = try values.decodeIfPresent(Double.self, forKey: .cachedTokens)
+            cacheCreationInputTokens = try values.decodeIfPresent(Double.self, forKey: .cacheCreationInputTokens)
+            cacheType = try values.decodeIfPresent(String.self, forKey: .cacheType)
         }
+        var fields: JSONObject {
+            if let original { return original }
+            var fields: JSONObject = [:]
+            if let cachedTokens { fields["cached_tokens"] = .number(cachedTokens) }
+            if let cacheCreationInputTokens { fields["cache_creation_input_tokens"] = .number(cacheCreationInputTokens) }
+            if let cacheType { fields["cache_type"] = .string(cacheType) }
+            return fields
+        }
+        public func encode(to encoder: Encoder) throws { try fields.encode(to: encoder) }
     }
-
     public struct CompletionTokensDetails: Sendable, Equatable, Codable {
-        public let reasoningTokens: Int?
-
-        public init(reasoningTokens: Int? = nil) {
-            self.reasoningTokens = reasoningTokens
+        public let reasoningTokens: Double?
+        private let original: JSONObject?
+        public init(reasoningTokens: Double? = nil) { self.reasoningTokens = reasoningTokens; original = nil }
+        private enum Keys: String, CodingKey { case reasoningTokens = "reasoning_tokens" }
+        public init(from decoder: Decoder) throws {
+            original = try decoder.singleValueContainer().decode(JSONObject.self)
+            reasoningTokens = try decoder.container(keyedBy: Keys.self).decodeIfPresent(Double.self, forKey: .reasoningTokens)
         }
-
-        private enum CodingKeys: String, CodingKey {
-            case reasoningTokens = "reasoning_tokens"
-        }
+        var fields: JSONObject { original ?? reasoningTokens.map { ["reasoning_tokens": .number($0)] } ?? [:] }
+        public func encode(to encoder: Encoder) throws { try fields.encode(to: encoder) }
     }
-
-    public let promptTokens: Int?
-    public let completionTokens: Int?
-    public let totalTokens: Int?
+    public let promptTokens: Double?
+    public let completionTokens: Double?
+    public let totalTokens: Double?
     public let promptTokensDetails: PromptTokensDetails?
     public let completionTokensDetails: CompletionTokensDetails?
+    private let original: JSONObject?
 
-    public init(
-        promptTokens: Int? = nil,
-        completionTokens: Int? = nil,
-        totalTokens: Int? = nil,
-        promptTokensDetails: PromptTokensDetails? = nil,
-        completionTokensDetails: CompletionTokensDetails? = nil
-    ) {
-        self.promptTokens = promptTokens
-        self.completionTokens = completionTokens
-        self.totalTokens = totalTokens
-        self.promptTokensDetails = promptTokensDetails
-        self.completionTokensDetails = completionTokensDetails
+    public init(promptTokens: Double? = nil, completionTokens: Double? = nil, totalTokens: Double? = nil,
+                promptTokensDetails: PromptTokensDetails? = nil, completionTokensDetails: CompletionTokensDetails? = nil) {
+        self.promptTokens = promptTokens; self.completionTokens = completionTokens; self.totalTokens = totalTokens
+        self.promptTokensDetails = promptTokensDetails; self.completionTokensDetails = completionTokensDetails; original = nil
     }
-
-    private enum CodingKeys: String, CodingKey {
-        case promptTokens = "prompt_tokens"
-        case completionTokens = "completion_tokens"
-        case totalTokens = "total_tokens"
-        case promptTokensDetails = "prompt_tokens_details"
-        case completionTokensDetails = "completion_tokens_details"
+    private enum Keys: String, CodingKey { case promptTokens = "prompt_tokens", completionTokens = "completion_tokens", totalTokens = "total_tokens", promptTokensDetails = "prompt_tokens_details", completionTokensDetails = "completion_tokens_details" }
+    public init(from decoder: Decoder) throws {
+        original = try decoder.singleValueContainer().decode(JSONObject.self)
+        let values = try decoder.container(keyedBy: Keys.self)
+        promptTokens = try values.decodeIfPresent(Double.self, forKey: .promptTokens)
+        completionTokens = try values.decodeIfPresent(Double.self, forKey: .completionTokens)
+        totalTokens = try values.decodeIfPresent(Double.self, forKey: .totalTokens)
+        promptTokensDetails = try values.decodeIfPresent(PromptTokensDetails.self, forKey: .promptTokensDetails)
+        completionTokensDetails = try values.decodeIfPresent(CompletionTokensDetails.self, forKey: .completionTokensDetails)
     }
+    var fields: JSONObject {
+        if let original { return original }
+        var fields: JSONObject = [:]
+        if let promptTokens { fields["prompt_tokens"] = .number(promptTokens) }
+        if let completionTokens { fields["completion_tokens"] = .number(completionTokens) }
+        if let totalTokens { fields["total_tokens"] = .number(totalTokens) }
+        if let promptTokensDetails { fields["prompt_tokens_details"] = .object(promptTokensDetails.fields) }
+        if let completionTokensDetails { fields["completion_tokens_details"] = .object(completionTokensDetails.fields) }
+        return fields
+    }
+    public func encode(to encoder: Encoder) throws { try fields.encode(to: encoder) }
 }
 
-public func convertAlibabaUsage(
-    _ usage: AlibabaUsage?
-) -> LanguageModelV3Usage {
-    // Base usage mapping mirrors OpenAI-compatible usage conversion.
-    let baseUsage: LanguageModelV3Usage
-    if let usage {
-        let promptTokens = usage.promptTokens ?? 0
-        let completionTokens = usage.completionTokens ?? 0
-        let cacheReadTokens = usage.promptTokensDetails?.cachedTokens ?? 0
-        let reasoningTokens = usage.completionTokensDetails?.reasoningTokens ?? 0
-
-        baseUsage = LanguageModelV3Usage(
-            inputTokens: .init(
-                total: promptTokens,
-                noCache: promptTokens - cacheReadTokens,
-                cacheRead: cacheReadTokens,
-                cacheWrite: nil
-            ),
-            outputTokens: .init(
-                total: completionTokens,
-                text: completionTokens - reasoningTokens,
-                reasoning: reasoningTokens
-            ),
-            raw: encodeToJSONValue(usage)
-        )
-    } else {
-        baseUsage = LanguageModelV3Usage()
+public func convertAlibabaUsage(_ usage: AlibabaUsage?) -> LanguageModelV4Usage {
+    guard let usage else { return .init() }
+    let input = usage.promptTokens ?? 0
+    let output = usage.completionTokens ?? 0
+    let read = usage.promptTokensDetails?.cachedTokens ?? 0
+    let write = usage.promptTokensDetails?.cacheCreationInputTokens ?? 0
+    let reasoning = usage.completionTokensDetails?.reasoningTokens ?? 0
+    func difference(_ total: Double, _ first: Double, _ second: Double = 0, clamp: Bool = false) -> Int? {
+        if let total = Int(exactly: total), let first = Int(exactly: first), let second = Int(exactly: second) {
+            func subtract(_ first: Int, _ second: Int) -> Int? {
+                let initial = total.subtractingReportingOverflow(first)
+                guard !initial.overflow else { return nil }
+                let result = initial.partialValue.subtractingReportingOverflow(second)
+                guard !result.overflow else { return nil }
+                return clamp ? max(0, result.partialValue) : result.partialValue
+            }
+            if let result = subtract(first, second) ?? subtract(second, first) { return result }
+            return clamp && Double(total) - Double(first) - Double(second) < 0 ? 0 : nil
+        }
+        let result = total - first - second
+        return Int(exactly: clamp ? max(0, result) : result)
     }
-
-    // Alibaba adds cache write tokens and recomputes noCache accordingly.
-    let cacheWriteTokens = usage?.promptTokensDetails?.cacheCreationInputTokens ?? 0
-    let noCacheTokens = (baseUsage.inputTokens.total ?? 0) - (baseUsage.inputTokens.cacheRead ?? 0) - cacheWriteTokens
-
-    return LanguageModelV3Usage(
-        inputTokens: .init(
-            total: baseUsage.inputTokens.total,
-            noCache: noCacheTokens,
-            cacheRead: baseUsage.inputTokens.cacheRead,
-            cacheWrite: cacheWriteTokens
-        ),
-        outputTokens: baseUsage.outputTokens,
-        raw: baseUsage.raw
-    )
-}
-
-private func encodeToJSONValue<T: Encodable>(_ value: T) -> JSONValue? {
-    do {
-        let data = try JSONEncoder().encode(value)
-        let raw = try JSONSerialization.jsonObject(with: data, options: [])
-        return try jsonValue(from: raw)
-    } catch {
-        return nil
-    }
+    return .init(inputTokens: .init(total: Int(exactly: input), noCache: difference(input, read, write), cacheRead: Int(exactly: read), cacheWrite: Int(exactly: write)),
+                 outputTokens: .init(total: Int(exactly: output), text: difference(output, reasoning, clamp: true), reasoning: Int(exactly: reasoning)), raw: .object(usage.fields))
 }

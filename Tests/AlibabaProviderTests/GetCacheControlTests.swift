@@ -1,48 +1,37 @@
 import Testing
-@testable import AISDKProvider
-@testable import AlibabaProvider
+import AISDKProvider
+import AlibabaProvider
 
-@Suite("CacheControlValidator")
+@Suite("Alibaba cache boundary")
 struct GetCacheControlTests {
-    @Test("extracts cacheControl from provider metadata")
-    func extractsCacheControl() {
-        let validator = CacheControlValidator()
-
-        let result = validator.getCacheControl([
-            "alibaba": [
-                "cacheControl": .object(["type": .string("ephemeral")])
-            ]
-        ])
-
-        #expect(result == .object(["type": .string("ephemeral")]))
+    @Test("a fifth cache marker warns without deleting the request markers")
+    func breakpointLimit() async throws {
+        let endpoint = AlibabaTestEndpoint()
+        let cache: SharedV4ProviderOptions = ["alibaba": ["cacheControl": ["type": "ephemeral"]]]
+        let prompt = Array(repeating: LanguageModelV4Message.system(content: "cached", providerOptions: cache), count: 5)
+        let result = try await alibabaTestModel(endpoint).doGenerate(options: .init(prompt: prompt))
+        guard case .array(let messages) = try await endpoint.body()["messages"] else { Issue.record("Missing messages"); return }
+        #expect(messages.count == 5)
+        #expect(messages.allSatisfy { value in
+            guard case .object(let message) = value, case .array(let parts) = message["content"], case .object(let part) = parts.first else { return false }
+            return part["cache_control"] == ["type": "ephemeral"]
+        })
+        #expect(result.warnings.count == 1)
+        #expect(result.warnings.contains { if case .other = $0 { true } else { false } })
     }
 
-    @Test("warns when exceeding 4 cache breakpoints")
-    func warnsWhenExceedingLimit() {
-        let validator = CacheControlValidator()
-
-        for _ in 0..<4 {
-            _ = validator.getCacheControl([
-                "alibaba": ["cacheControl": .object(["type": .string("ephemeral")])]
-            ])
-        }
-
-        let result = validator.getCacheControl([
-            "alibaba": ["cacheControl": .object(["type": .string("ephemeral")])]
+    @Test("nullish cacheControl falls back to cache_control while falsy markers are ignored")
+    func nullishAndFalsy() async throws {
+        let endpoint = AlibabaTestEndpoint()
+        let prompt: LanguageModelV4Prompt = [
+            .system(content: "fallback", providerOptions: ["alibaba": ["cacheControl": .null, "cache_control": ["type": "ephemeral"]]]),
+            .system(content: "uncached", providerOptions: ["alibaba": ["cacheControl": false]])
+        ]
+        let result = try await alibabaTestModel(endpoint).doGenerate(options: .init(prompt: prompt))
+        #expect(try await endpoint.body()["messages"] == [
+            ["role": "system", "content": [["type": "text", "text": "fallback", "cache_control": ["type": "ephemeral"]]]],
+            ["role": "system", "content": "uncached"]
         ])
-
-        #expect(result == .object(["type": .string("ephemeral")]))
-        #expect(validator.getWarnings().count == 1)
-        #expect(validator.getWarnings().first == .other(
-            message: "Max breakpoint limit exceeded. Only the last 4 cache markers will take effect."
-        ))
-    }
-
-    @Test("returns nil when no cache control is present")
-    func returnsNilWhenMissing() {
-        let validator = CacheControlValidator()
-        let result = validator.getCacheControl(["alibaba": [:]])
-        #expect(result == nil)
+        #expect(result.warnings.isEmpty)
     }
 }
-

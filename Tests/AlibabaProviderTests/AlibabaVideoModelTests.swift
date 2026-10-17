@@ -1,589 +1,312 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
+import AISDKProvider
+import AISDKProviderUtils
 @testable import AlibabaProvider
 
-@Suite("AlibabaVideoModel")
+@Suite("Alibaba video V4 operations")
 struct AlibabaVideoModelTests {
-    private let prompt = "A serene mountain lake at sunset with gentle ripples"
-    private let baseURL = "https://dashscope-intl.aliyuncs.com"
+    private static let baseURL = "https://proxy.example"
+    private static let createPath = "/api/v1/services/aigc/video-generation/video-synthesis"
+    private static let taskPath = "/api/v1/tasks/task-id"
+    private static let created: JSONValue = ["output": ["task_status": "PENDING", "task_id": "task-id"], "request_id": "created-request"]
+    private static let date = Date(timeIntervalSince1970: 123)
 
-    private var createURL: String {
-        "\(baseURL)/api/v1/services/aigc/video-generation/video-synthesis"
-    }
-
-    private var taskURL: String {
-        "\(baseURL)/api/v1/tasks/task-abc-123"
-    }
-
-    private static func jsonData(_ value: Any) throws -> Data {
-        try JSONSerialization.data(withJSONObject: value, options: [])
-    }
-
-    private static func httpResponse(url: URL, statusCode: Int, headers: [String: String]) -> HTTPURLResponse {
-        HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
-    }
-
-    private actor HTTPStub {
-        typealias Handler = @Sendable (_ request: URLRequest, _ callNumber: Int) async throws -> FetchResponse
-
-        struct Call: Sendable {
-            let method: String
-            let url: String
-            let headers: [String: String]
-            let body: JSONValue?
+    private actor Endpoint {
+        var payload: JSONValue
+        var status: Int
+        let inspect: @Sendable (URLRequest) throws -> Void
+        init(_ payload: JSONValue = AlibabaVideoModelTests.created, status: Int = 200, inspect: @escaping @Sendable (URLRequest) throws -> Void = { _ in }) {
+            self.payload = payload
+            self.status = status
+            self.inspect = inspect
         }
-
-        private var handlers: [String: Handler] = [:]
-        private var calls: [Call] = []
-        private var callCountByKey: [String: Int] = [:]
-
-        func setJSON(
-            method: String,
-            url: String,
-            statusCode: Int = 200,
-            body: Any,
-            headers: [String: String]? = nil
-        ) async throws {
-            let data = try AlibabaVideoModelTests.jsonData(body)
-            let headerFields: [String: String] = {
-                var base: [String: String] = [
-                    "Content-Type": "application/json",
-                    "Content-Length": String(data.count),
-                ]
-                if let headers {
-                    for (k, v) in headers { base[k] = v }
-                }
-                return base
-            }()
-
-            setHandler(method: method, url: url) { request, _ in
-                FetchResponse(
-                    body: .data(data),
-                    urlResponse: AlibabaVideoModelTests.httpResponse(url: request.url!, statusCode: statusCode, headers: headerFields)
-                )
-            }
+        func set(_ value: JSONValue) { payload = value }
+        func fetch(_ request: URLRequest) throws -> FetchResponse {
+            try inspect(request)
+            return FetchResponse(body: .data(try JSONEncoder().encode(payload)), urlResponse: HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json", "X-Response": "response-id"]
+            )!)
         }
+    }
 
-        func setHandler(method: String, url: String, handler: @escaping Handler) {
-            handlers["\(method.uppercased()) \(url)"] = handler
+    private func model(_ id: AlibabaVideoModelId = .wan26T2v, endpoint: Endpoint) -> AlibabaVideoModel {
+        AlibabaVideoModel(modelId: id, config: .init(
+            provider: "alibaba.video", baseURL: Self.baseURL,
+            headers: { ["Authorization": "Bearer provider-key", "X-Provider": "account", "User-Agent": "ai-sdk-alibaba/test"] },
+            fetch: { try await endpoint.fetch($0) }, currentDate: { Self.date }
+        ))
+    }
+
+    private func body(_ request: URLRequest) throws -> JSONObject {
+        try JSONDecoder().decode(JSONObject.self, from: #require(request.httpBody))
+    }
+
+    @Test("model versions select the size, tiered-reference or all-in-one wire protocol", arguments: [
+        "wanx2.1-t2v-turbo", "wan2.6-r2v", "wan2.7-r2v", "wan2.10-r2v", "wan3.0-video", "wan-next-video"
+    ])
+    func protocolRouting(id: String) async throws {
+        let sized = id == "wanx2.1-t2v-turbo" || id == "wan2.6-r2v"
+        let allInOne = id == "wan3.0-video" || id == "wan-next-video"
+        var input: JSONObject = ["prompt": "A scene"]
+        if id == "wan2.6-r2v" { input["reference_urls"] = ["https://media.example/ref.png"] }
+        else if id != "wanx2.1-t2v-turbo" {
+            var media: [JSONValue] = [["type": "reference_image", "url": "https://media.example/ref.png"]]
+            if allInOne { media.append(["type": "first_frame", "url": "https://media.example/start.png"]) }
+            input["media"] = .array(media)
         }
+        let expected: JSONObject = [
+            "model": .string(id), "input": .object(input),
+            "parameters": sized ? ["size": "1280*720"] : ["resolution": "720P", "ratio": "16:9"]
+        ]
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in
+            #expect(request.url?.path == Self.createPath)
+            #expect(request.httpMethod == "POST")
+            #expect(try body(request) == expected)
+        }
+        let result = try await model(.init(rawValue: id), endpoint: endpoint).doStart(options: .init(
+            prompt: "A scene", n: 1, resolution: "1280x720",
+            image: .url(url: "https://media.example/start.png", providerOptions: nil),
+            inputReferences: [.url(url: "https://media.example/ref.png", providerOptions: nil)]
+        ))
+        #expect(result.operation == ["taskId": "task-id"])
+        #expect(result.warnings.map(feature) == (id == "wanx2.1-t2v-turbo" ? ["inputReferences"] : []))
+    }
 
-        func handle(_ request: URLRequest) async throws -> FetchResponse {
-            let method = request.httpMethod ?? "GET"
-            let url = request.url?.absoluteString ?? ""
-            let key = "\(method.uppercased()) \(url)"
+    @Test("image models prefer first-frame bytes and retain protocol-specific parameter rules", arguments: [false, true])
+    func imageProtocol(tiered: Bool) async throws {
+        let id = tiered ? "wan2.7-i2v" : "wan2.6-i2v"
+        let parameters: JSONValue = tiered ? [:] : ["resolution": "480P", "shot_type": "multi", "audio": false]
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in
+            #expect(try body(request) == ["model": .string(id), "input": ["img_url": "iVBORw=="], "parameters": parameters])
+        }
+        let result = try await model(.init(rawValue: id), endpoint: endpoint).doStart(options: .init(
+            n: 1, aspectRatio: "9:16", resolution: "832x480", image: .url(url: "https://media.example/ignored.png", providerOptions: nil),
+            frameImages: [
+                .init(image: .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil), frameType: .firstFrame),
+                .init(image: .url(url: "https://media.example/end.png", providerOptions: nil), frameType: .lastFrame)
+            ],
+            generateAudio: false, providerOptions: ["alibaba": ["shotType": "multi", "audio": true]]
+        ))
+        #expect(result.warnings.map(feature) == (tiered ? ["frameImages", "resolution", "shotType", "generateAudio", "aspectRatio"] : ["frameImages", "aspectRatio"]))
+    }
 
-            let callNumber = (callCountByKey[key] ?? 0) + 1
-            callCountByKey[key] = callNumber
+    @Test("all-in-one requests combine typed references, frames, audio and smart duration")
+    func allInOneMedia() async throws {
+        let expected: JSONObject = [
+            "model": "wan3.0-video",
+            "input": ["prompt": "A scene", "negative_prompt": "blur", "audio_url": "https://media.example/audio.mp3", "media": [
+                ["type": "reference_image", "url": "data:image/png;base64,iVBORw=="],
+                ["type": "reference_video", "url": "https://media.example/clip.MOV?token=one"],
+                ["type": "first_frame", "url": "data:image/jpeg;base64,AQID"],
+                ["type": "last_frame", "url": "https://media.example/end.png"]
+            ]],
+            "parameters": ["duration": -1, "seed": 7, "resolution": "480P", "ratio": "adaptive", "prompt_extend": false, "watermark": true, "audio": false]
+        ]
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in #expect(try body(request) == expected) }
+        let result = try await model(.wan30Video, endpoint: endpoint).doStart(options: .init(
+            prompt: "A scene", n: 3, aspectRatio: "9:16", resolution: "832x480", duration: -1, fps: 24, seed: 7,
+            frameImages: [
+                .init(image: .file(mediaType: "image/jpeg", data: .base64("AQID"), providerOptions: nil), frameType: .firstFrame),
+                .init(image: .url(url: "https://media.example/end.png", providerOptions: nil), frameType: .lastFrame)
+            ],
+            inputReferences: [
+                .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
+                .url(url: "https://media.example/clip.MOV?token=one", mediaType: "image/jpeg", providerOptions: nil),
+                .file(mediaType: "video/mp4", data: .base64("AAAA"), providerOptions: nil)
+            ],
+            generateAudio: false,
+            providerOptions: ["alibaba": ["ratio": "adaptive", "audio": true, "shotType": "multi", "negativePrompt": "blur", "audioUrl": "https://media.example/audio.mp3", "promptExtend": false, "watermark": true]]
+        ))
+        #expect(result.warnings.map(feature) == ["inputReferences", "shotType", "fps", "n"])
+    }
 
-            let headers = request.allHTTPHeaderFields ?? [:]
-            let body: JSONValue?
-            if let data = request.httpBody {
-                body = try? JSONDecoder().decode(JSONValue.self, from: data)
+    @Test("explicit media overrides automatic inputs and carries wan3 media kinds and voice references")
+    func explicitMedia() async throws {
+        let media: [JSONValue] = [
+            ["type": "reference_audio", "url": "https://media.example/voice.mp3", "referenceVoice": .null],
+            ["type": "file", "url": "https://media.example/deck.pdf"],
+            ["type": "link", "url": "https://example.com/article"],
+            ["type": "reference_video", "url": "https://media.example/ref.mp4", "referenceVoice": "https://media.example/voice.mp3", "extra": true],
+            ["type": "last_frame", "url": "https://media.example/end.png"]
+        ]
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in
+            #expect(try body(request) == ["model": "wan3.0-video", "input": ["media": [
+                ["type": "reference_audio", "url": "https://media.example/voice.mp3"],
+                ["type": "file", "url": "https://media.example/deck.pdf"],
+                ["type": "link", "url": "https://example.com/article"],
+                ["type": "reference_video", "url": "https://media.example/ref.mp4", "reference_voice": "https://media.example/voice.mp3"],
+                ["type": "last_frame", "url": "https://media.example/end.png"]
+            ]], "parameters": ["resolution": "1080P", "ratio": "1:1"]])
+        }
+        let result = try await model(.wan30Video, endpoint: endpoint).doStart(options: .init(
+            n: 1, aspectRatio: "16:9", resolution: "1920x1080", image: .url(url: "ignored", providerOptions: nil),
+            inputReferences: [.file(mediaType: "video/mp4", data: .base64("AAAA"), providerOptions: nil)],
+            providerOptions: ["alibaba": ["media": .array(media), "ratio": "1:1", "future": true]]
+        ))
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("size-protocol references honor standard options, provider fallback and frame exclusions", arguments: ["standard", "provider", "frames"])
+    func referencePriority(source: String) async throws {
+        let frames = source == "frames"
+        let provider = source == "provider"
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in
+            let input: JSONValue = frames ? [:] : ["reference_urls": [.string(provider ? "https://media.example/fallback.png" : "https://media.example/standard.png")]]
+            #expect(try body(request) == ["model": "wan2.6-r2v", "input": input, "parameters": [:]])
+        }
+        let result = try await model(.wan26R2v, endpoint: endpoint).doStart(options: .init(
+            n: 1, frameImages: frames ? [.init(image: .url(url: "https://media.example/end.png", providerOptions: nil), frameType: .lastFrame)] : nil,
+            inputReferences: provider ? nil : [.url(url: "https://media.example/standard.png", providerOptions: nil), .file(mediaType: "image/png", data: .base64("AAAA"), providerOptions: nil)],
+            providerOptions: ["alibaba": ["referenceUrls": ["https://media.example/fallback.png"]]]
+        ))
+        #expect(result.warnings.map(feature) == (provider ? [] : [frames ? "frameImages" : "inputReferences"]))
+    }
+
+    @Test("start and resumed status calls preserve operation IDs, API headers and response metadata")
+    func resumableOperation() async throws {
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer caller-key")
+            #expect(request.value(forHTTPHeaderField: "X-Provider") == "account")
+            #expect(request.value(forHTTPHeaderField: "X-Request") == "caller")
+            if request.httpMethod == "POST" {
+                #expect(request.url?.path == Self.createPath)
+                #expect(request.value(forHTTPHeaderField: "X-DashScope-Async") == "enable")
             } else {
-                body = nil
+                #expect(request.httpMethod == "GET")
+                #expect(request.url?.path == Self.taskPath)
             }
-            calls.append(Call(method: method, url: url, headers: headers, body: body))
-
-            guard let handler = handlers[key] else {
-                throw TestError(message: "Unexpected request: \(key)")
-            }
-
-            return try await handler(request, callNumber)
         }
-
-        func call(at index: Int) -> Call? {
-            guard index >= 0, index < calls.count else { return nil }
-            return calls[index]
+        let headers = ["authorization": "Bearer caller-key", "X-Request": "caller"]
+        let started = try await model(.wan30Video, endpoint: endpoint).doStart(options: .init(n: 1, headers: headers))
+        let operation = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(started.operation))
+        #expect(operation == ["taskId": "task-id"])
+        #expect(started.response.timestamp == Self.date)
+        #expect(started.response.headers?["x-response"] == "response-id")
+        let resumed = model(.wan30Video, endpoint: endpoint)
+        await endpoint.set(["output": ["task_id": "task-id", "task_status": "RUNNING"]])
+        guard case .pending(_, _, let pendingInfo) = try await resumed.doStatus(options: .init(operation: operation, headers: headers)) else {
+            Issue.record("Expected pending operation"); return
         }
-
-        func count() -> Int { calls.count }
-    }
-
-    private struct TestError: Error, CustomStringConvertible {
-        let message: String
-        var description: String { message }
-    }
-
-    private func makeModel(
-        modelId: AlibabaVideoModelId = .wan26T2v,
-        headers: (@Sendable () throws -> [String: String?])? = { ["Authorization": "Bearer test-api-key"] },
-        fetch: FetchFunction? = nil,
-        currentDate: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_704_067_200) } // 2024-01-01
-    ) -> AlibabaVideoModel {
-        AlibabaVideoModel(
-            modelId: modelId,
-            config: AlibabaVideoModelConfig(
-                provider: "alibaba.video",
-                baseURL: baseURL,
-                headers: headers ?? { [:] },
-                fetch: fetch,
-                currentDate: currentDate
-            )
-        )
-    }
-
-    private var defaultProviderOptions: SharedV3ProviderOptions {
-        [
-            "alibaba": [
-                "pollIntervalMs": .number(1),
-                "pollTimeoutMs": .number(5_000),
-            ]
-        ]
-    }
-
-    private var defaultOptions: VideoModelV3CallOptions {
-        VideoModelV3CallOptions(
-            prompt: prompt,
-            n: 1,
-            providerOptions: defaultProviderOptions
-        )
-    }
-
-    private var createTaskResponse: [String: Any] {
-        [
-            "output": [
-                "task_status": "PENDING",
-                "task_id": "task-abc-123",
-            ],
-            "request_id": "req-001",
-        ]
-    }
-
-    private var succeededTaskResponse: [String: Any] {
-        [
-            "output": [
-                "task_id": "task-abc-123",
-                "task_status": "SUCCEEDED",
-                "video_url": "https://dashscope-result.oss.aliyuncs.com/output/video-001.mp4",
-                "submit_time": "2024-01-01 00:00:00.000",
-                "scheduled_time": "2024-01-01 00:00:01.000",
-                "end_time": "2024-01-01 00:01:00.000",
-                "orig_prompt": prompt,
-                "actual_prompt": "An enhanced prompt with more cinematic details",
-            ],
-            "usage": [
-                "duration": 5.0,
-                "output_video_duration": 5,
-                "SR": 1080,
-                "size": "1920x1080",
-            ],
-            "request_id": "req-002",
-        ]
-    }
-
-    @Test("constructor exposes correct provider and model information")
-    func constructorInfo() throws {
-        let model = makeModel()
-        #expect(model.provider == "alibaba.video")
-        #expect(model.modelId == "wan2.6-t2v")
-        #expect(model.specificationVersion == "v3")
-
-        switch model.maxVideosPerCall {
-        case .value(let value):
-            #expect(value == 1)
-        case .default, .function:
-            Issue.record("Expected fixed maxVideosPerCall == 1")
-        }
-    }
-
-    @Test("doGenerate sends correct request body for T2V")
-    func requestBodyT2V() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        _ = try await model.doGenerate(options: defaultOptions)
-
-        guard let call = await stub.call(at: 0) else {
-            Issue.record("Missing captured request")
-            return
-        }
-
-        #expect(call.url == createURL)
-        #expect(call.body == .object([
-            "model": .string("wan2.6-t2v"),
-            "input": .object(["prompt": .string(prompt)]),
-            "parameters": .object([:]),
-        ]))
-    }
-
-    @Test("doGenerate sends size parameter for T2V resolution (x converted to *)")
-    func t2vResolutionSizeMapping() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            resolution: "1920x1080",
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(parameters)? = body["parameters"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(parameters["size"] == .string("1920*1080"))
-    }
-
-    @Test("doGenerate sends provider options (negativePrompt, promptExtend, shotType, watermark)")
-    func providerOptionsMapping() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "alibaba": [
-                    "negativePrompt": .string("blurry, low quality"),
-                    "promptExtend": .bool(true),
-                    "shotType": .string("multi"),
-                    "watermark": .bool(false),
-                    "pollIntervalMs": .number(1),
-                    "pollTimeoutMs": .number(5_000),
-                ]
-            ]
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(input)? = body["input"],
-              case let .object(parameters)? = body["parameters"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(input["negative_prompt"] == .string("blurry, low quality"))
-        #expect(parameters["prompt_extend"] == .bool(true))
-        #expect(parameters["shot_type"] == .string("multi"))
-        #expect(parameters["watermark"] == .bool(false))
-    }
-
-    @Test("doGenerate sends img_url from URL-based image for I2V model")
-    func i2vURLImage() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(modelId: .wan26I2v, fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            image: .url(url: "https://example.com/image.jpg", providerOptions: nil),
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(input)? = body["input"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(input["img_url"] == .string("https://example.com/image.jpg"))
-    }
-
-    @Test("doGenerate sends img_url as base64 from file data")
-    func i2vFileImageBase64() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(modelId: .wan26I2vFlash, fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            image: .file(mediaType: "image/png", data: .binary(Data([137, 80, 78, 71])), providerOptions: nil),
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(input)? = body["input"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(input["img_url"] == .string("iVBORw=="))
-    }
-
-    @Test("maps resolution to I2V format (WxH → 720P/1080P)")
-    func i2vResolutionMapping() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(modelId: .wan26I2v, fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            resolution: "1920x1080",
-            providerOptions: defaultProviderOptions
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(parameters)? = body["parameters"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(parameters["resolution"] == .string("1080P"))
-    }
-
-    @Test("sends reference_urls for R2V model and does not for other modes")
-    func r2vReferenceURLs() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(modelId: .wan26R2vFlash, fetch: fetch)
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 1,
-            providerOptions: [
-                "alibaba": [
-                    "referenceUrls": .array([
-                        .string("https://example.com/ref-image.jpg"),
-                        .string("https://example.com/ref-video.mp4"),
-                    ]),
-                    "pollIntervalMs": .number(1),
-                    "pollTimeoutMs": .number(5_000),
-                ]
-            ]
-        ))
-
-        guard let call = await stub.call(at: 0),
-              case let .object(body)? = call.body,
-              case let .object(input)? = body["input"] else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        #expect(input["reference_urls"] == .array([
-            .string("https://example.com/ref-image.jpg"),
-            .string("https://example.com/ref-video.mp4"),
-        ]))
-    }
-
-    @Test("sends X-DashScope-Async only on task creation")
-    func headersAsyncOnlyOnCreate() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        _ = try await model.doGenerate(options: defaultOptions)
-
-        guard let createCall = await stub.call(at: 0), let pollCall = await stub.call(at: 1) else {
-            Issue.record("Missing captured calls")
-            return
-        }
-
-        #expect(createCall.headers["x-dashscope-async"] == "enable")
-        #expect(pollCall.headers["x-dashscope-async"] == nil)
-    }
-
-    @Test("warns for unsupported aspectRatio/fps/n")
-    func warningsUnsupported() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        let result = try await model.doGenerate(options: .init(
-            prompt: prompt,
-            n: 3,
-            aspectRatio: "16:9",
-            fps: 30,
-            providerOptions: defaultProviderOptions
-        ))
-
-        #expect(result.warnings.contains(.unsupported(feature: "aspectRatio", details: "Alibaba video models use explicit size/resolution dimensions. Use the resolution option or providerOptions.alibaba for size control.")))
-        #expect(result.warnings.contains(.unsupported(feature: "fps", details: "Alibaba video models do not support custom FPS.")))
-        #expect(result.warnings.contains(.unsupported(feature: "n", details: "Alibaba video models only support generating 1 video per call.")))
-    }
-
-    @Test("returns video URL, response info, and provider metadata")
-    func responseAndMetadata() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let testDate = Date(timeIntervalSince1970: 1_704_067_200)
-        let model = makeModel(fetch: fetch, currentDate: { testDate })
-
-        let result = try await model.doGenerate(options: defaultOptions)
-
-        #expect(result.videos == [.url(
-            url: "https://dashscope-result.oss.aliyuncs.com/output/video-001.mp4",
-            mediaType: "video/mp4"
-        )])
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "wan2.6-t2v")
-
-        #expect(result.providerMetadata?["alibaba"] == [
-            "taskId": .string("task-abc-123"),
-            "videoUrl": .string("https://dashscope-result.oss.aliyuncs.com/output/video-001.mp4"),
-            "actualPrompt": .string("An enhanced prompt with more cinematic details"),
-            "usage": .object([
-                "duration": .number(5),
-                "outputVideoDuration": .number(5),
-                "resolution": .number(1080),
-                "size": .string("1920x1080"),
-            ]),
+        #expect(pendingInfo.modelId == "wan3.0-video")
+        await endpoint.set([
+            "output": ["task_id": "task-id", "task_status": "SUCCEEDED", "video_url": "https://proxy.example/result.mp4", "actual_prompt": "Expanded scene"],
+            "usage": ["duration": 12.5, "output_video_duration": 8.5, "input_video_duration": 4, "fps": .number(1e100), "SR": 720, "size": "1280x720", "ratio": "16:9"]
         ])
-    }
-
-    @Test("throws when no task_id is returned")
-    func errorNoTaskId() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: ["output": NSNull(), "request_id": "req-003"])
-        try await stub.setJSON(method: "GET", url: taskURL, body: succeededTaskResponse)
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("No task_id"))
+        guard case .completed(let videos, let warnings, let metadata, let response) = try await resumed.doStatus(options: .init(operation: operation, headers: headers)) else {
+            Issue.record("Expected completed operation"); return
         }
+        #expect(videos == [.url(url: "https://proxy.example/result.mp4", mediaType: "video/mp4")])
+        #expect(warnings.isEmpty)
+        #expect(metadata == ["alibaba": ["taskId": "task-id", "videoUrl": "https://proxy.example/result.mp4", "actualPrompt": "Expanded scene", "usage": ["duration": 12.5, "outputVideoDuration": 8.5, "inputVideoDuration": 4, "fps": .number(1e100), "resolution": 720, "size": "1280x720", "ratio": "16:9"]]])
+        #expect(response.timestamp == Self.date)
+        #expect(response.headers?["x-response"] == "response-id")
     }
 
-    @Test("throws when task status is FAILED")
-    func errorFailedStatus() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: [
-            "output": [
-                "task_id": "task-abc-123",
-                "task_status": "FAILED",
-                "message": "Content policy violation",
-            ],
-            "request_id": "req-004",
+    @Test("completed metadata preserves nullable base usage and omits null wan3-only facts")
+    func nullableUsage() async throws {
+        let endpoint = Endpoint([
+            "output": ["task_id": "task-id", "task_status": "SUCCEEDED", "video_url": "https://media.example/result.mp4"],
+            "usage": ["duration": .null, "output_video_duration": 1.5, "SR": .null, "size": .null, "input_video_duration": .null, "fps": .null, "ratio": .null]
         ])
+        guard case .completed(_, _, let metadata, _) = try await model(endpoint: endpoint).doStatus(options: .init(operation: ["taskId": "task-id"])) else {
+            Issue.record("Expected completed operation"); return
+        }
+        #expect(metadata?["alibaba"]?["usage"] == ["duration": .null, "outputVideoDuration": 1.5, "resolution": .null, "size": .null])
+    }
 
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
+    @Test("failed and canceled operations return terminal errors with response diagnostics", arguments: ["FAILED", "CANCELED"])
+    func failedOperation(status: String) async throws {
+        let endpoint = Endpoint(["output": ["task_id": "task-id", "task_status": .string(status), "message": "Policy decision \u{FEFF}"]])
+        guard case .error(let error, let metadata, let response) = try await model(endpoint: endpoint).doStatus(options: .init(operation: ["taskId": "task-id"])) else {
+            Issue.record("Expected terminal error"); return
+        }
+        #expect(error == "Video generation \(status.lowercased()). Task ID: task-id. Policy decision")
+        #expect(metadata == nil)
+        #expect(response.timestamp == Self.date)
+        #expect(response.modelId == "wan2.6-t2v")
+    }
 
+    @Test("unknown task statuses and null outputs remain pending", arguments: [JSONValue.null, ["task_id": "task-id", "task_status": "NEW_STATUS"]])
+    func pendingOperation(output: JSONValue) async throws {
+        let endpoint = Endpoint(["output": output])
+        guard case .pending = try await model(endpoint: endpoint).doStatus(options: .init(operation: ["taskId": "task-id"])) else {
+            Issue.record("Expected pending operation"); return
+        }
+    }
+
+    @Test("missing creation ID or completed URL yields the provider generation error", arguments: [false, true])
+    func missingResult(status: Bool) async throws {
+        let payload: JSONValue = status ? ["output": ["task_id": "task-id", "task_status": "SUCCEEDED", "video_url": .null]] : ["output": .null, "request_id": "request-id"]
+        let instance = model(endpoint: Endpoint(payload))
         do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("failed"))
+            if status { _ = try await instance.doStatus(options: .init(operation: ["taskId": "task-id"])) }
+            else { _ = try await instance.doStart(options: .init(n: 1)) }
+            Issue.record("Expected generation error")
+        } catch let error as any AISDKError {
+            #expect(error.name == "ALIBABA_VIDEO_GENERATION_ERROR")
+            #expect(error.message.contains(status ? "No video URL" : "No task_id"))
         }
     }
 
-    @Test("throws when task status is CANCELED")
-    func errorCanceledStatus() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: [
-            "output": [
-                "task_id": "task-abc-123",
-                "task_status": "CANCELED",
-            ],
-            "request_id": "req-005",
-        ])
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
+    @Test("native API error bodies retain status, provider message and headers", arguments: [false, true])
+    func apiError(status: Bool) async throws {
+        let endpoint = Endpoint(["code": .null, "message": "Denied", "request_id": .null], status: 401)
+        let instance = model(endpoint: endpoint)
         do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("canceled"))
+            if status { _ = try await instance.doStatus(options: .init(operation: ["taskId": "task-id"])) }
+            else { _ = try await instance.doStart(options: .init(n: 1)) }
+            Issue.record("Expected API error")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 401)
+            #expect(error.message == "Denied")
+            #expect(!error.isRetryable)
+            #expect(error.responseHeaders?["x-response"] == "response-id")
+            #expect(try JSONDecoder().decode(JSONValue.self, from: Data(#require(error.responseBody).utf8)) == ["code": .null, "message": "Denied", "request_id": .null])
         }
     }
 
-    @Test("throws when no video URL in succeeded response")
-    func errorNoVideoURL() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-        try await stub.setJSON(method: "GET", url: taskURL, body: [
-            "output": [
-                "task_id": "task-abc-123",
-                "task_status": "SUCCEEDED",
-                "video_url": NSNull(),
-            ],
-            "request_id": "req-006",
-        ])
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        do {
-            _ = try await model.doGenerate(options: defaultOptions)
-            Issue.record("Expected error")
-        } catch {
-            #expect(String(describing: error).localizedCaseInsensitiveContains("No video URL"))
+    @Test("task wire types validate required IDs and numeric usage", arguments: [false, true])
+    func invalidResponse(status: Bool) async throws {
+        let payload: JSONValue = status ? ["output": ["task_id": "task-id", "task_status": "SUCCEEDED"], "usage": ["fps": "24"]] : ["output": ["task_id": "task-id"]]
+        let instance = model(endpoint: Endpoint(payload))
+        await #expect(throws: APICallError.self) {
+            if status { _ = try await instance.doStatus(options: .init(operation: ["taskId": "task-id"])) }
+            else { _ = try await instance.doStart(options: .init(n: 1)) }
         }
     }
 
-    @Test("polls until SUCCEEDED status")
-    func pollingUntilSucceeded() async throws {
-        let stub = HTTPStub()
-        try await stub.setJSON(method: "POST", url: createURL, body: createTaskResponse)
-
-        await stub.setHandler(method: "GET", url: taskURL) { request, callNumber in
-            let body: Any
-            if callNumber < 3 {
-                body = [
-                    "output": [
-                        "task_id": "task-abc-123",
-                        "task_status": callNumber == 1 ? "PENDING" : "RUNNING",
-                    ],
-                    "request_id": "req-poll-\(callNumber)",
-                ]
-            } else {
-                body = self.succeededTaskResponse
-            }
-
-            let data = try AlibabaVideoModelTests.jsonData(body)
-            return FetchResponse(
-                body: .data(data),
-                urlResponse: AlibabaVideoModelTests.httpResponse(url: request.url!, statusCode: 200, headers: ["Content-Type": "application/json"])
-            )
+    @Test("video option schemas reject unsupported kinds, invalid ratios and nonpositive intervals", arguments: [
+        ["media": [["type": "unknown", "url": "url"]]] as JSONObject, ["ratio": "2:1"], ["pollIntervalMs": 0], ["audio": "false"]
+    ])
+    func invalidOptions(settings: JSONObject) async throws {
+        await #expect(throws: InvalidArgumentError.self) {
+            try await model(endpoint: Endpoint()).doStart(options: .init(n: 1, providerOptions: ["alibaba": settings]))
         }
-
-        let fetch: FetchFunction = { request in try await stub.handle(request) }
-        let model = makeModel(fetch: fetch)
-
-        let result = try await model.doGenerate(options: defaultOptions)
-        #expect(result.videos.count == 1)
     }
+
+    @Test("nullish video options and fractional polling settings retain source defaults")
+    func nullishOptions() async throws {
+        let endpoint = Endpoint { (request: URLRequest) throws -> Void in #expect(try body(request) == ["model": "wan2.6-t2v", "input": [:], "parameters": [:]]) }
+        let result = try await model(endpoint: endpoint).doStart(options: .init(n: 1, fps: 0, providerOptions: ["alibaba": [
+            "negativePrompt": .null, "audioUrl": .null, "promptExtend": .null, "shotType": .null, "watermark": .null, "audio": .null,
+            "referenceUrls": .null, "media": .null, "ratio": .null, "pollIntervalMs": 0.5, "pollTimeoutMs": .number(1e100), "future": ["kept": true]
+        ]]))
+        #expect(result.operation == ["taskId": "task-id"])
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test("start and status honor aborted requests", arguments: [false, true])
+    func cancellation(status: Bool) async throws {
+        let instance = model(endpoint: Endpoint())
+        await #expect(throws: CancellationError.self) {
+            if status { _ = try await instance.doStatus(options: .init(operation: ["taskId": "task-id"], abortSignal: { true })) }
+            else { _ = try await instance.doStart(options: .init(n: 1, abortSignal: { true })) }
+        }
+    }
+}
+
+private func feature(_ warning: SharedV4Warning) -> String {
+    if case .unsupported(let feature, _) = warning { return feature }
+    return "other"
 }
