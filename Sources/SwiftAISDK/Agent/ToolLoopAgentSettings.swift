@@ -50,7 +50,7 @@ public struct ToolLoopAgentCall<CallOptions: Sendable>: Sendable {
     public var messages: [ModelMessage]?
     public var instructions: Instructions?
     public var allowSystemInMessages: Bool?
-    public var model: LanguageModel
+    public var model: any LanguageModelConvertible
     public var tools: ToolSet?
     public var toolChoice: ToolChoice?
     public var stopWhen: [StopCondition]
@@ -88,7 +88,7 @@ public struct ToolLoopAgentSettings<CallOptions: Sendable, OutputValue: Sendable
     public var instructions: Instructions?
     /// Whether `prompt` and `messages` may contain system messages. Default: `false`.
     public var allowSystemInMessages: Bool?
-    public var model: LanguageModel
+    public var model: any LanguageModelConvertible
     public var tools: ToolSet?
     public var toolChoice: ToolChoice?
     /// Stop conditions for the tool loop. Default: 20 steps.
@@ -131,7 +131,7 @@ public struct ToolLoopAgentSettings<CallOptions: Sendable, OutputValue: Sendable
         id: String? = nil,
         instructions: Instructions? = nil,
         allowSystemInMessages: Bool? = nil,
-        model: LanguageModel,
+        model: any LanguageModelConvertible,
         tools: ToolSet? = nil,
         toolChoice: ToolChoice? = nil,
         stopWhen: [StopCondition]? = nil,
@@ -206,7 +206,7 @@ public extension ToolLoopAgentSettings where OutputValue == String, PartialOutpu
         id: String? = nil,
         instructions: Instructions? = nil,
         allowSystemInMessages: Bool? = nil,
-        model: LanguageModel,
+        model: any LanguageModelConvertible,
         tools: ToolSet? = nil,
         toolChoice: ToolChoice? = nil,
         stopWhen: [StopCondition]? = nil,

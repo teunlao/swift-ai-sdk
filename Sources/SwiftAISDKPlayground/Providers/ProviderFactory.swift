@@ -16,10 +16,10 @@ enum ProviderFactory {
                 baseURL: configuration.baseURLOverrides["gateway"]?.absoluteString,
                 apiKey: configuration.keys.gateway
             ))
-            return .v4(try provider.languageModel(modelId: modelId))
+            return .model(try provider.languageModel(modelId: modelId))
 
         case "openai":
-            return .v4(try OpenAIPlaygroundFactory.makeLanguageModel(
+            return .model(try OpenAIPlaygroundFactory.makeLanguageModel(
                 modelId: modelId,
                 configuration: configuration,
                 logger: logger

@@ -18,7 +18,7 @@ You can mix and match custom providers, the provider registry, and [middleware](
 
 ## Custom Providers
 
-You can create a Provider V4 custom provider using `customProviderV4`.
+Create a custom provider using `customProvider`; pass native models directly.
 
 ### Example: Custom Model Settings
 
@@ -30,7 +30,7 @@ import SwiftAISDK
 import OpenAIProvider
 
 // Custom provider with different provider options:
-let customOpenAI = customProviderV4(
+let customOpenAI = customProvider(
   languageModels: [
     // Replacement model with custom provider options:
     "gpt-4o": wrapLanguageModel(
@@ -64,7 +64,7 @@ import SwiftAISDK
 import AnthropicProvider
 
 // Custom provider with alias names:
-let customAnthropic = customProviderV4(
+let customAnthropic = customProvider(
   languageModels: [
     "opus": try anthropic.languageModel(modelId: "claude-opus-4-8"),
     "sonnet": try anthropic.languageModel(modelId: "claude-sonnet-5"),
@@ -83,7 +83,7 @@ import SwiftAISDK
 import AnthropicProvider
 import OpenAIProvider
 
-let myProvider = customProviderV4(
+let myProvider = customProvider(
   languageModels: [
     "text-medium": try anthropic.languageModel(modelId: "claude-sonnet-5"),
     "text-small": try openai.languageModel("gpt-4o-mini"),
@@ -222,10 +222,10 @@ import GroqProvider
 let registry = createProviderRegistry(
   providers: [
     // Pass through a full provider with a namespace prefix
-    "xai": asProviderV4(xai),
+    "xai": xai,
 
     // Setup model name aliases
-    "anthropic": customProviderV4(
+    "anthropic": customProvider(
       languageModels: [
         "fast": try anthropic.languageModel(modelId: "claude-haiku-4-5"),
 
@@ -235,7 +235,7 @@ let registry = createProviderRegistry(
         // Extended reasoning model configuration:
         "reasoning": wrapLanguageModel(
           model: try anthropic.languageModel(modelId: "claude-opus-4-8"),
-          middleware: LanguageModelV4MiddlewareInput.single(defaultSettingsMiddleware(
+          middleware: LanguageModelMiddlewareInput.single(defaultSettingsMiddleware(
             settings: DefaultSettings(
               maxOutputTokens: 100000,
               providerOptions: ["anthropic": [
@@ -253,8 +253,8 @@ let registry = createProviderRegistry(
     ),
 
     // Limit a provider to certain models without a fallback
-    "groq": customProviderV4(
-      legacyLanguageModels: [
+    "groq": customProvider(
+      languageModels: [
         "gemma2-9b-it": try groq.languageModel(modelId: "gemma2-9b-it"),
         "qwen-qwq-32b": try groq.languageModel(modelId: "qwen-qwq-32b")
       ]

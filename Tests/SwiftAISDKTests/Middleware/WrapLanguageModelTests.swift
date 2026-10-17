@@ -12,30 +12,6 @@ import Testing
 
 // MARK: - Test Helpers
 
-extension LanguageModelV3GenerateResult {
-    /// Extract first text content for testing
-    var firstText: String? {
-        for item in content {
-            if case .text(let part) = item { return part.text }
-        }
-        return nil
-    }
-
-    /// Create modified result with transformed text
-    func withModifiedText(_ transform: (String) -> String) -> Self {
-        guard let text = firstText else { return self }
-        return LanguageModelV3GenerateResult(
-            content: [.text(.init(text: transform(text)))],
-            finishReason: finishReason,
-            usage: usage,
-            providerMetadata: providerMetadata,
-            request: request,
-            response: response,
-            warnings: warnings
-        )
-    }
-}
-
 extension LanguageModelV4GenerateResult {
     /// Extract first text content for testing.
     var firstText: String? {
@@ -71,8 +47,8 @@ struct WrapLanguageModelTests {
         @Test("should pass through by default")
         func passThrough() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(modelId: "test-model"),
-                middleware: .single(LanguageModelV3Middleware())
+                model: MockLanguageModelV4(modelId: "test-model"),
+                middleware: .single(LanguageModelV4Middleware())
             )
 
             #expect(wrappedModel.modelId == "test-model")
@@ -81,8 +57,8 @@ struct WrapLanguageModelTests {
         @Test("should use middleware overrideModelId if provided")
         func middlewareOverride() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(modelId: "test-model"),
-                middleware: .single(LanguageModelV3Middleware(
+                model: MockLanguageModelV4(modelId: "test-model"),
+                middleware: .single(LanguageModelV4Middleware(
                     overrideModelId: { _ in "override-model" }
                 ))
             )
@@ -93,8 +69,8 @@ struct WrapLanguageModelTests {
         @Test("should use modelId parameter if provided")
         func parameterOverride() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(modelId: "test-model"),
-                middleware: .single(LanguageModelV3Middleware()),
+                model: MockLanguageModelV4(modelId: "test-model"),
+                middleware: .single(LanguageModelV4Middleware()),
                 modelId: "override-model"
             )
 
@@ -204,8 +180,8 @@ struct WrapLanguageModelTests {
         @Test("should pass through by default")
         func passThrough() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(provider: "test-provider"),
-                middleware: .single(LanguageModelV3Middleware())
+                model: MockLanguageModelV4(provider: "test-provider"),
+                middleware: .single(LanguageModelV4Middleware())
             )
 
             #expect(wrappedModel.provider == "test-provider")
@@ -214,8 +190,8 @@ struct WrapLanguageModelTests {
         @Test("should use middleware overrideProvider if provided")
         func middlewareOverride() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(provider: "test-provider"),
-                middleware: .single(LanguageModelV3Middleware(
+                model: MockLanguageModelV4(provider: "test-provider"),
+                middleware: .single(LanguageModelV4Middleware(
                     overrideProvider: { _ in "override-provider" }
                 ))
             )
@@ -226,8 +202,8 @@ struct WrapLanguageModelTests {
         @Test("should use providerId parameter if provided")
         func parameterOverride() async throws {
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(provider: "test-provider"),
-                middleware: .single(LanguageModelV3Middleware()),
+                model: MockLanguageModelV4(provider: "test-provider"),
+                middleware: .single(LanguageModelV4Middleware()),
                 providerId: "override-provider"
             )
 
@@ -246,10 +222,10 @@ struct WrapLanguageModelTests {
             let originalUrls = ["original/*": [supportedUrls]]
 
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(
+                model: MockLanguageModelV4(
                     supportedUrls: .value(originalUrls)
                 ),
-                middleware: .single(LanguageModelV3Middleware())
+                middleware: .single(LanguageModelV4Middleware())
             )
 
             let result = try await wrappedModel.supportedUrls
@@ -263,10 +239,10 @@ struct WrapLanguageModelTests {
             let originalUrls = try ["original/*": [NSRegularExpression(pattern: "^https://.*$")]]
 
             let wrappedModel = wrapLanguageModel(
-                model: MockLanguageModelV3(
+                model: MockLanguageModelV4(
                     supportedUrls: .value(originalUrls)
                 ),
-                middleware: .single(LanguageModelV3Middleware(
+                middleware: .single(LanguageModelV4Middleware(
                     overrideSupportedUrls: { _ in
                         ["override/*": [overrideRegex]]
                     }
@@ -285,31 +261,31 @@ struct WrapLanguageModelTests {
     func transformParamsForGenerate() async throws {
         actor CallTracker {
             var called = false
-            var capturedType: LanguageModelV3Middleware.OperationType?
+            var capturedType: LanguageModelV4Middleware.OperationType?
 
-            func markCalled(type: LanguageModelV3Middleware.OperationType) {
+            func markCalled(type: LanguageModelV4Middleware.OperationType) {
                 called = true
                 capturedType = type
             }
 
             func wasCalled() -> Bool { called }
-            func getType() -> LanguageModelV3Middleware.OperationType? { capturedType }
+            func getType() -> LanguageModelV4Middleware.OperationType? { capturedType }
         }
 
         let tracker = CallTracker()
-        let mockModel = MockLanguageModelV3(
+        let mockModel = MockLanguageModelV4(
             doGenerate: .array([
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+                    usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                 )
             ])
         )
 
         let wrappedModel = wrapLanguageModel(
             model: mockModel,
-            middleware: .single(LanguageModelV3Middleware(
+            middleware: .single(LanguageModelV4Middleware(
                 transformParams: { type, params, _ in
                     await tracker.markCalled(type: type)
                     return params
@@ -317,10 +293,10 @@ struct WrapLanguageModelTests {
             ))
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: [
                 .user(
-                    content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                    content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                     providerOptions: nil
                 )
             ]
@@ -340,22 +316,22 @@ struct WrapLanguageModelTests {
     func transformParamsForStream() async throws {
         actor CallTracker {
             var called = false
-            var capturedType: LanguageModelV3Middleware.OperationType?
+            var capturedType: LanguageModelV4Middleware.OperationType?
 
-            func markCalled(type: LanguageModelV3Middleware.OperationType) {
+            func markCalled(type: LanguageModelV4Middleware.OperationType) {
                 called = true
                 capturedType = type
             }
 
             func wasCalled() -> Bool { called }
-            func getType() -> LanguageModelV3Middleware.OperationType? { capturedType }
+            func getType() -> LanguageModelV4Middleware.OperationType? { capturedType }
         }
 
         let tracker = CallTracker()
-        let mockModel = MockLanguageModelV3(
+        let mockModel = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(
-                    stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+                LanguageModelV4StreamResult(
+                    stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
                         continuation.finish()
                     }
                 )
@@ -364,7 +340,7 @@ struct WrapLanguageModelTests {
 
         let wrappedModel = wrapLanguageModel(
             model: mockModel,
-            middleware: .single(LanguageModelV3Middleware(
+            middleware: .single(LanguageModelV4Middleware(
                 transformParams: { type, params, _ in
                     await tracker.markCalled(type: type)
                     return params
@@ -372,10 +348,10 @@ struct WrapLanguageModelTests {
             ))
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: [
                 .user(
-                    content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                    content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                     providerOptions: nil
                 )
             ]
@@ -407,20 +383,20 @@ struct WrapLanguageModelTests {
         }
 
         let tracker = CallTracker()
-        let mockModel = MockLanguageModelV3(
+        let mockModel = MockLanguageModelV4(
             doGenerate: .function { _ in
                 await tracker.markDoGenerateCalled()
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+                    usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                 )
             }
         )
 
         let wrappedModel = wrapLanguageModel(
             model: mockModel,
-            middleware: .single(LanguageModelV3Middleware(
+            middleware: .single(LanguageModelV4Middleware(
                 wrapGenerate: { doGenerate, _, _, _ in
                     await tracker.markWrapCalled()
                     return try await doGenerate()
@@ -428,10 +404,10 @@ struct WrapLanguageModelTests {
             ))
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: [
                 .user(
-                    content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                    content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                     providerOptions: nil
                 )
             ]
@@ -462,11 +438,11 @@ struct WrapLanguageModelTests {
         }
 
         let tracker = CallTracker()
-        let mockModel = MockLanguageModelV3(
+        let mockModel = MockLanguageModelV4(
             doStream: .function { _ in
                 await tracker.markDoStreamCalled()
-                return LanguageModelV3StreamResult(
-                    stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+                return LanguageModelV4StreamResult(
+                    stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
                         continuation.finish()
                     }
                 )
@@ -475,7 +451,7 @@ struct WrapLanguageModelTests {
 
         let wrappedModel = wrapLanguageModel(
             model: mockModel,
-            middleware: .single(LanguageModelV3Middleware(
+            middleware: .single(LanguageModelV4Middleware(
                 wrapStream: { _, doStream, _, _ in
                     await tracker.markWrapCalled()
                     return try await doStream()
@@ -483,10 +459,10 @@ struct WrapLanguageModelTests {
             ))
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: [
                 .user(
-                    content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                    content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                     providerOptions: nil
                 )
             ]
@@ -520,12 +496,12 @@ struct WrapLanguageModelTests {
             }
 
             let tracker = CallTracker()
-            let mockModel = MockLanguageModelV3(
+            let mockModel = MockLanguageModelV4(
                 doGenerate: .array([
-                    LanguageModelV3GenerateResult(
+                    LanguageModelV4GenerateResult(
                         content: [],
                         finishReason: .stop,
-                        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+                        usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                     )
                 ])
             )
@@ -533,13 +509,13 @@ struct WrapLanguageModelTests {
             let wrappedModel = wrapLanguageModel(
                 model: mockModel,
                 middleware: .multiple([
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         transformParams: { type, params, _ in
                             await tracker.markCall1()
                             return params
                         }
                     ),
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         transformParams: { type, params, _ in
                             await tracker.markCall2()
                             return params
@@ -548,10 +524,10 @@ struct WrapLanguageModelTests {
                 ])
             )
 
-            let options = LanguageModelV3CallOptions(
+            let options = LanguageModelV4CallOptions(
                 prompt: [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                        content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                         providerOptions: nil
                     )
                 ]
@@ -580,10 +556,10 @@ struct WrapLanguageModelTests {
             }
 
             let tracker = CallTracker()
-            let mockModel = MockLanguageModelV3(
+            let mockModel = MockLanguageModelV4(
                 doStream: .array([
-                    LanguageModelV3StreamResult(
-                        stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+                    LanguageModelV4StreamResult(
+                        stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
                             continuation.finish()
                         }
                     )
@@ -593,13 +569,13 @@ struct WrapLanguageModelTests {
             let wrappedModel = wrapLanguageModel(
                 model: mockModel,
                 middleware: .multiple([
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         transformParams: { type, params, _ in
                             await tracker.markCall1()
                             return params
                         }
                     ),
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         transformParams: { type, params, _ in
                             await tracker.markCall2()
                             return params
@@ -608,10 +584,10 @@ struct WrapLanguageModelTests {
                 ])
             )
 
-            let options = LanguageModelV3CallOptions(
+            let options = LanguageModelV4CallOptions(
                 prompt: [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                        content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                         providerOptions: nil
                     )
                 ]
@@ -628,12 +604,12 @@ struct WrapLanguageModelTests {
 
         @Test("should chain multiple wrapGenerate middlewares in the correct order")
         func multipleWrapGenerate() async throws {
-            let mockModel = MockLanguageModelV3(
+            let mockModel = MockLanguageModelV4(
                 doGenerate: .function { _ in
-                    LanguageModelV3GenerateResult(
+                    LanguageModelV4GenerateResult(
                         content: [.text(.init(text: "final generate result"))],
                         finishReason: .stop,
-                        usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
+                        usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5))
                     )
                 }
             )
@@ -654,7 +630,7 @@ struct WrapLanguageModelTests {
             let wrappedModel = wrapLanguageModel(
                 model: mockModel,
                 middleware: .multiple([
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         wrapGenerate: { doGenerate, _, _, _ in
                             await tracker.markCall1()
                             let result = try await doGenerate()
@@ -663,7 +639,7 @@ struct WrapLanguageModelTests {
                             }
                         }
                     ),
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         wrapGenerate: { doGenerate, _, _, _ in
                             await tracker.markCall2()
                             let result = try await doGenerate()
@@ -675,10 +651,10 @@ struct WrapLanguageModelTests {
                 ])
             )
 
-            let options = LanguageModelV3CallOptions(
+            let options = LanguageModelV4CallOptions(
                 prompt: [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                        content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                         providerOptions: nil
                     )
                 ]
@@ -696,10 +672,10 @@ struct WrapLanguageModelTests {
 
         @Test("should chain multiple wrapStream middlewares in the correct order")
         func multipleWrapStream() async throws {
-            let mockModel = MockLanguageModelV3(
+            let mockModel = MockLanguageModelV4(
                 doStream: .function { _ in
-                    LanguageModelV3StreamResult(
-                        stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+                    LanguageModelV4StreamResult(
+                        stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
                             continuation.finish()
                         }
                     )
@@ -722,13 +698,13 @@ struct WrapLanguageModelTests {
             let wrappedModel = wrapLanguageModel(
                 model: mockModel,
                 middleware: .multiple([
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         wrapStream: { _, doStream, _, _ in
                             await tracker.markCall1()
                             return try await doStream()
                         }
                     ),
-                    LanguageModelV3Middleware(
+                    LanguageModelV4Middleware(
                         wrapStream: { _, doStream, _, _ in
                             await tracker.markCall2()
                             return try await doStream()
@@ -737,10 +713,10 @@ struct WrapLanguageModelTests {
                 ])
             )
 
-            let options = LanguageModelV3CallOptions(
+            let options = LanguageModelV4CallOptions(
                 prompt: [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                        content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                         providerOptions: nil
                     )
                 ]
@@ -761,8 +737,8 @@ struct WrapLanguageModelTests {
     @Test("should support models that use 'this' context in supportedUrls")
     func supportedUrlsContextBinding() async throws {
         // Create a custom model that uses computed property for supportedUrls
-        final class MockLanguageModelWithImageSupport: LanguageModelV3, @unchecked Sendable {
-            let specificationVersion = "v3"
+        final class MockLanguageModelWithImageSupport: LanguageModelV4, @unchecked Sendable {
+            let specificationVersion = "v4"
             let provider = "test-provider"
             let modelId = "test-model"
 
@@ -781,11 +757,11 @@ struct WrapLanguageModelTests {
                 }
             }
 
-            func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+            func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
                 fatalError("Not implemented")
             }
 
-            func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+            func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
                 fatalError("Not implemented")
             }
         }
@@ -794,7 +770,7 @@ struct WrapLanguageModelTests {
 
         let wrappedModel = wrapLanguageModel(
             model: model,
-            middleware: .single(LanguageModelV3Middleware())
+            middleware: .single(LanguageModelV4Middleware())
         )
 
         let urls = try await wrappedModel.supportedUrls

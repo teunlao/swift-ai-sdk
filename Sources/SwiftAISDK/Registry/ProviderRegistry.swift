@@ -2,347 +2,146 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Provider registry for managing multiple AI providers.
-
- Port of `@ai-sdk/ai/src/registry/provider-registry.ts`.
-
- The registry is V4-first internally: legacy V3 providers are accepted by the
- compatibility factory and normalized through `asProviderV4` at registration time.
- */
-
-/// Protocol defining provider registry interface.
 public protocol ProviderRegistryProvider: Sendable {
-    /// Returns the language model with the given combined ID (providerId:modelId).
     func languageModel(id: String) throws -> any LanguageModelV4
-
-    /// Returns the embedding model with the given combined ID.
     func embeddingModel(id: String) throws -> any EmbeddingModelV4
-
-    /// Backward-compatible alias for `embeddingModel(id:)`.
-    func textEmbeddingModel(id: String) throws -> any EmbeddingModelV4
-
-    /// Returns the image model with the given combined ID.
     func imageModel(id: String) throws -> any ImageModelV4
-
-    /// Returns the video model with the given combined ID when the original provider exposes a legacy video model.
     func videoModel(id: String) throws -> any VideoModelV4
-
-    /// Returns the reranking model with the given combined ID.
     func rerankingModel(id: String) throws -> any RerankingModelV4
-
-    /// Returns the transcription model with the given combined ID.
     func transcriptionModel(id: String) throws -> any TranscriptionModelV4
-
-    /// Returns the speech model with the given combined ID.
     func speechModel(id: String) throws -> any SpeechModelV4
-
-    /// Returns the files API for a provider ID.
     func files(id: String) throws -> any FilesV4
-
-    /// Returns the skills API for a provider ID.
     func skills(id: String) throws -> any SkillsV4
 }
 
-/**
- Creates a registry for legacy V3 providers with optional middleware functionality.
-
- Legacy providers are normalized to the V4 surface immediately. Language model
- middleware remains V3-based for compatibility and is applied before V4 adaptation.
- */
 public struct ProviderRegistryOptions: Sendable {
     public var separator: String
-    public var languageModelMiddleware: LanguageModelV4MiddlewareInput?
-    public var legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
-    public var imageModelMiddleware: ImageModelMiddlewareInput? = nil
+    public var languageModelMiddleware: LanguageModelMiddlewareInput?
+    public var imageModelMiddleware: ImageModelMiddlewareInput?
 
-    public init(
-        separator: String = ":",
-        languageModelMiddleware: LanguageModelV4MiddlewareInput? = nil,
-        imageModelMiddleware: ImageModelMiddlewareInput? = nil
-    ) {
+    public init(separator: String = ":", languageModelMiddleware: LanguageModelMiddlewareInput? = nil, imageModelMiddleware: ImageModelMiddlewareInput? = nil) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
-        self.legacyLanguageModelMiddleware = nil
         self.imageModelMiddleware = imageModelMiddleware
     }
 
-    public init(
-        separator: String = ":",
-        legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
-    ) {
+    public init(separator: String = ":", languageModelMiddleware: [LanguageModelV4Middleware]) {
         self.separator = separator
-        self.languageModelMiddleware = nil
-        self.legacyLanguageModelMiddleware = legacyLanguageModelMiddleware
+        self.languageModelMiddleware = languageModelMiddleware.isEmpty ? nil : .multiple(languageModelMiddleware)
+        imageModelMiddleware = nil
     }
 
-    public init(
-        separator: String = ":",
-        languageModelMiddleware: [LanguageModelV4Middleware]
-    ) {
-        self.separator = separator
-        self.legacyLanguageModelMiddleware = nil
-        if languageModelMiddleware.isEmpty {
-            self.languageModelMiddleware = nil
-        } else if languageModelMiddleware.count == 1, let middleware = languageModelMiddleware.first {
-            self.languageModelMiddleware = .single(middleware)
-        } else {
-            self.languageModelMiddleware = .multiple(languageModelMiddleware)
-        }
-    }
-
-    public init(
-        separator: String = ":",
-        languageModelMiddleware: LanguageModelV4Middleware
-    ) {
+    public init(separator: String = ":", languageModelMiddleware: LanguageModelV4Middleware) {
         self.separator = separator
         self.languageModelMiddleware = .single(languageModelMiddleware)
-        self.legacyLanguageModelMiddleware = nil
+        imageModelMiddleware = nil
     }
-
-    public init(
-        separator: String = ":",
-        languageModelMiddleware: [LanguageModelV3Middleware]
-    ) {
-        self.separator = separator
-        self.languageModelMiddleware = nil
-        if languageModelMiddleware.isEmpty {
-            self.legacyLanguageModelMiddleware = nil
-        } else if languageModelMiddleware.count == 1, let middleware = languageModelMiddleware.first {
-            self.legacyLanguageModelMiddleware = .single(middleware)
-        } else {
-            self.legacyLanguageModelMiddleware = .multiple(languageModelMiddleware)
-        }
-    }
-
-    public init(
-        separator: String = ":",
-        languageModelMiddleware: LanguageModelV3Middleware
-    ) {
-        self.separator = separator
-        self.languageModelMiddleware = nil
-        self.legacyLanguageModelMiddleware = .single(languageModelMiddleware)
-    }
-}
-
-public func createProviderRegistry(
-    providers: [String: any ProviderV3],
-    options: ProviderRegistryOptions = ProviderRegistryOptions()
-) -> ProviderRegistryProvider {
-    DefaultProviderRegistry(
-        separator: options.separator,
-        languageModelMiddleware: options.languageModelMiddleware,
-        legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
-        imageModelMiddleware: options.imageModelMiddleware,
-        providers: providers.mapValues(asProviderV4),
-        legacyProviders: providers
-    )
 }
 
 public func createProviderRegistry(
     providers: [String: any ProviderV4],
     options: ProviderRegistryOptions = ProviderRegistryOptions()
 ) -> ProviderRegistryProvider {
-    createProviderRegistryV4(providers: providers, options: options)
+    DefaultProviderRegistry(separator: options.separator, languageModelMiddleware: options.languageModelMiddleware,
+        imageModelMiddleware: options.imageModelMiddleware, providers: providers)
 }
 
-public func createProviderRegistryV4(
-    providers: [String: any ProviderV4],
-    options: ProviderRegistryOptions = ProviderRegistryOptions()
-) -> ProviderRegistryProvider {
-    DefaultProviderRegistry(
-        separator: options.separator,
-        languageModelMiddleware: options.languageModelMiddleware,
-        legacyLanguageModelMiddleware: options.legacyLanguageModelMiddleware,
-        imageModelMiddleware: options.imageModelMiddleware,
-        providers: providers,
-        legacyProviders: [:]
-    )
-}
-
-/// Default implementation of provider registry.
 final class DefaultProviderRegistry: ProviderRegistryProvider {
     private let providers: [String: any ProviderV4]
-    private let legacyProviders: [String: any ProviderV3]
     private let separator: String
-    private let languageModelMiddleware: LanguageModelV4MiddlewareInput?
-    private let legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?
+    private let languageModelMiddleware: LanguageModelMiddlewareInput?
     private let imageModelMiddleware: ImageModelMiddlewareInput?
 
-    init(
-        separator: String,
-        languageModelMiddleware: LanguageModelV4MiddlewareInput?,
-        legacyLanguageModelMiddleware: LanguageModelMiddlewareInput?,
-        imageModelMiddleware: ImageModelMiddlewareInput? = nil,
-        providers: [String: any ProviderV4] = [:],
-        legacyProviders: [String: any ProviderV3] = [:]
-    ) {
+    init(separator: String, languageModelMiddleware: LanguageModelMiddlewareInput?, imageModelMiddleware: ImageModelMiddlewareInput? = nil,
+         providers: [String: any ProviderV4] = [:]) {
         self.separator = separator
         self.languageModelMiddleware = languageModelMiddleware
-        self.legacyLanguageModelMiddleware = legacyLanguageModelMiddleware
         self.imageModelMiddleware = imageModelMiddleware
         self.providers = providers
-        self.legacyProviders = legacyProviders
     }
 
-    func registerProvider(id: String, provider: any ProviderV3) -> DefaultProviderRegistry {
-        var newProviders = providers
-        var newLegacyProviders = legacyProviders
-        newProviders[id] = asProviderV4(provider)
-        newLegacyProviders[id] = provider
-        return DefaultProviderRegistry(
-            separator: separator,
-            languageModelMiddleware: languageModelMiddleware,
-            legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
-            imageModelMiddleware: imageModelMiddleware,
-            providers: newProviders,
-            legacyProviders: newLegacyProviders
-        )
+    func registerProvider(id: String, provider: any ProviderV4) -> DefaultProviderRegistry {
+        var providers = providers
+        providers[id] = provider
+        return DefaultProviderRegistry(separator: separator, languageModelMiddleware: languageModelMiddleware,
+            imageModelMiddleware: imageModelMiddleware, providers: providers)
     }
 
-    func registerProviderV4(id: String, provider: any ProviderV4) -> DefaultProviderRegistry {
-        var newProviders = providers
-        newProviders[id] = provider
-        return DefaultProviderRegistry(
-            separator: separator,
-            languageModelMiddleware: languageModelMiddleware,
-            legacyLanguageModelMiddleware: legacyLanguageModelMiddleware,
-            imageModelMiddleware: imageModelMiddleware,
-            providers: newProviders,
-            legacyProviders: legacyProviders
-        )
-    }
-
-    private func getProvider(
-        id: String,
-        modelType: NoSuchModelError.ModelType
-    ) throws -> any ProviderV4 {
+    private func getProvider(id: String, modelType: NoSuchModelError.ModelType) throws -> any ProviderV4 {
         guard let provider = providers[id] else {
-            throw NoSuchProviderError(
-                modelId: id,
-                modelType: modelType,
-                providerId: id,
-                availableProviders: Array(providers.keys)
-            )
+            throw NoSuchProviderError(modelId: id, modelType: modelType, providerId: id, availableProviders: Array(providers.keys))
         }
         return provider
     }
 
-    private func splitId(
-        id: String,
-        modelType: NoSuchModelError.ModelType
-    ) throws -> (providerId: String, modelId: String) {
+    private func splitId(id: String, modelType: NoSuchModelError.ModelType) throws -> (providerId: String, modelId: String) {
         guard let range = id.range(of: separator) else {
-            throw NoSuchModelError(
-                modelId: id,
-                modelType: modelType,
-                message: "Invalid \(modelType.rawValue) id for registry: \(id) " +
-                    "(must be in the format \"providerId\(separator)modelId\")"
-            )
+            throw NoSuchModelError(modelId: id, modelType: modelType,
+                message: "Invalid \(modelType.rawValue) id for registry: \(id) (must be in the format \"providerId\(separator)modelId\")")
         }
-
         return (String(id[..<range.lowerBound]), String(id[range.upperBound...]))
     }
 
-    public func languageModel(id: String) throws -> any LanguageModelV4 {
+    func languageModel(id: String) throws -> any LanguageModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .languageModel)
-
-        let provider = try getProvider(id: providerId, modelType: .languageModel)
-        let model = try provider.languageModel(modelId: modelId)
-
-        if let middleware = languageModelMiddleware {
-            return wrapLanguageModel(model: model, middleware: middleware)
-        }
-
-        if let middleware = legacyLanguageModelMiddleware, let legacyProvider = legacyProviders[providerId] {
-            let legacyModel = try legacyProvider.languageModel(modelId: modelId)
-            return asLanguageModelV4(wrapLanguageModel(model: legacyModel, middleware: middleware))
-        }
-
-        return model
+        let model = try getProvider(id: providerId, modelType: .languageModel).languageModel(modelId: modelId)
+        return languageModelMiddleware.map { wrapLanguageModel(model: model, middleware: $0) } ?? model
     }
 
-    public func embeddingModel(id: String) throws -> any EmbeddingModelV4 {
+    func embeddingModel(id: String) throws -> any EmbeddingModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .embeddingModel)
-        let provider = try getProvider(id: providerId, modelType: .embeddingModel)
-        return try provider.embeddingModel(modelId: modelId)
+        return try getProvider(id: providerId, modelType: .embeddingModel).embeddingModel(modelId: modelId)
     }
 
-    public func textEmbeddingModel(id: String) throws -> any EmbeddingModelV4 {
-        try embeddingModel(id: id)
-    }
-
-    public func imageModel(id: String) throws -> any ImageModelV4 {
+    func imageModel(id: String) throws -> any ImageModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .imageModel)
-        let provider = try getProvider(id: providerId, modelType: .imageModel)
-        let model = try provider.imageModel(modelId: modelId)
+        let model = try getProvider(id: providerId, modelType: .imageModel).imageModel(modelId: modelId)
         return imageModelMiddleware.map { wrapImageModel(model: model, middleware: $0) } ?? model
     }
 
-    public func videoModel(id: String) throws -> any VideoModelV4 {
+    func videoModel(id: String) throws -> any VideoModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .videoModel)
-
-        let provider = try getProvider(id: providerId, modelType: .videoModel)
-        guard let videoProvider = provider as? any VideoProviderV4 else {
+        guard let provider = try getProvider(id: providerId, modelType: .videoModel) as? any VideoProviderV4 else {
             throw NoSuchModelError(modelId: id, modelType: .videoModel)
         }
-        return try videoProvider.videoModel(modelId: modelId)
+        return try provider.videoModel(modelId: modelId)
     }
 
-    public func rerankingModel(id: String) throws -> any RerankingModelV4 {
+    func rerankingModel(id: String) throws -> any RerankingModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .rerankingModel)
-        let provider = try getProvider(id: providerId, modelType: .rerankingModel)
-
-        guard let model = try provider.rerankingModel(modelId: modelId) else {
+        guard let model = try getProvider(id: providerId, modelType: .rerankingModel).rerankingModel(modelId: modelId) else {
             throw NoSuchModelError(modelId: id, modelType: .rerankingModel)
         }
-
         return model
     }
 
-    public func transcriptionModel(id: String) throws -> any TranscriptionModelV4 {
+    func transcriptionModel(id: String) throws -> any TranscriptionModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .transcriptionModel)
-        let provider = try getProvider(id: providerId, modelType: .transcriptionModel)
-
-        guard let model = try provider.transcriptionModel(modelId: modelId) else {
+        guard let model = try getProvider(id: providerId, modelType: .transcriptionModel).transcriptionModel(modelId: modelId) else {
             throw NoSuchModelError(modelId: id, modelType: .transcriptionModel)
         }
-
         return model
     }
 
-    public func speechModel(id: String) throws -> any SpeechModelV4 {
+    func speechModel(id: String) throws -> any SpeechModelV4 {
         let (providerId, modelId) = try splitId(id: id, modelType: .speechModel)
-        let provider = try getProvider(id: providerId, modelType: .speechModel)
-
-        guard let model = try provider.speechModel(modelId: modelId) else {
+        guard let model = try getProvider(id: providerId, modelType: .speechModel).speechModel(modelId: modelId) else {
             throw NoSuchModelError(modelId: id, modelType: .speechModel)
         }
-
         return model
     }
 
-    public func files(id: String) throws -> any FilesV4 {
-        let provider = try getProvider(id: id, modelType: .languageModel)
-
-        guard let files = try provider.files() else {
-            throw ProviderRegistryCapabilityError(
-                message: "The provider \"\(id)\" does not support file uploads. Make sure it exposes a files() method."
-            )
+    func files(id: String) throws -> any FilesV4 {
+        guard let files = try getProvider(id: id, modelType: .languageModel).files() else {
+            throw ProviderRegistryCapabilityError(message: "The provider \"\(id)\" does not support file uploads. Make sure it exposes a files() method.")
         }
-
         return files
     }
 
-    public func skills(id: String) throws -> any SkillsV4 {
-        let provider = try getProvider(id: id, modelType: .languageModel)
-
-        guard let skills = try provider.skills() else {
-            throw ProviderRegistryCapabilityError(
-                message: "The provider \"\(id)\" does not support skills. Make sure it exposes a skills() method."
-            )
+    func skills(id: String) throws -> any SkillsV4 {
+        guard let skills = try getProvider(id: id, modelType: .languageModel).skills() else {
+            throw ProviderRegistryCapabilityError(message: "The provider \"\(id)\" does not support skills. Make sure it exposes a skills() method.")
         }
-
         return skills
     }
 }
@@ -350,8 +149,5 @@ final class DefaultProviderRegistry: ProviderRegistryProvider {
 private struct ProviderRegistryCapabilityError: Error, LocalizedError, CustomStringConvertible, Sendable {
     let message: String
     var errorDescription: String? { message }
-
-    var description: String {
-        message
-    }
+    var description: String { message }
 }

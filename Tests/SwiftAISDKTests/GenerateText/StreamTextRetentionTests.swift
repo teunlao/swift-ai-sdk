@@ -5,13 +5,13 @@ import AISDKProvider
 
 @Suite("StreamText – retention")
 struct StreamTextRetentionTests {
-    private let defaultUsage = LanguageModelV3Usage(
+    private let defaultUsage = LanguageModelV4Usage(
         inputTokens: .init(total: 1),
         outputTokens: .init(total: 4)
     )
 
-    private func makeStreamParts() -> AsyncThrowingStream<LanguageModelV3StreamPart, Error> {
-        let parts: [LanguageModelV3StreamPart] = [
+    private func makeStreamParts() -> AsyncThrowingStream<LanguageModelV4StreamPart, Error> {
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -28,17 +28,17 @@ struct StreamTextRetentionTests {
 
     @Test("request contains body when requested")
     func requestContainsBodyWhenRequested() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .singleValue(
-                LanguageModelV3StreamResult(
+                LanguageModelV4StreamResult(
                     stream: makeStreamParts(),
-                    request: LanguageModelV3RequestInfo(body: "test body")
+                    request: LanguageModelV4RequestInfo(body: "test body")
                 )
             )
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             include: StreamTextInclude(requestBody: true)
         )
@@ -49,17 +49,17 @@ struct StreamTextRetentionTests {
 
     @Test("request excludes body when experimentalInclude.requestBody is false")
     func requestExcludesBodyWhenIncludeRequestBodyFalse() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .singleValue(
-                LanguageModelV3StreamResult(
+                LanguageModelV4StreamResult(
                     stream: makeStreamParts(),
-                    request: LanguageModelV3RequestInfo(body: "test body")
+                    request: LanguageModelV4RequestInfo(body: "test body")
                 )
             )
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             include: StreamTextInclude(requestBody: false)
         )

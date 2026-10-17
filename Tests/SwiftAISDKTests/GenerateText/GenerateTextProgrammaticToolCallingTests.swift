@@ -107,12 +107,12 @@ struct GenerateTextProgrammaticToolCallingTests {
 
     @Test("5 steps: provider tool triggers client tool across multiple turns (dice game fixture)")
     func diceGameFixture() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let onStepProviderMetadata = LockedValue(initial: [ProviderMetadata?]())
         let onStepFinishReasons = LockedValue(initial: [FinishReason]())
         let onFinishEvent = LockedValue(initial: Optional<GenerateTextEndEvent>.none)
 
-        let step1 = LanguageModelV3GenerateResult(
+        let step1 = LanguageModelV4GenerateResult(
             content: [
                 .text(.init(text: "I'll help you simulate this dice game between two players!")),
                 .toolCall(.init(
@@ -137,7 +137,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             providerMetadata: containerProviderMetadata
         )
 
-        let step2 = LanguageModelV3GenerateResult(
+        let step2 = LanguageModelV4GenerateResult(
             content: [
                 .toolCall(.init(
                     toolCallId: "toolu_01UvVQ2xwA6preZppeajCkYK",
@@ -155,7 +155,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             providerMetadata: containerProviderMetadata
         )
 
-        let step3 = LanguageModelV3GenerateResult(
+        let step3 = LanguageModelV4GenerateResult(
             content: [
                 .toolCall(.init(
                     toolCallId: "toolu_01T7Upuuv8C71nq7DZ9ZPNQW",
@@ -173,7 +173,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             providerMetadata: containerProviderMetadata
         )
 
-        let step4 = LanguageModelV3GenerateResult(
+        let step4 = LanguageModelV4GenerateResult(
             content: [
                 .toolCall(.init(
                     toolCallId: "toolu_01DiUBRds64sNajVPTZRrDSM",
@@ -199,7 +199,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             "content": .array([]),
         ])
 
-        let step5 = LanguageModelV3GenerateResult(
+        let step5 = LanguageModelV4GenerateResult(
             content: [
                 .toolResult(.init(
                     toolCallId: codeExecutionToolCallId,
@@ -212,7 +212,7 @@ struct GenerateTextProgrammaticToolCallingTests {
             usage: usage
         )
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             provider: "anthropic",
             modelId: "claude-sonnet-4-5-20250929",
             doGenerate: .array([step1, step2, step3, step4, step5])
@@ -227,7 +227,7 @@ struct GenerateTextProgrammaticToolCallingTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "Play a dice game between two players.",
             stopWhen: [isStepCount(10)],

@@ -22,7 +22,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – basic textStream")
 struct StreamTextBasicTests {
-    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
+    private let defaultUsage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
     private struct SummaryOutput: Codable, Equatable, Sendable {
         let value: String
     }
@@ -68,7 +68,7 @@ struct StreamTextBasicTests {
 
     @Test("textStream yields raw deltas in order")
     func textStreamYieldsRawDeltas() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -84,13 +84,13 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let stopCondition: SwiftAISDK.StopCondition = { steps in
@@ -98,7 +98,7 @@ struct StreamTextBasicTests {
         }
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             stopWhen: [stopCondition]
         )
@@ -111,7 +111,7 @@ struct StreamTextBasicTests {
 
     @Test("readAllText concatenates all deltas")
     func readAllTextConcatenates() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-rat", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "z", providerMetadata: nil),
@@ -125,14 +125,14 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -142,7 +142,7 @@ struct StreamTextBasicTests {
 
     @Test("fallback response metadata uses internal options when provider omits response metadata")
     func fallbackResponseMetadataUsesInternalOptions() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textStart(id: "step", providerMetadata: nil),
             .textDelta(id: "step", delta: "Fallback", providerMetadata: nil),
@@ -154,18 +154,18 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let fallbackDate = Date(timeIntervalSince1970: 123)
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             internalOptions: StreamTextInternalOptions(
                 now: { 0 },
@@ -196,7 +196,7 @@ struct StreamTextBasicTests {
 
     @Test("telemetry disabled produces no spans")
     func telemetryDisabledProducesNoSpans() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "telemetry-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -209,18 +209,18 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let tracer = MockTracer()
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)]),
             internalOptions: StreamTextInternalOptions(
@@ -238,7 +238,7 @@ struct StreamTextBasicTests {
 
     @Test("telemetry records first chunk timing")
     func telemetryRecordsFirstChunkTiming() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textDelta(id: "1", delta: "First", providerMetadata: nil),
             .textEnd(id: "1", providerMetadata: nil),
@@ -249,13 +249,13 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let tracer = MockTracer()
@@ -263,7 +263,7 @@ struct StreamTextBasicTests {
         let nowValues: [Double] = [0.0, 123.0, 200.0]
         let nowValuesShared = LockedValue(initial: 0)
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             telemetry: telemetry,
             internalOptions: StreamTextInternalOptions(
@@ -291,24 +291,24 @@ struct StreamTextBasicTests {
 
     @Test("telemetry records operation duration in seconds")
     func telemetryRecordsFinishTiming() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textDelta(id: "1", delta: "Speed", providerMetadata: nil),
             .textEnd(id: "1", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4)),
+                usage: LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4)),
                 providerMetadata: nil
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let tracer = MockTracer()
@@ -316,7 +316,7 @@ struct StreamTextBasicTests {
         let nowValues: [Double] = [0.0, 10.0, 210.0]
         let nowValuesShared = LockedValue(initial: 0)
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             telemetry: telemetry,
             internalOptions: StreamTextInternalOptions(
@@ -344,7 +344,7 @@ struct StreamTextBasicTests {
 
     @Test("telemetry records spans when enabled")
     func telemetryRecordsSpansWhenEnabled() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: nil, modelId: nil, timestamp: nil),
             .textStart(id: "1", providerMetadata: nil),
@@ -358,13 +358,13 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let tracer = MockTracer()
@@ -375,7 +375,7 @@ struct StreamTextBasicTests {
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             telemetry: telemetry,
             runtimeContext: ["test-key": .string("value")],
@@ -411,19 +411,19 @@ struct StreamTextBasicTests {
     @Test("tools convert client tool calls to static variants")
     func toolsConvertClientToolCallsToStatic() async throws {
         // Arrange a simple client-executed tool call with valid JSON input and result.
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "search",
                 input: "{\"q\":\"swift\"}",
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: "call-1",
                 toolName: "search",
                 result: .object(["items": .array([.string("result")])]),
@@ -431,16 +431,16 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil),
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: usage, providerMetadata: nil),
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         // Provide a ToolSet with a matching tool name, so call/result become static.
@@ -459,7 +459,7 @@ struct StreamTextBasicTests {
         ]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello"
         )
@@ -499,7 +499,7 @@ struct StreamTextBasicTests {
     }
     @Test("toUIMessageStream emits UI chunks in order")
     func toUIMessageStreamBasic() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -512,17 +512,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             stopWhen: [isStepCount(3)]
         )
@@ -550,7 +550,7 @@ struct StreamTextBasicTests {
 
     @Test("pipeTextStreamToResponse writes plain text")
     func pipeTextStreamToResponse() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -565,14 +565,14 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -586,7 +586,7 @@ struct StreamTextBasicTests {
 
     @Test("stopWhen isStepCount(1) yields one step")
     func stopWhenSingleStep() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -599,17 +599,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             stopWhen: [isStepCount(1)]
         )
@@ -622,7 +622,7 @@ struct StreamTextBasicTests {
 
     @Test("fullStream emits tool input events in order")
     func fullStreamToolInputOrder() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .toolInputStart(id: "tool-1", toolName: "search", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
@@ -635,17 +635,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -670,7 +670,7 @@ struct StreamTextBasicTests {
 
     @Test("fullStream with empty provider emits framing only")
     func fullStreamEmptyEmitsFramingOnly() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .finish(
@@ -680,17 +680,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -732,7 +732,7 @@ struct StreamTextBasicTests {
             return mapped
         }
 
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -746,17 +746,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             transform: [uppercaseTransform]
         )
@@ -774,16 +774,16 @@ struct StreamTextBasicTests {
 
     @Test("transform uppercases tool results and inputs across steps")
     func transformUppercasesToolResultsAcrossSteps() async throws {
-        let usageStepOne = LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
-        let usageStepTwo = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
+        let usageStepOne = LanguageModelV4Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
+        let usageStepTwo = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 4))
 
-        let stepOneParts: [LanguageModelV3StreamPart] = [
+        let stepOneParts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .reasoningStart(id: "reasoning-0", providerMetadata: nil),
             .reasoningDelta(id: "reasoning-0", delta: "thinking", providerMetadata: nil),
             .reasoningEnd(id: "reasoning-0", providerMetadata: nil),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "tool1",
                 input: "{\"value\":\"value\"}",
@@ -797,7 +797,7 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stepTwoParts: [LanguageModelV3StreamPart] = [
+        let stepTwoParts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 1)),
             .textStart(id: "text-1", providerMetadata: nil),
@@ -811,19 +811,19 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream1 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in stepOneParts { continuation.yield(part) }
             continuation.finish()
         }
-        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream2 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in stepTwoParts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(stream: stream1),
-                LanguageModelV3StreamResult(stream: stream2)
+                LanguageModelV4StreamResult(stream: stream1),
+                LanguageModelV4StreamResult(stream: stream2)
             ])
         )
 
@@ -909,7 +909,7 @@ struct StreamTextBasicTests {
         let telemetry = TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer, runtimeContext: true)])
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             stopWhen: [isStepCount(3)],
@@ -977,7 +977,7 @@ struct StreamTextBasicTests {
 
     @Test("fullStream emits framing and text events in order")
     func fullStreamFramingOrder() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -992,17 +992,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -1034,7 +1034,7 @@ struct StreamTextBasicTests {
 
     @Test("accessors return final values after finish")
     func accessorsAfterFinish() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-xyz", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -1047,17 +1047,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -1076,10 +1076,10 @@ struct StreamTextBasicTests {
     @Test("fullStream emits file and source events")
     func fullStreamFileAndSource() async throws {
         let data = Data([0x01, 0x02, 0x03])
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .file(LanguageModelV3File(mediaType: "application/octet-stream", data: .binary(data))),
+            .file(LanguageModelV4File(mediaType: "application/octet-stream", data: .data(data))),
             .source(.url(id: "s1", url: "https://example.com", title: "t", providerMetadata: nil)),
             .finish(
                 finishReason: .stop,
@@ -1088,14 +1088,14 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -1125,7 +1125,7 @@ struct StreamTextBasicTests {
     func onChunkAndOnFinishCallbacks() async throws {
         actor Counter { var n = 0; func inc() { n += 1 }; func get() -> Int { n } }
         actor Flag { var v = false; func set() { v = true }; func get() -> Bool { v } }
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "1", providerMetadata: nil),
@@ -1138,17 +1138,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
 
         let counter = Counter()
         let finished = Flag()
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             onChunk: { _ in await counter.inc() },
             onEnd: { _ in await finished.set() }
@@ -1164,43 +1164,43 @@ struct StreamTextBasicTests {
     }
 	    @Test("tool-calls finish triggers continuation when client outputs provided")
 	    func toolCallsFinishTriggersContinuation() async throws {
-	        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 2))
+	        let usage = LanguageModelV4Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 2))
 
-	        let stepOneParts: [LanguageModelV3StreamPart] = [
+	        let stepOneParts: [LanguageModelV4StreamPart] = [
 	            .streamStart(warnings: []),
 	            .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-	            .toolCall(LanguageModelV3ToolCall(
+	            .toolCall(LanguageModelV4ToolCall(
 	                toolCallId: "call-1",
 	                toolName: "search",
 	                input: "{\"q\":\"swift\"}",
 	                providerExecuted: false,
 	                providerMetadata: nil
 	            )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .toolCalls), usage: usage, providerMetadata: nil)
 	        ]
 
-        let stepTwoParts: [LanguageModelV3StreamPart] = [
+        let stepTwoParts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-2", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 1)),
             .textStart(id: "t-1", providerMetadata: nil),
             .textDelta(id: "t-1", delta: "Done", providerMetadata: nil),
             .textEnd(id: "t-1", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
-        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream1 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in stepOneParts { continuation.yield(part) }
             continuation.finish()
         }
-        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream2 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in stepTwoParts { continuation.yield(part) }
             continuation.finish()
         }
 
-	        let model = MockLanguageModelV3(
+	        let model = MockLanguageModelV4(
 	            doStream: .array([
-	                LanguageModelV3StreamResult(stream: stream1),
-	                LanguageModelV3StreamResult(stream: stream2)
+	                LanguageModelV4StreamResult(stream: stream1),
+	                LanguageModelV4StreamResult(stream: stream2)
 	            ])
 	        )
 
@@ -1217,7 +1217,7 @@ struct StreamTextBasicTests {
 	        ]
 
 	        let result = try streamText(
-	            model: .v3(model),
+	            model: model,
 	            tools: tools,
 	            prompt: "hello",
 	            stopWhen: [isStepCount(3)]
@@ -1236,11 +1236,11 @@ struct StreamTextBasicTests {
 
     @Test("invalid tool-call JSON marks dynamic call as invalid")
     func invalidToolCallJsonMarksDynamic() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let parts: [LanguageModelV3StreamPart] = [
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-invalid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-invalid",
                 toolName: "search",
                 input: "{invalid",
@@ -1250,20 +1250,20 @@ struct StreamTextBasicTests {
             .textStart(id: "t-err", providerMetadata: nil),
             .textDelta(id: "t-err", delta: "partial", providerMetadata: nil),
             .textEnd(id: "t-err", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello"
         )
 
@@ -1286,7 +1286,7 @@ struct StreamTextBasicTests {
 
     @Test("experimental_partialOutputStream yields deduplicated partials for text output")
     func experimentalPartialOutputStreamYieldsTextPartials() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "partial-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "txt", providerMetadata: nil),
@@ -1301,17 +1301,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result: DefaultStreamTextResult<String, String> = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             output: Output.text()
         )
@@ -1324,7 +1324,7 @@ struct StreamTextBasicTests {
 
     @Test("experimentalOutput returns parsed object when configured")
     func experimentalOutputReturnsParsedObject() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "output-id", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "txt", providerMetadata: nil),
@@ -1339,17 +1339,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             output: Output.object(schema: summarySchema())
         )
@@ -1364,8 +1364,8 @@ struct StreamTextBasicTests {
 
     @Test("experimentalOutput throws when finish reason is tool-calls")
     func experimentalOutputThrowsOnToolCalls() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let parts: [LanguageModelV3StreamPart] = [
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "toolcalls", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .finish(
@@ -1375,17 +1375,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let result: DefaultStreamTextResult<SummaryOutput, JSONValue> = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             output: Output.object(schema: summarySchema())
         )
@@ -1398,10 +1398,10 @@ struct StreamTextBasicTests {
 
     @Test("tool input callbacks are invoked before execution")
     func toolInputCallbacksInvoked() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "input-available", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "demo",
                 input: "{\"value\":1}",
@@ -1419,13 +1419,13 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let startCalls = LockedValue(initial: 0)
@@ -1455,7 +1455,7 @@ struct StreamTextBasicTests {
         let tools: ToolSet = ["demo": tool]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello"
         )
@@ -1476,10 +1476,10 @@ struct StreamTextBasicTests {
 
     @Test("repairToolCall fixes invalid tool input before execution")
     func repairToolCallFixesInvalidInput() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "repair", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "repair-1",
                 toolName: "demo",
                 input: "{invalid",
@@ -1493,13 +1493,13 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             for part in parts { continuation.yield(part) }
             continuation.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let repairCalls = LockedValue(initial: 0)
@@ -1518,7 +1518,7 @@ struct StreamTextBasicTests {
         let tools: ToolSet = ["demo": tool]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello",
             repairToolCall: { options in
@@ -1546,24 +1546,24 @@ struct StreamTextBasicTests {
 
     @Test("onStepFinish is invoked exactly once per step")
     func onStepFinishInvokedOnce() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "x", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
 
         let calls = LockedValue(initial: 0)
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi",
             onStepEnd: { _ in calls.withValue { $0 += 1 } }
         )
@@ -1576,17 +1576,17 @@ struct StreamTextBasicTests {
 
     @Test("a provider error part reaches onError and the stream, and ends the step with finish reason error")
     func providerErrorPartIsReported() async throws {
-        let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let providerStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
-            c.yield(.error(error: .string("boom")))
+            c.yield(.error(error: .value(.string("boom"))))
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: providerStream)))
 
         let onErrorCalls = LockedValue(initial: 0)
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "err",
             onError: { _ in
                 onErrorCalls.withValue { $0 += 1 }
@@ -1604,8 +1604,8 @@ struct StreamTextBasicTests {
 
     @Test("onStepFinish provides correct finishReason and usage")
     func onStepFinishProvidesDetails() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 3))
-        let parts: [LanguageModelV3StreamPart] = [
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 2), outputTokens: .init(total: 3))
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "rf-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "t", providerMetadata: nil),
@@ -1618,17 +1618,17 @@ struct StreamTextBasicTests {
             )
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
 
         struct Snapshot: Sendable { var reason: FinishReason?; var usage: LanguageModelUsage? }
         let snap = LockedValue(initial: Snapshot(reason: nil, usage: nil))
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "ok",
             onStepEnd: { step in
                 snap.withValue { s in
@@ -1648,15 +1648,15 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream respects sendStart/sendFinish flags")
     func uiMessageStreamRespectsFlags() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: LanguageModelV4Usage(), providerMetadata: nil)
         ]
-        let model = MockLanguageModelV3(doStream: .function { _ in
-            LanguageModelV3StreamResult(stream: AsyncThrowingStream { continuation in
+        let model = MockLanguageModelV4(doStream: .function { _ in
+            LanguageModelV4StreamResult(stream: AsyncThrowingStream { continuation in
                 parts.forEach { continuation.yield($0) }
                 continuation.finish()
             })
@@ -1664,7 +1664,7 @@ struct StreamTextBasicTests {
 
         // sendStart=false, sendFinish=true
         let result1 = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
         let stream1 = result1.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(sendFinish: true, sendStart: false))
@@ -1675,7 +1675,7 @@ struct StreamTextBasicTests {
 
         // sendStart=true, sendFinish=false
         let result2 = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
         let stream2 = result2.toUIMessageStream(options: UIMessageStreamOptions<UIMessage>(sendFinish: false, sendStart: true))
@@ -1687,20 +1687,20 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStreamResponse respects sendStart/sendFinish flags")
     func uiMessageStreamResponseRespectsFlags() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: LanguageModelV4Usage(), providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1729,7 +1729,7 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream includes sources when enabled")
     func toUIMessageStreamIncludesSources() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "sid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "t", providerMetadata: nil),
@@ -1738,16 +1738,16 @@ struct StreamTextBasicTests {
             .source(
                 .url(id: "s-url", url: "https://example.com", title: "Example", providerMetadata: nil)
             ),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1765,7 +1765,7 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream includes reasoning when enabled")
     func toUIMessageStreamIncludesReasoning() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "rid", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .reasoningStart(id: "r1", providerMetadata: nil),
@@ -1774,17 +1774,17 @@ struct StreamTextBasicTests {
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "X", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1800,19 +1800,19 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream maps tool events to UI chunks")
     func toUIMessageStreamMapsToolEvents() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .toolInputStart(id: "c1", toolName: "demo", providerMetadata: nil, providerExecuted: false, dynamic: nil, title: nil),
             .toolInputDelta(id: "c1", delta: "{\"x\":1}", providerMetadata: nil),
             .toolInputEnd(id: "c1", providerMetadata: nil),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "c1",
                 toolName: "demo",
                 input: "{\"x\":1}",
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: "c1",
                 toolName: "demo",
                 result: .object(["ok": .bool(true)]),
@@ -1820,16 +1820,16 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1844,16 +1844,16 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream maps tool output error")
     func toUIMessageStreamMapsToolError() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "c2",
                 toolName: "fail",
                 input: "{}",
                 providerExecuted: true,
                 providerMetadata: nil
             )),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: "c2",
                 toolName: "fail",
                 result: .string("boom"),
@@ -1861,16 +1861,16 @@ struct StreamTextBasicTests {
                 preliminary: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1889,20 +1889,20 @@ struct StreamTextBasicTests {
 
     @Test("toUIMessageStream emits message-metadata at start/finish when provided")
     func uiMessageStreamEmitsMessageMetadata() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "A", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: LanguageModelV3Usage(), providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: LanguageModelV4Usage(), providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -1924,25 +1924,25 @@ struct StreamTextBasicTests {
 
     @Test("onFinish is invoked exactly once")
     func onFinishInvokedExactlyOnce() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let parts: [LanguageModelV3StreamPart] = [
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "fin-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "t", providerMetadata: nil),
             .textDelta(id: "t", delta: "ok", providerMetadata: nil),
             .textEnd(id: "t", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: usage, providerMetadata: nil)
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
 
         let calls = LockedValue(initial: 0)
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi",
             onEnd: { _ in calls.withValue { $0 += 1 } }
         )
@@ -1958,7 +1958,7 @@ struct StreamTextBasicTests {
 
 @Suite("StreamText – invalid tool calls and step loop")
 struct StreamTextInvalidToolCallStepLoopTests {
-    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+    private let defaultUsage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
     private func toolInputSchema(requiredKey: String = "value") -> FlexibleSchema<JSONValue> {
         FlexibleSchema(jsonSchema(JSONValue.object([
@@ -1978,42 +1978,42 @@ struct StreamTextInvalidToolCallStepLoopTests {
         // and emits .toolError. The step finishes with .toolCalls.
         // The step loop should continue to step 2 where the model
         // receives the error and responds with text.
-        let stepOneParts: [LanguageModelV3StreamPart] = [
+        let stepOneParts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "myTool",
                 input: #"{"wrong_key": "value"}"#,
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
         ]
 
         // Step 2: model sees the error and produces a text response
-        let stepTwoParts: [LanguageModelV3StreamPart] = [
+        let stepTwoParts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-2", modelId: "mock", timestamp: Date(timeIntervalSince1970: 1)),
             .textStart(id: "t-1", providerMetadata: nil),
             .textDelta(id: "t-1", delta: "I see the error", providerMetadata: nil),
             .textEnd(id: "t-1", providerMetadata: nil),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil),
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: defaultUsage, providerMetadata: nil),
         ]
 
-        let stream1 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream1 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in stepOneParts { c.yield(p) }
             c.finish()
         }
-        let stream2 = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream2 = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in stepTwoParts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(stream: stream1),
-                LanguageModelV3StreamResult(stream: stream2),
+                LanguageModelV4StreamResult(stream: stream1),
+                LanguageModelV4StreamResult(stream: stream2),
             ])
         )
 
@@ -2025,7 +2025,7 @@ struct StreamTextInvalidToolCallStepLoopTests {
         ]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello",
             stopWhen: [isStepCount(3)]
@@ -2047,26 +2047,26 @@ struct StreamTextInvalidToolCallStepLoopTests {
     func invalidToolCallErrorInResponseMessages() async throws {
         // Even with a single step, the error should be recorded in the
         // response messages so it would be available for continuation
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "myTool",
                 input: #"{"wrong_key": "value"}"#,
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .finish(finishReason: LanguageModelV3FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
+            .finish(finishReason: LanguageModelV4FinishReason(unified: .toolCalls), usage: defaultUsage, providerMetadata: nil),
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: stream))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: stream))
         )
 
         let tools: ToolSet = [
@@ -2077,7 +2077,7 @@ struct StreamTextInvalidToolCallStepLoopTests {
         ]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello"
         )

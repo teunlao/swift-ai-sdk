@@ -61,24 +61,24 @@ struct GenerateVideoTests {
     }
 
     private func createMockResponse(
-        videos: [VideoModelV3VideoData],
+        videos: [VideoModelV4VideoData],
         warnings: [VideoGenerationWarning] = [],
         timestamp: Date? = nil,
         modelId: String? = nil,
-        providerMetadata: SharedV3ProviderMetadata? = nil,
+        providerMetadata: SharedV4ProviderMetadata? = nil,
         headers: [String: String]? = nil
-    ) -> VideoModelV3GenerateResult {
-        let defaultMetadata: SharedV3ProviderMetadata = [
+    ) -> VideoModelV4GenerateResult {
+        let defaultMetadata: SharedV4ProviderMetadata = [
             "testProvider": [
                 "videos": .array(Array(repeating: .null, count: videos.count))
             ]
         ]
 
-        return VideoModelV3GenerateResult(
+        return VideoModelV4GenerateResult(
             videos: videos,
-            warnings: warnings.map(convertVideoWarningToV3),
+            warnings: warnings.map(convertVideoWarningToV4),
             providerMetadata: providerMetadata ?? defaultMetadata,
-            response: VideoModelV3ResponseInfo(
+            response: VideoModelV4ResponseInfo(
                 timestamp: timestamp ?? Date(),
                 modelId: modelId ?? "test-model-id",
                 headers: headers ?? [:]
@@ -112,7 +112,7 @@ struct GenerateVideoTests {
         )
     }
 
-    private func convertVideoWarningToV3(_ warning: VideoGenerationWarning) -> SharedV3Warning {
+    private func convertVideoWarningToV4(_ warning: VideoGenerationWarning) -> SharedV4Warning {
         switch warning {
         case let .unsupported(feature, details):
             return .unsupported(feature: feature, details: details)
@@ -390,7 +390,7 @@ struct GenerateVideoTests {
 
     @Test("should send args to doGenerate")
     func sendsArgsToDoGenerate() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
         let abortSignal: @Sendable () -> Bool = { false }
 
         let providerOptions: ProviderOptions = [
@@ -400,7 +400,7 @@ struct GenerateVideoTests {
         ]
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -532,7 +532,7 @@ struct GenerateVideoTests {
     func resolvesStringVideoModelThroughLegacyGlobalProvider() async throws {
         let provider = customProvider(
             videoModels: [
-                "video-model": MockVideoModelV3(
+                "video-model": MockVideoModelV4(
                     modelId: "resolved-video-model",
                     doGenerate: { _ in
                         self.createMockResponse(
@@ -548,7 +548,7 @@ struct GenerateVideoTests {
 
         let result = try await withGlobalProvider(provider, operation: {
             try await experimental_generateVideo(
-                model: .string("video-model"),
+                model: "video-model",
                 prompt: prompt
             )
         })
@@ -564,7 +564,7 @@ struct GenerateVideoTests {
         ]
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -605,7 +605,7 @@ struct GenerateVideoTests {
             defer { resetWarningHooks() }
 
             _ = try await experimental_generateVideo(
-                model: MockVideoModelV3(
+                model: MockVideoModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             videos: [
@@ -629,7 +629,7 @@ struct GenerateVideoTests {
     @Test("should return generated videos with correct mime types (base64)")
     func returnsVideosWithMediaTypes_base64() async throws {
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -650,7 +650,7 @@ struct GenerateVideoTests {
     @Test("should return the first video")
     func returnsFirstVideo() async throws {
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -671,7 +671,7 @@ struct GenerateVideoTests {
         let binaryData = decodeBase64(mp4Base64)
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -697,7 +697,7 @@ struct GenerateVideoTests {
         }
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -727,7 +727,7 @@ struct GenerateVideoTests {
 
         do {
             _ = try await experimental_generateVideo(
-                model: MockVideoModelV3(
+                model: MockVideoModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             videos: [
@@ -756,7 +756,7 @@ struct GenerateVideoTests {
         }
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -776,7 +776,7 @@ struct GenerateVideoTests {
     func generatesAcrossMultipleCalls() async throws {
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -812,7 +812,7 @@ struct GenerateVideoTests {
         let warning2: VideoGenerationWarning = .other(message: "Warning from call 2")
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -847,7 +847,7 @@ struct GenerateVideoTests {
     func supportsModelMaxVideosPerCallFunction() async throws {
         let maxVideosCalls = SingleValueBox<String>()
 
-        let model = MockVideoModelV3(
+        let model = MockVideoModelV4(
             maxVideosPerCall: .function({ modelId in
                 await maxVideosCalls.set(modelId)
                 return 2
@@ -888,7 +888,7 @@ struct GenerateVideoTests {
     func throwsNoVideoGeneratedError() async throws {
         do {
             _ = try await experimental_generateVideo(
-                model: MockVideoModelV3(
+                model: MockVideoModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             videos: [],
@@ -911,7 +911,7 @@ struct GenerateVideoTests {
     func includesHeadersInNoVideoGeneratedError() async throws {
         do {
             _ = try await experimental_generateVideo(
-                model: MockVideoModelV3(
+                model: MockVideoModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             videos: [],
@@ -936,7 +936,7 @@ struct GenerateVideoTests {
         let testHeaders = ["x-test": "value"]
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -968,7 +968,7 @@ struct GenerateVideoTests {
     @Test("should return provider metadata")
     func returnsProviderMetadata() async throws {
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         videos: [
@@ -1003,7 +1003,7 @@ struct GenerateVideoTests {
     func mergesProviderMetadata() async throws {
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -1057,7 +1057,7 @@ struct GenerateVideoTests {
     func mergesGatewayProviderMetadata() async throws {
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -1112,15 +1112,15 @@ struct GenerateVideoTests {
     @Test("should handle nil providerMetadata")
     func handlesNilProviderMetadata() async throws {
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { _ in
-                    VideoModelV3GenerateResult(
+                    VideoModelV4GenerateResult(
                         videos: [
                             .base64(data: self.mp4Base64, mediaType: "video/mp4")
                         ],
                         warnings: [],
                         providerMetadata: nil,
-                        response: VideoModelV3ResponseInfo(
+                        response: VideoModelV4ResponseInfo(
                             timestamp: Date(),
                             modelId: "test-model-id",
                             headers: [:]
@@ -1138,7 +1138,7 @@ struct GenerateVideoTests {
     func preservesPerCallProviderMetadata() async throws {
 
         let result = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 maxVideosPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -1211,10 +1211,10 @@ struct GenerateVideoTests {
 
     @Test("should handle string prompt")
     func promptNormalization_stringPrompt() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -1234,12 +1234,12 @@ struct GenerateVideoTests {
 
     @Test("should handle object prompt with text and image")
     func promptNormalization_textAndImage() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
         let pngBase64 =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -1259,10 +1259,10 @@ struct GenerateVideoTests {
 
     @Test("should handle URL image in prompt")
     func promptNormalization_urlImage() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -1281,13 +1281,13 @@ struct GenerateVideoTests {
 
     @Test("should handle data URL image in prompt")
     func promptNormalization_dataUrlImage() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
         let pngBase64 =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
         let dataUrl = "data:image/png;base64,\(pngBase64)"
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -1307,12 +1307,12 @@ struct GenerateVideoTests {
 
     @Test("should detect image mediaType from raw base64 string via signature detection")
     func promptNormalization_detectMediaTypeFromRawBase64() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
         let pngBase64 =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -1332,11 +1332,11 @@ struct GenerateVideoTests {
 
     @Test("should detect image mediaType from Data via signature detection")
     func promptNormalization_detectMediaTypeFromBytes() async throws {
-        let optionsBox = SingleValueBox<VideoModelV3CallOptions>()
+        let optionsBox = SingleValueBox<VideoModelV4CallOptions>()
         let jpegBytes = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46])
 
         _ = try await experimental_generateVideo(
-            model: MockVideoModelV3(
+            model: MockVideoModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(

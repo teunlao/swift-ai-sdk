@@ -10,7 +10,7 @@ struct AgentOpenAIGenerateOnFinishExample: Example {
     do {
       let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant.",
-        model: .v4(try openai("gpt-4o")),
+        model: try openai("gpt-4o"),
         onEnd: { event in
           Logger.section("onEnd")
           Logger.info(event.text)

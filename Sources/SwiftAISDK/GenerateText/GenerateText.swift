@@ -114,7 +114,7 @@ final class StepAbortTimeout: @unchecked Sendable {
  callbacks are ignored.
  */
 public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
-    model modelArg: LanguageModel,
+    model modelArg: any LanguageModelConvertible,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     experimentalToolCallers: ToolCallers? = nil,
@@ -154,7 +154,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
     let includeResponseBody = includeOptions?.responseBody ?? false
 
     let resolvedToolCallConcurrency = try prepareToolCallConcurrency(toolCallConcurrency)
-    let model = try resolveLanguageModelV4(modelArg)
+    let model = try resolveLanguageModel(modelArg)
     let resolvedToolCallers = try resolveToolCallers(tools: tools, callers: experimentalToolCallers)
     let now = _internal.now
 
@@ -341,7 +341,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             let prepareStepResult = try await prepareStep?(PrepareStepOptions(
                 steps: steps,
                 stepNumber: stepNumber,
-                model: .v4(model),
+                model: model,
                 instructions: instructionsForNextStep,
                 initialInstructions: initialPrompt.instructions,
                 messages: stepInputMessages,
@@ -351,7 +351,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
                 runtimeContext: runtimeContext
             ))
 
-            let stepModel = try prepareStepResult?.model.map(resolveLanguageModelV4) ?? model
+            let stepModel = try prepareStepResult?.model.map(resolveLanguageModel) ?? model
             let stepInstructions = prepareStepResult?.instructions ?? instructionsForNextStep
             runtimeContext = prepareStepResult?.runtimeContext ?? runtimeContext
             toolsContext = prepareStepResult?.toolsContext ?? toolsContext
@@ -371,7 +371,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
             let stepToolChoice = prepareToolChoice(stepToolChoiceSetting)
             let stepMessages = prepareStepResult?.messages ?? stepInputMessages
 
-            let promptMessages = try await convertToLanguageModelV4Prompt(
+            let promptMessages = try await convertToLanguageModelPrompt(
                 prompt: StandardizedPrompt(instructions: stepInstructions, messages: stepMessages),
                 supportedUrls: try await stepModel.supportedUrls,
                 download: download
@@ -795,7 +795,7 @@ public func generateText<OutputValue: Sendable, PartialOutput: Sendable>(
  Same as `generateText(model:output:…)` with `Output.text()`.
  */
 public func generateText(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     experimentalToolCallers: ToolCallers? = nil,

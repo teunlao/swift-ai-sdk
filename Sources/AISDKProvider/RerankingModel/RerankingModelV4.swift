@@ -5,7 +5,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/reranking-model/v4/reranking-model-v4.ts`.
  */
-public protocol RerankingModelV4: Sendable {
+public protocol RerankingModelV4: RerankingModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

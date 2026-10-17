@@ -8,7 +8,7 @@ import AISDKProviderUtils
  Port of `@ai-sdk/ai/src/transcribe/stream-transcribe.ts`.
  */
 public func streamTranscribe(
-    model: TranscriptionModel,
+    model: any TranscriptionModelConvertible,
     audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>,
     inputAudioFormat: TranscriptionModelV4StreamOptions.InputAudioFormat,
     providerOptions: ProviderOptions = [:],
@@ -17,55 +17,11 @@ public func streamTranscribe(
     includeRawChunks: Bool? = nil,
     telemetry: TelemetryOptions? = nil
 ) throws -> any StreamTranscriptionResult {
-    guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
+    guard let resolvedModel = try resolveTranscriptionModel(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
     }
     return makeStreamTranscriptionResult(
         model: resolvedModel,
-        audio: audio,
-        inputAudioFormat: inputAudioFormat,
-        providerOptions: providerOptions,
-        abortSignal: abortSignal,
-        headers: headers,
-        includeRawChunks: includeRawChunks,
-        telemetry: telemetry
-    )
-}
-
-public func streamTranscribe(
-    model: any TranscriptionModelV4,
-    audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>,
-    inputAudioFormat: TranscriptionModelV4StreamOptions.InputAudioFormat,
-    providerOptions: ProviderOptions = [:],
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    includeRawChunks: Bool? = nil,
-    telemetry: TelemetryOptions? = nil
-) throws -> any StreamTranscriptionResult {
-    try streamTranscribe(
-        model: .v4(model),
-        audio: audio,
-        inputAudioFormat: inputAudioFormat,
-        providerOptions: providerOptions,
-        abortSignal: abortSignal,
-        headers: headers,
-        includeRawChunks: includeRawChunks,
-        telemetry: telemetry
-    )
-}
-
-public func streamTranscribe(
-    model: any TranscriptionModelV3,
-    audio: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>,
-    inputAudioFormat: TranscriptionModelV4StreamOptions.InputAudioFormat,
-    providerOptions: ProviderOptions = [:],
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    includeRawChunks: Bool? = nil,
-    telemetry: TelemetryOptions? = nil
-) throws -> any StreamTranscriptionResult {
-    try streamTranscribe(
-        model: .v3(model),
         audio: audio,
         inputAudioFormat: inputAudioFormat,
         providerOptions: providerOptions,

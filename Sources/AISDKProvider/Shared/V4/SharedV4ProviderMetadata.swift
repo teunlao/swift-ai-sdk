@@ -5,4 +5,4 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/shared/v4/shared-v4-provider-metadata.ts`.
  */
-public typealias SharedV4ProviderMetadata = SharedV3ProviderMetadata
+public typealias SharedV4ProviderMetadata = [String: [String: JSONValue]]

@@ -90,7 +90,7 @@ func streamLanguageModelCall(
     onLanguageModelCallStart: OnLanguageModelCallStartCallback?,
     onLanguageModelCallEnd: OnLanguageModelCallEndCallback?
 ) async throws -> LanguageModelCallStream {
-    let promptMessages = try await convertToLanguageModelV4Prompt(
+    let promptMessages = try await convertToLanguageModelPrompt(
         prompt: StandardizedPrompt(instructions: instructions, messages: messages),
         supportedUrls: try await model.supportedUrls,
         download: download

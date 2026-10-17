@@ -17,7 +17,7 @@ private actor IntCounter {
 
 @Suite("Tool approval signatures")
 struct ToolApprovalSignatureTests {
-    private let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+    private let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
     private func approvalTool(executions: IntCounter) -> ToolSet {
         [
@@ -39,13 +39,13 @@ struct ToolApprovalSignatureTests {
 
     /// History after a signed approval request was issued and approved by the user.
     private func approvedHistory(secret: ToolApprovalSecret, tools: ToolSet) async throws -> [ModelMessage] {
-        let model = MockLanguageModelV3(doGenerate: .singleValue(LanguageModelV3GenerateResult(
-            content: [.toolCall(LanguageModelV3ToolCall(toolCallId: "call-1", toolName: "tool1", input: #"{"value":"v"}"#))],
+        let model = MockLanguageModelV4(doGenerate: .singleValue(LanguageModelV4GenerateResult(
+            content: [.toolCall(LanguageModelV4ToolCall(toolCallId: "call-1", toolName: "tool1", input: #"{"value":"v"}"#))],
             finishReason: .toolCalls,
             usage: usage
         )))
         let issued = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "run it",
             toolApprovalSecret: secret
@@ -64,12 +64,12 @@ struct ToolApprovalSignatureTests {
     }
 
     private func continueFrom(_ messages: [ModelMessage], secret: ToolApprovalSecret, tools: ToolSet) async throws {
-        let model = MockLanguageModelV3(doGenerate: .singleValue(LanguageModelV3GenerateResult(
-            content: [.text(LanguageModelV3Text(text: "ok"))],
+        let model = MockLanguageModelV4(doGenerate: .singleValue(LanguageModelV4GenerateResult(
+            content: [.text(LanguageModelV4Text(text: "ok"))],
             finishReason: .stop,
             usage: usage
         )))
-        _ = try await generateText(model: .v3(model), tools: tools, messages: messages, toolApprovalSecret: secret)
+        _ = try await generateText(model: model, tools: tools, messages: messages, toolApprovalSecret: secret)
     }
 
     @Test("a signed approval issued by the server executes when it comes back approved")

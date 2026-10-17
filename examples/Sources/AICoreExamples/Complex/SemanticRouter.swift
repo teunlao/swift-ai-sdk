@@ -17,13 +17,13 @@ struct SemanticRouterExample: Example {
 
   final class SemanticRouter<Name: Sendable & Hashable> {
     private let routes: [Route<Name>]
-    private let embeddingModel: any EmbeddingModelV4
+    private let embeddingModel: any EmbeddingModelConvertible
     private let similarityThreshold: Double
     private var cached: [(name: Name, value: String, embedding: [Double])]? = nil
 
     init(
       routes: [Route<Name>],
-      embeddingModel: any EmbeddingModelV4,
+      embeddingModel: any EmbeddingModelConvertible,
       similarityThreshold: Double
     ) {
       self.routes = routes

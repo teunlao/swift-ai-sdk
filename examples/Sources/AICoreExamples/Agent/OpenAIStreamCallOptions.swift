@@ -17,7 +17,7 @@ struct AgentOpenAIStreamCallOptionsExample: Example {
 
       let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant.",
-        model: .v4(try openai("gpt-5-mini")),
+        model: try openai("gpt-5-mini"),
         onStepEnd: { step in
           Logger.section("Step finished")
           Logger.info("finishReason=\(step.finishReason) tokens=\(step.usage.totalTokens ?? 0)")

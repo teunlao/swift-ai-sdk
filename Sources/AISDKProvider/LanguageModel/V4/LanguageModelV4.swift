@@ -5,7 +5,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/language-model/v4/language-model-v4.ts`.
  */
-public protocol LanguageModelV4: Sendable {
+public protocol LanguageModelV4: LanguageModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

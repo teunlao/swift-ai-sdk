@@ -636,7 +636,7 @@ However, you may want to control how invalid tool calls are repaired without req
 additional steps that pollute the message history.
 
 Use the `repairToolCall` callback to attempt repair with a custom function.
-It receives `ToolCallRepairOptions` and returns a replacement `LanguageModelV4ToolCall` or `nil`.
+It receives `ToolCallRepairOptions` and returns a replacement tool call or `nil`.
 
 You can use different strategies to repair the tool call:
 
@@ -664,7 +664,7 @@ let _ = try await generateText(
       prompt: "Fix the inputs for tool \(options.toolCall.toolName): \(options.toolCall.input)"
     )
     let input = try JSONEncoder().encode(repaired.object)
-    return LanguageModelV4ToolCall(
+    return .init(
       toolCallId: options.toolCall.toolCallId,
       toolName: options.toolCall.toolName,
       input: String(decoding: input, as: UTF8.self),
@@ -700,7 +700,7 @@ let _ = try await generateText(
       $0.toolName == options.toolCall.toolName
     }) else { return nil }
     let input = try JSONEncoder().encode(newCall.input)
-    return LanguageModelV4ToolCall(
+    return .init(
       toolCallId: options.toolCall.toolCallId,
       toolName: newCall.toolName,
       input: String(decoding: input, as: UTF8.self),

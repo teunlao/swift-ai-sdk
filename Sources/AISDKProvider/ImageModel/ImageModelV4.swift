@@ -5,7 +5,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/image-model/v4/image-model-v4.ts`.
  */
-public protocol ImageModelV4: Sendable {
+public protocol ImageModelV4: ImageModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

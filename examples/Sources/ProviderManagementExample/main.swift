@@ -20,7 +20,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.section("Example 1: Custom Provider with Model Aliases")
     Logger.info("Creating custom provider with semantic names...")
 
-    let customOpenAI = customProviderV4(
+    let customOpenAI = customProvider(
       languageModels: [
         // Semantic aliases for easy version updates
         "fast": try openai.languageModel("gpt-4o-mini"),
@@ -135,7 +135,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.section("Example 5: Limited Provider Without Fallback")
     Logger.info("Creating provider with only specific models...")
 
-    let limitedProvider = customProviderV4(
+    let limitedProvider = customProvider(
       languageModels: [
         "mini": try openai.languageModel("gpt-4o-mini"),
         "standard": try openai.languageModel("gpt-4o")
@@ -157,7 +157,7 @@ struct ProviderManagementExample: CLIExample {
     Logger.separator()
     Logger.info("Provider management examples complete!")
     Logger.info("Key concepts:")
-    Logger.info("  • customProviderV4() - Create providers with aliases and settings")
+    Logger.info("  • customProvider() - Create providers with aliases and settings")
     Logger.info("  • createProviderRegistry() - Manage multiple providers")
     Logger.info("  • Custom separators - Use : or > or / for readability")
     Logger.info("  • Middleware - Apply to all models in registry")

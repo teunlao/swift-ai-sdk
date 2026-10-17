@@ -35,26 +35,6 @@ public func wrapEmbeddingModel(
     wrapEmbeddingModel(model: model, middleware: [middleware], modelId: modelId, providerId: providerId)
 }
 
-/// Wraps a V3 embedding model, resolving it to V4 first.
-public func wrapEmbeddingModel(
-    model: any EmbeddingModelV3<String>,
-    middleware: [EmbeddingModelV4Middleware],
-    modelId: String? = nil,
-    providerId: String? = nil
-) -> any EmbeddingModelV4 {
-    wrapEmbeddingModel(model: asEmbeddingModelV4(model), middleware: middleware, modelId: modelId, providerId: providerId)
-}
-
-/// Wraps a V3 embedding model, resolving it to V4 first.
-public func wrapEmbeddingModel(
-    model: any EmbeddingModelV3<String>,
-    middleware: EmbeddingModelV4Middleware,
-    modelId: String? = nil,
-    providerId: String? = nil
-) -> any EmbeddingModelV4 {
-    wrapEmbeddingModel(model: asEmbeddingModelV4(model), middleware: [middleware], modelId: modelId, providerId: providerId)
-}
-
 private func makeWrappedEmbeddingModel(
     model: any EmbeddingModelV4,
     middleware: EmbeddingModelV4Middleware,

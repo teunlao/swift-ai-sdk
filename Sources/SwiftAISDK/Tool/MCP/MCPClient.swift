@@ -839,29 +839,29 @@ internal final class DefaultMCPClient: MCPClient, @unchecked Sendable {
 
     // MARK: - toModelOutput
 
-    private static func mcpToModelOutput(_ output: JSONValue) -> LanguageModelV3ToolResultOutput {
+    private static func mcpToModelOutput(_ output: JSONValue) -> LanguageModelV4ToolResultOutput {
         guard case .object(let obj) = output,
               case .array(let content) = obj["content"] else {
             return .json(value: output)
         }
 
-        let converted: [LanguageModelV3ToolResultContentPart] = content.map { part in
+        let converted: [LanguageModelV4ToolResultContentPart] = content.map { part in
             guard case .object(let partObj) = part,
                   case .string(let type) = partObj["type"] else {
-                return .text(text: jsonStringify(part))
+                return .text(text: jsonStringify(part), providerOptions: nil)
             }
 
             if type == "text", case .string(let text) = partObj["text"] {
-                return .text(text: text)
+                return .text(text: text, providerOptions: nil)
             }
 
             if type == "image",
                case .string(let data) = partObj["data"],
                case .string(let mimeType) = partObj["mimeType"] {
-                return .media(data: data, mediaType: mimeType)
+                return .file(data: .base64(data), mediaType: mimeType, filename: nil, providerOptions: nil)
             }
 
-            return .text(text: jsonStringify(part))
+            return .text(text: jsonStringify(part), providerOptions: nil)
         }
 
         return .content(value: converted)

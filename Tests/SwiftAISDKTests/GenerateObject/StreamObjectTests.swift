@@ -15,7 +15,7 @@ struct StreamObjectTests {
         outputTokens: 10,
         totalTokens: 13
     )
-    private let defaultUsageV3 = LanguageModelV3Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
+    private let defaultUsageV4 = LanguageModelV4Usage(inputTokens: .init(total: 3), outputTokens: .init(total: 10))
 
     private func defaultObjectSchema() -> FlexibleSchema<JSONValue> {
         FlexibleSchema(
@@ -40,7 +40,7 @@ struct StreamObjectTests {
         )
 
         let result = try streamObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -64,7 +64,7 @@ struct StreamObjectTests {
         let model = MockStreamLanguageModel(parts: defaultParts())
 
         let _ = try streamObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(
                 schema: defaultObjectSchema(),
                 schemaName: "test-name",
@@ -86,7 +86,7 @@ struct StreamObjectTests {
         )
 
         let _ = try streamObject(
-            model: .v3(model),
+            model: model,
             schema: defaultObjectSchema(),
             prompt: "prompt",
             schemaName: "test-name",
@@ -126,7 +126,7 @@ struct StreamObjectTests {
         )
 
         let result = try streamObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.array(schema: elementSchema, schemaName: "array"),
             prompt: "prompt"
         )
@@ -162,7 +162,7 @@ struct StreamObjectTests {
         )
 
         let result = try streamObjectArray(
-            model: .v3(model),
+            model: model,
             schema: elementSchema,
             prompt: "prompt",
             schemaName: "array"
@@ -178,7 +178,7 @@ struct StreamObjectTests {
         let finishCollector = FinishEventCollector<JSONValue>()
 
         let result = try streamObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             onFinish: { event in
@@ -201,13 +201,13 @@ struct StreamObjectTests {
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textDelta(id: "1", delta: "{", providerMetadata: nil),
-            .error(error: .string("broken-json"))
+            .error(error: .value(.string("broken-json")))
         ])
 
         let errorCollector = ErrorEventCollector()
 
         let result = try? streamObject(
-            model: .v3(errorModel),
+            model: errorModel,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             onError: { event in
@@ -224,7 +224,7 @@ struct StreamObjectTests {
         let model = MockStreamLanguageModel(parts: defaultParts())
 
         let result = try streamObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -238,7 +238,7 @@ struct StreamObjectTests {
         let model = MockStreamLanguageModel(parts: defaultParts())
 
         let result = try streamObject(
-            model: .v3(model),
+            model: model,
             schema: defaultObjectSchema(),
             prompt: "prompt"
         )
@@ -257,7 +257,7 @@ struct StreamObjectTests {
 
     // MARK: - Helpers
 
-    private func defaultParts() -> [LanguageModelV3StreamPart] {
+    private func defaultParts() -> [LanguageModelV4StreamPart] {
         [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
@@ -271,13 +271,13 @@ struct StreamObjectTests {
             .textEnd(id: "1", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: defaultUsageV3,
+                usage: defaultUsageV4,
                 providerMetadata: ["testProvider": ["testKey": .string("testValue")]]
             )
         ]
     }
 
-    private func arrayParts() -> [LanguageModelV3StreamPart] {
+    private func arrayParts() -> [LanguageModelV4StreamPart] {
         [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date()),
@@ -288,19 +288,19 @@ struct StreamObjectTests {
             .textDelta(id: "1", delta: ",", providerMetadata: nil),
             .textDelta(id: "1", delta: "{\"value\":\"3\"}", providerMetadata: nil),
             .textDelta(id: "1", delta: "]}", providerMetadata: nil),
-            .finish(finishReason: .stop, usage: defaultUsageV3, providerMetadata: nil)
+            .finish(finishReason: .stop, usage: defaultUsageV4, providerMetadata: nil)
         ]
     }
 }
 
 // MARK: - Test utilities
 
-private final class MockStreamLanguageModel: LanguageModelV3, @unchecked Sendable {
+private final class MockStreamLanguageModel: LanguageModelV4, @unchecked Sendable {
     let provider: String = "mock-provider"
     let modelId: String = "mock-model-id"
 
     struct DoStreamCall {
-        let options: LanguageModelV3CallOptions
+        let options: LanguageModelV4CallOptions
     }
 
     private actor CallRecorder {
@@ -331,14 +331,14 @@ private final class MockStreamLanguageModel: LanguageModelV3, @unchecked Sendabl
 
     private let recorder = CallRecorder()
 
-    private let parts: [LanguageModelV3StreamPart]
-    private let requestInfo: LanguageModelV3RequestInfo?
-    private let responseInfo: LanguageModelV3StreamResponseInfo?
+    private let parts: [LanguageModelV4StreamPart]
+    private let requestInfo: LanguageModelV4RequestInfo?
+    private let responseInfo: LanguageModelV4StreamResponseInfo?
 
     init(
-        parts: [LanguageModelV3StreamPart],
-        request: LanguageModelV3RequestInfo? = nil,
-        response: LanguageModelV3StreamResponseInfo? = nil
+        parts: [LanguageModelV4StreamPart],
+        request: LanguageModelV4RequestInfo? = nil,
+        response: LanguageModelV4StreamResponseInfo? = nil
     ) {
         self.parts = parts
         self.requestInfo = request
@@ -355,13 +355,13 @@ private final class MockStreamLanguageModel: LanguageModelV3, @unchecked Sendabl
         }
     }
 
-    func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         throw NotImplementedError()
     }
 
-    func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         await recorder.append(DoStreamCall(options: options))
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: AsyncThrowingStream { continuation in
                 for part in parts {
                     continuation.yield(part)

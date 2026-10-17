@@ -10,4 +10,4 @@ import AISDKProviderUtils
 
  Port of `@ai-sdk/ai/src/types/provider-metadata.ts`.
  */
-public typealias ProviderMetadata = SharedV3ProviderMetadata
+public typealias ProviderMetadata = SharedV4ProviderMetadata

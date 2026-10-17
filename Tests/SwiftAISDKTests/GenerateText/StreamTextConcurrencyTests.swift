@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – concurrency & control")
 struct StreamTextConcurrencyTests {
-    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
+    private let defaultUsage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
 
     actor Flag { private var v = false; func set() { v = true }; func get() -> Bool { v } }
     actor StringCollector {
@@ -26,7 +26,7 @@ struct StreamTextConcurrencyTests {
 
     @Test("two subscribers receive identical deltas")
     func twoSubscribersReceiveIdenticalDeltas() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "A", providerMetadata: nil),
@@ -35,12 +35,12 @@ struct StreamTextConcurrencyTests {
             .textEnd(id: "A", providerMetadata: nil),
             .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hello")
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hello")
 
         let collector1 = StringCollector()
         let collector2 = StringCollector()
@@ -63,7 +63,7 @@ struct StreamTextConcurrencyTests {
         let yielded = Flag()
         let aborted = AbortFlag()
         // Build a slow stream to allow stop() to interleave
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             _ = Task {
                 c.yield(.streamStart(warnings: []))
                 c.yield(.responseMetadata(id: "id-0", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)))
@@ -77,9 +77,9 @@ struct StreamTextConcurrencyTests {
                 c.finish()
             }
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hello",
             settings: CallSettings(abortSignal: { aborted.isSet })
         )
@@ -115,17 +115,17 @@ struct StreamTextConcurrencyTests {
 
         // Provider stream emits two toolCalls before .finish — mimics a model
         // requesting parallel tool use in one response
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "step-1", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-A",
                 toolName: "slow_tool",
                 input: "{\"id\":\"A\"}",
                 providerExecuted: false,
                 providerMetadata: nil
             )),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-B",
                 toolName: "slow_tool",
                 input: "{\"id\":\"B\"}",
@@ -133,18 +133,18 @@ struct StreamTextConcurrencyTests {
                 providerMetadata: nil
             )),
             .finish(
-                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
+                finishReason: LanguageModelV4FinishReason(unified: .toolCalls),
                 usage: defaultUsage,
                 providerMetadata: nil
             ),
         ]
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
 
         let tools: ToolSet = [
             "slow_tool": Tool(
@@ -171,7 +171,7 @@ struct StreamTextConcurrencyTests {
         ]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello"
         )
@@ -206,11 +206,11 @@ struct StreamTextConcurrencyTests {
             lifecycle.continuation.finish()
         }
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             _ = Task {
                 c.yield(.streamStart(warnings: []))
                 c.yield(.responseMetadata(id: "s1", modelId: "mock-model", timestamp: Date(timeIntervalSince1970: 0)))
-                c.yield(.toolCall(LanguageModelV3ToolCall(
+                c.yield(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: "call-1",
                     toolName: "blocking_tool",
                     input: "{}",
@@ -218,7 +218,7 @@ struct StreamTextConcurrencyTests {
                     providerMetadata: nil
                 )))
                 c.yield(.finish(
-                    finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
+                    finishReason: LanguageModelV4FinishReason(unified: .toolCalls),
                     usage: defaultUsage,
                     providerMetadata: nil
                 ))
@@ -244,9 +244,9 @@ struct StreamTextConcurrencyTests {
             )
         ]
 
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "hello",
             settings: CallSettings(abortSignal: { aborted.isSet })

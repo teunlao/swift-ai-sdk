@@ -47,31 +47,6 @@ public func uploadFile(
 
 @_disfavoredOverload
 public func uploadFile(
-    api: any ProviderV3,
-    data: DataContentOrURL,
-    mediaType: String? = nil,
-    filename: String? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil
-) async throws -> DefaultUploadFileResult {
-    guard let filesProvider = api as? any FilesProvider else {
-        throw UploadCapabilityError(message: "The provider does not support file uploads. Make sure it exposes a files() method.")
-    }
-
-    return try await uploadFile(
-        api: filesProvider.files(),
-        data: data,
-        mediaType: mediaType,
-        filename: filename,
-        abortSignal: abortSignal,
-        headers: headers,
-        providerOptions: providerOptions
-    )
-}
-
-@_disfavoredOverload
-public func uploadFile(
     api: any ProviderV4,
     data: DataContentOrURL,
     mediaType: String? = nil,
@@ -87,27 +62,6 @@ public func uploadFile(
     return try await uploadFile(
         api: filesAPI,
         data: data,
-        mediaType: mediaType,
-        filename: filename,
-        abortSignal: abortSignal,
-        headers: headers,
-        providerOptions: providerOptions
-    )
-}
-
-@_disfavoredOverload
-public func uploadFile(
-    api: any ProviderV3,
-    data: DataContent,
-    mediaType: String? = nil,
-    filename: String? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil
-) async throws -> DefaultUploadFileResult {
-    try await uploadFile(
-        api: api,
-        data: toDataContentOrURL(data),
         mediaType: mediaType,
         filename: filename,
         abortSignal: abortSignal,
@@ -201,30 +155,14 @@ private func cancelUploadStream(_ data: FilesV4UploadFileData) async {
 }
 
 private func normalizeUploadData(_ data: DataContentOrURL) throws -> FilesV4UploadFileData {
-    switch data {
-    case .text(let text):
-        return .text(text)
+    switch try convertToFileData(data).data {
+    case .text(let text): return .text(text)
+    case .data(let bytes): return .data(bytes)
+    case .base64(let base64): return .base64(base64)
     case .reference:
-        throw InvalidArgumentError(
-            argument: "data",
-            message: "Provider reference data cannot be uploaded again. Pass the original file bytes or text."
-        )
-    case .data, .string, .url:
-        break
-    }
-
-    let converted = try convertToLanguageModelV3DataContent(data)
-
-    switch converted.data {
-    case .data(let bytes):
-        return .data(bytes)
-    case .base64(let base64):
-        return .base64(base64)
+        throw InvalidArgumentError(argument: "data", message: "Provider reference data cannot be uploaded again. Pass the original file bytes or text.")
     case .url:
-        throw InvalidArgumentError(
-            argument: "data",
-            message: "URL data is not supported for file uploads. Fetch the URL content first and pass the bytes."
-        )
+        throw InvalidArgumentError(argument: "data", message: "URL data is not supported for file uploads. Fetch the URL content first and pass the bytes.")
     }
 }
 

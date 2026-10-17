@@ -27,7 +27,7 @@ struct GoogleEmbeddingModelTests {
         let model = try createGoogle(settings: .init(apiKey: "key", fetch: fetch)).embeddingModel(modelId: "gemini-embedding-2")
         let values = (0...100).map(String.init)
         let content: [JSONValue] = (0...100).map { .array([.object(["text": .string("multimodal-\($0)")])]) }
-        let result = try await embedMany(model: .v4(model), values: values, dimensions: 8, maxParallelCalls: 1, maxRetries: 0, providerOptions: ["google": ["content": .array(content)]])
+        let result = try await embedMany(model: model, values: values, dimensions: 8, maxParallelCalls: 1, maxRetries: 0, providerOptions: ["google": ["content": .array(content)]])
         #expect(result.embeddings == (0...100).map { [Double($0)] })
     }
 

@@ -109,7 +109,7 @@ public typealias Context = [String: JSONValue]
 
  Port of `ToolResultOutput` from `@ai-sdk/provider-utils/src/types/content-part.ts`.
  */
-public typealias ToolResultOutput = LanguageModelV3ToolResultOutput
+public typealias ToolResultOutput = LanguageModelV4ToolResultOutput
 
 /**
  Description of a function tool: fixed text, or text resolved per call from the
@@ -223,7 +223,7 @@ public struct Tool: Sendable {
     public let contextSchema: FlexibleSchema<JSONValue>?
 
     /// An optional list of input examples that show the language model what the input should look like.
-    public let inputExamples: [LanguageModelV3ToolInputExample]?
+    public let inputExamples: [LanguageModelV4ToolInputExample]?
 
     /// Strict mode setting for the tool.
     public let strict: Bool?
@@ -282,7 +282,7 @@ public struct Tool: Sendable {
         metadata: [String: JSONValue]? = nil,
         inputSchema: FlexibleSchema<JSONValue>,
         contextSchema: FlexibleSchema<JSONValue>? = nil,
-        inputExamples: [LanguageModelV3ToolInputExample]? = nil,
+        inputExamples: [LanguageModelV4ToolInputExample]? = nil,
         strict: Bool? = nil,
         needsApproval: NeedsApproval? = nil,
         onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,
@@ -499,7 +499,7 @@ public func tool(
     metadata: [String: JSONValue]? = nil,
     inputSchema: FlexibleSchema<JSONValue>,
     contextSchema: FlexibleSchema<JSONValue>? = nil,
-    inputExamples: [LanguageModelV3ToolInputExample]? = nil,
+    inputExamples: [LanguageModelV4ToolInputExample]? = nil,
     strict: Bool? = nil,
     needsApproval: NeedsApproval? = nil,
     onInputStart: (@Sendable (ToolExecutionOptions) async throws -> Void)? = nil,

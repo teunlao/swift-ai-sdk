@@ -4,12 +4,12 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import SwiftAISDK
 
-private let basePrompt: LanguageModelV3Prompt = [
+private let basePrompt: LanguageModelV4Prompt = [
     .user(content: [.text(.init(text: "Hello, world!"))], providerOptions: nil)
 ]
 
-private func makeBaseOptions(tools: [LanguageModelV3Tool]?) -> LanguageModelV3CallOptions {
-    LanguageModelV3CallOptions(
+private func makeBaseOptions(tools: [LanguageModelV4Tool]?) -> LanguageModelV4CallOptions {
+    LanguageModelV4CallOptions(
         prompt: basePrompt,
         tools: tools
     )
@@ -18,9 +18,9 @@ private func makeBaseOptions(tools: [LanguageModelV3Tool]?) -> LanguageModelV3Ca
 private func makeFunctionTool(
     name: String,
     description: String? = nil,
-    inputExamples: [LanguageModelV3ToolInputExample]? = nil
-) -> LanguageModelV3Tool {
-    .function(LanguageModelV3FunctionTool(
+    inputExamples: [LanguageModelV4ToolInputExample]? = nil
+) -> LanguageModelV4Tool {
+    .function(LanguageModelV4FunctionTool(
         name: name,
         inputSchema: .object([
             "type": .string("object"),
@@ -32,14 +32,14 @@ private func makeFunctionTool(
 }
 
 private func transform(
-    _ middleware: LanguageModelV3Middleware,
-    _ options: LanguageModelV3CallOptions
-) async throws -> LanguageModelV3CallOptions {
+    _ middleware: LanguageModelV4Middleware,
+    _ options: LanguageModelV4CallOptions
+) async throws -> LanguageModelV4CallOptions {
     guard let transform = middleware.transformParams else {
         Issue.record("Expected transformParams to be set")
         return options
     }
-    return try await transform(.generate, options, MockLanguageModelV3())
+    return try await transform(.generate, options, MockLanguageModelV4())
 }
 
 @Suite("addToolInputExamplesMiddleware")
@@ -48,7 +48,7 @@ struct AddToolInputExamplesMiddlewareTests {
     struct TransformParamsTests {
         @Test("appends examples to tool description")
         func appendsExamples() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -56,8 +56,8 @@ struct AddToolInputExamplesMiddlewareTests {
                         name: "weather",
                         description: "Get the weather in a location",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("San Francisco")]),
-                            LanguageModelV3ToolInputExample(input: ["location": .string("London")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("San Francisco")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("London")]),
                         ]
                     )
                 ])
@@ -79,7 +79,7 @@ Input Examples:
 
         @Test("handles tool without existing description")
         func noExistingDescription() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -87,7 +87,7 @@ Input Examples:
                         name: "weather",
                         description: nil,
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("Berlin")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("Berlin")]),
                         ]
                     )
                 ])
@@ -109,7 +109,7 @@ Input Examples:
     struct PrefixTests {
         @Test("uses provided prefix")
         func usesPrefix() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
                 prefix: "Here are some example inputs:"
             ))
 
@@ -120,7 +120,7 @@ Input Examples:
                         name: "weather",
                         description: "Get the weather",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("Paris")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("Paris")]),
                         ]
                     )
                 ])
@@ -143,11 +143,11 @@ Here are some example inputs:
     struct FormatTests {
         @Test("uses default JSON stringify format")
         func defaultFormat() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
-                    .function(LanguageModelV3FunctionTool(
+                    .function(LanguageModelV4FunctionTool(
                         name: "search",
                         inputSchema: .object([
                             "type": .string("object"),
@@ -157,7 +157,7 @@ Here are some example inputs:
                             ])
                         ]),
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: [
+                            LanguageModelV4ToolInputExample(input: [
                                 "query": .string("test"),
                                 "limit": .number(10),
                             ])
@@ -181,7 +181,7 @@ Input Examples:
 
         @Test("uses custom format function")
         func customFormat() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(
                 format: { example, index in
                     let encoder = JSONEncoder()
                     guard let data = try? encoder.encode(JSONValue.object(example.input)) else {
@@ -198,8 +198,8 @@ Input Examples:
                         name: "weather",
                         description: "Get the weather",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("Paris")]),
-                            LanguageModelV3ToolInputExample(input: ["location": .string("Tokyo")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("Paris")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("Tokyo")]),
                         ]
                     )
                 ])
@@ -223,7 +223,7 @@ Input Examples:
     struct RemoveTests {
         @Test("removes inputExamples by default")
         func removesByDefault() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -231,7 +231,7 @@ Input Examples:
                         name: "weather",
                         description: "Get the weather",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("NYC")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("NYC")]),
                         ]
                     )
                 ])
@@ -246,7 +246,7 @@ Input Examples:
 
         @Test("keeps inputExamples when remove is false")
         func keepsWhenRemoveFalse() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(remove: false))
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware(options: AddToolInputExamplesOptions(remove: false))
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -254,7 +254,7 @@ Input Examples:
                         name: "weather",
                         description: "Get the weather",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("NYC")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("NYC")]),
                         ]
                     )
                 ])
@@ -262,7 +262,7 @@ Input Examples:
 
             if case .function(let tool) = result.tools?.first {
                 #expect(tool.inputExamples == [
-                    LanguageModelV3ToolInputExample(input: ["location": .string("NYC")])
+                    LanguageModelV4ToolInputExample(input: ["location": .string("NYC")])
                 ])
             } else {
                 Issue.record("Expected function tool")
@@ -274,7 +274,7 @@ Input Examples:
     struct EdgeCaseTests {
         @Test("passes through tools without inputExamples")
         func noInputExamples() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [makeFunctionTool(name: "weather", description: "Get the weather")])
@@ -289,7 +289,7 @@ Input Examples:
 
         @Test("passes through tools with empty inputExamples array")
         func emptyInputExamples() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -310,8 +310,8 @@ Input Examples:
 
         @Test("passes through provider tools unchanged")
         func providerToolsUnchanged() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
-            let providerTool = LanguageModelV3ProviderTool(
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
+            let providerTool = LanguageModelV4ProviderTool(
                 id: "anthropic.web_search_20250305",
                 name: "web_search",
                 args: ["maxUses": .number(5)]
@@ -332,7 +332,7 @@ Input Examples:
 
         @Test("handles multiple tools with mixed examples")
         func mixedExamples() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(
                 middleware,
                 makeBaseOptions(tools: [
@@ -340,7 +340,7 @@ Input Examples:
                         name: "weather",
                         description: "Get the weather",
                         inputExamples: [
-                            LanguageModelV3ToolInputExample(input: ["location": .string("NYC")]),
+                            LanguageModelV4ToolInputExample(input: ["location": .string("NYC")]),
                         ]
                     ),
                     makeFunctionTool(name: "time", description: "Get the current time")
@@ -360,14 +360,14 @@ Input Examples:
 
         @Test("handles empty tools array")
         func emptyToolsArray() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(middleware, makeBaseOptions(tools: []))
             #expect(result.tools == [])
         }
 
         @Test("handles nil tools")
         func nilTools() async throws {
-            let middleware: LanguageModelV3Middleware = addToolInputExamplesMiddleware()
+            let middleware: LanguageModelV4Middleware = addToolInputExamplesMiddleware()
             let result = try await transform(middleware, makeBaseOptions(tools: nil))
             #expect(result.tools == nil)
         }

@@ -89,7 +89,7 @@ private func isAudioEmpty(_ audio: SpeechModelV4Audio) -> Bool {
  - Throws: `UnsupportedModelVersionError`, `NoSpeechGeneratedError`, or retry-related errors.
  */
 public func generateSpeech(
-    model: SpeechModel,
+    model: any SpeechModelConvertible,
     text: String,
     voice: String? = nil,
     outputFormat: String? = nil,
@@ -102,7 +102,7 @@ public func generateSpeech(
     headers: [String: String]? = nil,
     telemetry: TelemetryOptions? = nil
 ) async throws -> any SpeechResult {
-    guard let model = try resolveSpeechModelV4(model) else {
+    guard let model = try resolveSpeechModel(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
     }
 
@@ -215,62 +215,3 @@ private func generateSpeechCall(
     )
 }
 
-public func generateSpeech(
-    model: any SpeechModelV4,
-    text: String,
-    voice: String? = nil,
-    outputFormat: String? = nil,
-    instructions: String? = nil,
-    speed: Double? = nil,
-    language: String? = nil,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    telemetry: TelemetryOptions? = nil
-) async throws -> any SpeechResult {
-    try await generateSpeech(
-        model: .v4(model),
-        text: text,
-        voice: voice,
-        outputFormat: outputFormat,
-        instructions: instructions,
-        speed: speed,
-        language: language,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        telemetry: telemetry
-    )
-}
-
-public func generateSpeech(
-    model: any SpeechModelV3,
-    text: String,
-    voice: String? = nil,
-    outputFormat: String? = nil,
-    instructions: String? = nil,
-    speed: Double? = nil,
-    language: String? = nil,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    telemetry: TelemetryOptions? = nil
-) async throws -> any SpeechResult {
-    try await generateSpeech(
-        model: .v3(model),
-        text: text,
-        voice: voice,
-        outputFormat: outputFormat,
-        instructions: instructions,
-        speed: speed,
-        language: language,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        telemetry: telemetry
-    )
-}

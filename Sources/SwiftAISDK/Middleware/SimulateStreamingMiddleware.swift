@@ -73,66 +73,6 @@ public func simulateStreamingMiddleware() -> LanguageModelV4Middleware {
     )
 }
 
-/// Creates a V3 middleware that simulates streaming from a generate result.
-public func simulateStreamingMiddleware() -> LanguageModelV3Middleware {
-    LanguageModelV3Middleware(
-        middlewareVersion: "v3",
-        wrapStream: { doGenerate, _, _, _ in
-            let result = try await doGenerate()
-
-            var parts: [LanguageModelV3StreamPart] = [
-                .streamStart(warnings: result.warnings),
-                .responseMetadata(
-                    id: result.response?.id,
-                    modelId: result.response?.modelId,
-                    timestamp: result.response?.timestamp
-                ),
-            ]
-
-            var id = 0
-            for content in result.content {
-                switch content {
-                case .text(let text):
-                    guard !text.text.isEmpty else { continue }
-                    parts.append(.textStart(id: String(id), providerMetadata: text.providerMetadata))
-                    parts.append(.textDelta(id: String(id), delta: text.text, providerMetadata: nil))
-                    parts.append(.textEnd(id: String(id), providerMetadata: nil))
-                    id += 1
-                case .reasoning(let reasoning):
-                    parts.append(.reasoningStart(id: String(id), providerMetadata: reasoning.providerMetadata))
-                    parts.append(.reasoningDelta(id: String(id), delta: reasoning.text, providerMetadata: nil))
-                    parts.append(.reasoningEnd(id: String(id), providerMetadata: nil))
-                    id += 1
-                case .toolCall(let toolCall):
-                    parts.append(.toolCall(toolCall))
-                case .toolResult(let toolResult):
-                    parts.append(.toolResult(toolResult))
-                case .toolApprovalRequest(let request):
-                    parts.append(.toolApprovalRequest(request))
-                case .custom(let custom):
-                    parts.append(.custom(custom))
-                case .file(let file):
-                    parts.append(.file(file))
-                case .source(let source):
-                    parts.append(.source(source))
-                }
-            }
-
-            parts.append(.finish(
-                finishReason: result.finishReason,
-                usage: result.usage,
-                providerMetadata: result.providerMetadata
-            ))
-
-            return LanguageModelV3StreamResult(
-                stream: replay(parts),
-                request: result.request,
-                response: result.response.map { LanguageModelV3StreamResponseInfo(headers: $0.headers) }
-            )
-        }
-    )
-}
-
 private func replay<Part: Sendable>(_ parts: [Part]) -> AsyncThrowingStream<Part, Error> {
     AsyncThrowingStream { continuation in
         for part in parts {

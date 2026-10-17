@@ -84,12 +84,12 @@ struct StreamTextPrepareStepParityTests {
             )
         ]
 
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
 
-        let step0Parts: [LanguageModelV3StreamPart] = [
+        let step0Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "tool1",
                 input: #"{}"#
@@ -101,7 +101,7 @@ struct StreamTextPrepareStepParityTests {
             )
         ]
 
-        let step1Parts: [LanguageModelV3StreamPart] = [
+        let step1Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock-model-id", timestamp: Date(timeIntervalSince1970: 1)),
             .textStart(id: "t", providerMetadata: nil),
@@ -117,15 +117,15 @@ struct StreamTextPrepareStepParityTests {
         let step0Stream = makeAsyncStream(from: step0Parts)
         let step1Stream = makeAsyncStream(from: step1Parts)
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(stream: step0Stream),
-                LanguageModelV3StreamResult(stream: step1Stream),
+                LanguageModelV4StreamResult(stream: step0Stream),
+                LanguageModelV4StreamResult(stream: step1Stream),
             ])
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(3)],

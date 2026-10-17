@@ -265,7 +265,7 @@ struct GenerationContractTests {
         let objectRecorder = EventRecorder()
         let objectModel = MockLanguageModelV4(doGenerate: .singleValue(generateResult([.text(LanguageModelV4Text(text: "{}"))])))
         _ = try await generateObjectNoSchema(
-            model: .v4(objectModel),
+            model: objectModel,
             prompt: "go",
             telemetry: TelemetryOptions(integrations: [objectRecorder])
         )
@@ -279,7 +279,7 @@ struct GenerationContractTests {
         let failingRecorder = EventRecorder()
         let failing = MockLanguageModelV4(doGenerate: .function { _ in throw CancellationError() })
         _ = try? await generateObjectNoSchema(
-            model: .v4(failing),
+            model: failing,
             prompt: "go",
             telemetry: TelemetryOptions(integrations: [failingRecorder]),
             settings: CallSettings(maxRetries: 0)
@@ -288,7 +288,7 @@ struct GenerationContractTests {
 
         let disabled = EventRecorder()
         _ = try await generateObjectNoSchema(
-            model: .v4(objectModel),
+            model: objectModel,
             prompt: "go",
             telemetry: TelemetryOptions(isEnabled: false, integrations: [disabled])
         )
@@ -305,7 +305,7 @@ struct GenerationContractTests {
             .finish(finishReason: LanguageModelV4FinishReason(unified: .stop), usage: usage, providerMetadata: nil),
         ])))
 
-        let result = try streamObjectNoSchema(model: .v4(model), prompt: "go")
+        let result = try streamObjectNoSchema(model: model, prompt: "go")
 
         #expect(try await result.object == .object(["a": .number(1)]))
         #expect(model.doStreamCalls.first?.responseFormat == .json(schema: nil, name: nil, description: nil))

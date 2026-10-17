@@ -2,41 +2,8 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/// Converts various data content inputs to `LanguageModelV3DataContent` while tracking media type.
-public func convertToLanguageModelV3DataContent(
-    _ content: DataContentOrURL
-) throws -> (data: LanguageModelV3DataContent, mediaType: String?) {
-    switch content {
-    case .data(let data):
-        return (data: .data(data), mediaType: nil)
-
-    case .string(let string):
-        if let url = URL(string: string), url.scheme == "data" {
-            return try extractDataFromDataURL(url)
-        } else if let url = URL(string: string), let scheme = url.scheme,
-                  scheme == "http" || scheme == "https" {
-            return (data: .url(url), mediaType: nil)
-        } else {
-            return (data: .base64(string), mediaType: nil)
-        }
-
-    case .url(let url):
-        if url.scheme == "data" {
-            return try extractDataFromDataURL(url)
-        } else {
-            return (data: .url(url), mediaType: nil)
-        }
-
-    case .reference:
-        throw UnsupportedFunctionalityError(functionality: "provider reference file data on a v3 model")
-
-    case .text(let text):
-        return (data: .data(Data(text.utf8)), mediaType: nil)
-    }
-}
-
-/// Converts data content inputs to the V4 tagged file-data shape.
-public func convertToSharedV4FileData(
+/// Converts data content inputs to the provider's tagged file-data shape.
+public func convertToFileData(
     _ content: DataContentOrURL
 ) throws -> (data: SharedV4FileData, mediaType: String?) {
     switch content {
@@ -44,18 +11,19 @@ public func convertToSharedV4FileData(
         return (data: .reference(reference), mediaType: nil)
     case .text(let text):
         return (data: .text(text), mediaType: nil)
-    case .data, .string, .url:
-        break
-    }
-
-    let converted = try convertToLanguageModelV3DataContent(content)
-    switch converted.data {
     case .data(let data):
-        return (data: .data(data), mediaType: converted.mediaType)
-    case .base64(let base64):
-        return (data: .base64(base64), mediaType: converted.mediaType)
+        return (data: .data(data), mediaType: nil)
+    case .string(let string):
+        if let url = URL(string: string), url.scheme == "data" {
+            return try extractDataFromDataURL(url)
+        } else if let url = URL(string: string), let scheme = url.scheme,
+                  scheme == "http" || scheme == "https" {
+            return (data: .url(url), mediaType: nil)
+        }
+        return (data: .base64(string), mediaType: nil)
     case .url(let url):
-        return (data: .url(url), mediaType: converted.mediaType)
+        if url.scheme == "data" { return try extractDataFromDataURL(url) }
+        return (data: .url(url), mediaType: nil)
     }
 }
 
@@ -100,7 +68,7 @@ public func convertDataToText(_ data: Data) throws -> String {
     return text
 }
 
-private func extractDataFromDataURL(_ url: URL) throws -> (data: LanguageModelV3DataContent, mediaType: String?) {
+private func extractDataFromDataURL(_ url: URL) throws -> (data: SharedV4FileData, mediaType: String?) {
     let dataUrlString = url.absoluteString
     let (mediaType, base64Content) = splitDataUrl(dataUrlString)
 

@@ -33,24 +33,6 @@ public func uploadSkill(
 }
 
 public func uploadSkill(
-    api: any ProviderV3,
-    files: [SkillsV4File],
-    displayTitle: String? = nil,
-    providerOptions: ProviderOptions? = nil
-) async throws -> DefaultUploadSkillResult {
-    guard let skillsProvider = api as? any SkillsProvider else {
-        throw UploadCapabilityError(message: "The provider does not support skills. Make sure it exposes a skills() method.")
-    }
-
-    return try await uploadSkill(
-        api: skillsProvider.skills(),
-        files: files,
-        displayTitle: displayTitle,
-        providerOptions: providerOptions
-    )
-}
-
-public func uploadSkill(
     api: any ProviderV4,
     files: [SkillsV4File],
     displayTitle: String? = nil,

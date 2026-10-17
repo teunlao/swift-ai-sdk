@@ -118,11 +118,11 @@ struct GenerateImageTests {
         warnings: [ImageGenerationWarning] = [],
         timestamp: Date? = nil,
         modelId: String? = nil,
-        providerMetadata: ImageModelV3ProviderMetadata? = nil,
-        usage: ImageModelV3Usage? = nil,
+        providerMetadata: ImageModelV4ProviderMetadata? = nil,
+        usage: ImageModelV4Usage? = nil,
         headers: [String: String]? = nil
-    ) -> ImageModelV3GenerateResult {
-        let generatedImages: ImageModelV3GeneratedImages
+    ) -> ImageModelV4GenerateResult {
+        let generatedImages: ImageModelV4GeneratedImages
         let imageCount: Int
 
         switch images {
@@ -135,17 +135,17 @@ struct GenerateImageTests {
         }
 
         let metadata = providerMetadata ?? [
-            "testProvider": ImageModelV3ProviderMetadataValue(
+            "testProvider": ImageModelV4ProviderMetadataValue(
                 images: Array(repeating: .null, count: imageCount),
                 additionalData: nil
             )
         ]
 
-        return ImageModelV3GenerateResult(
+        return ImageModelV4GenerateResult(
             images: generatedImages,
-            warnings: warnings.map(convertImageGenerationWarningToV3),
+            warnings: warnings.map(convertImageGenerationWarningToV4),
             providerMetadata: metadata,
-            response: ImageModelV3ResponseInfo(
+            response: ImageModelV4ResponseInfo(
                 timestamp: timestamp ?? Date(),
                 modelId: modelId ?? "test-model-id",
                 headers: headers
@@ -195,7 +195,7 @@ struct GenerateImageTests {
         )
     }
 
-    private func convertImageGenerationWarningToV3(_ warning: ImageGenerationWarning) -> SharedV3Warning {
+    private func convertImageGenerationWarningToV4(_ warning: ImageGenerationWarning) -> SharedV4Warning {
         switch warning {
         case let .unsupported(feature, details):
             return .unsupported(feature: feature, details: details)
@@ -218,7 +218,7 @@ struct GenerateImageTests {
 
     @Test("should send args to doGenerate")
     func sendsArgsToDoGenerate() async throws {
-        let optionsBox = SingleValueBox<ImageModelV3CallOptions>()
+        let optionsBox = SingleValueBox<ImageModelV4CallOptions>()
         let abortSignal: @Sendable () -> Bool = { false }
         let providerOptions: ProviderOptions = [
             "mock-provider": [
@@ -226,14 +226,14 @@ struct GenerateImageTests {
             ]
         ]
         let expectedImageData = try convertBase64ToData(pngBase64)
-        let expectedFile: ImageModelV3File = .file(
+        let expectedFile: ImageModelV4File = .file(
             mediaType: "image/png",
             data: .binary(expectedImageData),
             providerOptions: nil
         )
 
         _ = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { options in
                     await optionsBox.set(options)
                     return self.createMockResponse(
@@ -347,7 +347,7 @@ struct GenerateImageTests {
 
     @Test("should resolve string image model IDs through V4 global provider")
     func resolvesStringImageModelThroughV4GlobalProvider() async throws {
-        let provider = customProviderV4(
+        let provider = customProvider(
             imageModels: [
                 "image-model": MockImageModelV4(
                     provider: "v4-provider",
@@ -362,9 +362,9 @@ struct GenerateImageTests {
             ]
         )
 
-        let result = try await withGlobalProviderV4(provider, operation: {
+        let result = try await withGlobalProvider(provider, operation: {
             try await generateImage(
-                model: .string("image-model"),
+                model: "image-model",
                 prompt: prompt
             )
         })
@@ -380,7 +380,7 @@ struct GenerateImageTests {
         ]
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .base64([self.pngBase64]),
@@ -423,7 +423,7 @@ struct GenerateImageTests {
             defer { resetWarningHooks() }
 
             _ = try await generateImage(
-                model: MockImageModelV3(
+                model: MockImageModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             images: .base64([self.pngBase64]),
@@ -470,7 +470,7 @@ struct GenerateImageTests {
 
 
             _ = try await generateImage(
-                model: MockImageModelV3(
+                model: MockImageModelV4(
                     maxImagesPerCall: .value(2),
                     doGenerate: { options in
                         switch options.n {
@@ -524,7 +524,7 @@ struct GenerateImageTests {
             defer { resetWarningHooks() }
 
             _ = try await generateImage(
-                model: MockImageModelV3(
+                model: MockImageModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             images: .base64([self.pngBase64]),
@@ -546,7 +546,7 @@ struct GenerateImageTests {
     @Test("should return generated images with correct mime types")
     func returnsImagesWithMimeTypes() async throws {
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .base64([self.pngBase64, self.jpegBase64])
@@ -575,7 +575,7 @@ struct GenerateImageTests {
     @Test("should return the first image with correct mime type")
     func returnsFirstImage() async throws {
         let result = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .base64([self.pngBase64, self.jpegBase64])
@@ -595,7 +595,7 @@ struct GenerateImageTests {
         let binaryImages = [decodeBase64(pngBase64), decodeBase64(jpegBase64)]
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .data(binaryImages)
@@ -625,7 +625,7 @@ struct GenerateImageTests {
         ]
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -681,7 +681,7 @@ struct GenerateImageTests {
         ]
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
@@ -733,7 +733,7 @@ struct GenerateImageTests {
         }
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 maxImagesPerCall: .function(handler),
                 doGenerate: { options in
                     switch options.n {
@@ -786,7 +786,7 @@ struct GenerateImageTests {
         }
 
         let result: DefaultGenerateImageResult = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 maxImagesPerCall: .function(handler),
                 doGenerate: { options in
                     switch options.n {
@@ -822,7 +822,7 @@ struct GenerateImageTests {
     func throwsWhenNoImages() async throws {
         do {
             _ = try await generateImage(
-                model: MockImageModelV3(
+                model: MockImageModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             images: .base64([]),
@@ -852,7 +852,7 @@ struct GenerateImageTests {
 
         do {
             _ = try await generateImage(
-                model: MockImageModelV3(
+                model: MockImageModelV4(
                     doGenerate: { _ in
                         self.createMockResponse(
                             images: .base64([]),
@@ -879,7 +879,7 @@ struct GenerateImageTests {
         let headers = ["x-test": "value"]
 
         let result = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .base64([self.pngBase64]),
@@ -904,7 +904,7 @@ struct GenerateImageTests {
     @Test("should return provider metadata")
     func returnsProviderMetadata() async throws {
         let metadata = [
-            "testProvider": ImageModelV3ProviderMetadataValue(
+            "testProvider": ImageModelV4ProviderMetadataValue(
                 images: [
                     .object(["revisedPrompt": .string("test-revised-prompt")]),
                     .null
@@ -914,7 +914,7 @@ struct GenerateImageTests {
         ]
 
         let result = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(
                         images: .base64([self.pngBase64, self.pngBase64]),
@@ -938,7 +938,7 @@ struct GenerateImageTests {
     @Test("should expose empty usage when provider does not report usage")
     func exposesEmptyUsageWhenProviderDoesNotReportUsage() async throws {
         let result = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 doGenerate: { _ in
                     self.createMockResponse(images: .base64([self.pngBase64]))
                 }
@@ -953,14 +953,14 @@ struct GenerateImageTests {
     func aggregatesUsageAcrossMultipleProviderCalls() async throws {
 
         let result = try await generateImage(
-            model: MockImageModelV3(
+            model: MockImageModelV4(
                 maxImagesPerCall: .value(2),
                 doGenerate: { options in
                     switch options.n {
                     case 2:
                         return self.createMockResponse(
                             images: .base64([self.pngBase64]),
-                            usage: ImageModelV3Usage(
+                            usage: ImageModelV4Usage(
                                 inputTokens: 10,
                                 outputTokens: 0,
                                 totalTokens: 10
@@ -969,7 +969,7 @@ struct GenerateImageTests {
                     case 1:
                         return self.createMockResponse(
                             images: .base64([self.jpegBase64]),
-                            usage: ImageModelV3Usage(
+                            usage: ImageModelV4Usage(
                                 inputTokens: 5,
                                 outputTokens: 0,
                                 totalTokens: 5

@@ -137,28 +137,6 @@ private func formatWarning(_ warning: Warning) -> String {
     }
 }
 
-/// Format SharedV3Warning
-private func formatSharedV3Warning(_ warning: SharedV3Warning, prefix: String) -> String {
-    switch warning {
-    case .unsupported(let feature, let details):
-        var message = "\(prefix) The feature \"\(feature)\" is not supported"
-        if let details = details {
-            message += " - \(details)"
-        }
-        return message
-
-    case .compatibility(let feature, let details):
-        var message = "\(prefix) Using compatibility mode for \"\(feature)\""
-        if let details = details {
-            message += " - \(details)"
-        }
-        return message
-
-    case .other(let message):
-        return "\(prefix) \(message)"
-    }
-}
-
 /// Format SharedV4Warning
 private func formatSharedV4Warning(_ warning: SharedV4Warning, prefix: String) -> String {
     switch warning {

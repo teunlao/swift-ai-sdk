@@ -24,7 +24,7 @@ struct EmbedManyTests {
 
     @Test("UTF-8 byte batches preserve per-value provider options")
     func utf8BatchesPreserveProviderOptions() async throws {
-        struct BudgetModel: EmbeddingModelV3, EmbeddingModelMaxInputBytesPerCall, EmbeddingModelProviderOptionsTransformer {
+        struct BudgetModel: EmbeddingModelV4, EmbeddingModelMaxInputBytesPerCall, EmbeddingModelProviderOptionsTransformer {
             typealias VALUE = String
             let provider = "test"
             let modelId = "byte-budget"
@@ -34,7 +34,7 @@ struct EmbedManyTests {
             func transformProviderOptions(_ options: EmbeddingModelProviderOptionsTransformerOptions) async throws -> SharedV4ProviderOptions? {
                 ["test": ["indices": .array((options.startIndex..<options.endIndex).map { .number(Double($0)) })]]
             }
-            func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
+            func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
                 guard options.values.reduce(0, { $0 + $1.utf8.count }) <= 4,
                       case .array(let indices)? = options.providerOptions?["test"]?["indices"] else {
                     return .init(embeddings: [])
@@ -45,7 +45,7 @@ struct EmbedManyTests {
                 }, usage: .init(tokens: 1))
             }
         }
-        let result = try await embedMany(model: .v3(BudgetModel()), values: ["é", "é", "a"])
+        let result = try await embedMany(model: BudgetModel(), values: ["é", "é", "a"])
         #expect(result.embeddings == [[0], [1], [2]])
         #expect(result.usage.tokens == 2)
         #expect(result.responses?.count == 2)
@@ -68,7 +68,7 @@ struct EmbedManyTests {
         let events = EventRecorder()
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { options in
@@ -79,14 +79,14 @@ struct EmbedManyTests {
 
             let embeddingIndex = testValues.firstIndex(of: options.values[0])!
 
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: [dummyEmbeddings[embeddingIndex]],
-                response: EmbeddingModelV3ResponseInfo()
+                response: EmbeddingModelV4ResponseInfo()
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -107,7 +107,7 @@ struct EmbedManyTests {
         let events = EventRecorder()
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: true,
             maxEmbeddingsPerCall: 1
         ) { options in
@@ -118,14 +118,14 @@ struct EmbedManyTests {
 
             let embeddingIndex = testValues.firstIndex(of: options.values[0])!
 
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: [dummyEmbeddings[embeddingIndex]],
-                response: EmbeddingModelV3ResponseInfo()
+                response: EmbeddingModelV4ResponseInfo()
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -144,7 +144,7 @@ struct EmbedManyTests {
         let events = EventRecorder()
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: true,
             maxEmbeddingsPerCall: 1
         ) { options in
@@ -155,14 +155,14 @@ struct EmbedManyTests {
 
             let embeddingIndex = testValues.firstIndex(of: options.values[0])!
 
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: [dummyEmbeddings[embeddingIndex]],
-                response: EmbeddingModelV3ResponseInfo()
+                response: EmbeddingModelV4ResponseInfo()
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues,
             maxParallelCalls: 2
         )
@@ -180,14 +180,14 @@ struct EmbedManyTests {
 
     @Test("result.embeddings populated for single-call path")
     func embeddingsSingleCall() async throws {
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             maxEmbeddingsPerCall: nil
         ) { _ in
-            EmbeddingModelV3DoEmbedResult(embeddings: dummyEmbeddings)
+            EmbeddingModelV4Result(embeddings: dummyEmbeddings)
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -196,19 +196,19 @@ struct EmbedManyTests {
 
     @Test("result.embeddings aggregated across multiple calls")
     func embeddingsMultipleCalls() async throws {
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 2
         ) { options in
             if options.values == Array(testValues.prefix(2)) {
-                return EmbeddingModelV3DoEmbedResult(embeddings: Array(dummyEmbeddings.prefix(2)))
+                return EmbeddingModelV4Result(embeddings: Array(dummyEmbeddings.prefix(2)))
             }
             #expect(options.values == Array(testValues.suffix(1)))
-            return EmbeddingModelV3DoEmbedResult(embeddings: Array(dummyEmbeddings.suffix(1)))
+            return EmbeddingModelV4Result(embeddings: Array(dummyEmbeddings.suffix(1)))
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -219,21 +219,21 @@ struct EmbedManyTests {
     func responsesCollected() async throws {
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { _ in
             let index = await callCounter.next()
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: [dummyEmbeddings[index]],
-                response: EmbeddingModelV3ResponseInfo(
+                response: EmbeddingModelV4ResponseInfo(
                     body: ["index": index]
                 )
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -248,12 +248,12 @@ struct EmbedManyTests {
 
     @Test("result.values mirrors input order")
     func resultValuesMatchInput() async throws {
-        let model = TestEmbeddingModelV3<String> { _ in
-            EmbeddingModelV3DoEmbedResult(embeddings: dummyEmbeddings)
+        let model = TestEmbeddingModelV4 { _ in
+            EmbeddingModelV4Result(embeddings: dummyEmbeddings)
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -264,20 +264,20 @@ struct EmbedManyTests {
     func usageAggregated() async throws {
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 2
         ) { _ in
             let index = await callCounter.next()
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: index == 0
                     ? Array(dummyEmbeddings.prefix(2)) : Array(dummyEmbeddings.suffix(1)),
-                usage: EmbeddingModelV3Usage(tokens: index == 0 ? 10 : 20)
+                usage: EmbeddingModelV4Usage(tokens: index == 0 ? 10 : 20)
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -288,16 +288,16 @@ struct EmbedManyTests {
     func headersForwarded() async throws {
         let capturedHeaders = HeadersCapture()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             maxEmbeddingsPerCall: nil
         ) { options in
             await capturedHeaders.set(options.headers)
-            return EmbeddingModelV3DoEmbedResult(embeddings: dummyEmbeddings)
+            return EmbeddingModelV4Result(embeddings: dummyEmbeddings)
         }
 
         _ =
             try await embedMany(
-                model: .v3(model),
+                model: model,
                 values: testValues,
                 headers: ["custom-request-header": "request-header-value"]
             ) as DefaultEmbedManyResult<String>
@@ -316,16 +316,16 @@ struct EmbedManyTests {
             "aProvider": ["someKey": .string("someValue")]
         ]
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             maxEmbeddingsPerCall: nil
         ) { options in
             #expect(options.providerOptions == expected)
-            return EmbeddingModelV3DoEmbedResult(embeddings: [[1, 2, 3]])
+            return EmbeddingModelV4Result(embeddings: [[1, 2, 3]])
         }
 
         _ =
             try await embedMany(
-                model: .v3(model),
+                model: model,
                 values: ["test-input"],
                 providerOptions: expected
             ) as DefaultEmbedManyResult<String>
@@ -335,7 +335,7 @@ struct EmbedManyTests {
     func providerMetadataMerged() async throws {
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 1
         ) { _ in
@@ -347,14 +347,14 @@ struct EmbedManyTests {
                 ]
             ]
 
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: [dummyEmbeddings[index]],
                 providerMetadata: metadata
             )
         }
 
         let result = try await embedMany(
-            model: .v3(model),
+            model: model,
             values: testValues
         )
 
@@ -405,7 +405,7 @@ struct EmbedManyTests {
         }
 
         let result = try await embedMany(
-            model: .v4(model),
+            model: model,
             values: testValues
         )
 
@@ -432,11 +432,10 @@ struct EmbedManyTests {
 
         _ =
             try await embedMany(
-                model: .v3(
-                    TestEmbeddingModelV3<String> { _ in
-                        EmbeddingModelV3DoEmbedResult(embeddings: dummyEmbeddings)
-                    }
-                ),
+                model: 
+                    TestEmbeddingModelV4 { _ in
+                        EmbeddingModelV4Result(embeddings: dummyEmbeddings)
+                    },
                 values: testValues,
                 telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, embedding: true)])
             ) as DefaultEmbedManyResult<String>
@@ -449,21 +448,21 @@ struct EmbedManyTests {
         let tracer = MockTracer()
         let callCounter = CallCounter()
 
-        let model = TestEmbeddingModelV3<String>(
+        let model = TestEmbeddingModelV4(
             supportsParallelCalls: false,
             maxEmbeddingsPerCall: 2
         ) { _ in
             let index = await callCounter.next()
-            return EmbeddingModelV3DoEmbedResult(
+            return EmbeddingModelV4Result(
                 embeddings: index == 0
                     ? Array(dummyEmbeddings.prefix(2)) : Array(dummyEmbeddings.suffix(1)),
-                usage: EmbeddingModelV3Usage(tokens: index == 0 ? 10 : 20)
+                usage: EmbeddingModelV4Usage(tokens: index == 0 ? 10 : 20)
             )
         }
 
         _ =
             try await embedMany(
-                model: .v3(model),
+                model: model,
                 values: testValues,
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
@@ -496,16 +495,15 @@ struct EmbedManyTests {
 
         _ =
             try await embedMany(
-                model: .v3(
-                    TestEmbeddingModelV3<String>(
+                model: 
+                    TestEmbeddingModelV4(
                         maxEmbeddingsPerCall: nil
                     ) { _ in
-                        EmbeddingModelV3DoEmbedResult(
+                        EmbeddingModelV4Result(
                             embeddings: dummyEmbeddings,
-                            usage: EmbeddingModelV3Usage(tokens: 10)
+                            usage: EmbeddingModelV4Usage(tokens: 10)
                         )
-                    }
-                ),
+                    },
                 values: testValues,
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
@@ -535,16 +533,15 @@ struct EmbedManyTests {
 
         _ =
             try await embedMany(
-                model: .v3(
-                    TestEmbeddingModelV3<String>(
+                model: 
+                    TestEmbeddingModelV4(
                         maxEmbeddingsPerCall: nil
                     ) { _ in
-                        EmbeddingModelV3DoEmbedResult(
+                        EmbeddingModelV4Result(
                             embeddings: dummyEmbeddings,
-                            usage: EmbeddingModelV3Usage(tokens: 10)
+                            usage: EmbeddingModelV4Usage(tokens: 10)
                         )
-                    }
-                ),
+                    },
                 values: testValues,
                 telemetry: TelemetryOptions(
                     recordInputs: false,
@@ -582,12 +579,12 @@ private actor HeadersCapture {
     }
 }
 
-extension TestEmbeddingModelV3 where Value == String {
+extension TestEmbeddingModelV4 {
     fileprivate convenience init(
         supportsParallelCalls: Bool = true,
         maxEmbeddingsPerCall: Int? = nil,
-        doEmbed: @escaping @Sendable (EmbeddingModelV3DoEmbedOptions<String>) async throws ->
-            EmbeddingModelV3DoEmbedResult
+        doEmbed: @escaping @Sendable (EmbeddingModelV4CallOptions) async throws ->
+            EmbeddingModelV4Result
     ) {
         self.init(
             provider: "test-provider",

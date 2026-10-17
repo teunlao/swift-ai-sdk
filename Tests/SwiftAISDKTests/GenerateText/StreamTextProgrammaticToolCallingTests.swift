@@ -113,12 +113,12 @@ struct StreamTextProgrammaticToolCallingTests {
 
     @Test("5 steps: provider tool triggers client tool across multiple turns (dice game fixture)")
     func diceGameFixture() async throws {
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
         let onStepProviderMetadata = LockedValue(initial: [ProviderMetadata?]())
         let onStepFinishReasons = LockedValue(initial: [FinishReason]())
         let onFinishCapture = LockedValue(initial: Optional<FinishCapture>.none)
 
-        let step1Parts: [LanguageModelV3StreamPart] = [
+        let step1Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-1",
@@ -132,13 +132,13 @@ struct StreamTextProgrammaticToolCallingTests {
                 providerMetadata: nil
             ),
             .textEnd(id: "t1", providerMetadata: nil),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: codeExecutionToolCallId,
                 toolName: "code_execution",
                 input: #"{"type":"programmatic-tool-call","code":"game_loop()"}"#,
                 providerExecuted: true
             )),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_019jKkXz4jAdwHweHBw92CVY",
                 toolName: "rollDie",
                 input: #"{ "player": "player1" }"#
@@ -150,14 +150,14 @@ struct StreamTextProgrammaticToolCallingTests {
             ),
         ]
 
-        let step2Parts: [LanguageModelV3StreamPart] = [
+        let step2Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-2",
                 modelId: "claude-sonnet-4-5-20250929",
                 timestamp: Date(timeIntervalSince1970: 1)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_015dGLMbwBKv1ZRQr6KdJzeH",
                 toolName: "rollDie",
                 input: #"{ "player": "player2" }"#
@@ -169,19 +169,19 @@ struct StreamTextProgrammaticToolCallingTests {
             ),
         ]
 
-        let step3Parts: [LanguageModelV3StreamPart] = [
+        let step3Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-3",
                 modelId: "claude-sonnet-4-5-20250929",
                 timestamp: Date(timeIntervalSince1970: 2)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_01PMcE1JBKCeLjn83cgUCvR5",
                 toolName: "rollDie",
                 input: #"{ "player": "player1" }"#
             )),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_01MZf5QJ1EQyd2yGyeLzBxAS",
                 toolName: "rollDie",
                 input: #"{ "player": "player2" }"#
@@ -193,19 +193,19 @@ struct StreamTextProgrammaticToolCallingTests {
             ),
         ]
 
-        let step4Parts: [LanguageModelV3StreamPart] = [
+        let step4Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-4",
                 modelId: "claude-sonnet-4-5-20250929",
                 timestamp: Date(timeIntervalSince1970: 3)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_01DiUBRds64sNajVPTZRrDSM",
                 toolName: "rollDie",
                 input: #"{ "player": "player1" }"#
             )),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "toolu_01XQa3r3y1Fe8rnkGSncq626",
                 toolName: "rollDie",
                 input: #"{ "player": "player2" }"#
@@ -225,14 +225,14 @@ struct StreamTextProgrammaticToolCallingTests {
             "content": .array([]),
         ])
 
-        let step5Parts: [LanguageModelV3StreamPart] = [
+        let step5Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-5",
                 modelId: "claude-sonnet-4-5-20250929",
                 timestamp: Date(timeIntervalSince1970: 4)
             ),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: codeExecutionToolCallId,
                 toolName: "code_execution",
                 result: codeExecutionResult
@@ -247,15 +247,15 @@ struct StreamTextProgrammaticToolCallingTests {
             ),
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             provider: "anthropic",
             modelId: "claude-sonnet-4-5-20250929",
             doStream: .array([
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step1Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step2Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step3Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step4Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step5Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step1Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step2Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step3Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step4Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step5Parts)),
             ])
         )
 
@@ -268,7 +268,7 @@ struct StreamTextProgrammaticToolCallingTests {
         ]
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "Play a dice game between two players.",
             stopWhen: [isStepCount(10)],

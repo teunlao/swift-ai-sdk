@@ -134,63 +134,6 @@ public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> Lang
     )
 }
 
-/// Creates a V3 middleware that extracts reasoning sections from text content.
-public func extractReasoningMiddleware(options: ExtractReasoningOptions) -> LanguageModelV3Middleware {
-    LanguageModelV3Middleware(
-        middlewareVersion: "v3",
-        wrapGenerate: { doGenerate, _, _, _ in
-            let result = try await doGenerate()
-
-            var content: [LanguageModelV3Content] = []
-            for part in result.content {
-                guard case .text(let text) = part,
-                      let extracted = extractReasoning(from: text.text, options: options)
-                else {
-                    content.append(part)
-                    continue
-                }
-                content.append(.reasoning(LanguageModelV3Reasoning(text: extracted.reasoning)))
-                content.append(.text(LanguageModelV3Text(text: extracted.text)))
-            }
-
-            return LanguageModelV3GenerateResult(
-                content: content,
-                finishReason: result.finishReason,
-                usage: result.usage,
-                providerMetadata: result.providerMetadata,
-                request: result.request,
-                response: result.response,
-                warnings: result.warnings
-            )
-        },
-        wrapStream: { _, doStream, _, _ in
-            let result = try await doStream()
-            let extractor = ReasoningStreamExtractor<LanguageModelV3StreamPart>(
-                options: options,
-                parts: ReasoningStreamParts(
-                    classify: { part in
-                        switch part {
-                        case .textStart(let id, _): return .textStart(id: id)
-                        case .textDelta(let id, let delta, _): return .textDelta(id: id, delta: delta)
-                        case .textEnd(let id, _): return .textEnd(id: id)
-                        default: return .other
-                        }
-                    },
-                    reasoningStart: { .reasoningStart(id: $0, providerMetadata: nil) },
-                    reasoningDelta: { .reasoningDelta(id: $0, delta: $1, providerMetadata: nil) },
-                    reasoningEnd: { .reasoningEnd(id: $0, providerMetadata: nil) },
-                    textDelta: { .textDelta(id: $0, delta: $1, providerMetadata: nil) }
-                )
-            )
-            return LanguageModelV3StreamResult(
-                stream: pipeMiddlewareStream(result.stream) { extractor.process($0) },
-                request: result.request,
-                response: result.response
-            )
-        }
-    )
-}
-
 // MARK: - Generate
 
 /// Splits `text` into reasoning and the remaining text, or returns `nil` when it holds no complete section.

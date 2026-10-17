@@ -11,7 +11,7 @@ nonisolated(unsafe) var logWarningsForTranscribe: ([Warning]) -> Void = logWarni
  Port of `@ai-sdk/ai/src/transcribe/transcribe.ts`.
  */
 public func transcribe(
-    model: TranscriptionModel,
+    model: any TranscriptionModelConvertible,
     audio: TranscriptionAudioInput,
     providerOptions: ProviderOptions = [:],
     maxRetries: Int? = nil,
@@ -20,7 +20,7 @@ public func transcribe(
     experimentalDownload download: DownloadFileFunction? = nil,
     telemetry: TelemetryOptions? = nil
 ) async throws -> any TranscriptionResult {
-    guard let resolvedModel = try resolveTranscriptionModelV4(model) else {
+    guard let resolvedModel = try resolveTranscriptionModel(model) else {
         throw ModelResolutionFailure(message: "Model could not be resolved")
     }
 
@@ -117,50 +117,6 @@ public func transcribe(
         warnings: result.warnings,
         responses: [responseMetadata],
         providerMetadata: result.providerMetadata ?? [:]
-    )
-}
-
-public func transcribe(
-    model: any TranscriptionModelV4,
-    audio: TranscriptionAudioInput,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil,
-    telemetry: TelemetryOptions? = nil
-) async throws -> any TranscriptionResult {
-    try await transcribe(
-        model: .v4(model),
-        audio: audio,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        experimentalDownload: download,
-        telemetry: telemetry
-    )
-}
-
-public func transcribe(
-    model: any TranscriptionModelV3,
-    audio: TranscriptionAudioInput,
-    providerOptions: ProviderOptions = [:],
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    experimentalDownload download: DownloadFileFunction? = nil,
-    telemetry: TelemetryOptions? = nil
-) async throws -> any TranscriptionResult {
-    try await transcribe(
-        model: .v3(model),
-        audio: audio,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        experimentalDownload: download,
-        telemetry: telemetry
     )
 }
 

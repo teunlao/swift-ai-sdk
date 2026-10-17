@@ -15,7 +15,7 @@ struct AgentOpenAIGenerateJSONExample: Example {
       let outputSpec = Output.object(Recipe.self, name: "recipe", description: "Lasagna recipe")
       let settings = ToolLoopAgentSettings<Never, Recipe, JSONValue>(
         instructions: "You are a helpful assistant.",
-        model: .v4(try openai("gpt-4o")),
+        model: try openai("gpt-4o"),
         output: outputSpec
       )
       let agent = ToolLoopAgent(settings)

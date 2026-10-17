@@ -10,7 +10,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/video-model/v4/video-model-v4.ts`.
  */
-public protocol VideoModelV4: Sendable {
+public protocol VideoModelV4: VideoModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

@@ -42,12 +42,12 @@ private func makeMockResult(
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
     providerMetadata: [String: [String: JSONValue]]? = nil
-) -> SpeechModelV3Result {
-    SpeechModelV3Result(
+) -> SpeechModelV4Result {
+    SpeechModelV4Result(
         audio: .binary(file.data),
-        warnings: warnings.map(convertSpeechWarningToV3),
+        warnings: warnings.map(convertSpeechWarningToV4),
         request: nil,
-        response: SpeechModelV3Result.ResponseInfo(
+        response: SpeechModelV4Result.ResponseInfo(
             timestamp: timestamp,
             modelId: modelId,
             headers: headers,
@@ -79,7 +79,7 @@ private func makeMockResultV4(
     )
 }
 
-private func convertSpeechWarningToV3(_ warning: SpeechWarning) -> SharedV3Warning {
+private func convertSpeechWarningToV4(_ warning: SpeechWarning) -> SharedV4Warning {
     switch warning {
     case let .unsupported(feature, details):
         return .unsupported(feature: feature, details: details)
@@ -120,9 +120,9 @@ struct GenerateSpeechTests {
             return false
         }
 
-        let capturedOptions = ValueBox<SpeechModelV3CallOptions?>(nil)
+        let capturedOptions = ValueBox<SpeechModelV4CallOptions?>(nil)
 
-        let model = MockSpeechModelV3 { options in
+        let model = MockSpeechModelV4 { options in
             capturedOptions.value = options
             return makeMockResult(audio: mockAudioFile)
         }
@@ -225,7 +225,7 @@ struct GenerateSpeechTests {
 
     @Test("should resolve string speech model IDs through V4 global provider")
     func shouldResolveStringSpeechModelThroughV4GlobalProvider() async throws {
-        let provider = customProviderV4(
+        let provider = customProvider(
             speechModels: [
                 "speech-model": MockSpeechModelV4(
                     provider: "v4-provider",
@@ -240,9 +240,9 @@ struct GenerateSpeechTests {
             ]
         )
 
-        let result = try await withGlobalProviderV4(provider, operation: {
+        let result = try await withGlobalProvider(provider, operation: {
             try await generateSpeech(
-                model: .string("speech-model"),
+                model: "speech-model",
                 text: sampleText
             )
         })
@@ -263,7 +263,7 @@ struct GenerateSpeechTests {
             ]
         ]
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(
                 audio: mockAudioFile,
                 warnings: warnings,
@@ -295,7 +295,7 @@ struct GenerateSpeechTests {
             recordedWarnings.value.append(warnings)
         }
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(audio: mockAudioFile, warnings: expectedWarnings)
         }
 
@@ -319,7 +319,7 @@ struct GenerateSpeechTests {
             recordedWarnings.value = warnings
         }
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(audio: mockAudioFile, warnings: [])
         }
 
@@ -333,7 +333,7 @@ struct GenerateSpeechTests {
 
     @Test("should return the audio data")
     func shouldReturnAudioData() async throws {
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(audio: mockAudioFile)
         }
 
@@ -356,7 +356,7 @@ struct GenerateSpeechTests {
             mediaType: "audio/mp3"
         )
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(
                 audio: emptyFile,
                 timestamp: testDate
@@ -394,7 +394,7 @@ struct GenerateSpeechTests {
             "user-agent": expectedUserAgent
         ]
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(
                 audio: emptyFile,
                 timestamp: testDate,
@@ -423,7 +423,7 @@ struct GenerateSpeechTests {
     func shouldReturnResponseMetadata() async throws {
         let headers = ["x-test": "value"]
 
-        let model = MockSpeechModelV3 { _ in
+        let model = MockSpeechModelV4 { _ in
             makeMockResult(
                 audio: mockAudioFile,
                 timestamp: testDate,
@@ -447,18 +447,18 @@ struct GenerateSpeechTests {
 
 // MARK: - Mock Speech Model
 
-private final class MockSpeechModelV3: SpeechModelV3, @unchecked Sendable {
+private final class MockSpeechModelV4: SpeechModelV4, @unchecked Sendable {
     let specificationVersion: String
     let provider: String
     let modelId: String
 
-    private let generateHandler: @Sendable (SpeechModelV3CallOptions) async throws -> SpeechModelV3Result
+    private let generateHandler: @Sendable (SpeechModelV4CallOptions) async throws -> SpeechModelV4Result
 
     init(
-        specificationVersion: String = "v3",
+        specificationVersion: String = "v4",
         provider: String = "mock-provider",
         modelId: String = "test-model-id",
-        doGenerate: @escaping @Sendable (SpeechModelV3CallOptions) async throws -> SpeechModelV3Result
+        doGenerate: @escaping @Sendable (SpeechModelV4CallOptions) async throws -> SpeechModelV4Result
     ) {
         self.specificationVersion = specificationVersion
         self.provider = provider
@@ -466,7 +466,7 @@ private final class MockSpeechModelV3: SpeechModelV3, @unchecked Sendable {
         self.generateHandler = doGenerate
     }
 
-    func doGenerate(options: SpeechModelV3CallOptions) async throws -> SpeechModelV3Result {
+    func doGenerate(options: SpeechModelV4CallOptions) async throws -> SpeechModelV4Result {
         try await generateHandler(options)
     }
 }

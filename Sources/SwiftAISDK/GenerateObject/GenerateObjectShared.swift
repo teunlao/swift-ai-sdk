@@ -34,12 +34,6 @@ func makeGenerateObjectPrompt(
 }
 
 func convertGenerateObjectRequestMetadata(
-    _ info: LanguageModelV3RequestInfo?
-) -> LanguageModelRequestMetadata {
-    convertGenerateObjectRequestBody(info?.body)
-}
-
-func convertGenerateObjectRequestMetadata(
     _ info: LanguageModelV4RequestInfo?
 ) -> LanguageModelRequestMetadata {
     convertGenerateObjectRequestBody(info?.body)

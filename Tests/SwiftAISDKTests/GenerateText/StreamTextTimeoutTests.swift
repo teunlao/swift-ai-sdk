@@ -6,12 +6,12 @@ import Testing
 
 @Suite("StreamText – timeout")
 struct StreamTextTimeoutTests {
-    private func makeStream() -> AsyncThrowingStream<LanguageModelV3StreamPart, Error> {
-        let parts: [LanguageModelV3StreamPart] = [
+    private func makeStream() -> AsyncThrowingStream<LanguageModelV4StreamPart, Error> {
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(),
+                usage: LanguageModelV4Usage(),
                 providerMetadata: nil
             ),
         ]
@@ -24,12 +24,12 @@ struct StreamTextTimeoutTests {
 
     @Test("timeout forwards abort signal to model")
     func timeoutForwardsAbortSignalToModel() async throws {
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeStream()))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)
         )
@@ -42,12 +42,12 @@ struct StreamTextTimeoutTests {
 
     @Test("no timeout and no abortSignal passes nil to model")
     func noTimeoutPassesNilAbortSignalToModel() async throws {
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeStream()))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input"
         )
 
@@ -59,12 +59,12 @@ struct StreamTextTimeoutTests {
 
     @Test("timeout object without totalMs/stepMs/chunkMs does not create abort signal")
     func emptyTimeoutObjectDoesNotCreateAbortSignal() async throws {
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeStream()))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration())
         )
@@ -77,12 +77,12 @@ struct StreamTextTimeoutTests {
 
     @Test("stepMs creates abort signal")
     func stepTimeoutCreatesAbortSignal() async throws {
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeStream()))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration(stepMs: 5000))
         )
@@ -95,12 +95,12 @@ struct StreamTextTimeoutTests {
 
     @Test("chunkMs creates abort signal")
     func chunkTimeoutCreatesAbortSignal() async throws {
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeStream()))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeStream()))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration(chunkMs: 5000))
         )

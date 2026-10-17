@@ -11,9 +11,9 @@ struct ProviderRegistryTests {
         let model = TestEmbeddingModelV4 { options in
             .init(embeddings: options.values.map { [Double($0.utf8.count)] })
         }
-        let aliases = customProvider(embeddingModels: ["alias": .string("real")])
-        let global = customProviderV4(embeddingModels: ["real": model])
-        try await withGlobalProviderV4(global) {
+        let aliases = customProvider(embeddingModels: ["alias": "real"])
+        let global = customProvider(embeddingModels: ["real": model])
+        try await withGlobalProvider(global) {
             let resolved = try aliases.embeddingModel(modelId: "alias")
             let result = try await embed(model: resolved, value: "é")
             #expect(result.embedding == [2])
@@ -36,17 +36,17 @@ struct ProviderRegistryTests {
                 response: .init(timestamp: Date(), modelId: "fallback-transcription")
             )
         }
-        let fallback = customProviderV4(
+        let fallback = customProvider(
             transcriptionModels: ["alias": transcription],
             speechModels: ["alias": speech]
         )
         let aliases = customProvider(
-            transcriptionModels: ["alias": .string("global-transcription")],
-            speechModels: ["alias": .string("global-speech")],
+            transcriptionModels: ["alias": "global-transcription"],
+            speechModels: ["alias": "global-speech"],
             fallbackProvider: fallback
         )
 
-        try await withGlobalProviderV4(MediaProvider()) {
+        try await withGlobalProvider(MediaProvider()) {
             let resolvedSpeech = try aliases.speechModel(modelId: "alias")
             let speechModel = try #require(resolvedSpeech)
             let audio = try await generateSpeech(model: speechModel, text: "fallback audio")
@@ -63,17 +63,17 @@ struct ProviderRegistryTests {
 
     @Test("speech and transcription aliases preserve resolution errors instead of using fallback")
     func mediaAliasesPreserveResolutionErrors() {
-        let fallback = customProviderV4(
+        let fallback = customProvider(
             transcriptionModels: ["alias": MockTranscriptionModelV4()],
             speechModels: ["alias": MockSpeechModelV4()]
         )
         let aliases = customProvider(
-            transcriptionModels: ["alias": .string("global-transcription")],
-            speechModels: ["alias": .string("global-speech")],
+            transcriptionModels: ["alias": "global-transcription"],
+            speechModels: ["alias": "global-speech"],
             fallbackProvider: fallback
         )
 
-        withGlobalProviderV4(customProviderV4()) {
+        withGlobalProvider(customProvider()) {
             #expect {
                 try aliases.speechModel(modelId: "alias")
             } throws: { error in
@@ -88,7 +88,7 @@ struct ProviderRegistryTests {
             }
         }
 
-        withGlobalProviderV4(MediaProvider(error: MediaResolutionError.unavailable)) {
+        withGlobalProvider(MediaProvider(error: MediaResolutionError.unavailable)) {
             #expect(throws: MediaResolutionError.unavailable) {
                 try aliases.speechModel(modelId: "alias")
             }
@@ -103,7 +103,7 @@ struct ProviderRegistryTests {
         let model = MockVideoModelV4 { options in
             .init(videos: [.binary(data: Data((options.prompt ?? "").utf8), mediaType: "video/mp4")], response: .init(timestamp: Date(), modelId: "video-model"))
         }
-        let provider = customProviderV4(videoModels: ["alias": .v4(model)])
+        let provider = customProvider(videoModels: ["alias": model])
         let registry = createProviderRegistry(providers: ["p": provider])
         let resolved = try registry.videoModel(id: "p:alias")
         let result = try await experimental_generateVideo(model: resolved, prompt: "video")
@@ -128,7 +128,7 @@ struct ProviderRegistryTests {
             )
         }
         let registry = createProviderRegistry(
-            providers: ["p": customProviderV4(imageModels: ["alias": model])],
+            providers: ["p": customProvider(imageModels: ["alias": model])],
             options: .init(imageModelMiddleware: .multiple([middleware("A"), middleware("B")]))
         )
         let resolved = try registry.imageModel(id: "p:alias")
@@ -153,7 +153,7 @@ struct ProviderRegistryTests {
     @Test("returns direct V4 model from V4 registry")
     func returnsDirectV4ModelFromV4Registry() throws {
         let baseModel = MockLanguageModelV4(provider: "v4-base", modelId: "v4-model")
-        let provider = customProviderV4(languageModels: ["model": baseModel])
+        let provider = customProvider(languageModels: ["model": baseModel])
 
         let registry = createProviderRegistry(providers: ["p": provider])
         let resolved = try registry.languageModel(id: "p:model")
@@ -166,7 +166,7 @@ struct ProviderRegistryTests {
     @Test("applies V4 middleware to V4 registry language model")
     func appliesV4MiddlewareToV4RegistryLanguageModel() throws {
         let baseModel = MockLanguageModelV4(provider: "v4-base", modelId: "v4-model")
-        let provider = customProviderV4(languageModels: ["model": baseModel])
+        let provider = customProvider(languageModels: ["model": baseModel])
         let middleware = LanguageModelV4Middleware(
             overrideProvider: { model in "\(model.provider)-wrapped" },
             overrideModelId: { model in "\(model.modelId)-wrapped" }
@@ -184,22 +184,10 @@ struct ProviderRegistryTests {
         #expect(resolved.specificationVersion == "v4")
     }
 
-    @Test("customProviderV4 adapts legacy language models")
-    func customProviderV4AdaptsLegacyLanguageModels() throws {
-        let baseModel = TestLanguageModel(provider: "legacy-base", modelId: "legacy-model")
-        let provider = customProviderV4(legacyLanguageModels: ["model": baseModel])
-
-        let resolved = try provider.languageModel(modelId: "model")
-
-        #expect(resolved.provider == "legacy-base")
-        #expect(resolved.modelId == "legacy-model")
-        #expect(resolved.specificationVersion == "v4")
-    }
-
     @Test("applies single middleware to language model")
     func appliesSingleMiddleware() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
-        let middleware = LanguageModelV3Middleware(
+        let middleware = LanguageModelV4Middleware(
             overrideProvider: { model in "\(model.provider)-wrapped" },
             overrideModelId: { model in "\(model.modelId)-wrapped" }
         )
@@ -220,11 +208,11 @@ struct ProviderRegistryTests {
     func appliesMultipleMiddleware() throws {
         let baseModel = TestLanguageModel(provider: "base", modelId: "model")
         let middlewareChain = [
-            LanguageModelV3Middleware(
+            LanguageModelV4Middleware(
                 overrideProvider: { model in "\(model.provider)-outer" },
                 overrideModelId: { model in "\(model.modelId)-outer" }
             ),
-            LanguageModelV3Middleware(
+            LanguageModelV4Middleware(
                 overrideProvider: { model in "\(model.provider)-inner" },
                 overrideModelId: { model in "\(model.modelId)-inner" }
             )
@@ -347,8 +335,8 @@ private struct MediaProvider: ProviderV4 {
     }
 }
 
-private final class TestLanguageModel: LanguageModelV3, @unchecked Sendable {
-    let specificationVersion = "v3"
+private final class TestLanguageModel: LanguageModelV4, @unchecked Sendable {
+    let specificationVersion = "v4"
     let providerValue: String
     let modelIdentifier: String
 
@@ -369,21 +357,21 @@ private final class TestLanguageModel: LanguageModelV3, @unchecked Sendable {
         get async throws { [:] }
     }
 
-    func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        LanguageModelV3GenerateResult(
+    func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        LanguageModelV4GenerateResult(
             content: [],
             finishReason: .init(unified: .stop),
-            usage: LanguageModelV3Usage(inputTokens: .init(total: 0), outputTokens: .init(total: 0)),
+            usage: LanguageModelV4Usage(inputTokens: .init(total: 0), outputTokens: .init(total: 0)),
             warnings: []
         )
     }
 
-    func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        LanguageModelV3StreamResult(stream: AsyncThrowingStream { $0.finish() })
+    func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        LanguageModelV4StreamResult(stream: AsyncThrowingStream { $0.finish() })
     }
 }
 
-private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
+private final class TestRerankingModel: RerankingModelV4, @unchecked Sendable {
     let providerValue: String
     let modelIdentifier: String
 
@@ -400,16 +388,16 @@ private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
         modelIdentifier
     }
 
-    func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
-        RerankingModelV3DoRerankResult(ranking: [])
+    func doRerank(options: RerankingModelV4CallOptions) async throws -> RerankingModelV4Result {
+        RerankingModelV4Result(ranking: [])
     }
 }
 
-private final class TestVideoModel: VideoModelV3, @unchecked Sendable {
-    public var specificationVersion: String { "v3" }
+private final class TestVideoModel: VideoModelV4, @unchecked Sendable {
+    public var specificationVersion: String { "v4" }
     public var provider: String { providerValue }
     public var modelId: String { modelIdentifier }
-    public var maxVideosPerCall: VideoModelV3MaxVideosPerCall { .value(1) }
+    public var maxVideosPerCall: VideoModelV4MaxVideosPerCall { .value(1) }
 
     private let providerValue: String
     private let modelIdentifier: String
@@ -419,12 +407,12 @@ private final class TestVideoModel: VideoModelV3, @unchecked Sendable {
         self.modelIdentifier = modelId
     }
 
-    func doGenerate(options: VideoModelV3CallOptions) async throws -> VideoModelV3GenerateResult {
-        VideoModelV3GenerateResult(
+    func doGenerate(options: VideoModelV4CallOptions) async throws -> VideoModelV4GenerateResult {
+        VideoModelV4GenerateResult(
             videos: [],
             warnings: [],
             providerMetadata: nil,
-            response: VideoModelV3ResponseInfo(timestamp: Date(), modelId: modelIdentifier, headers: nil)
+            response: VideoModelV4ResponseInfo(timestamp: Date(), modelId: modelIdentifier, headers: nil)
         )
     }
 }

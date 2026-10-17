@@ -1,8 +1,7 @@
 /**
  Mock implementation of LanguageModelV4 for testing.
 
- Port direction: mirrors the Swift V3 mock while exercising the current
- upstream V4 language model contract.
+ Exercises the current provider language model contract.
  */
 
 import Foundation

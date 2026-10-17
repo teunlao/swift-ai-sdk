@@ -450,61 +450,8 @@ private enum GenerateTextResultJSONEncoder {
 
     // MARK: - Tool Result Output
 
-    private static func toolResultOutput(_ output: LanguageModelV3ToolResultOutput) -> JSONValue {
-        switch output {
-        case .text(let value, let providerOptions):
-            return object([
-                "type": .string("text"),
-                "value": .string(value),
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        case .json(let value, let providerOptions):
-            return object([
-                "type": .string("json"),
-                "value": value,
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        case .executionDenied(let reason, let providerOptions):
-            return object([
-                "type": .string("execution-denied"),
-                "reason": optionalString(reason),
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        case .errorText(let value, let providerOptions):
-            return object([
-                "type": .string("error-text"),
-                "value": .string(value),
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        case .errorJson(let value, let providerOptions):
-            return object([
-                "type": .string("error-json"),
-                "value": value,
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        case .content(let parts, let providerOptions):
-            return object([
-                "type": .string("content"),
-                "value": .array(parts.map(toolResultContentPart)),
-                "providerOptions": encodedProviderOptions(providerOptions)
-            ])
-        }
-    }
-
-    private static func toolResultContentPart(_ part: LanguageModelV3ToolResultContentPart) -> JSONValue {
-        switch part {
-        case .text(let text):
-            return object([
-                "type": .string("text"),
-                "text": .string(text)
-            ])
-        case .media(let data, let mediaType):
-            return object([
-                "type": .string("image-data"),
-                "data": .string(data),
-                "mediaType": .string(mediaType)
-            ])
-        }
+    private static func toolResultOutput(_ output: LanguageModelV4ToolResultOutput) -> JSONValue {
+        JSONValueEncoding.jsonValue(from: output) ?? .null
     }
 
     // MARK: - Misc Helpers

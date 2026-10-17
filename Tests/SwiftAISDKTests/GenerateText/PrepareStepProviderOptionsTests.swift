@@ -79,12 +79,12 @@ struct PrepareStepProviderOptionsTests {
             )
         ]
 
-        let usage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
-        let model = MockLanguageModelV3(
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        let model = MockLanguageModelV4(
             doGenerate: .array([
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
-                        .toolCall(LanguageModelV3ToolCall(
+                        .toolCall(LanguageModelV4ToolCall(
                             toolCallId: "call-1",
                             toolName: "tool1",
                             input: #"{}"#
@@ -93,9 +93,9 @@ struct PrepareStepProviderOptionsTests {
                     finishReason: .toolCalls,
                     usage: usage
                 ),
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
-                        .text(LanguageModelV3Text(text: "done"))
+                        .text(LanguageModelV4Text(text: "done"))
                     ],
                     finishReason: .stop,
                     usage: usage
@@ -104,7 +104,7 @@ struct PrepareStepProviderOptionsTests {
         )
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(2)],

@@ -18,23 +18,23 @@ struct StreamTextSSEIntegrationTests {
 
     @Test("toSSEStream mirrors encoder output")
     func toSSEStreamMatchesEncoder() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textDelta(id: "a", delta: "Hi", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
+                usage: LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]
-        let providerStream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let providerStream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             parts.forEach { continuation.yield($0) }
             continuation.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: providerStream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: providerStream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 
@@ -48,22 +48,22 @@ struct StreamTextSSEIntegrationTests {
 
     @Test("SSE omits usage when includeUsage is false")
     func sseOmitsUsageWhenFlagDisabled() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textDelta(id: "t", delta: "Hi", providerMetadata: nil),
             .finish(
                 finishReason: .stop,
-                usage: LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5)),
+                usage: LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 5)),
                 providerMetadata: nil
             )
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             parts.forEach { c.yield($0) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             prompt: "hi"
         )
 

@@ -1,6 +1,6 @@
 import AISDKProvider
 
-extension LanguageModelV3FinishReason {
+extension LanguageModelV4FinishReason {
     static var stop: Self { .init(unified: .stop) }
     static var length: Self { .init(unified: .length) }
     static var contentFilter: Self { .init(unified: .contentFilter) }

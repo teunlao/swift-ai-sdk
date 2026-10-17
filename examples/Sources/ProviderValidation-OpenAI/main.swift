@@ -163,10 +163,6 @@ func testBasicProviderInstance() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created model: \(modelType)")
 
-    // Verify it's a LanguageModelV4 (the actual type returned is OpenAIResponsesLanguageModel)
-    if !(model is any LanguageModelV4) {
-        throw ValidationError.typeMismatch("Expected LanguageModelV4, got \(modelType)")
-    }
 }
 
 func testCustomProviderSettings() async throws {
@@ -184,10 +180,6 @@ func testCustomProviderSettings() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created custom provider and model: \(modelType)")
 
-    // Verify it's a LanguageModelV4
-    if !(model is any LanguageModelV4) {
-        throw ValidationError.typeMismatch("Expected LanguageModelV4, got \(modelType)")
-    }
 }
 
 func testLanguageModelCreation() async throws {
@@ -196,7 +188,6 @@ func testLanguageModelCreation() async throws {
     let model = try openai("gpt-5")
     print("   Created model with ID: gpt-5")
 
-    // Model is guaranteed to be LanguageModelV4
     print("   Type: \(type(of: model))")
 }
 
@@ -209,10 +200,6 @@ func testResponsesAPIModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created responses model: \(modelType)")
 
-    // Verify it's a LanguageModelV4
-    if !(model is any LanguageModelV4) {
-        throw ValidationError.typeMismatch("Expected LanguageModelV4, got \(modelType)")
-    }
 }
 
 func testProviderOptionsBasic() async throws {
@@ -289,7 +276,6 @@ func testTextEmbeddingModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created embedding model: \(modelType)")
 
-    print("   Model conforms to EmbeddingModelV4")
 }
 
 func testEmbeddingProviderOptions() async throws {
@@ -316,8 +302,6 @@ func testImageModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created image model: \(modelType)")
 
-    // Type is guaranteed to be ImageModelV4
-    print("   ✓ Model conforms to ImageModelV4")
 }
 
 // MARK: - Provider-Specific Options Tests
@@ -631,7 +615,6 @@ func testChatModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created chat model: \(modelType)")
 
-    print("   ✓ Chat model conforms to LanguageModelV4")
 }
 
 func testChatModelProviderOptions() async throws {
@@ -762,7 +745,6 @@ func testCompletionModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created completion model: \(modelType)")
 
-    print("   ✓ Completion model conforms to LanguageModelV4")
 }
 
 func testCompletionModelProviderOptions() async throws {
@@ -794,7 +776,6 @@ func testTranscriptionModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created transcription model: \(modelType)")
 
-    print("   ✓ Transcription model conforms to TranscriptionModelV4")
 }
 
 func testTranscriptionModelProviderOptions() async throws {
@@ -824,7 +805,6 @@ func testSpeechModelCreation() async throws {
     let modelType = String(describing: type(of: model))
     print("   Created speech model: \(modelType)")
 
-    print("   ✓ Speech model conforms to SpeechModelV4")
 }
 
 func testSpeechModelProviderOptions() async throws {
@@ -864,14 +844,11 @@ extension String {
 // MARK: - Error Types
 
 enum ValidationError: Error, CustomStringConvertible {
-    case typeMismatch(String)
     case unexpectedValue(String)
     case missingFeature(String)
 
     var description: String {
         switch self {
-        case .typeMismatch(let msg):
-            return "Type mismatch: \(msg)"
         case .unexpectedValue(let msg):
             return "Unexpected value: \(msg)"
         case .missingFeature(let msg):

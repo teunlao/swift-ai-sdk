@@ -42,34 +42,6 @@ public func defaultSettingsMiddleware(
     )
 }
 
-/// Creates a V3 middleware that applies default settings to language model calls.
-public func defaultSettingsMiddleware(
-    settings: DefaultSettings
-) -> LanguageModelV3Middleware {
-    LanguageModelV3Middleware(
-        transformParams: { _, params, _ in
-            LanguageModelV3CallOptions(
-                prompt: params.prompt,
-                maxOutputTokens: params.maxOutputTokens ?? settings.maxOutputTokens,
-                temperature: params.temperature ?? settings.temperature,
-                stopSequences: params.stopSequences ?? settings.stopSequences,
-                topP: params.topP ?? settings.topP,
-                topK: params.topK ?? settings.topK,
-                presencePenalty: params.presencePenalty ?? settings.presencePenalty,
-                frequencyPenalty: params.frequencyPenalty ?? settings.frequencyPenalty,
-                responseFormat: mergeResponseFormat(settings.responseFormat, params.responseFormat?.asV4)?.asV3,
-                seed: params.seed ?? settings.seed,
-                tools: params.tools ?? settings.tools?.map(\.asV3),
-                toolChoice: params.toolChoice ?? settings.toolChoice?.asV3,
-                includeRawChunks: params.includeRawChunks,
-                abortSignal: params.abortSignal,
-                headers: mergeSettingHeaders(settings.headers, params.headers),
-                providerOptions: mergeProviderOptions(settings.providerOptions, params.providerOptions)
-            )
-        }
-    )
-}
-
 /// Default settings that can be applied to language model calls.
 ///
 /// All fields are optional. When specified, they will be used as defaults
@@ -164,59 +136,3 @@ private func mergeResponseFormat(
     return .json(schema: mergedSchema, name: name ?? baseName, description: description ?? baseDescription)
 }
 
-// MARK: - V3 conversions
-
-private extension LanguageModelV3ResponseFormat {
-    var asV4: LanguageModelV4ResponseFormat {
-        switch self {
-        case .text:
-            return .text
-        case let .json(schema, name, description):
-            return .json(schema: schema, name: name, description: description)
-        }
-    }
-}
-
-private extension LanguageModelV4ResponseFormat {
-    var asV3: LanguageModelV3ResponseFormat {
-        switch self {
-        case .text:
-            return .text
-        case let .json(schema, name, description):
-            return .json(schema: schema, name: name, description: description)
-        }
-    }
-}
-
-private extension LanguageModelV4Tool {
-    var asV3: LanguageModelV3Tool {
-        switch self {
-        case .function(let tool):
-            return .function(LanguageModelV3FunctionTool(
-                name: tool.name,
-                inputSchema: tool.inputSchema,
-                inputExamples: tool.inputExamples?.map { LanguageModelV3ToolInputExample(input: $0.input) },
-                description: tool.description,
-                strict: tool.strict,
-                providerOptions: tool.providerOptions
-            ))
-        case .provider(let tool):
-            return .provider(LanguageModelV3ProviderTool(id: tool.id, name: tool.name, args: tool.args))
-        }
-    }
-}
-
-private extension LanguageModelV4ToolChoice {
-    var asV3: LanguageModelV3ToolChoice {
-        switch self {
-        case .auto:
-            return .auto
-        case .none:
-            return .none
-        case .required:
-            return .required
-        case .tool(let toolName):
-            return .tool(toolName: toolName)
-        }
-    }
-}

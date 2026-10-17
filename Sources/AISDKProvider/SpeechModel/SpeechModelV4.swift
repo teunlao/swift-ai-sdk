@@ -5,7 +5,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/speech-model/v4/speech-model-v4.ts`.
  */
-public protocol SpeechModelV4: Sendable {
+public protocol SpeechModelV4: SpeechModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

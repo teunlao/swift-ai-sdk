@@ -331,7 +331,7 @@ private func urlData(_ string: String) throws -> DataContentOrURL {
 
 private func modelOutput(
     toolCallId: String, input: JSONValue?, output: Any?, tool: Tool?, errorMode: ToolOutputErrorMode, unavailable: Bool = false
-) async throws -> LanguageModelV3ToolResultOutput {
+) async throws -> LanguageModelV4ToolResultOutput {
     if errorMode == .none, tool == nil, unavailable {
         return .text(value: "Tool output omitted because the tool is no longer available.")
     }

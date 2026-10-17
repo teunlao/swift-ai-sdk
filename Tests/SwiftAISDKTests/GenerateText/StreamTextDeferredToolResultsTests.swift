@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – deferred tool results")
 struct StreamTextDeferredToolResultsTests {
-    private let usage = LanguageModelV3Usage(
+    private let usage = LanguageModelV4Usage(
         inputTokens: .init(total: 1),
         outputTokens: .init(total: 1)
     )
@@ -52,14 +52,14 @@ struct StreamTextDeferredToolResultsTests {
             "deferred_tool": deferredTool(),
         ]
 
-        let step1Parts: [LanguageModelV3StreamPart] = [
+        let step1Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-1",
                 modelId: "mock-model-id",
                 timestamp: Date(timeIntervalSince1970: 0)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "deferred_tool",
                 input: #"{ "value": "test" }"#,
@@ -72,14 +72,14 @@ struct StreamTextDeferredToolResultsTests {
             ),
         ]
 
-        let step2Parts: [LanguageModelV3StreamPart] = [
+        let step2Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-2",
                 modelId: "mock-model-id",
                 timestamp: Date(timeIntervalSince1970: 1)
             ),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: "call-1",
                 toolName: "deferred_tool",
                 result: .string("ERROR"),
@@ -96,15 +96,15 @@ struct StreamTextDeferredToolResultsTests {
             ),
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step1Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step2Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step1Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step2Parts)),
             ])
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(3)]
@@ -155,20 +155,20 @@ struct StreamTextDeferredToolResultsTests {
             "deferred_tool": deferredTool(),
         ]
 
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-1",
                 modelId: "mock-model-id",
                 timestamp: Date(timeIntervalSince1970: 0)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "deferred_tool",
                 input: #"{ "value": "test" }"#,
                 providerExecuted: true
             )),
-            .toolResult(LanguageModelV3ToolResult(
+            .toolResult(LanguageModelV4ToolResult(
                 toolCallId: "call-1",
                 toolName: "deferred_tool",
                 result: .string("ERROR"),
@@ -185,12 +185,12 @@ struct StreamTextDeferredToolResultsTests {
             ),
         ]
 
-        let model = MockLanguageModelV3(
-            doStream: .singleValue(LanguageModelV3StreamResult(stream: makeAsyncStream(from: parts)))
+        let model = MockLanguageModelV4(
+            doStream: .singleValue(LanguageModelV4StreamResult(stream: makeAsyncStream(from: parts)))
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(2)]

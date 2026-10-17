@@ -58,7 +58,7 @@ public struct GenerateVideoFrameImage: Sendable {
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 func generateVideo(
-    model: VideoModel,
+    model: any VideoModelConvertible,
     prompt: GenerateVideoPrompt,
     n: Int = 1,
     maxVideosPerCall: Int? = nil,
@@ -79,7 +79,7 @@ func generateVideo(
     webhook: GenerateVideoWebhookFactory? = nil,
     referenceInputs: [VideoModelV4File]? = nil
 ) async throws -> DefaultGenerateVideoResult {
-    let resolvedModel = try resolveVideoModelV4(model)
+    let resolvedModel = try resolveVideoModel(model)
     let normalizedPrompt = try prompt.normalize()
     let normalizedFrameImages = try frameImages?.map { frame in
         VideoModelV4FrameImage(

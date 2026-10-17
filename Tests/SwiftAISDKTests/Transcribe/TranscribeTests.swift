@@ -49,13 +49,13 @@ private func makeMockResponse(
     modelId: String = "test-model-id",
     headers: [String: String]? = nil,
     providerMetadata: [String: [String: JSONValue]]? = nil
-) -> TranscriptionModelV3Result {
+) -> TranscriptionModelV4Result {
     let responseHeaders = headers ?? [:]
 
-    return TranscriptionModelV3Result(
+    return TranscriptionModelV4Result(
         text: text,
         segments: segments.map {
-            TranscriptionModelV3Result.Segment(
+            TranscriptionModelV4Result.Segment(
                 text: $0.text,
                 startSecond: $0.startSecond,
                 endSecond: $0.endSecond
@@ -63,9 +63,9 @@ private func makeMockResponse(
         },
         language: language,
         durationInSeconds: durationInSeconds,
-        warnings: warnings.map(convertTranscriptionWarningToV3),
+        warnings: warnings.map(convertTranscriptionWarningToV4),
         request: nil,
-        response: TranscriptionModelV3Result.ResponseInfo(
+        response: TranscriptionModelV4Result.ResponseInfo(
             timestamp: timestamp,
             modelId: modelId,
             headers: responseHeaders,
@@ -105,7 +105,7 @@ private func makeMockResponseV4(
     )
 }
 
-private func convertTranscriptionWarningToV3(_ warning: TranscriptionWarning) -> SharedV3Warning {
+private func convertTranscriptionWarningToV4(_ warning: TranscriptionWarning) -> SharedV4Warning {
     switch warning {
     case let .unsupported(feature, details):
         return .unsupported(feature: feature, details: details)
@@ -128,9 +128,9 @@ struct TranscribeTests {
             return false
         }
 
-        let capturedOptions = ValueBox<TranscriptionModelV3CallOptions?>(nil)
+        let capturedOptions = ValueBox<TranscriptionModelV4CallOptions?>(nil)
 
-        let model = MockTranscriptionModelV3 { options in
+        let model = MockTranscriptionModelV4 { options in
             capturedOptions.value = options
             return makeMockResponse()
         }
@@ -233,7 +233,7 @@ struct TranscribeTests {
         let url = URL(string: "https://example.com/audio.wav")!
         let downloadCalled = ValueBox(false)
         let abortCalled = ValueBox(false)
-        let capturedOptions = ValueBox<TranscriptionModelV3CallOptions?>(nil)
+        let capturedOptions = ValueBox<TranscriptionModelV4CallOptions?>(nil)
 
         let abortSignal: @Sendable () -> Bool = {
             abortCalled.value = true
@@ -247,7 +247,7 @@ struct TranscribeTests {
             return DownloadResult(data: audioData, mediaType: "audio/wav")
         }
 
-        let model = MockTranscriptionModelV3 { options in
+        let model = MockTranscriptionModelV4 { options in
             capturedOptions.value = options
             return makeMockResponse()
         }
@@ -277,7 +277,7 @@ struct TranscribeTests {
 
     @Test("should resolve string transcription model IDs through V4 global provider")
     func shouldResolveStringTranscriptionModelThroughV4GlobalProvider() async throws {
-        let provider = customProviderV4(
+        let provider = customProvider(
             transcriptionModels: [
                 "transcription-model": MockTranscriptionModelV4(
                     provider: "v4-provider",
@@ -289,9 +289,9 @@ struct TranscribeTests {
             ]
         )
 
-        let result = try await withGlobalProviderV4(provider, operation: {
+        let result = try await withGlobalProvider(provider, operation: {
             try await transcribe(
-                model: .string("transcription-model"),
+                model: "transcription-model",
                 audio: .data(audioData)
             )
         })
@@ -312,7 +312,7 @@ struct TranscribeTests {
             ]
         ]
 
-        let model = MockTranscriptionModelV3 { _ in
+        let model = MockTranscriptionModelV4 { _ in
             makeMockResponse(
                 warnings: warnings,
                 providerMetadata: providerMetadata
@@ -344,7 +344,7 @@ struct TranscribeTests {
                 recordedWarnings.value.append(warnings)
             }
 
-            let model = MockTranscriptionModelV3 { _ in
+            let model = MockTranscriptionModelV4 { _ in
                 makeMockResponse(warnings: expectedWarnings)
             }
 
@@ -370,7 +370,7 @@ struct TranscribeTests {
                 recordedWarnings.value.append(warnings)
             }
 
-            let model = MockTranscriptionModelV3 { _ in
+            let model = MockTranscriptionModelV4 { _ in
                 makeMockResponse(warnings: [])
             }
 
@@ -386,7 +386,7 @@ struct TranscribeTests {
 
     @Test("should return the transcript")
     func shouldReturnTranscript() async throws {
-        let model = MockTranscriptionModelV3 { _ in
+        let model = MockTranscriptionModelV4 { _ in
             makeMockResponse()
         }
 
@@ -413,8 +413,8 @@ struct TranscribeTests {
 
     @Test("ADTS audio is detected at the transcription request boundary")
     func adtsAudioDetection() async throws {
-        let captured = ValueBox<TranscriptionModelV3CallOptions?>(nil)
-        let model = MockTranscriptionModelV3 { options in
+        let captured = ValueBox<TranscriptionModelV4CallOptions?>(nil)
+        let model = MockTranscriptionModelV4 { options in
             captured.value = options
             return makeMockResponse()
         }
@@ -424,7 +424,7 @@ struct TranscribeTests {
 
     @Test("silent audio returns an empty transcript and response metadata")
     func silentAudioReturnsEmptyTranscript() async throws {
-        let model = MockTranscriptionModelV3 { _ in
+        let model = MockTranscriptionModelV4 { _ in
             makeMockResponse(
                 text: "", segments: [], language: sampleLanguage,
                 durationInSeconds: 0, timestamp: testDate,
@@ -443,7 +443,7 @@ struct TranscribeTests {
     func shouldReturnResponseMetadata() async throws {
         let testHeaders: [String: String] = ["x-test": "value"]
 
-        let model = MockTranscriptionModelV3 { _ in
+        let model = MockTranscriptionModelV4 { _ in
             makeMockResponse(
                 timestamp: testDate,
                 modelId: "test-model",
@@ -464,23 +464,23 @@ struct TranscribeTests {
     }
 }
 
-private final class MockTranscriptionModelV3: TranscriptionModelV3, @unchecked Sendable {
+private final class MockTranscriptionModelV4: TranscriptionModelV4, @unchecked Sendable {
     let provider: String
     let modelId: String
 
-    private let generate: @Sendable (TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result
+    private let generate: @Sendable (TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result
 
     init(
         provider: String = "mock-provider",
         modelId: String = "mock-model-id",
-        doGenerate: @escaping @Sendable (TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result
+        doGenerate: @escaping @Sendable (TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result
     ) {
         self.provider = provider
         self.modelId = modelId
         self.generate = doGenerate
     }
 
-    func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
+    func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
         try await generate(options)
     }
 }

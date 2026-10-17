@@ -134,8 +134,8 @@ struct ModelMessageCodableTests {
                 toolCallId: "call_1",
                 toolName: "screenshot",
                 output: .content(value: [
-                    .text(text: "Screenshot captured"),
-                    .media(data: "iVBOR", mediaType: "image/png"),
+                    .text(text: "Screenshot captured", providerOptions: nil),
+                    .file(data: .base64("iVBOR"), mediaType: "image/png", filename: nil, providerOptions: nil),
                 ])
             )),
         ]))

@@ -6,20 +6,20 @@ import AISDKProviderUtils
 
 @Suite("StreamText – error & replay")
 struct StreamTextErrorAndReplayTests {
-    private let defaultUsage = LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
+    private let defaultUsage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 2))
 
     @Test("provider error part reaches the stream as an error part")
     func providerErrorPartIsForwarded() async throws {
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)))
             c.yield(.textStart(id: "A", providerMetadata: nil))
             c.yield(.textDelta(id: "A", delta: "X", providerMetadata: nil))
-            c.yield(.error(error: .string("boom")))
+            c.yield(.error(error: .value(.string("boom"))))
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi", onError: { _ in nil })
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hi", onError: { _ in nil })
 
         let parts = try await result.collectFullStream()
         let errors = parts.compactMap { part -> String? in
@@ -31,7 +31,7 @@ struct StreamTextErrorAndReplayTests {
 
     @Test("late subscriber gets replay and terminal")
     func lateSubscriberGetsReplay() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "A", providerMetadata: nil),
@@ -39,12 +39,12 @@ struct StreamTextErrorAndReplayTests {
             .textEnd(id: "A", providerMetadata: nil),
             .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for p in parts { c.yield(p) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi")
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hi")
 
         // Drain fully first
         _ = try await result.collectFullStream()
@@ -59,14 +59,14 @@ struct StreamTextErrorAndReplayTests {
     @Test("consumeStream routes a thrown stream error to its handler")
     func consumeStreamRoutesErrors() async throws {
         struct Boom: Error {}
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             c.yield(.streamStart(warnings: []))
             c.yield(.responseMetadata(id: "id-err", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)))
             c.yield(.textStart(id: "1", providerMetadata: nil))
             c.finish(throwing: Boom())
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi")
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hi")
 
         let (errorStream, continuation) = AsyncStream.makeStream(of: Error.self)
         await result.consumeStream(options: ConsumeStreamOptions(onError: { error in
@@ -81,7 +81,7 @@ struct StreamTextErrorAndReplayTests {
 
     @Test("pipeTextStreamToResponse writes plain text")
     func pipeTextStreamToResponseWritesPlainText() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-1", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "A", providerMetadata: nil),
@@ -89,12 +89,12 @@ struct StreamTextErrorAndReplayTests {
             .textEnd(id: "A", providerMetadata: nil),
             .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for part in parts { c.yield(part) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi")
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hi")
 
         let writer = MockStreamTextResponseWriter()
         let initOptions = TextStreamResponseInit(headers: ["X-Test": "1"], status: 202, statusText: "Accepted")
@@ -109,7 +109,7 @@ struct StreamTextErrorAndReplayTests {
 
     @Test("toTextStreamResponse exposes stream")
     func toTextStreamResponseExposesStream() async throws {
-        let parts: [LanguageModelV3StreamPart] = [
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-2", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
             .textStart(id: "A", providerMetadata: nil),
@@ -117,12 +117,12 @@ struct StreamTextErrorAndReplayTests {
             .textEnd(id: "A", providerMetadata: nil),
             .finish(finishReason: .stop, usage: defaultUsage, providerMetadata: nil)
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { c in
             for part in parts { c.yield(part) }
             c.finish()
         }
-        let model = MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
-        let result = try streamText(model: .v3(model), prompt: "hi")
+        let model = MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
+        let result = try streamText(model: model, prompt: "hi")
 
         let response = result.toTextStreamResponse(init: TextStreamResponseInit(status: 201, statusText: "Created"))
         let textChunks = try await convertReadableStreamToArray(response.stream)

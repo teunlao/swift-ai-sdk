@@ -6,7 +6,7 @@ import AISDKProvider
 /// Port of `@ai-sdk/provider-utils/src/parse-provider-options.ts`.
 public func parseProviderOptions<Options>(
     provider: String,
-    providerOptions: SharedV3ProviderOptions?,
+    providerOptions: SharedV4ProviderOptions?,
     schema: FlexibleSchema<Options>
 ) async throws -> Options? {
     guard let providerOptions, let rawOptions = providerOptions[provider] else {

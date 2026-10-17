@@ -5,7 +5,7 @@ import Foundation
 
  Port of `@ai-sdk/provider/src/transcription-model/v4/transcription-model-v4.ts`.
  */
-public protocol TranscriptionModelV4: Sendable {
+public protocol TranscriptionModelV4: TranscriptionModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }
@@ -20,17 +20,6 @@ extension TranscriptionModelV4 {
     public func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult {
         throw UnsupportedFunctionalityError(functionality: "streaming transcription with \(modelId)")
     }
-}
-
-/**
- Streaming capability for legacy transcription models adapted through V4.
-
- Swift protocols do not support TypeScript-style optional methods on V3
- models. This capability lets a legacy concrete model expose the upstream V4
- `doStream` contract while still satisfying a legacy provider surface.
- */
-public protocol TranscriptionModelV4Streaming: Sendable {
-    func doStream(options: TranscriptionModelV4StreamOptions) async throws -> TranscriptionModelV4StreamResult
 }
 
 public struct TranscriptionModelV4Result: Sendable {

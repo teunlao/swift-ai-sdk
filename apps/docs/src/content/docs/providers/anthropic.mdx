@@ -14,7 +14,7 @@ import Cross from '../../../components/Cross.astro';
 </Aside>
 
 The `AnthropicProvider` module integrates the [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
-with the Swift AI SDK. Its default `anthropic` instance is a native Provider V4
+with the Swift AI SDK. Its default `anthropic` instance is a native provider
 facade and supports text generation, streaming, reasoning, files, skills, and
 Anthropic provider-defined tools.
 
@@ -47,7 +47,7 @@ the environment variable to be present yet.
 
 ## Provider Instance
 
-Import the default V4 provider and create a model by ID:
+Import the default provider and create a model by ID:
 
 ```swift
 import SwiftAISDK
@@ -83,7 +83,7 @@ The settings are:
 
 ## Language Models
 
-The V4 facade exposes equivalent model factories:
+The provider exposes equivalent model factories:
 
 ```swift
 let generic = try anthropic.languageModel(modelId: "claude-sonnet-5")
@@ -162,11 +162,11 @@ let result = try await generateText(
 ## Effort
 
 Anthropic effort controls how much work Claude spends across reasoning, normal
-text, and tool calls. `xhigh` and `max` are distinct levels. The generic V4
+text, and tool calls. `xhigh` and `max` are distinct levels. The portable
 reasoning enum ends at `xhigh`; the Anthropic-only `max` level must be passed as
 the provider `effort` option.
 
-Use the normalized V4 setting when portable reasoning control is preferred:
+Use the normalized reasoning setting when portable reasoning control is preferred:
 
 ```swift
 let result = try await generateText(
@@ -451,7 +451,7 @@ let result = try await generateText(
 )
 ```
 
-Upload a file through the V4 provider, then pass the returned provider
+Upload a file through the provider, then pass the returned provider
 reference into a typed `FilePart`. Set `containerUpload` when the file should be
 mounted in the code execution container:
 
@@ -516,13 +516,13 @@ let result = try await generateText(
 )
 ```
 
-Custom skills can be uploaded directly through the V4 provider:
+Custom skills can be uploaded directly through the provider:
 
 ```swift
 let uploadedSkill = try await uploadSkill(
   api: anthropic,
   files: [
-    SkillsV4File(
+    .init(
       path: "SKILL.md",
       content: .text("# Data review\nAnalyze the supplied dataset.")
     )

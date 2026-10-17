@@ -11,7 +11,7 @@ struct AgentOpenAIGenerateExample: Example {
       let model = try openai("gpt-4o")
       let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant.",
-        model: .v4(model)
+        model: model
       )
       let agent = ToolLoopAgent(settings)
       let result = try await agent.generate(

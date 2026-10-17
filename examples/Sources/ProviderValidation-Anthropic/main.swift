@@ -2,7 +2,7 @@
  Anthropic Provider Documentation Validation
 
  This executable keeps the public Swift examples in the Anthropic provider
- documentation type-checked against the current Provider V4 surface.
+ documentation type-checked against the current public API.
 
  Run with: swift run ProviderValidation-Anthropic
  */
@@ -22,11 +22,11 @@ struct ProviderValidationAnthropic {
     static func main() async {
         try? EnvLoader.load()
 
-        printHeader("Anthropic Provider V4 Documentation Validation")
+        printHeader("Anthropic Provider Documentation Validation")
 
         let tests: [(String, () async throws -> Void)] = [
-            ("Native V4 provider", testNativeV4Provider),
-            ("Custom V4 provider", testCustomV4Provider),
+            ("Default provider", testDefaultProvider),
+            ("Custom provider", testCustomProvider),
             ("Frontier model IDs", testFrontierModelIds),
             ("Normalized xhigh reasoning", testNormalizedXhighReasoning),
             ("Anthropic max effort", testAnthropicMaxEffort),
@@ -34,7 +34,7 @@ struct ProviderValidationAnthropic {
             ("Typed cache-control messages", testCacheControlMessages),
             ("Provider-defined tools", testProviderDefinedTools),
             ("Provider file reference", testProviderFileReference),
-            ("V4 upload helpers", testUploadHelperSignatures),
+            ("Upload helpers", testUploadHelperSignatures),
             ("Typed PDF prompt", testPDFPrompt),
             ("Typed tool generation", testTypedToolGeneration),
             ("Live generateText", testLiveGenerateText),
@@ -71,20 +71,14 @@ struct ProviderValidationAnthropic {
     }
 }
 
-// MARK: - Provider V4
+// MARK: - Provider
 
-func testNativeV4Provider() async throws {
-    guard anthropic.specificationVersion == "v4" else {
-        throw ValidationError.unexpectedValue("default anthropic provider is not V4")
-    }
-
+func testDefaultProvider() async throws {
     let model = try anthropic("claude-sonnet-5")
-    guard model.specificationVersion == "v4" else {
-        throw ValidationError.unexpectedValue("default Anthropic model is not V4")
-    }
+    print("Created model: \(model.modelId)")
 }
 
-func testCustomV4Provider() async throws {
+func testCustomProvider() async throws {
     let provider = createAnthropic(
         settings: AnthropicProviderSettings(
             baseURL: "https://proxy.example.com/v1",
@@ -94,9 +88,7 @@ func testCustomV4Provider() async throws {
     )
 
     let model = try provider.languageModel(modelId: "claude-opus-4-8")
-    guard model.specificationVersion == "v4" else {
-        throw ValidationError.unexpectedValue("custom Anthropic model is not V4")
-    }
+    print("Created custom model: \(model.modelId)")
 }
 
 func testFrontierModelIds() async throws {
@@ -109,9 +101,7 @@ func testFrontierModelIds() async throws {
         "claude-sonnet-4-6",
     ] {
         let model = try anthropic(modelId)
-        guard model.specificationVersion == "v4" else {
-            throw ValidationError.unexpectedValue("\(modelId) is not a V4 model")
-        }
+        print("Created model: \(model.modelId)")
     }
 
     _ = anthropic.chat("claude-sonnet-5")
@@ -258,7 +248,7 @@ func uploadDocumentationSkill() async throws -> DefaultUploadSkillResult {
     try await uploadSkill(
         api: anthropic,
         files: [
-            SkillsV4File(
+            .init(
                 path: "SKILL.md",
                 content: .text("# Data review\nAnalyze the supplied dataset.")
             )

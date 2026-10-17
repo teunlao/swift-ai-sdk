@@ -148,7 +148,7 @@ struct MCPClientTests {
             ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
         )
         #expect(modelOutput == .content(value: [
-            .media(data: "aW1hZ2U=", mediaType: "image/png"),
+            .file(data: .base64("aW1hZ2U="), mediaType: "image/png", filename: nil, providerOptions: nil),
         ]))
     }
 
@@ -191,7 +191,7 @@ struct MCPClientTests {
             ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
         )
         #expect(modelOutput == .content(value: [
-            .text(text: "Hello world"),
+            .text(text: "Hello world", providerOptions: nil),
         ]))
     }
 
@@ -235,8 +235,8 @@ struct MCPClientTests {
             ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
         )
         #expect(modelOutput == .content(value: [
-            .text(text: "Here is an image:"),
-            .media(data: "aW1hZ2U=", mediaType: "image/png"),
+            .text(text: "Here is an image:", providerOptions: nil),
+            .file(data: .base64("aW1hZ2U="), mediaType: "image/png", filename: nil, providerOptions: nil),
         ]))
     }
 
@@ -286,18 +286,15 @@ struct MCPClientTests {
             ToolModelOutputOptions(toolCallId: "1", input: .object([:]), output: output)
         )
 
-        guard let modelOutput, case .content(let parts, _) = modelOutput else {
+        guard let modelOutput, case .content(let parts) = modelOutput else {
             Issue.record("Expected content output")
             return
         }
 
         #expect(parts.count == 1)
-        if case .text(let text) = parts[0] {
-            // Ensure it is a JSON string representation of the part.
-            #expect(text.contains("\"type\""))
-            #expect(text.contains("\"custom\""))
-            #expect(text.contains("\"foo\""))
-            #expect(text.contains("\"bar\""))
+        if case .text(let text, _) = parts[0] {
+            let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+            #expect(decoded == .object(["type": "custom", "data": .object(["foo": "bar"])]))
         } else {
             Issue.record("Expected text fallback for unknown content type")
         }

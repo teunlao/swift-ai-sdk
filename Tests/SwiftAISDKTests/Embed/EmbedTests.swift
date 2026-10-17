@@ -89,13 +89,13 @@ struct EmbedTests {
 
     @Test("result.embedding should match model output")
     func resultEmbeddingMatches() async throws {
-        let model = TestEmbeddingModelV3<String> { options in
+        let model = TestEmbeddingModelV4 { options in
             #expect(options.values == [testValue])
-            return EmbeddingModelV3DoEmbedResult(embeddings: [dummyEmbedding])
+            return EmbeddingModelV4Result(embeddings: [dummyEmbedding])
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue
         )
 
@@ -104,20 +104,20 @@ struct EmbedTests {
 
     @Test("result.response should include provider response")
     func resultIncludesResponse() async throws {
-        let response = EmbeddingModelV3ResponseInfo(
+        let response = EmbeddingModelV4ResponseInfo(
             headers: ["foo": "bar"],
             body: ["foo": "bar"]
         )
 
-        let model = TestEmbeddingModelV3<String> { _ in
-            EmbeddingModelV3DoEmbedResult(
+        let model = TestEmbeddingModelV4 { _ in
+            EmbeddingModelV4Result(
                 embeddings: [dummyEmbedding],
                 response: response
             )
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue
         )
 
@@ -128,12 +128,12 @@ struct EmbedTests {
 
     @Test("result.value echoes input")
     func resultIncludesValue() async throws {
-        let model = TestEmbeddingModelV3<String> { _ in
-            EmbeddingModelV3DoEmbedResult(embeddings: [dummyEmbedding])
+        let model = TestEmbeddingModelV4 { _ in
+            EmbeddingModelV4Result(embeddings: [dummyEmbedding])
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue
         )
 
@@ -142,15 +142,15 @@ struct EmbedTests {
 
     @Test("result.usage reflects provider usage")
     func resultIncludesUsage() async throws {
-        let model = TestEmbeddingModelV3<String> { _ in
-            EmbeddingModelV3DoEmbedResult(
+        let model = TestEmbeddingModelV4 { _ in
+            EmbeddingModelV4Result(
                 embeddings: [dummyEmbedding],
-                usage: EmbeddingModelV3Usage(tokens: 10)
+                usage: EmbeddingModelV4Usage(tokens: 10)
             )
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue
         )
 
@@ -165,15 +165,15 @@ struct EmbedTests {
             ]
         ]
 
-        let model = TestEmbeddingModelV3<String> { _ in
-            EmbeddingModelV3DoEmbedResult(
+        let model = TestEmbeddingModelV4 { _ in
+            EmbeddingModelV4Result(
                 embeddings: [dummyEmbedding],
                 providerMetadata: providerMetadata
             )
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue
         )
 
@@ -209,7 +209,7 @@ struct EmbedTests {
         }
 
         let result = try await embed(
-            model: .v4(model),
+            model: model,
             value: testValue,
             providerOptions: expectedOptions,
             headers: ["custom-request-header": "request-header-value"]
@@ -235,13 +235,13 @@ struct EmbedTests {
     func headersOptionIsForwarded() async throws {
         let capturedHeaders = HeadersCapture()
 
-        let model = TestEmbeddingModelV3<String> { options in
+        let model = TestEmbeddingModelV4 { options in
             await capturedHeaders.set(options.headers)
-            return EmbeddingModelV3DoEmbedResult(embeddings: [dummyEmbedding])
+            return EmbeddingModelV4Result(embeddings: [dummyEmbedding])
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: testValue,
             headers: ["custom-request-header": "request-header-value"]
         )
@@ -261,13 +261,13 @@ struct EmbedTests {
             "aProvider": ["someKey": .string("someValue")]
         ]
 
-        let model = TestEmbeddingModelV3<String> { options in
+        let model = TestEmbeddingModelV4 { options in
             #expect(options.providerOptions == expectedOptions)
-            return EmbeddingModelV3DoEmbedResult(embeddings: [[1, 2, 3]])
+            return EmbeddingModelV4Result(embeddings: [[1, 2, 3]])
         }
 
         let result = try await embed(
-            model: .v3(model),
+            model: model,
             value: "test-input",
             providerOptions: expectedOptions
         )
@@ -281,11 +281,10 @@ struct EmbedTests {
 
         _ =
             try await embed(
-                model: .v3(
-                    TestEmbeddingModelV3<String> { _ in
-                        EmbeddingModelV3DoEmbedResult(embeddings: [dummyEmbedding])
-                    }
-                ),
+                model: 
+                    TestEmbeddingModelV4 { _ in
+                        EmbeddingModelV4Result(embeddings: [dummyEmbedding])
+                    },
                 value: testValue,
                 telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, embedding: true, runtimeContext: true)])
             ) as DefaultEmbedResult<String>
@@ -299,14 +298,13 @@ struct EmbedTests {
 
         _ =
             try await embed(
-                model: .v3(
-                    TestEmbeddingModelV3<String> { _ in
-                        EmbeddingModelV3DoEmbedResult(
+                model: 
+                    TestEmbeddingModelV4 { _ in
+                        EmbeddingModelV4Result(
                             embeddings: [dummyEmbedding],
-                            usage: EmbeddingModelV3Usage(tokens: 10)
+                            usage: EmbeddingModelV4Usage(tokens: 10)
                         )
-                    }
-                ),
+                    },
                 value: testValue,
                 telemetry: TelemetryOptions(
                     functionId: "test-function-id",
@@ -340,14 +338,13 @@ struct EmbedTests {
 
         _ =
             try await embed(
-                model: .v3(
-                    TestEmbeddingModelV3<String> { _ in
-                        EmbeddingModelV3DoEmbedResult(
+                model: 
+                    TestEmbeddingModelV4 { _ in
+                        EmbeddingModelV4Result(
                             embeddings: [dummyEmbedding],
-                            usage: EmbeddingModelV3Usage(tokens: 10)
+                            usage: EmbeddingModelV4Usage(tokens: 10)
                         )
-                    }
-                ),
+                    },
                 value: testValue,
                 telemetry: TelemetryOptions(
                     recordInputs: false,
@@ -397,12 +394,12 @@ private actor V4EmbeddingOptionsCapture {
     }
 }
 
-extension TestEmbeddingModelV3 where Value == String {
+extension TestEmbeddingModelV4 {
     fileprivate convenience init(
         supportsParallelCalls: Bool = true,
         maxEmbeddingsPerCall: Int? = nil,
-        doEmbed: @escaping @Sendable (EmbeddingModelV3DoEmbedOptions<String>) async throws ->
-            EmbeddingModelV3DoEmbedResult
+        doEmbed: @escaping @Sendable (EmbeddingModelV4CallOptions) async throws ->
+            EmbeddingModelV4Result
     ) {
         self.init(
             provider: "test-provider",

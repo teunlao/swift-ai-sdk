@@ -34,44 +34,6 @@ private final class MockSkillsAPI: SkillsV4 {
     }
 }
 
-private final class MockSkillsProvider: ProviderV3, SkillsProvider {
-    private let skillsAPI: any SkillsV4
-
-    init(skillsAPI: any SkillsV4) {
-        self.skillsAPI = skillsAPI
-    }
-
-    func skills() -> any SkillsV4 {
-        skillsAPI
-    }
-
-    func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-}
-
-private final class UnsupportedSkillsProvider: ProviderV3 {
-    func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-}
-
 private final class MockSkillsProviderV4: ProviderV4 {
     private let skillsAPI: any SkillsV4
 
@@ -153,7 +115,7 @@ struct UploadSkillTests {
                 latestVersion: "v1"
             )
         )
-        let provider = MockSkillsProvider(skillsAPI: api)
+        let provider = MockSkillsProviderV4(skillsAPI: api)
 
         let result = try await uploadSkill(
             api: provider,
@@ -186,18 +148,6 @@ struct UploadSkillTests {
 
     @Test("rejects unsupported providers with upstream-style message")
     func rejectsUnsupportedProvider() async throws {
-        do {
-            _ = try await uploadSkill(
-                api: UnsupportedSkillsProvider(),
-                files: [
-                    SkillsV4File(path: "index.ts", content: .data(Data([0x01])))
-                ]
-            )
-            Issue.record("Expected unsupported provider to throw")
-        } catch {
-            #expect(error.localizedDescription == "The provider does not support skills. Make sure it exposes a skills() method.")
-        }
-
         do {
             _ = try await uploadSkill(
                 api: UnsupportedSkillsProviderV4(),

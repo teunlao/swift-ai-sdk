@@ -57,7 +57,7 @@ struct OpenAIChatToolResultCrashRegressionTests {
             )
         }))
         let result = try await generateText(
-            model: .v4(provider.chat("gpt-4o-mini")),
+            model: provider.chat("gpt-4o-mini"),
             tools: ["calculator": tool],
             messages: modelMessages
         )

@@ -110,7 +110,7 @@ struct PrepareToolsAndToolChoiceTests {
         )
 
         #expect(result.tools?.count == 2)
-        #expect(result.toolChoice == LanguageModelV3ToolChoice.none)
+        #expect(result.toolChoice == LanguageModelV4ToolChoice.none)
     }
 
     // MARK: - Test 5: Object toolChoice
@@ -225,7 +225,7 @@ struct PrepareToolsAndToolChoiceTests {
 
         if case .function(let tool) = result.tools?[0] {
             #expect(tool.providerOptions != nil)
-            // Verify nested structure: SharedV3ProviderOptions is [String: [String: JSONValue]]
+            // Verify nested structure: SharedV4ProviderOptions is [String: [String: JSONValue]]
             // Tool.providerOptions values are already nested objects, extracted directly
             if let options = tool.providerOptions,
                let aProviderObj = options["aProvider"],
@@ -253,7 +253,7 @@ struct PrepareToolsAndToolChoiceTests {
                     ])
                 )),
                 inputExamples: [
-                    LanguageModelV3ToolInputExample(input: ["location": .string("San Francisco")])
+                    LanguageModelV4ToolInputExample(input: ["location": .string("San Francisco")])
                 ]
             )
         ]

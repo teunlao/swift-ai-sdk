@@ -203,7 +203,7 @@ struct ConvertToLanguageModelPromptTests {
         }
 
         #expect(filePart.mediaType == "application/pdf")
-        guard case .url(let url) = filePart.data else {
+        guard case .url(let url, _) = filePart.data else {
             Issue.record("Expected URL")
             return
         }
@@ -793,7 +793,7 @@ struct ConvertToLanguageModelPromptTests {
         }
 
         #expect(filePart.mediaType == "application/pdf")
-        guard case .url(let url) = filePart.data else {
+        guard case .url(let url, _) = filePart.data else {
             Issue.record("Expected URL")
             return
         }
@@ -1213,7 +1213,7 @@ struct ConvertToLanguageModelMessageTests {
             return
         }
 
-        guard case .url(let url) = filePart.data else {
+        guard case .url(let url, _) = filePart.data else {
             Issue.record("Expected URL")
             return
         }
@@ -1527,7 +1527,7 @@ struct ConvertToLanguageModelMessageTests {
             return
         }
 
-        guard case .url(let url) = filePart.data else {
+        guard case .url(let url, _) = filePart.data else {
             Issue.record("Expected URL")
             return
         }
@@ -2072,7 +2072,7 @@ struct ConvertToLanguageModelMessageTests {
                     toolCallId: "toolCallId",
                     toolName: "toolName",
                     output: .content(value: [
-                        LanguageModelV3ToolResultContentPart.media(data: "dGVzdA==", mediaType: "image/png")
+                        LanguageModelV4ToolResultContentPart.file(data: .base64("dGVzdA=="), mediaType: "image/png", filename: nil, providerOptions: nil)
                     ]),
                     providerOptions: nil
                 ))
@@ -2099,14 +2099,14 @@ struct ConvertToLanguageModelMessageTests {
         #expect(part.toolCallId == "toolCallId")
         #expect(part.toolName == "toolName")
 
-        guard case .content(value: let contentParts, providerOptions: _) = part.output else {
+        guard case .content(value: let contentParts) = part.output else {
             Issue.record("Expected content output")
             return
         }
 
         #expect(contentParts.count == 1)
 
-        guard case .media(data: let data, mediaType: let mediaType) = contentParts[0] else {
+        guard case .file(data: .base64(let data), mediaType: let mediaType, filename: _, providerOptions: _) = contentParts[0] else {
             Issue.record("Expected media content part")
             return
         }

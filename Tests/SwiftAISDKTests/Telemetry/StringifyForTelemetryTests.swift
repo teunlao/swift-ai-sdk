@@ -3,7 +3,7 @@
 
  Port of `@ai-sdk/ai/src/telemetry/stringify-for-telemetry.test.ts`.
 
- Tests JSON serialization of LanguageModelV3Prompt with special handling
+ Tests JSON serialization of LanguageModelV4Prompt with special handling
  for Data (Uint8Array) content in file parts.
  */
 
@@ -18,11 +18,11 @@ struct StringifyForTelemetryTests {
 
     @Test("should stringify a prompt with text parts")
     func stringifyTextPrompt() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "You are a helpful assistant.", providerOptions: nil),
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Hello!"))
+                    .text(LanguageModelV4TextPart(text: "Hello!"))
                 ],
                 providerOptions: nil
             )
@@ -41,11 +41,11 @@ struct StringifyForTelemetryTests {
     func convertDataToBase64() throws {
         let imageData = Data([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff])
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
                     .file(
-                        LanguageModelV3FilePart(
+                        LanguageModelV4FilePart(
                             data: .data(imageData),
                             mediaType: "image/png"
                         )
@@ -58,7 +58,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":[{"data":"iVBOR///","mediaType":"image/png","type":"file"}],"role":"user"}]
+        [{"content":[{"data":{"data":"iVBOR///","type":"data"},"mediaType":"image/png","type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -68,11 +68,11 @@ struct StringifyForTelemetryTests {
     func preserveFileMetadata() throws {
         let imageData = Data([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff])
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
                     .file(
-                        LanguageModelV3FilePart(
+                        LanguageModelV4FilePart(
                             data: .data(imageData),
                             mediaType: "image/png",
                             filename: "image.png",
@@ -89,7 +89,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":[{"data":"iVBOR///","filename":"image.png","mediaType":"image/png","providerOptions":{"anthropic":{"key":"value"}},"type":"file"}],"role":"user"}]
+        [{"content":[{"data":{"data":"iVBOR///","type":"data"},"filename":"image.png","mediaType":"image/png","providerOptions":{"anthropic":{"key":"value"}},"type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -99,12 +99,12 @@ struct StringifyForTelemetryTests {
     func keepURLImages() throws {
         let imageUrl = URL(string: "https://example.com/image.jpg")!
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Check this image:")),
+                    .text(LanguageModelV4TextPart(text: "Check this image:")),
                     .file(
-                        LanguageModelV3FilePart(
+                        LanguageModelV4FilePart(
                             data: .url(imageUrl),
                             mediaType: "image/jpeg"
                         )
@@ -118,7 +118,7 @@ struct StringifyForTelemetryTests {
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         // URLs with forward slashes are escaped as \/ by JSONEncoder
         let expected = """
-        [{"content":[{"text":"Check this image:","type":"text"},{"data":"https://example.com/image.jpg","mediaType":"image/jpeg","type":"file"}],"role":"user"}]
+        [{"content":[{"text":"Check this image:","type":"text"},{"data":{"type":"url","url":"https://example.com/image.jpg"},"mediaType":"image/jpeg","type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -129,18 +129,18 @@ struct StringifyForTelemetryTests {
         let imageData = Data([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff])
         let imageUrl = URL(string: "https://example.com/image.jpg")!
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "You are a helpful assistant.", providerOptions: nil),
             .user(
                 content: [
                     .file(
-                        LanguageModelV3FilePart(
+                        LanguageModelV4FilePart(
                             data: .data(imageData),
                             mediaType: "image/png"
                         )
                     ),
                     .file(
-                        LanguageModelV3FilePart(
+                        LanguageModelV4FilePart(
                             data: .url(imageUrl),
                             mediaType: "image/jpeg"
                         )
@@ -150,7 +150,7 @@ struct StringifyForTelemetryTests {
             ),
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "I see the images!"))
+                    .text(LanguageModelV4TextPart(text: "I see the images!"))
                 ],
                 providerOptions: nil
             )
@@ -159,7 +159,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":"You are a helpful assistant.","role":"system"},{"content":[{"data":"iVBOR///","mediaType":"image/png","type":"file"},{"data":"https://example.com/image.jpg","mediaType":"image/jpeg","type":"file"}],"role":"user"},{"content":[{"text":"I see the images!","type":"text"}],"role":"assistant"}]
+        [{"content":"You are a helpful assistant.","role":"system"},{"content":[{"data":{"data":"iVBOR///","type":"data"},"mediaType":"image/png","type":"file"},{"data":{"type":"url","url":"https://example.com/image.jpg"},"mediaType":"image/jpeg","type":"file"}],"role":"user"},{"content":[{"text":"I see the images!","type":"text"}],"role":"assistant"}]
         """
 
         #expect(result == expected)

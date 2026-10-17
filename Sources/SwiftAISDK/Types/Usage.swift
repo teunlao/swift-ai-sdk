@@ -90,8 +90,6 @@ public struct LanguageModelUsage: Sendable, Equatable, Codable {
 /**
  Represents the number of tokens used in an embedding.
 
- Note: This will be replaced with EmbeddingModelV3Usage in the future
- (as noted in upstream TODO).
  */
 public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
     /// The number of tokens used in the embedding.
@@ -128,34 +126,6 @@ public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
  Type alias for `ImageModelV4Usage` from the Provider package.
  */
 public typealias ImageModelUsage = ImageModelV4Usage
-
-/**
- Convert provider-level usage into AI-level usage.
- */
-public func asLanguageModelUsage(_ usage: LanguageModelV3Usage) -> LanguageModelUsage {
-    let rawObject: JSONObject?
-    if let raw = usage.raw, case .object(let object) = raw {
-        rawObject = object
-    } else {
-        rawObject = nil
-    }
-
-    return LanguageModelUsage(
-        inputTokens: usage.inputTokens.total,
-        inputTokenDetails: .init(
-            noCacheTokens: usage.inputTokens.noCache,
-            cacheReadTokens: usage.inputTokens.cacheRead,
-            cacheWriteTokens: usage.inputTokens.cacheWrite
-        ),
-        outputTokens: usage.outputTokens.total,
-        outputTokenDetails: .init(
-            textTokens: usage.outputTokens.text,
-            reasoningTokens: usage.outputTokens.reasoning
-        ),
-        totalTokens: addTokenCounts(usage.inputTokens.total, usage.outputTokens.total),
-        raw: rawObject
-    )
-}
 
 /**
  Convert provider-level V4 usage into AI-level usage.

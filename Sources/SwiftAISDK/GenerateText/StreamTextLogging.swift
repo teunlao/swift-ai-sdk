@@ -164,21 +164,6 @@ private final class StreamTextLogEncoder {
 
 // MARK: - Helpers
 
-private extension SharedV3Warning {
-    func codeDescription() -> String {
-        switch self {
-        case let .unsupported(feature, details):
-            if let details { return "unsupported(\(feature)): \(details)" }
-            return "unsupported(\(feature))"
-        case let .compatibility(feature, details):
-            if let details { return "compatibility(\(feature)): \(details)" }
-            return "compatibility(\(feature))"
-        case let .other(message):
-            return "other(\(message))"
-        }
-    }
-}
-
 private extension SharedV4Warning {
     func codeDescription() -> String {
         switch self {

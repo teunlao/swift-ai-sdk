@@ -2,219 +2,23 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-/**
- Converts prompt messages to LanguageModelV3 format for provider consumption.
-
- Port of `@ai-sdk/ai/src/prompt/convert-to-language-model-prompt.ts`.
-
- This module handles:
- - Converting ModelMessage types to LanguageModelV3Message format
- - Downloading assets from URLs when models don't support URL references
- - Converting content parts (text, images, files, reasoning, tool calls)
- - Combining consecutive tool messages for efficiency
- */
-
-/**
- Converts a standardized prompt to LanguageModelV3 format.
-
- - Parameter prompt: The standardized prompt to convert
- - Parameter supportedUrls: Map of media types to supported URL patterns
- - Parameter download: Download function for fetching URL assets (optional)
- - Returns: Array of LanguageModelV3Message suitable for provider consumption
- - Throws: Various errors during conversion or download
- */
 public func convertToLanguageModelPrompt(
     prompt: StandardizedPrompt,
     supportedUrls: [String: [NSRegularExpression]],
     download: DownloadFunction? = nil
-) async throws -> LanguageModelV3Prompt {
-    // Download assets from URLs if needed
-    let downloadedAssets = try await downloadAssets(
-        messages: prompt.messages,
-        download: download ?? createDefaultDownloadFunction(),
-        supportedUrls: supportedUrls
-    )
-
-    var messages: [LanguageModelV3Message] = []
-    switch prompt.instructions {
-    case .text(let text)?:
-        messages.append(.system(content: text, providerOptions: nil))
-    case .messages(let systemMessages)?:
-        messages += systemMessages.map { .system(content: $0.content, providerOptions: $0.providerOptions) }
-    case nil:
-        break
-    }
-
-    // Convert all user/assistant/tool messages
-    messages.append(contentsOf: try prompt.messages.map { message in
-        try convertToLanguageModelMessage(message: message, downloadedAssets: downloadedAssets)
-    })
-
-    // Combine consecutive tool messages into a single tool message
-    var combinedMessages: [LanguageModelV3Message] = []
-    for message in messages {
-        // Extract role and content
-        switch message {
-        case .tool(let content, let providerOptions):
-            // Check if last message is also a tool message
-            if case .tool(var lastContent, _) = combinedMessages.last {
-                // Merge content arrays
-                combinedMessages.removeLast()
-                lastContent.append(contentsOf: content)
-                combinedMessages.append(.tool(content: lastContent, providerOptions: providerOptions))
-            } else {
-                combinedMessages.append(message)
-            }
-        default:
-            combinedMessages.append(message)
-        }
-    }
-
-    // Filter out empty tool messages (e.g. if they only contained
-    // tool-approval-response parts that were removed).
-    return combinedMessages.filter { message in
-        if case .tool(let content, _) = message {
-            return !content.isEmpty
-        }
-        return true
-    }
-}
-
-/**
- Converts a ModelMessage to a LanguageModelV3Message.
-
- - Parameter message: The ModelMessage to convert
- - Parameter downloadedAssets: Map of URLs to their downloaded data
- - Returns: LanguageModelV3Message
- - Throws: InvalidMessageRoleError for unsupported roles, or errors during conversion
- */
-public func convertToLanguageModelMessage(
-    message: ModelMessage,
-    downloadedAssets: [String: DownloadedAsset]
-) throws -> LanguageModelV3Message {
-    switch message {
-    case .system(let systemMessage):
-        return .system(
-            content: systemMessage.content,
-            providerOptions: systemMessage.providerOptions
-        )
-
-    case .user(let userMessage):
-        let content: [LanguageModelV3UserMessagePart]
-
-        switch userMessage.content {
-        case .text(let text):
-            content = [.text(LanguageModelV3TextPart(text: text))]
-
-        case .parts(let parts):
-            content = try parts
-                .map { part in
-                    try convertUserPartToLanguageModelPart(part: part, downloadedAssets: downloadedAssets)
-                }
-                // Remove empty text parts
-                .filter { part in
-                    if case .text(let textPart) = part {
-                        return !textPart.text.isEmpty
-                    }
-                    return true
-                }
-        }
-
-        return .user(content: content, providerOptions: userMessage.providerOptions)
-
-    case .assistant(let assistantMessage):
-        let content: [LanguageModelV3MessagePart]
-
-        switch assistantMessage.content {
-        case .text(let text):
-            content = [.text(LanguageModelV3TextPart(text: text))]
-
-        case .parts(let parts):
-            content = try parts
-                // Remove empty text parts (no text, and no provider options)
-                .filter { part in
-                    if case .text(let textPart) = part {
-                        return !textPart.text.isEmpty || textPart.providerOptions != nil
-                    }
-                    return true
-                }
-                // Remove tool-approval-request (not supported in V3)
-                .compactMap { part -> AssistantContentPart? in
-                    if case .toolApprovalRequest = part {
-                        return nil
-                    }
-                    return part
-                }
-                .map { part in
-                    try convertAssistantPartToLanguageModelPart(part: part)
-                }
-        }
-
-        return .assistant(content: content, providerOptions: assistantMessage.providerOptions)
-
-    case .tool(let toolMessage):
-        let content: [LanguageModelV3ToolMessagePart] = toolMessage.content.compactMap { part in
-            switch part {
-            case .toolResult(let result):
-                return .toolResult(LanguageModelV3ToolResultPart(
-                    toolCallId: result.toolCallId,
-                    toolName: result.toolName,
-                    output: result.output,
-                    providerOptions: result.providerOptions
-                ))
-            case .toolApprovalResponse(let approvalResponse):
-                guard approvalResponse.providerExecuted == true else { return nil }
-                return .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
-                    approvalId: approvalResponse.approvalId,
-                    approved: approvalResponse.approved,
-                    reason: approvalResponse.reason,
-                    providerOptions: nil
-                ))
-            }
-        }
-
-        return .tool(content: content, providerOptions: toolMessage.providerOptions)
-    }
-}
-
-/**
- Converts a standardized prompt to the V4 provider prompt.
-
- Port of `convertToLanguageModelPrompt` from
- `@ai-sdk/ai/src/prompt/convert-to-language-model-prompt.ts`: instructions
- become leading system messages, consecutive tool messages are combined, and
- every client tool call must have a tool result before the next user or system
- message and at the end.
-
- - Throws: `MissingToolResultsError` when tool results are missing.
- */
-public func convertToLanguageModelV4Prompt(
-    prompt: StandardizedPrompt,
-    supportedUrls: [String: [NSRegularExpression]],
-    download: DownloadFunction? = nil
 ) async throws -> LanguageModelV4Prompt {
-    let downloadedAssets = try await downloadAssets(
-        messages: prompt.messages,
-        download: download ?? createDefaultDownloadFunction(),
-        supportedUrls: supportedUrls
-    )
-
+    let downloadedAssets = try await downloadAssets(messages: prompt.messages,
+        download: download ?? createDefaultDownloadFunction(), supportedUrls: supportedUrls)
     var messages: [LanguageModelV4Message] = []
     switch prompt.instructions {
-    case .text(let text):
-        messages.append(.system(content: text, providerOptions: nil))
+    case .text(let text): messages.append(.system(content: text, providerOptions: nil))
     case .messages(let systemMessages):
-        messages.append(contentsOf: systemMessages.map {
-            .system(content: $0.content, providerOptions: $0.providerOptions)
-        })
-    case nil:
-        break
+        messages.append(contentsOf: systemMessages.map { .system(content: $0.content, providerOptions: $0.providerOptions) })
+    case nil: break
     }
-
-    messages.append(contentsOf: try prompt.messages.map { message in
-        try convertToLanguageModelV4Message(message: message, downloadedAssets: downloadedAssets)
+    messages.append(contentsOf: try prompt.messages.map {
+        try convertToLanguageModelMessage(message: $0, downloadedAssets: downloadedAssets)
     })
-
     var combinedMessages: [LanguageModelV4Message] = []
     for message in messages {
         guard case .tool(let content, let providerOptions) = message,
@@ -222,7 +26,6 @@ public func convertToLanguageModelV4Prompt(
             combinedMessages.append(message)
             continue
         }
-
         combinedMessages.removeLast()
         let hadContent = !lastContent.isEmpty
         if hadContent, let lastProviderOptions {
@@ -230,43 +33,28 @@ public func convertToLanguageModelV4Prompt(
                 .withProviderOptions(mergeProviderOptions(lastProviderOptions, lastContent[lastContent.count - 1].providerOptions))
         }
         lastContent.append(contentsOf: content)
-        combinedMessages.append(.tool(
-            content: lastContent,
-            providerOptions: hadContent ? providerOptions : mergeProviderOptions(lastProviderOptions, providerOptions)
-        ))
+        combinedMessages.append(.tool(content: lastContent,
+            providerOptions: hadContent ? providerOptions : mergeProviderOptions(lastProviderOptions, providerOptions)))
     }
-
     var pendingToolCallIds: [String] = []
     for message in combinedMessages {
         switch message {
         case .assistant(let content, _):
             for part in content {
-                if case .toolCall(let toolCall) = part, toolCall.providerExecuted != true,
-                   !pendingToolCallIds.contains(toolCall.toolCallId) {
-                    pendingToolCallIds.append(toolCall.toolCallId)
-                }
+                if case .toolCall(let call) = part, call.providerExecuted != true,
+                   !pendingToolCallIds.contains(call.toolCallId) { pendingToolCallIds.append(call.toolCallId) }
             }
         case .tool(let content, _):
             for part in content {
-                if case .toolResult(let result) = part {
-                    pendingToolCallIds.removeAll { $0 == result.toolCallId }
-                }
+                if case .toolResult(let result) = part { pendingToolCallIds.removeAll { $0 == result.toolCallId } }
             }
         case .user, .system:
-            if !pendingToolCallIds.isEmpty {
-                throw MissingToolResultsError(toolCallIds: pendingToolCallIds)
-            }
+            if !pendingToolCallIds.isEmpty { throw MissingToolResultsError(toolCallIds: pendingToolCallIds) }
         }
     }
-
-    if !pendingToolCallIds.isEmpty {
-        throw MissingToolResultsError(toolCallIds: pendingToolCallIds)
-    }
-
-    return combinedMessages.filter { message in
-        if case .tool(let content, _) = message {
-            return !content.isEmpty
-        }
+    if !pendingToolCallIds.isEmpty { throw MissingToolResultsError(toolCallIds: pendingToolCallIds) }
+    return combinedMessages.filter {
+        if case .tool(let content, _) = $0 { return !content.isEmpty }
         return true
     }
 }
@@ -282,204 +70,61 @@ private extension LanguageModelV4ToolMessagePart {
     func withProviderOptions(_ providerOptions: SharedV4ProviderOptions?) -> LanguageModelV4ToolMessagePart {
         switch self {
         case .toolResult(let part):
-            return .toolResult(LanguageModelV4ToolResultPart(
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                output: part.output,
-                providerOptions: providerOptions
-            ))
+            return .toolResult(.init(toolCallId: part.toolCallId, toolName: part.toolName,
+                output: part.output, providerOptions: providerOptions))
         case .toolApprovalResponse(let part):
-            return .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
-                approvalId: part.approvalId,
-                approved: part.approved,
-                reason: part.reason,
-                providerOptions: providerOptions
-            ))
+            return .toolApprovalResponse(.init(approvalId: part.approvalId, approved: part.approved,
+                reason: part.reason, providerOptions: providerOptions))
         }
     }
 }
 
-public func convertToLanguageModelV4Message(
+public func convertToLanguageModelMessage(
     message: ModelMessage,
     downloadedAssets: [String: DownloadedAsset]
 ) throws -> LanguageModelV4Message {
     switch message {
-    case .system(let systemMessage):
-        return .system(
-            content: systemMessage.content,
-            providerOptions: systemMessage.providerOptions
-        )
-
-    case .user(let userMessage):
+    case .system(let message):
+        return .system(content: message.content, providerOptions: message.providerOptions)
+    case .user(let message):
         let content: [LanguageModelV4UserMessagePart]
-        switch userMessage.content {
-        case .text(let text):
-            content = [.text(LanguageModelV4TextPart(text: text))]
-
+        switch message.content {
+        case .text(let text): content = [.text(.init(text: text))]
         case .parts(let parts):
-            content = try parts
-                .map { part in
-                    try convertUserPartToLanguageModelV4Part(part: part, downloadedAssets: downloadedAssets)
-                }
-                .filter { part in
-                    if case .text(let textPart) = part {
-                        return !textPart.text.isEmpty
-                    }
+            content = try parts.map { try convertUserPartToLanguageModelV4Part(part: $0, downloadedAssets: downloadedAssets) }
+                .filter {
+                    if case .text(let part) = $0 { return !part.text.isEmpty }
                     return true
                 }
         }
-
-        return .user(content: content, providerOptions: userMessage.providerOptions)
-
-    case .assistant(let assistantMessage):
+        return .user(content: content, providerOptions: message.providerOptions)
+    case .assistant(let message):
         let content: [LanguageModelV4MessagePart]
-        switch assistantMessage.content {
-        case .text(let text):
-            content = [.text(LanguageModelV4TextPart(text: text))]
-
+        switch message.content {
+        case .text(let text): content = [.text(.init(text: text))]
         case .parts(let parts):
-            content = try parts
-                .filter { part in
-                    if case .text(let textPart) = part {
-                        return !textPart.text.isEmpty || textPart.providerOptions != nil
-                    }
-                    return true
-                }
-                .compactMap { part -> AssistantContentPart? in
-                    if case .toolApprovalRequest = part {
-                        return nil
-                    }
-                    return part
-                }
-                .map { part in
-                    try convertAssistantPartToLanguageModelV4Part(part: part)
-                }
+            content = try parts.filter {
+                if case .text(let part) = $0 { return !part.text.isEmpty || part.providerOptions != nil }
+                return true
+            }.compactMap { part -> AssistantContentPart? in
+                if case .toolApprovalRequest = part { return nil }
+                return part
+            }.map { try convertAssistantPartToLanguageModelV4Part(part: $0) }
         }
-
-        return .assistant(content: content, providerOptions: assistantMessage.providerOptions)
-
-    case .tool(let toolMessage):
-        let content: [LanguageModelV4ToolMessagePart] = try toolMessage.content.compactMap { part in
-            switch part {
+        return .assistant(content: content, providerOptions: message.providerOptions)
+    case .tool(let message):
+        let content: [LanguageModelV4ToolMessagePart] = message.content.compactMap {
+            switch $0 {
             case .toolResult(let result):
-                return .toolResult(LanguageModelV4ToolResultPart(
-                    toolCallId: result.toolCallId,
-                    toolName: result.toolName,
-                    output: try convertToolResultOutputToLanguageModelV4(result.output),
-                    providerOptions: result.providerOptions
-                ))
-            case .toolApprovalResponse(let approvalResponse):
-                guard approvalResponse.providerExecuted == true else { return nil }
-                return .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
-                    approvalId: approvalResponse.approvalId,
-                    approved: approvalResponse.approved,
-                    reason: approvalResponse.reason,
-                    providerOptions: nil
-                ))
+                return .toolResult(.init(toolCallId: result.toolCallId, toolName: result.toolName,
+                    output: result.output, providerOptions: result.providerOptions))
+            case .toolApprovalResponse(let response):
+                guard response.providerExecuted == true else { return nil }
+                return .toolApprovalResponse(.init(approvalId: response.approvalId, approved: response.approved,
+                    reason: response.reason, providerOptions: nil))
             }
         }
-
-        return .tool(content: content, providerOptions: toolMessage.providerOptions)
-    }
-}
-
-// MARK: - Helper Functions
-
-/**
- Convert user content part to LanguageModelV3UserMessagePart.
- */
-private func convertUserPartToLanguageModelPart(
-    part: UserContentPart,
-    downloadedAssets: [String: DownloadedAsset]
-) throws -> LanguageModelV3UserMessagePart {
-    switch part {
-    case .text(let textPart):
-        return .text(LanguageModelV3TextPart(
-            text: textPart.text,
-            providerOptions: textPart.providerOptions
-        ))
-
-    case .image(let imagePart):
-        let filePart = try convertMediaPartToLanguageModelFilePart(
-            data: imagePart.image,
-            mediaType: imagePart.mediaType,
-            filename: nil,
-            providerOptions: imagePart.providerOptions,
-            isImage: true,
-            downloadedAssets: downloadedAssets
-        )
-        return .file(filePart)
-
-    case .file(let filePart):
-        let convertedFilePart = try convertMediaPartToLanguageModelFilePart(
-            data: filePart.data,
-            mediaType: filePart.mediaType,
-            filename: filePart.filename,
-            providerOptions: filePart.providerOptions,
-            isImage: false,
-            downloadedAssets: downloadedAssets
-        )
-        return .file(convertedFilePart)
-    }
-}
-
-/**
- Convert assistant content part to LanguageModelV3MessagePart.
- */
-private func convertAssistantPartToLanguageModelPart(
-    part: AssistantContentPart
-) throws -> LanguageModelV3MessagePart {
-    switch part {
-    case .text(let textPart):
-        return .text(LanguageModelV3TextPart(
-            text: textPart.text,
-            providerOptions: textPart.providerOptions
-        ))
-
-    case .file(let filePart):
-        let (data, mediaType) = try convertToLanguageModelV3DataContent(filePart.data)
-        return .file(LanguageModelV3FilePart(
-            data: data,
-            mediaType: mediaType ?? filePart.mediaType,
-            filename: filePart.filename,
-            providerOptions: filePart.providerOptions
-        ))
-
-    case .custom:
-        throw UnsupportedFunctionalityError(functionality: "custom prompt parts on v3 model")
-
-    case .reasoning(let reasoningPart):
-        return .reasoning(LanguageModelV3ReasoningPart(
-            text: reasoningPart.text,
-            providerOptions: reasoningPart.providerOptions
-        ))
-
-    case .reasoningFile:
-        throw UnsupportedFunctionalityError(functionality: "reasoning-file prompt parts on v3 model")
-
-    case .toolCall(let toolCallPart):
-        return .toolCall(LanguageModelV3ToolCallPart(
-            toolCallId: toolCallPart.toolCallId,
-            toolName: toolCallPart.toolName,
-            input: toolCallPart.input,
-            providerExecuted: toolCallPart.providerExecuted,
-            providerOptions: toolCallPart.providerOptions
-        ))
-
-    case .toolResult(let toolResultPart):
-        return .toolResult(LanguageModelV3ToolResultPart(
-            toolCallId: toolResultPart.toolCallId,
-            toolName: toolResultPart.toolName,
-            output: toolResultPart.output,
-            providerOptions: toolResultPart.providerOptions
-        ))
-
-    case .toolApprovalRequest:
-        // Should be filtered out before this point
-        throw InvalidMessageRoleError(
-            role: "tool-approval-request",
-            message: "Tool approval requests are not supported in LanguageModelV3"
-        )
+        return .tool(content: content, providerOptions: message.providerOptions)
     }
 }
 
@@ -488,366 +133,112 @@ private func convertUserPartToLanguageModelV4Part(
     downloadedAssets: [String: DownloadedAsset]
 ) throws -> LanguageModelV4UserMessagePart {
     switch part {
-    case .text(let textPart):
-        return .text(LanguageModelV4TextPart(
-            text: textPart.text,
-            providerOptions: textPart.providerOptions
-        ))
-
-    case .image(let imagePart):
-        return .file(try convertMediaPartToLanguageModelV4FilePart(
-            data: imagePart.image,
-            mediaType: imagePart.mediaType,
-            filename: nil,
-            providerOptions: imagePart.providerOptions,
-            isImage: true,
-            downloadedAssets: downloadedAssets
-        ))
-
-    case .file(let filePart):
-        return .file(try convertMediaPartToLanguageModelV4FilePart(
-            data: filePart.data,
-            mediaType: filePart.mediaType,
-            filename: filePart.filename,
-            providerOptions: filePart.providerOptions,
-            isImage: false,
-            downloadedAssets: downloadedAssets
-        ))
+    case .text(let part): return .text(.init(text: part.text, providerOptions: part.providerOptions))
+    case .image(let part):
+        return .file(try convertMediaPartToLanguageModelV4FilePart(data: part.image, mediaType: part.mediaType,
+            filename: nil, providerOptions: part.providerOptions, isImage: true, downloadedAssets: downloadedAssets))
+    case .file(let part):
+        return .file(try convertMediaPartToLanguageModelV4FilePart(data: part.data, mediaType: part.mediaType,
+            filename: part.filename, providerOptions: part.providerOptions, isImage: false, downloadedAssets: downloadedAssets))
     }
 }
 
-private func convertAssistantPartToLanguageModelV4Part(
-    part: AssistantContentPart
-) throws -> LanguageModelV4MessagePart {
+private func convertAssistantPartToLanguageModelV4Part(part: AssistantContentPart) throws -> LanguageModelV4MessagePart {
     switch part {
-    case .text(let textPart):
-        return .text(LanguageModelV4TextPart(
-            text: textPart.text,
-            providerOptions: textPart.providerOptions
-        ))
-
-    case .file(let filePart):
-        let (data, mediaType) = try convertToSharedV4FileData(filePart.data)
-        return .file(LanguageModelV4FilePart(
-            data: data,
-            mediaType: mediaType ?? filePart.mediaType,
-            filename: filePart.filename,
-            providerOptions: filePart.providerOptions
-        ))
-
-    case .custom(let customPart):
-        return .custom(LanguageModelV4CustomPart(
-            kind: customPart.kind,
-            providerOptions: customPart.providerOptions
-        ))
-
-    case .reasoning(let reasoningPart):
-        return .reasoning(LanguageModelV4ReasoningPart(
-            text: reasoningPart.text,
-            providerOptions: reasoningPart.providerOptions
-        ))
-
-    case .reasoningFile(let reasoningFilePart):
-        let (data, mediaType) = try convertToLanguageModelV4FileData(reasoningFilePart.data)
-        return .reasoningFile(LanguageModelV4ReasoningFilePart(
-            data: data,
-            mediaType: mediaType ?? reasoningFilePart.mediaType,
-            providerOptions: reasoningFilePart.providerOptions
-        ))
-
-    case .toolCall(let toolCallPart):
-        return .toolCall(LanguageModelV4ToolCallPart(
-            toolCallId: toolCallPart.toolCallId,
-            toolName: toolCallPart.toolName,
-            input: toolCallPart.input,
-            providerExecuted: toolCallPart.providerExecuted,
-            providerOptions: toolCallPart.providerOptions
-        ))
-
-    case .toolResult(let toolResultPart):
-        return .toolResult(LanguageModelV4ToolResultPart(
-            toolCallId: toolResultPart.toolCallId,
-            toolName: toolResultPart.toolName,
-            output: try convertToolResultOutputToLanguageModelV4(toolResultPart.output),
-            providerOptions: toolResultPart.providerOptions
-        ))
-
+    case .text(let part): return .text(.init(text: part.text, providerOptions: part.providerOptions))
+    case .file(let part):
+        let (data, mediaType) = try convertToFileData(part.data)
+        return .file(.init(data: data, mediaType: mediaType ?? part.mediaType,
+            filename: part.filename, providerOptions: part.providerOptions))
+    case .custom(let part): return .custom(.init(kind: part.kind, providerOptions: part.providerOptions))
+    case .reasoning(let part): return .reasoning(.init(text: part.text, providerOptions: part.providerOptions))
+    case .reasoningFile(let part):
+        let (data, mediaType) = try convertToLanguageModelV4FileData(part.data)
+        return .reasoningFile(.init(data: data, mediaType: mediaType ?? part.mediaType, providerOptions: part.providerOptions))
+    case .toolCall(let part):
+        return .toolCall(.init(toolCallId: part.toolCallId, toolName: part.toolName, input: part.input,
+            providerExecuted: part.providerExecuted, providerOptions: part.providerOptions))
+    case .toolResult(let part):
+        return .toolResult(.init(toolCallId: part.toolCallId, toolName: part.toolName,
+            output: part.output, providerOptions: part.providerOptions))
     case .toolApprovalRequest:
-        throw InvalidMessageRoleError(
-            role: "tool-approval-request",
-            message: "Tool approval requests are not supported in LanguageModelV4 prompts"
-        )
+        throw InvalidMessageRoleError(role: "tool-approval-request", message: "Tool approval requests are not supported in LanguageModelV4 prompts")
     }
 }
 
-private func convertToolResultOutputToLanguageModelV4(
-    _ output: LanguageModelV3ToolResultOutput
-) throws -> LanguageModelV4ToolResultOutput {
-    switch output {
-    case let .text(value, providerOptions):
-        return .text(value: value, providerOptions: providerOptions)
-    case let .json(value, providerOptions):
-        return .json(value: value, providerOptions: providerOptions)
-    case let .executionDenied(reason, providerOptions):
-        return .executionDenied(reason: reason, providerOptions: providerOptions)
-    case let .errorText(value, providerOptions):
-        return .errorText(value: value, providerOptions: providerOptions)
-    case let .errorJson(value, providerOptions):
-        return .errorJson(value: value, providerOptions: providerOptions)
-    case let .content(value, providerOptions):
-        if providerOptions != nil {
-            throw UnsupportedFunctionalityError(functionality: "tool result content providerOptions on v4 model")
-        }
-        return .content(value: value.map(convertToolResultContentPartToLanguageModelV4))
-    }
-}
-
-private func convertToolResultContentPartToLanguageModelV4(
-    _ part: LanguageModelV3ToolResultContentPart
-) -> LanguageModelV4ToolResultContentPart {
-    switch part {
-    case .text(let text):
-        return .text(text: text, providerOptions: nil)
-    case let .media(data, mediaType):
-        return .file(data: .base64(data), mediaType: mediaType, filename: nil, providerOptions: nil)
-    }
-}
-
-private func convertToLanguageModelV4FileData(
-    _ content: DataContentOrURL
-) throws -> (data: LanguageModelV4FileData, mediaType: String?) {
-    let converted = try convertToSharedV4FileData(content)
+private func convertToLanguageModelV4FileData(_ content: DataContentOrURL) throws -> (data: LanguageModelV4FileData, mediaType: String?) {
+    let converted = try convertToFileData(content)
     switch converted.data {
-    case .data(let data):
-        return (.data(data), converted.mediaType)
-    case .base64(let base64):
-        return (.base64(base64), converted.mediaType)
-    case let .url(url, originalUrl):
-        return (.url(url, originalUrl: originalUrl), converted.mediaType)
-    case .text(let text):
-        return (.data(Data(text.utf8)), converted.mediaType)
-    case .reference:
-        throw UnsupportedFunctionalityError(functionality: "provider reference file data in reasoning-file prompt part")
+    case .data(let data): return (.data(data), converted.mediaType)
+    case .base64(let data): return (.base64(data), converted.mediaType)
+    case let .url(url, originalUrl): return (.url(url, originalUrl: originalUrl), converted.mediaType)
+    case .text(let text): return (.data(Data(text.utf8)), converted.mediaType)
+    case .reference: throw UnsupportedFunctionalityError(functionality: "provider reference file data in reasoning-file prompt part")
     }
-}
-
-/**
- Convert image or file part to LanguageModelV3FilePart.
- */
-private func convertMediaPartToLanguageModelFilePart(
-    data: DataContentOrURL,
-    mediaType: String?,
-    filename: String?,
-    providerOptions: ProviderOptions?,
-    isImage: Bool,
-    downloadedAssets: [String: DownloadedAsset]
-) throws -> LanguageModelV3FilePart {
-    // Convert to LanguageModelV3DataContent
-    let (convertedData, convertedMediaType) = try convertToLanguageModelV3DataContent(data)
-
-    var finalMediaType = convertedMediaType ?? mediaType
-    var finalData = convertedData
-
-    // If the content is a URL, check if it was downloaded
-    if case .url(let url) = finalData {
-        let downloadedFile = downloadedAssets[url.absoluteString]
-        if let downloadedFile = downloadedFile {
-            if downloadedFile.data.isEmpty {
-                // Failed download marker - convert URL to string
-                finalData = .base64(url.absoluteString)
-            } else {
-                // Successfully downloaded
-                finalData = .data(downloadedFile.data)
-                finalMediaType = finalMediaType ?? downloadedFile.mediaType
-            }
-        }
-        // else: URL not in downloadedAssets -> model supports it, keep as URL
-    }
-
-    // For images, try to detect media type automatically
-    if isImage {
-        switch finalData {
-        case .data(let bytes):
-            finalMediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? finalMediaType
-        case .base64(let base64String):
-            if let bytes = Data(base64Encoded: base64String) {
-                finalMediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? finalMediaType
-            }
-        case .url:
-            break
-        }
-    }
-
-    // For files, mediaType is required
-    if !isImage && finalMediaType == nil {
-        throw InvalidDataContentError(
-            content: "file",
-            message: "Media type is missing for file part"
-        )
-    }
-
-    return LanguageModelV3FilePart(
-        data: finalData,
-        mediaType: finalMediaType ?? "image/*",  // Default for images
-        filename: filename,
-        providerOptions: providerOptions
-    )
 }
 
 private func convertMediaPartToLanguageModelV4FilePart(
-    data: DataContentOrURL,
-    mediaType: String?,
-    filename: String?,
-    providerOptions: ProviderOptions?,
-    isImage: Bool,
+    data: DataContentOrURL, mediaType: String?, filename: String?, providerOptions: ProviderOptions?, isImage: Bool,
     downloadedAssets: [String: DownloadedAsset]
 ) throws -> LanguageModelV4FilePart {
-    let converted = try convertToSharedV4FileData(data)
-
-    var finalMediaType = converted.mediaType ?? mediaType
-    var finalData = converted.data
-
-    if case .url(let url, _) = finalData {
-        let downloadedFile = downloadedAssets[url.absoluteString]
-        if let downloadedFile {
-            if downloadedFile.data.isEmpty {
-                finalData = .base64(url.absoluteString)
-            } else {
-                finalData = .data(downloadedFile.data)
-                finalMediaType = finalMediaType ?? downloadedFile.mediaType
-            }
-        }
+    let converted = try convertToFileData(data)
+    var mediaType = converted.mediaType ?? mediaType
+    var data = converted.data
+    if case .url(let url, _) = data, let downloaded = downloadedAssets[url.absoluteString] {
+        if downloaded.data.isEmpty { data = .base64(url.absoluteString) }
+        else { data = .data(downloaded.data); mediaType = mediaType ?? downloaded.mediaType }
     }
-
     if isImage {
-        switch finalData {
-        case .data(let bytes):
-            finalMediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? finalMediaType
-        case .base64(let base64String):
-            if let bytes = Data(base64Encoded: base64String) {
-                finalMediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? finalMediaType
-            }
-        case .text(let text):
-            finalMediaType = detectMediaType(data: Data(text.utf8), signatures: imageMediaTypeSignatures) ?? finalMediaType
-        case .url, .reference:
-            break
+        switch data {
+        case .data(let bytes): mediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? mediaType
+        case .base64(let base64):
+            if let bytes = Data(base64Encoded: base64) { mediaType = detectMediaType(data: bytes, signatures: imageMediaTypeSignatures) ?? mediaType }
+        case .text(let text): mediaType = detectMediaType(data: Data(text.utf8), signatures: imageMediaTypeSignatures) ?? mediaType
+        case .url, .reference: break
         }
     }
-
-    if !isImage && finalMediaType == nil {
-        throw InvalidDataContentError(
-            content: "file",
-            message: "Media type is missing for file part"
-        )
-    }
-
-    return LanguageModelV4FilePart(
-        data: finalData,
-        mediaType: finalMediaType ?? "image/*",
-        filename: filename,
-        providerOptions: providerOptions
-    )
+    if !isImage && mediaType == nil { throw InvalidDataContentError(content: "file", message: "Media type is missing for file part") }
+    return .init(data: data, mediaType: mediaType ?? "image/*", filename: filename, providerOptions: providerOptions)
 }
 
-/**
- Downloads images and files from URLs in the messages.
-
- - Parameter messages: Array of ModelMessage to scan for URLs
- - Parameter download: Download function to use
- - Parameter supportedUrls: Map of media types to supported URL patterns
- - Returns: Map of URL strings to downloaded assets
- - Throws: Errors during download operations
- */
 private func downloadAssets(
-    messages: [ModelMessage],
-    download: DownloadFunction,
-    supportedUrls: [String: [NSRegularExpression]]
+    messages: [ModelMessage], download: DownloadFunction, supportedUrls: [String: [NSRegularExpression]]
 ) async throws -> [String: DownloadedAsset] {
-    // Extract all user messages with content parts
-    let plannedDownloads: [DownloadRequest] = messages
-        .compactMap { message -> UserModelMessage? in
-            if case .user(let userMessage) = message {
-                return userMessage
-            }
+    let plannedDownloads: [DownloadRequest] = messages.compactMap { message -> UserModelMessage? in
+        if case .user(let message) = message { return message }
+        return nil
+    }.compactMap { message -> [UserContentPart]? in
+        if case .parts(let parts) = message.content { return parts }
+        return nil
+    }.flatMap { $0 }.compactMap { part -> (mediaType: String?, data: DataContentOrURL)? in
+        switch part {
+        case .image(let part): return (part.mediaType ?? "image/*", part.image)
+        case .file(let part): return (part.mediaType, part.data)
+        case .text: return nil
+        }
+    }.compactMap { item -> (mediaType: String?, url: URL)? in
+        switch item.data {
+        case .url(let url): return (item.mediaType, url)
+        case .string(let value):
+            if let url = URL(string: value), let scheme = url.scheme, scheme == "http" || scheme == "https" { return (item.mediaType, url) }
             return nil
+        case .data, .reference, .text: return nil
         }
-        .compactMap { userMessage -> [UserContentPart]? in
-            if case .parts(let parts) = userMessage.content {
-                return parts
-            }
-            return nil
-        }
-        .flatMap { $0 }
-        // Filter only image and file parts
-        .compactMap { part -> (mediaType: String?, data: DataContentOrURL)? in
-            switch part {
-            case .image(let imagePart):
-                let mediaType = imagePart.mediaType ?? "image/*"
-                return (mediaType: mediaType, data: imagePart.image)
-
-            case .file(let filePart):
-                return (mediaType: filePart.mediaType, data: filePart.data)
-
-            case .text:
-                return nil
-            }
-        }
-        // Extract URLs
-        .compactMap { item -> (mediaType: String?, url: URL)? in
-            switch item.data {
-            case .url(let url):
-                return (mediaType: item.mediaType, url: url)
-            case .string(let str):
-                // Try to create URL, but only accept if it has a valid http/https scheme
-                if let url = URL(string: str),
-                   let scheme = url.scheme,
-                   (scheme == "http" || scheme == "https") {
-                    return (mediaType: item.mediaType, url: url)
-                }
-                return nil
-            case .data:
-                return nil
-            case .reference, .text:
-                return nil
-            }
-        }
-        // Check if URL is supported by model
-        .map { item in
-            DownloadRequest(
-                url: item.url,
-                isUrlSupportedByModel: item.mediaType != nil && isUrlSupported(
-                    mediaType: item.mediaType!,
-                    url: item.url.absoluteString,
-                    supportedUrls: supportedUrls
-                )
-            )
-        }
-
-    // Download in parallel
-    let downloadedFiles = try await download(plannedDownloads)
-
-    // Build result dictionary
-    var result: [String: DownloadedAsset] = [:]
-    for (index, file) in downloadedFiles.enumerated() {
-        let request = plannedDownloads[index]
-        let urlString = request.url.absoluteString
-
-        if let file = file {
-            // Successfully downloaded
-            result[urlString] = (data: file.data, mediaType: file.mediaType)
-        } else if !request.isUrlSupportedByModel {
-            // Failed to download, but was supposed to be downloaded
-            // Use empty Data as marker (will be converted to string later)
-            result[urlString] = (data: Data(), mediaType: nil)
-        }
-        // If isUrlSupportedByModel == true and file == nil, don't add to result
-        // (URL should remain as URL object)
+    }.map { item in
+        DownloadRequest(url: item.url, isUrlSupportedByModel: item.mediaType != nil && isUrlSupported(
+            mediaType: item.mediaType!, url: item.url.absoluteString, supportedUrls: supportedUrls))
     }
-
+    let files = try await download(plannedDownloads)
+    var result: [String: DownloadedAsset] = [:]
+    for (index, file) in files.enumerated() {
+        let request = plannedDownloads[index]
+        if let file { result[request.url.absoluteString] = (file.data, file.mediaType) }
+        else if !request.isUrlSupportedByModel {
+            // Empty data marks an unsuccessful requested download.
+            result[request.url.absoluteString] = (Data(), nil)
+        }
+    }
     return result
 }
 
-// MARK: - Supporting Types
-
-/// Represents a downloaded asset (data + optional media type)
 public typealias DownloadedAsset = (data: Data, mediaType: String?)

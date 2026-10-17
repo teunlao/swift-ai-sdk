@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("StreamText – tool-error providerMetadata")
 struct StreamTextToolErrorProviderMetadataTests {
-    private let usage = LanguageModelV3Usage(
+    private let usage = LanguageModelV4Usage(
         inputTokens: .init(total: 1),
         outputTokens: .init(total: 1)
     )
@@ -35,14 +35,14 @@ struct StreamTextToolErrorProviderMetadataTests {
 
         let tools: ToolSet = ["demo": tool]
 
-        let step1Parts: [LanguageModelV3StreamPart] = [
+        let step1Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-1",
                 modelId: "mock-model-id",
                 timestamp: Date(timeIntervalSince1970: 0)
             ),
-            .toolCall(LanguageModelV3ToolCall(
+            .toolCall(LanguageModelV4ToolCall(
                 toolCallId: "call-1",
                 toolName: "demo",
                 input: #"{ "q": "hi" }"#,
@@ -56,7 +56,7 @@ struct StreamTextToolErrorProviderMetadataTests {
             ),
         ]
 
-        let step2Parts: [LanguageModelV3StreamPart] = [
+        let step2Parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(
                 id: "msg-2",
@@ -73,15 +73,15 @@ struct StreamTextToolErrorProviderMetadataTests {
             ),
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doStream: .array([
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step1Parts)),
-                LanguageModelV3StreamResult(stream: makeAsyncStream(from: step2Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step1Parts)),
+                LanguageModelV4StreamResult(stream: makeAsyncStream(from: step2Parts)),
             ])
         )
 
         let result = try streamText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(3)]

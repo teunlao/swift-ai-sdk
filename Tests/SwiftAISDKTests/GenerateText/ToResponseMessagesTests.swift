@@ -288,7 +288,7 @@ struct ToResponseMessagesTests {
                 execute: nil,
                 outputSchema: nil,
                 toModelOutput: { _ in
-                    LanguageModelV3ToolResultOutput.json(
+                    LanguageModelV4ToolResultOutput.json(
                         value: .object(["proof": .string("that toModelOutput is called")])
                     )
                 },
@@ -505,7 +505,7 @@ struct ToResponseMessagesTests {
             Issue.record("Expected assistant message")
             return
         }
-        let expectedOutput = LanguageModelV3ToolResultOutput.json(
+        let expectedOutput = LanguageModelV4ToolResultOutput.json(
             value: .array([
                 .object(["url": .string("https://patch.com/california/san-francisco/calendar")])
             ])

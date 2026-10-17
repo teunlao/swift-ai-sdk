@@ -6,38 +6,38 @@ import Testing
 
 @Suite("ToolLoopAgent")
 struct AgentTests {
-    private func textStream(_ text: String) -> LanguageModelV3StreamResult {
-        let parts: [LanguageModelV3StreamPart] = [
+    private func textStream(_ text: String) -> LanguageModelV4StreamResult {
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .textStart(id: "1", providerMetadata: nil),
             .textDelta(id: "1", delta: text, providerMetadata: nil),
             .textEnd(id: "1", providerMetadata: nil),
             .finish(
-                finishReason: LanguageModelV3FinishReason(unified: .stop),
-                usage: LanguageModelV3Usage(),
+                finishReason: LanguageModelV4FinishReason(unified: .stop),
+                usage: LanguageModelV4Usage(),
                 providerMetadata: nil
             ),
         ]
-        return LanguageModelV3StreamResult(stream: AsyncThrowingStream { continuation in
+        return LanguageModelV4StreamResult(stream: AsyncThrowingStream { continuation in
             parts.forEach { continuation.yield($0) }
             continuation.finish()
         })
     }
 
-    private func textResult(_ text: String) -> LanguageModelV3GenerateResult {
-        LanguageModelV3GenerateResult(
-            content: [.text(LanguageModelV3Text(text: text))],
-            finishReason: LanguageModelV3FinishReason(unified: .stop),
-            usage: LanguageModelV3Usage()
+    private func textResult(_ text: String) -> LanguageModelV4GenerateResult {
+        LanguageModelV4GenerateResult(
+            content: [.text(LanguageModelV4Text(text: text))],
+            finishReason: LanguageModelV4FinishReason(unified: .stop),
+            usage: LanguageModelV4Usage()
         )
     }
 
     @Test("generate forwards the agent settings and tags the user agent")
     func generateForwardsSettings() async throws {
-        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
+        let model = MockLanguageModelV4(doGenerate: .singleValue(textResult("ok")))
         let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(
             instructions: "You are helpful",
-            model: .v3(model),
+            model: model,
             tools: ["echo": Tool(description: "Echo", inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))))],
             // A forced choice would reject the text-only response; `.none` still proves forwarding.
             toolChoice: ToolChoice.none,
@@ -57,7 +57,7 @@ struct AgentTests {
         #expect(options.maxOutputTokens == 42)
         #expect(options.temperature == 0.1)
         #expect(options.tools?.count == 1)
-        #expect(options.toolChoice == LanguageModelV3ToolChoice.none)
+        #expect(options.toolChoice == LanguageModelV4ToolChoice.none)
         #expect(options.providerOptions?["openai"]?["mode"] == .string("fast"))
         #expect(options.headers?["user-agent"]?.contains("ai-sdk-agent/tool-loop") == true)
     }
@@ -66,9 +66,9 @@ struct AgentTests {
     func prepareCallUsesValidatedOptions() async throws {
         struct CallOptions: Codable, Sendable { let userName: String }
 
-        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
+        let model = MockLanguageModelV4(doGenerate: .singleValue(textResult("ok")))
         let agent = ToolLoopAgent<CallOptions, String, String>(ToolLoopAgentSettings(
-            model: .v3(model),
+            model: model,
             callOptionsSchema: FlexibleSchema(Schema.codable(
                 CallOptions.self,
                 jsonSchema: .object([
@@ -96,10 +96,10 @@ struct AgentTests {
 
     @Test("settings and call callbacks both receive the end event")
     func callbacksAreMerged() async throws {
-        let model = MockLanguageModelV3(doStream: .singleValue(textStream("streamed")))
+        let model = MockLanguageModelV4(doStream: .singleValue(textStream("streamed")))
         let calls = CallRecorder()
         let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(
-            model: .v3(model),
+            model: model,
             onEnd: { _ in calls.record("settings") }
         ))
 
@@ -115,8 +115,8 @@ struct AgentTests {
 
     @Test("a prompt given as both prompt and messages is rejected")
     func promptAndMessagesAreRejected() async throws {
-        let model = MockLanguageModelV3(doGenerate: .singleValue(textResult("ok")))
-        let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(model: .v3(model)))
+        let model = MockLanguageModelV4(doGenerate: .singleValue(textResult("ok")))
+        let agent = ToolLoopAgent<Never, String, String>(ToolLoopAgentSettings(model: model))
 
         await #expect(throws: InvalidPromptError.self) {
             _ = try await agent.generate(AgentCallParameters(

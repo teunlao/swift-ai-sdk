@@ -6,22 +6,22 @@ import AISDKProviderUtils
 
 @Suite("StreamText – approval integration", .serialized)
 struct StreamTextApprovalIntegrationTests {
-    private func model(toolCallId: String, toolName: String, input: String) -> MockLanguageModelV3 {
-        let parts: [LanguageModelV3StreamPart] = [
+    private func model(toolCallId: String, toolName: String, input: String) -> MockLanguageModelV4 {
+        let parts: [LanguageModelV4StreamPart] = [
             .streamStart(warnings: []),
             .responseMetadata(id: "id-0", modelId: "mock", timestamp: Date(timeIntervalSince1970: 0)),
-            .toolCall(LanguageModelV3ToolCall(toolCallId: toolCallId, toolName: toolName, input: input)),
+            .toolCall(LanguageModelV4ToolCall(toolCallId: toolCallId, toolName: toolName, input: input)),
             .finish(
-                finishReason: LanguageModelV3FinishReason(unified: .toolCalls),
-                usage: LanguageModelV3Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
+                finishReason: LanguageModelV4FinishReason(unified: .toolCalls),
+                usage: LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1)),
                 providerMetadata: nil
             )
         ]
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             parts.forEach { continuation.yield($0) }
             continuation.finish()
         }
-        return MockLanguageModelV3(doStream: .singleValue(LanguageModelV3StreamResult(stream: stream)))
+        return MockLanguageModelV4(doStream: .singleValue(LanguageModelV4StreamResult(stream: stream)))
     }
 
     @Test("a tool that needs approval emits an approval request and is not executed")
@@ -36,7 +36,7 @@ struct StreamTextApprovalIntegrationTests {
         ]
 
         let result = try streamText(
-            model: .v3(model(toolCallId: "c1", toolName: "search", input: #"{"q":"hi"}"#)),
+            model: model(toolCallId: "c1", toolName: "search", input: #"{"q":"hi"}"#),
             tools: tools,
             prompt: "hello"
         )
@@ -63,7 +63,7 @@ struct StreamTextApprovalIntegrationTests {
         ]
 
         let result = try streamText(
-            model: .v3(model(toolCallId: "exec", toolName: "echo", input: #"{"value":1}"#)),
+            model: model(toolCallId: "exec", toolName: "echo", input: #"{"value":1}"#),
             tools: tools,
             prompt: "hi",
             toolApproval: .perTool(["echo": .status(.approved())])
@@ -102,7 +102,7 @@ struct StreamTextApprovalIntegrationTests {
         ]
 
         let result = try streamText(
-            model: .v3(model(toolCallId: "err", toolName: "streamer", input: "{}")),
+            model: model(toolCallId: "err", toolName: "streamer", input: "{}"),
             tools: tools,
             prompt: "hi"
         )
@@ -130,7 +130,7 @@ struct StreamTextApprovalIntegrationTests {
         ]
 
         let result = try streamText(
-            model: .v3(model(toolCallId: "deny", toolName: "guard", input: "{}")),
+            model: model(toolCallId: "deny", toolName: "guard", input: "{}"),
             tools: tools,
             prompt: "hi",
             toolApproval: .perTool(["guard": .status(.denied(reason: "not allowed"))])

@@ -12,7 +12,7 @@ import AISDKProviderUtils
 
 @Suite("GenerateText Advanced Tests", .serialized)
 struct GenerateTextAdvancedTests {
-    private let testUsage = LanguageModelV3Usage(
+    private let testUsage = LanguageModelV4Usage(
         inputTokens: .init(total: 3),
         outputTokens: .init(total: 10)
     )
@@ -34,10 +34,10 @@ struct GenerateTextAdvancedTests {
         ]
 
         _ = try await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [
                                 makeToolCallContent(
                                     toolCallId: "call-1",
@@ -49,8 +49,7 @@ struct GenerateTextAdvancedTests {
                             usage: testUsage
                         )
                     )
-                )
-            ),
+                ),
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
@@ -91,10 +90,10 @@ struct GenerateTextAdvancedTests {
         ]
 
         _ = try? await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [
                                 makeToolCallContent(
                                     toolCallId: "call-1",
@@ -106,8 +105,7 @@ struct GenerateTextAdvancedTests {
                             usage: testUsage
                         )
                     )
-                )
-            ),
+                ),
             tools: tools,
             toolChoice: .auto,
             prompt: "test-input",
@@ -197,10 +195,10 @@ struct GenerateTextAdvancedTests {
         ]
 
         _ = try await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [
                                 makeToolCallContent(
                                     toolCallId: "call-1",
@@ -212,8 +210,7 @@ struct GenerateTextAdvancedTests {
                             usage: testUsage
                         )
                     )
-                )
-            ),
+                ),
             tools: tools,
             toolChoice: .required,
             prompt: "test-input"
@@ -230,16 +227,16 @@ struct GenerateTextAdvancedTests {
 
     @Test("tools with custom schema populate tool calls")
     func toolsWithCustomSchemaProducesCalls() async throws {
-        var capturedTools: [LanguageModelV3Tool]?
-        var capturedToolChoice: LanguageModelV3ToolChoice?
-        var capturedPrompt: LanguageModelV3Prompt?
+        var capturedTools: [LanguageModelV4Tool]?
+        var capturedToolChoice: LanguageModelV4ToolChoice?
+        var capturedPrompt: LanguageModelV4Prompt?
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 capturedTools = options.tools
                 capturedToolChoice = options.toolChoice
                 capturedPrompt = options.prompt
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -265,7 +262,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             toolChoice: .required,
             prompt: "test-input",
@@ -422,9 +419,9 @@ struct GenerateTextAdvancedTests {
     func providerExecutedToolsSkipClientExecution() async throws {
         let toolExecuted = Flag()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -456,7 +453,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input"
         )
@@ -492,9 +489,9 @@ struct GenerateTextAdvancedTests {
     func dynamicToolsExecuteOnClient() async throws {
         let toolExecuted = Flag()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -519,7 +516,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input"
         )
@@ -556,9 +553,9 @@ struct GenerateTextAdvancedTests {
     func toolExecutionReceivesContext() async throws {
         let contextRecorder = ValueRecorder<JSONValue?>()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -585,7 +582,7 @@ struct GenerateTextAdvancedTests {
         let context: JSONValue = .object(["context": .string("test")])
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             toolsContext: ["contextTool": ["context": .string("test")]]
@@ -811,9 +808,9 @@ struct GenerateTextAdvancedTests {
     @Test("messages supportedUrls handles model context")
     func messagesSupportedUrlsHandlesModelContext() async throws {
         var supportedUrlsCalled = false
-        var modelReference: MockLanguageModelV3!
+        var modelReference: MockLanguageModelV4!
 
-        modelReference = MockLanguageModelV3(
+        modelReference = MockLanguageModelV4(
             supportedUrls: .function {
                 supportedUrlsCalled = true
                 let regex = try NSRegularExpression(pattern: "^https://.*$", options: [])
@@ -823,7 +820,7 @@ struct GenerateTextAdvancedTests {
                 return [:]
             },
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -847,7 +844,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(modelReference),
+            model: modelReference,
             messages: messages
         )
 
@@ -859,9 +856,9 @@ struct GenerateTextAdvancedTests {
 
     @Test("output defaults to the text of the final step")
     func outputDefaultsToText() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -870,7 +867,7 @@ struct GenerateTextAdvancedTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt"
         )
 
@@ -879,9 +876,9 @@ struct GenerateTextAdvancedTests {
 
     @Test("text output sets response format")
     func textOutputSetsResponseFormat() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -890,7 +887,7 @@ struct GenerateTextAdvancedTests {
         )
 
         let result: DefaultGenerateTextResult<String> = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             output: textOutputSpecification()
         )
@@ -921,9 +918,9 @@ struct GenerateTextAdvancedTests {
 
     @Test("object output parses json text")
     func objectOutputParsesJsonText() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [textContent("{\"summary\":\"result\"}")],
                     finishReason: .stop,
                     usage: testUsage
@@ -932,7 +929,7 @@ struct GenerateTextAdvancedTests {
         )
 
         let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             output: Output.object(schema: summaryOutputSchema())
         )
@@ -942,12 +939,12 @@ struct GenerateTextAdvancedTests {
 
     @Test("object output sets json response format")
     func objectOutputSetsJsonResponseFormat() async throws {
-        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let callRecorder = ValueRecorder<LanguageModelV4CallOptions>()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 await callRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("{\"summary\":\"value\"}")],
                     finishReason: .stop,
                     usage: testUsage
@@ -956,7 +953,7 @@ struct GenerateTextAdvancedTests {
         )
 
         let result: DefaultGenerateTextResult<SummaryOutput> = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             output: Output.object(schema: summaryOutputSchema())
         )
@@ -981,9 +978,9 @@ struct GenerateTextAdvancedTests {
 
     @Test("tool-calls finish reason skips output parsing")
     func toolCallsFinishReasonSkipsOutputParsing() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -1005,7 +1002,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result: DefaultGenerateTextResult<String> = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "prompt",
             stopWhen: [isStepCount(3)],
@@ -1028,7 +1025,7 @@ struct GenerateTextAdvancedTests {
     @Test("logWarnings captures warnings for single step")
     func logWarningsCapturesWarningsForSingleStep() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let expectedWarnings: [SharedV3Warning] = [
+            let expectedWarnings: [SharedV4Warning] = [
                 .other(message: "Setting is not supported"),
                 .unsupported(feature: "temperature", details: "Temperature parameter not supported")
             ]
@@ -1051,9 +1048,9 @@ struct GenerateTextAdvancedTests {
                 resetLogWarningsState()
             }
 
-            let model = MockLanguageModelV3(
+            let model = MockLanguageModelV4(
                 doGenerate: .singleValue(
-                    LanguageModelV3GenerateResult(
+                    LanguageModelV4GenerateResult(
                         content: [textContent("Hello, world!")],
                         finishReason: .stop,
                         usage: testUsage,
@@ -1063,14 +1060,14 @@ struct GenerateTextAdvancedTests {
             )
 
             _ = try await generateText(
-                model: .v3(model),
+                model: model,
                 prompt: "Hello"
             )
 
             let entries = collector.entries()
             #expect(entries.count == 1)
             if let first = entries.first {
-                let expected = expectedWarnings.map { Warning.languageModel(asCallWarning($0)) }
+                let expected = expectedWarnings.map { Warning.languageModel($0) }
                 #expect(first == expected)
             }
         }
@@ -1079,8 +1076,8 @@ struct GenerateTextAdvancedTests {
     @Test("logWarnings captures warnings per step")
     func logWarningsCapturesWarningsPerStep() async throws {
         try await LogWarningsTestLock.shared.withLock {
-            let warning1 = SharedV3Warning.other(message: "Warning from step 1")
-            let warning2 = SharedV3Warning.other(message: "Warning from step 2")
+            let warning1 = SharedV4Warning.other(message: "Warning from step 1")
+            let warning2 = SharedV4Warning.other(message: "Warning from step 2")
 
             let previousLogger = AI_SDK_LOG_WARNINGS
             resetLogWarningsState()
@@ -1101,11 +1098,11 @@ struct GenerateTextAdvancedTests {
             }
 
             let callCounter = IntCounter()
-            let model = MockLanguageModelV3(
+            let model = MockLanguageModelV4(
                 doGenerate: .function { options in
                     let index = await callCounter.next()
                     if index == 0 {
-                        return LanguageModelV3GenerateResult(
+                        return LanguageModelV4GenerateResult(
                             content: [
                             makeToolCallContent(
                                 toolCallId: "call-1",
@@ -1119,7 +1116,7 @@ struct GenerateTextAdvancedTests {
                         )
                     }
 
-                    return LanguageModelV3GenerateResult(
+                    return LanguageModelV4GenerateResult(
                         content: [textContent("Final response")],
                         finishReason: .stop,
                         usage: testUsage,
@@ -1136,7 +1133,7 @@ struct GenerateTextAdvancedTests {
             ]
 
             let result = try await generateText(
-                model: .v3(model),
+                model: model,
                 tools: tools,
                 prompt: "Hello",
                 stopWhen: [isStepCount(3)]
@@ -1147,8 +1144,8 @@ struct GenerateTextAdvancedTests {
             let entries = collector.entries()
             #expect(entries.count == 2)
             if entries.count == 2 {
-                #expect(entries[0] == [Warning.languageModel(asCallWarning(warning1))])
-                #expect(entries[1] == [Warning.languageModel(asCallWarning(warning2))])
+                #expect(entries[0] == [Warning.languageModel(warning1)])
+                #expect(entries[1] == [Warning.languageModel(warning2)])
             }
         }
     }
@@ -1174,9 +1171,9 @@ struct GenerateTextAdvancedTests {
                 resetLogWarningsState()
             }
 
-            let model = MockLanguageModelV3(
+            let model = MockLanguageModelV4(
                 doGenerate: .singleValue(
-                    LanguageModelV3GenerateResult(
+                    LanguageModelV4GenerateResult(
                         content: [textContent("Hello, world!")],
                         finishReason: .stop,
                         usage: testUsage,
@@ -1186,7 +1183,7 @@ struct GenerateTextAdvancedTests {
             )
 
             _ = try await generateText(
-                model: .v3(model),
+                model: model,
                 prompt: "Hello"
             )
 
@@ -1434,7 +1431,7 @@ struct GenerateTextAdvancedTests {
             if case .tool(let toolParts, _) = options.prompt[2],
                let firstPart = toolParts.first,
                case .toolResult(let resultPart) = firstPart {
-                #expect(resultPart.output == LanguageModelV3ToolResultOutput.executionDenied(reason: nil))
+                #expect(resultPart.output == LanguageModelV4ToolResultOutput.executionDenied(reason: nil))
             } else {
                 Issue.record("Expected tool result with execution denied output in prompt")
             }
@@ -1495,18 +1492,18 @@ struct GenerateTextAdvancedTests {
 
     @Test("prepareStep download respects supported urls from override")
     func prepareStepDownloadRespectsSupportedUrlsFromOverride() async throws {
-        let languageModelRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let languageModelRecorder = ValueRecorder<LanguageModelV4CallOptions>()
         let downloadRecorder = ValueRecorder<DownloadRequest>()
 
         let urlRegex = try NSRegularExpression(pattern: "^https?://.*$", options: [])
 
-        let modelWithSupport = MockLanguageModelV3(
+        let modelWithSupport = MockLanguageModelV4(
             provider: "with-image-url-support",
             modelId: "with-image-url-support",
             supportedUrls: .value(["image/*": [urlRegex]]),
             doGenerate: .function { options in
                 await languageModelRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("response from with-image-url-support")],
                     finishReason: .stop,
                     usage: testUsage
@@ -1514,13 +1511,13 @@ struct GenerateTextAdvancedTests {
             }
         )
 
-        let modelWithoutSupport = MockLanguageModelV3(
+        let modelWithoutSupport = MockLanguageModelV4(
             provider: "without-image-url-support",
             modelId: "without-image-url-support",
             supportedUrls: .value([:]),
             doGenerate: .function { options in
                 await languageModelRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("response from without-image-url-support")],
                     finishReason: .stop,
                     usage: testUsage
@@ -1553,10 +1550,10 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(modelWithSupport),
+            model: modelWithSupport,
             messages: messages,
             prepareStep: { _ in
-                PrepareStepResult(model: .v3(modelWithoutSupport))
+                PrepareStepResult(model: modelWithoutSupport)
             },
             download: downloadFunction
         )
@@ -1690,9 +1687,9 @@ struct GenerateTextAdvancedTests {
         input: String,
         providerExecuted: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
+    ) -> LanguageModelV4Content {
         .toolCall(
-            LanguageModelV3ToolCall(
+            LanguageModelV4ToolCall(
                 toolCallId: toolCallId,
                 toolName: toolName,
                 input: input,
@@ -1710,9 +1707,9 @@ struct GenerateTextAdvancedTests {
 	        providerExecuted: Bool? = nil,
 	        preliminary: Bool? = nil,
 	        providerMetadata: ProviderMetadata? = nil
-	    ) -> LanguageModelV3Content {
+	    ) -> LanguageModelV4Content {
 	        .toolResult(
-	            LanguageModelV3ToolResult(
+	            LanguageModelV4ToolResult(
 	                toolCallId: toolCallId,
 	                toolName: toolName,
 	                result: result,
@@ -1723,8 +1720,8 @@ struct GenerateTextAdvancedTests {
 	        )
 	    }
 
-    private func textContent(_ text: String) -> LanguageModelV3Content {
-        .text(LanguageModelV3Text(text: text, providerMetadata: nil))
+    private func textContent(_ text: String) -> LanguageModelV4Content {
+        .text(LanguageModelV4Text(text: text, providerMetadata: nil))
     }
 
     private func textOutputSpecification() -> Output.Specification<String, String> {
@@ -1803,9 +1800,9 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runToolExecutionErrorScenario() async throws -> ToolExecutionErrorScenario {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -1829,7 +1826,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input"
         )
@@ -1838,9 +1835,9 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runPreliminaryToolScenario() async throws -> PreliminaryToolScenario {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -1849,13 +1846,13 @@ struct GenerateTextAdvancedTests {
                         )
                     ],
                     finishReason: .toolCalls,
-                    usage: LanguageModelV3Usage(
+                    usage: LanguageModelV4Usage(
                         inputTokens: .init(total: 10),
                         outputTokens: .init(total: 20)
                     ),
                     providerMetadata: nil,
                     request: nil,
-                    response: LanguageModelV3ResponseInfo(
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id",
                         timestamp: Date(timeIntervalSince1970: 0),
                         modelId: "mock-model-id"
@@ -1876,7 +1873,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             internalOptions: GenerateTextInternalOptions(
@@ -1889,9 +1886,9 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runProviderExecutedToolsScenario() async throws -> ProviderExecutedToolsScenario {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -1911,8 +1908,8 @@ struct GenerateTextAdvancedTests {
                             input: #"{ "value": "value" }"#,
                             providerExecuted: true
                         ),
-                        LanguageModelV3Content.toolResult(
-                            LanguageModelV3ToolResult(
+                        LanguageModelV4Content.toolResult(
+                            LanguageModelV4ToolResult(
                                 toolCallId: "call-2",
                                 toolName: "web_search",
                                 result: JSONValue.string("ERROR"),
@@ -1937,7 +1934,7 @@ struct GenerateTextAdvancedTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: ["web_search": providerTool],
             prompt: "test-input",
             stopWhen: [isStepCount(4)]
@@ -1947,9 +1944,9 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runInvalidToolCallScenario() async throws -> InvalidToolCallScenario {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -1970,7 +1967,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "What are the tourist attractions in San Francisco?"
         )
@@ -1979,9 +1976,9 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runAlwaysNeedsApprovalScenario() async throws -> DefaultGenerateTextResult<String> {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -2004,7 +2001,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         return try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             stopWhen: [isStepCount(3)],
@@ -2018,9 +2015,9 @@ struct GenerateTextAdvancedTests {
     private func runNeedsApprovalFunctionScenario() async throws -> NeedsApprovalFunctionScenario {
         let approvalRecorder = ValueRecorder<ToolApprovalCallRecord>()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         makeToolCallContent(
                             toolCallId: "call-1",
@@ -2066,7 +2063,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             stopWhen: [isStepCount(3)],
@@ -2081,13 +2078,13 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runSingleApprovedToolScenario() async throws -> ToolApprovalExecutionScenario {
-        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let callRecorder = ValueRecorder<LanguageModelV4CallOptions>()
         let executeCounter = IntCounter()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 await callRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -2138,7 +2135,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             messages: messages,
             stopWhen: [isStepCount(3)],
@@ -2158,13 +2155,13 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runSingleDeniedToolScenario() async throws -> ToolApprovalExecutionScenario {
-        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let callRecorder = ValueRecorder<LanguageModelV4CallOptions>()
         let executeCounter = IntCounter()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 await callRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .toolCalls,
                     usage: testUsage
@@ -2215,7 +2212,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             messages: messages,
             stopWhen: [isStepCount(3)],
@@ -2235,13 +2232,13 @@ struct GenerateTextAdvancedTests {
     }
 
     private func runMultipleApprovedToolScenario() async throws -> ToolApprovalExecutionScenario {
-        let callRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let callRecorder = ValueRecorder<LanguageModelV4CallOptions>()
         let executeCounter = IntCounter()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 await callRecorder.append(options)
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .toolCalls,
                     usage: testUsage
@@ -2307,7 +2304,7 @@ struct GenerateTextAdvancedTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             messages: messages,
             stopWhen: [isStepCount(3)],
@@ -2391,7 +2388,7 @@ private struct ToolApprovalCallRecord: Sendable {
 
 private struct ToolApprovalExecutionScenario: Sendable {
     let result: DefaultGenerateTextResult<String>
-    let modelCalls: [LanguageModelV3CallOptions]
+    let modelCalls: [LanguageModelV4CallOptions]
     let executeCallCount: Int
 }
 

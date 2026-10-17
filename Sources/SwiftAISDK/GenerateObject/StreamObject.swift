@@ -10,7 +10,7 @@ import AISDKProviderUtils
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObject<ResultValue, PartialValue, ElementStream>(
-    model modelArg: LanguageModel,
+    model modelArg: any LanguageModelConvertible,
     output: GenerateObjectOutputSpec<ResultValue, PartialValue, ElementStream>,
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -27,7 +27,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
     internalOptions _internal: GenerateObjectInternalOptions = GenerateObjectInternalOptions(),
     settings: CallSettings = CallSettings()
 ) throws -> StreamObjectResult<PartialValue, ResultValue, ElementStream> {
-    let model = try resolveLanguageModelV4(modelArg)
+    let model = try resolveLanguageModel(modelArg)
 
     try validateObjectGenerationInput(
         output: output.kind,
@@ -84,7 +84,7 @@ public func streamObject<ResultValue, PartialValue, ElementStream>(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObject<ObjectResult: Codable & Sendable>(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     schema type: ObjectResult.Type,
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -129,7 +129,7 @@ public func streamObject<ObjectResult: Codable & Sendable>(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObject<ObjectResult>(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     schema: FlexibleSchema<ObjectResult>,
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -176,7 +176,7 @@ public func streamObject<ObjectResult>(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectNoSchema(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     instructions: Instructions? = nil,
     prompt: String? = nil,
     messages: [ModelMessage]? = nil,
@@ -214,7 +214,7 @@ public func streamObjectNoSchema(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectArray<ElementResult: Codable & Sendable>(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     schema elementType: ElementResult.Type,
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -259,7 +259,7 @@ public func streamObjectArray<ElementResult: Codable & Sendable>(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectArray<ElementResult>(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     schema: FlexibleSchema<ElementResult>,
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -306,7 +306,7 @@ public func streamObjectArray<ElementResult>(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func streamObjectEnum(
-    model: LanguageModel,
+    model: any LanguageModelConvertible,
     values: [String],
     instructions: Instructions? = nil,
     prompt: String? = nil,
@@ -420,7 +420,7 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
             prompt: prompt,
             messages: messages
         ))
-        let promptMessages = try await convertToLanguageModelV4Prompt(
+        let promptMessages = try await convertToLanguageModelPrompt(
             prompt: standardizedPrompt,
             supportedUrls: try await model.supportedUrls,
             download: download

@@ -31,7 +31,7 @@ targets: [
 
 ## Provider Instance
 
-You can import the default Provider V4 instance `openai` from `OpenAIProvider`:
+You can import the default provider instance `openai` from `OpenAIProvider`:
 
 ```swift
 import SwiftAISDK
@@ -58,7 +58,7 @@ let model = try provider("gpt-4o")
 ```
 
 The explicitly named `createOpenAIProvider(settings:)` factory also creates
-native Provider V4 models.
+native provider models.
 
 You can use the following optional settings to customize the OpenAI provider instance:
 
@@ -294,7 +294,7 @@ The following OpenAI-specific metadata is returned:
 - **reasoningContext** _(optional)_
   Effective persisted-reasoning context returned by GPT-5.6.
 
-Cache reads and writes are reported through `result.usage.inputTokens.cacheRead` and `result.usage.inputTokens.cacheWrite`; reasoning tokens are reported through `result.usage.outputTokens.reasoning` on the provider V4 result.
+Cache reads and writes are reported through `result.usage.inputTokens.cacheRead` and `result.usage.inputTokens.cacheWrite`; reasoning tokens are reported through `result.usage.outputTokens.reasoning` on the provider result.
 
 #### Reasoning Output
 
@@ -1352,10 +1352,10 @@ print("usage:", [
 GPT-5.6 also supports explicit cache control. Set `promptCacheOptions.mode` to `explicit` and mark each cache boundary with `promptCacheBreakpoint`:
 
 ```swift
-import AISDKProvider
+import SwiftAISDK
 import OpenAIProvider
 
-let breakpoint: SharedV4ProviderOptions = [
+let breakpoint: ProviderOptions = [
   "openai": [
     "promptCacheBreakpoint": .object(["mode": .string("explicit")])
   ]

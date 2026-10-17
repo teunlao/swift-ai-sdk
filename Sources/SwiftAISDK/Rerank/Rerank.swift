@@ -5,60 +5,9 @@ import AISDKProviderUtils
 /// Callback for rerank operation lifecycle events.
 public typealias RerankCallback<Event: Sendable> = @Sendable (Event) async throws -> Void
 
-/**
- Rerank documents using a reranking model.
-
- Port of `@ai-sdk/ai/src/rerank/rerank.ts`.
- */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func rerank(
-    model: any RerankingModelV3,
-    documents: [String],
-    query: String,
-    topN: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: RerankCallback<RerankStartEvent<String>>? = nil,
-    onEnd: RerankCallback<RerankEndEvent<String>>? = nil
-) async throws -> DefaultRerankResult<String> {
-    try await rerank(
-        model: .v3(model), documents: documents, query: query, topN: topN,
-        maxRetries: maxRetries, abortSignal: abortSignal, headers: headers,
-        providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext,
-        onStart: onStart, onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func rerank(
-    model: any RerankingModelV4,
-    documents: [String],
-    query: String,
-    topN: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: RerankCallback<RerankStartEvent<String>>? = nil,
-    onEnd: RerankCallback<RerankEndEvent<String>>? = nil
-) async throws -> DefaultRerankResult<String> {
-    try await rerank(
-        model: .v4(model), documents: documents, query: query, topN: topN,
-        maxRetries: maxRetries, abortSignal: abortSignal, headers: headers,
-        providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext,
-        onStart: onStart, onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func rerank(
-    model: RerankingModel,
+    model: any RerankingModelConvertible,
     documents: [String],
     query: String,
     topN: Int? = nil,
@@ -91,53 +40,7 @@ public func rerank(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func rerank(
-    model: any RerankingModelV3,
-    documents: [JSONObject],
-    query: String,
-    topN: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: RerankCallback<RerankStartEvent<JSONObject>>? = nil,
-    onEnd: RerankCallback<RerankEndEvent<JSONObject>>? = nil
-) async throws -> DefaultRerankResult<JSONObject> {
-    try await rerank(
-        model: .v3(model), documents: documents, query: query, topN: topN,
-        maxRetries: maxRetries, abortSignal: abortSignal, headers: headers,
-        providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext,
-        onStart: onStart, onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func rerank(
-    model: any RerankingModelV4,
-    documents: [JSONObject],
-    query: String,
-    topN: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: RerankCallback<RerankStartEvent<JSONObject>>? = nil,
-    onEnd: RerankCallback<RerankEndEvent<JSONObject>>? = nil
-) async throws -> DefaultRerankResult<JSONObject> {
-    try await rerank(
-        model: .v4(model), documents: documents, query: query, topN: topN,
-        maxRetries: maxRetries, abortSignal: abortSignal, headers: headers,
-        providerOptions: providerOptions, telemetry: telemetry, runtimeContext: runtimeContext,
-        onStart: onStart, onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func rerank(
-    model: RerankingModel,
+    model: any RerankingModelConvertible,
     documents: [JSONObject],
     query: String,
     topN: Int? = nil,
@@ -172,7 +75,7 @@ public func rerank(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func _rerank<Value: Sendable>(
-    model: RerankingModel,
+    model: any RerankingModelConvertible,
     documents: [Value],
     documentsToSend: RerankingModelV4CallOptions.Documents,
     query: String,
@@ -187,7 +90,7 @@ private func _rerank<Value: Sendable>(
     onEnd: RerankCallback<RerankEndEvent<Value>>?,
     telemetryDocument: @escaping @Sendable (Value) -> JSONValue
 ) async throws -> DefaultRerankResult<Value> {
-    let resolvedModel = try resolveRerankingModelV4(model)
+    let resolvedModel = try resolveRerankingModel(model)
     let callId = try createIDGenerator(prefix: "call", size: 24)()
     let dispatcher = TelemetryDispatcher(telemetry: telemetry)
 

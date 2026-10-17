@@ -370,7 +370,7 @@ public struct ToolResultPart: Sendable, Equatable, Codable {
     public let toolName: String
 
     /// Result of the tool call. This is a JSON-serializable object.
-    public let output: LanguageModelV3ToolResultOutput
+    public let output: LanguageModelV4ToolResultOutput
 
     /// Additional provider-specific metadata. They are passed through
     /// to the provider from the AI SDK and enable provider-specific
@@ -380,7 +380,7 @@ public struct ToolResultPart: Sendable, Equatable, Codable {
     public init(
         toolCallId: String,
         toolName: String,
-        output: LanguageModelV3ToolResultOutput,
+        output: LanguageModelV4ToolResultOutput,
         providerOptions: ProviderOptions? = nil
     ) {
         self.toolCallId = toolCallId
@@ -397,7 +397,7 @@ public struct ToolResultPart: Sendable, Equatable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         toolCallId = try container.decode(String.self, forKey: .toolCallId)
         toolName = try container.decode(String.self, forKey: .toolName)
-        output = try container.decode(LanguageModelV3ToolResultOutput.self, forKey: .output)
+        output = try container.decode(LanguageModelV4ToolResultOutput.self, forKey: .output)
         providerOptions = try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions)
     }
 

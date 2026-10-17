@@ -23,18 +23,18 @@ struct GenerateTextTimeoutTests {
 
     @Test("timeout forwards abort signal to model")
     func timeoutForwardsAbortSignalToModel() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage()
+                    usage: LanguageModelV4Usage()
                 )
             )
         )
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)
         )
@@ -45,18 +45,18 @@ struct GenerateTextTimeoutTests {
 
     @Test("no timeout and no abortSignal passes nil to model")
     func noTimeoutPassesNilAbortSignalToModel() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage()
+                    usage: LanguageModelV4Usage()
                 )
             )
         )
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input"
         )
 
@@ -66,18 +66,18 @@ struct GenerateTextTimeoutTests {
 
     @Test("timeout object without totalMs/stepMs does not create abort signal")
     func emptyTimeoutObjectDoesNotCreateAbortSignal() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
-                    usage: LanguageModelV3Usage()
+                    usage: LanguageModelV4Usage()
                 )
             )
         )
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(timeout: .configuration())
         )
@@ -109,12 +109,12 @@ struct GenerateTextTimeoutTests {
         }
 
         let capturedAbortSignal = LockedValue<(@Sendable () -> Bool)?>(nil)
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -122,7 +122,7 @@ struct GenerateTextTimeoutTests {
                         )
                     ],
                     finishReason: .toolCalls,
-                    usage: LanguageModelV3Usage()
+                    usage: LanguageModelV4Usage()
                 )
             )
         )
@@ -138,7 +138,7 @@ struct GenerateTextTimeoutTests {
         ]
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             settings: CallSettings(timeout: 5000)

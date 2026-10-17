@@ -22,7 +22,7 @@ struct AgentOpenAIStreamToolsExample: Example {
       let model = try openai("gpt-5")
       let settings = ToolLoopAgentSettings<Never, String, String>(
         instructions: "You are a helpful assistant that answers questions about the weather.",
-        model: .v4(model),
+        model: model,
         tools: ["weather": weather.tool]
       )
       let agent = ToolLoopAgent(settings)

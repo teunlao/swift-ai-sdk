@@ -14,7 +14,7 @@ import AISDKProviderUtils
 struct GenerateTextTests {
     // MARK: - Shared Fixtures
 
-    private let testUsage = LanguageModelV3Usage(
+    private let testUsage = LanguageModelV4Usage(
         inputTokens: .init(total: 3),
         outputTokens: .init(total: 10)
     )
@@ -25,15 +25,15 @@ struct GenerateTextTests {
     )
 
     private func makeGenerateResult(
-        content: [LanguageModelV3Content],
-        finishReason: LanguageModelV3FinishReason = .init(unified: .stop),
-        usage: LanguageModelV3Usage? = nil,
-        warnings: [SharedV3Warning] = [],
+        content: [LanguageModelV4Content],
+        finishReason: LanguageModelV4FinishReason = .init(unified: .stop),
+        usage: LanguageModelV4Usage? = nil,
+        warnings: [SharedV4Warning] = [],
         providerMetadata: ProviderMetadata? = nil,
-        request: LanguageModelV3RequestInfo? = nil,
-        response: LanguageModelV3ResponseInfo? = nil
-    ) -> LanguageModelV3GenerateResult {
-        LanguageModelV3GenerateResult(
+        request: LanguageModelV4RequestInfo? = nil,
+        response: LanguageModelV4ResponseInfo? = nil
+    ) -> LanguageModelV4GenerateResult {
+        LanguageModelV4GenerateResult(
             content: content,
             finishReason: finishReason,
             usage: usage ?? testUsage,
@@ -84,9 +84,9 @@ struct GenerateTextTests {
         input: String,
         providerExecuted: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
+    ) -> LanguageModelV4Content {
         .toolCall(
-            LanguageModelV3ToolCall(
+            LanguageModelV4ToolCall(
                 toolCallId: toolCallId,
                 toolName: toolName,
                 input: input,
@@ -104,9 +104,9 @@ struct GenerateTextTests {
         providerExecuted: Bool? = nil,
         preliminary: Bool? = nil,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
+    ) -> LanguageModelV4Content {
         .toolResult(
-            LanguageModelV3ToolResult(
+            LanguageModelV4ToolResult(
                 toolCallId: toolCallId,
                 toolName: toolName,
                 result: result,
@@ -120,22 +120,22 @@ struct GenerateTextTests {
     private func textContent(
         _ text: String,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
-        .text(LanguageModelV3Text(text: text, providerMetadata: providerMetadata))
+    ) -> LanguageModelV4Content {
+        .text(LanguageModelV4Text(text: text, providerMetadata: providerMetadata))
     }
 
     private func reasoningContent(
         _ text: String,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
-        .reasoning(LanguageModelV3Reasoning(text: text, providerMetadata: providerMetadata))
+    ) -> LanguageModelV4Content {
+        .reasoning(LanguageModelV4Reasoning(text: text, providerMetadata: providerMetadata))
     }
 
     private func fileContent(
         mediaType: String,
-        data: LanguageModelV3FileData
-    ) -> LanguageModelV3Content {
-        .file(LanguageModelV3File(mediaType: mediaType, data: data))
+        data: LanguageModelV4FileData
+    ) -> LanguageModelV4Content {
+        .file(LanguageModelV4File(mediaType: mediaType, data: data))
     }
 
     private func urlSourceContent(
@@ -143,7 +143,7 @@ struct GenerateTextTests {
         url: String,
         title: String? = nil,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3Content {
+    ) -> LanguageModelV4Content {
         .source(
             .url(
                 id: id,
@@ -154,8 +154,8 @@ struct GenerateTextTests {
         )
     }
 
-    private func makeModelWithSources() -> MockLanguageModelV3 {
-        MockLanguageModelV3(
+    private func makeModelWithSources() -> MockLanguageModelV4 {
+        MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
@@ -178,15 +178,15 @@ struct GenerateTextTests {
         )
     }
 
-    private func makeModelWithFiles() -> MockLanguageModelV3 {
-        MockLanguageModelV3(
+    private func makeModelWithFiles() -> MockLanguageModelV4 {
+        MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
                         textContent("Hello, world!"),
                         fileContent(
                             mediaType: "image/png",
-                            data: .binary(Data([1, 2, 3]))
+                            data: .data(Data([1, 2, 3]))
                         ),
                         fileContent(
                             mediaType: "image/jpeg",
@@ -198,8 +198,8 @@ struct GenerateTextTests {
         )
     }
 
-    private func makeModelWithReasoning() -> MockLanguageModelV3 {
-        MockLanguageModelV3(
+    private func makeModelWithReasoning() -> MockLanguageModelV4 {
+        MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
@@ -226,7 +226,7 @@ struct GenerateTextTests {
 
     @Test("result.content contains generated content and tool results")
     func resultGeneratesContent() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
@@ -239,7 +239,7 @@ struct GenerateTextTests {
                         ),
                         fileContent(
                             mediaType: "image/png",
-                            data: .binary(Data([1, 2, 3]))
+                            data: .data(Data([1, 2, 3]))
                         ),
                         reasoningContent("I will open the conversation with witty banter."),
                         makeToolCallContent(
@@ -263,7 +263,7 @@ struct GenerateTextTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "prompt"
         )
@@ -338,7 +338,7 @@ struct GenerateTextTests {
 
     @Test("result.text returns generated text")
     func resultTextReturnsGeneratedText() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
@@ -351,7 +351,7 @@ struct GenerateTextTests {
         let referenceModel = makeModelWithSources()
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt"
         )
 
@@ -367,7 +367,7 @@ struct GenerateTextTests {
         let model = makeModelWithReasoning()
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt"
         )
 
@@ -381,7 +381,7 @@ struct GenerateTextTests {
         let model = makeModelWithSources()
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt"
         )
 
@@ -414,7 +414,7 @@ struct GenerateTextTests {
         let model = makeModelWithFiles()
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt"
         )
 
@@ -434,7 +434,7 @@ struct GenerateTextTests {
     func resultStepsIncludeReasoning() async throws {
         let model = makeModelWithReasoning()
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(),
@@ -491,7 +491,7 @@ struct GenerateTextTests {
     func resultStepsIncludeSources() async throws {
         let model = makeModelWithSources()
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(),
@@ -531,7 +531,7 @@ struct GenerateTextTests {
     func resultStepsIncludeFiles() async throws {
         let model = makeModelWithFiles()
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             internalOptions: GenerateTextInternalOptions(
                 generateId: mockId(),
@@ -562,7 +562,7 @@ struct GenerateTextTests {
         let expectedSchemaValue = toolSchemaJSON(requiredKey: "value")
         let expectedSchemaOther = toolSchemaJSON(requiredKey: "somethingElse")
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 if let tools = options.tools {
                     #expect(tools.count == 2)
@@ -590,18 +590,18 @@ struct GenerateTextTests {
 
                 #expect(options.toolChoice == .required)
 
-                let expectedPrompt: LanguageModelV3Prompt = [
+                let expectedPrompt: LanguageModelV4Prompt = [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "test-input", providerOptions: nil))],
+                        content: [.text(LanguageModelV4TextPart(text: "test-input", providerOptions: nil))],
                         providerOptions: nil
                     )
                 ]
                 #expect(options.prompt == expectedPrompt)
 
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -620,7 +620,7 @@ struct GenerateTextTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             toolChoice: .required,
             prompt: "test-input"
@@ -643,7 +643,7 @@ struct GenerateTextTests {
     func resultToolResultsContainsToolResults() async throws {
         let expectedSchemaValue = toolSchemaJSON(requiredKey: "value")
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 if let tools = options.tools {
                     #expect(tools.count == 1)
@@ -660,18 +660,18 @@ struct GenerateTextTests {
 
                 #expect(options.toolChoice == .auto)
 
-                let expectedPrompt: LanguageModelV3Prompt = [
+                let expectedPrompt: LanguageModelV4Prompt = [
                     .user(
-                        content: [.text(LanguageModelV3TextPart(text: "test-input", providerOptions: nil))],
+                        content: [.text(LanguageModelV4TextPart(text: "test-input", providerOptions: nil))],
                         providerOptions: nil
                     )
                 ]
                 #expect(options.prompt == expectedPrompt)
 
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -696,7 +696,7 @@ struct GenerateTextTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input"
         )
@@ -717,9 +717,9 @@ struct GenerateTextTests {
 
     @Test("result.providerMetadata contains provider metadata")
     func resultProviderMetadataContainsMetadata() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [],
                     finishReason: .stop,
                     usage: testUsage,
@@ -734,7 +734,7 @@ struct GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input"
         )
 
@@ -749,10 +749,10 @@ struct GenerateTextTests {
     func optionsHeadersForwardedToModel() async throws {
         var capturedHeaders: [String: String]?
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 capturedHeaders = options.headers
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -761,7 +761,7 @@ struct GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             settings: CallSettings(headers: ["custom-request-header": "request-header-value"])
         )
@@ -774,12 +774,12 @@ struct GenerateTextTests {
 
     @Test("options.providerOptions forwarded to model")
     func optionsProviderOptionsForwardedToModel() async throws {
-        var capturedProviderOptions: SharedV3ProviderOptions?
+        var capturedProviderOptions: SharedV4ProviderOptions?
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 capturedProviderOptions = options.providerOptions
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("provider metadata test")],
                     finishReason: .stop,
                     usage: testUsage
@@ -787,14 +787,14 @@ struct GenerateTextTests {
             }
         )
 
-        let providerOptions: SharedV3ProviderOptions = [
+        let providerOptions: SharedV4ProviderOptions = [
             "aProvider": [
                 "someKey": .string("someValue")
             ]
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input",
             providerOptions: providerOptions
         )
@@ -810,12 +810,12 @@ struct GenerateTextTests {
         let abortFlag = AbortFlag()
         let capturedOptions = ValueRecorder<ToolExecutionOptions>()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -839,7 +839,7 @@ struct GenerateTextTests {
         ]
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             settings: CallSettings(abortSignal: { abortFlag.isAborted() })
@@ -859,16 +859,16 @@ struct GenerateTextTests {
 
     @Test("options.activeTools filters tools")
     func optionsActiveToolsFiltersTools() async throws {
-        var capturedTools: [LanguageModelV3Tool]?
-        var capturedToolChoice: LanguageModelV3ToolChoice?
-        var capturedPrompt: LanguageModelV3Prompt?
+        var capturedTools: [LanguageModelV4Tool]?
+        var capturedToolChoice: LanguageModelV4ToolChoice?
+        var capturedPrompt: LanguageModelV4Prompt?
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 capturedTools = options.tools
                 capturedToolChoice = options.toolChoice
                 capturedPrompt = options.prompt
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [textContent("Hello, world!")],
                     finishReason: .stop,
                     usage: testUsage
@@ -888,7 +888,7 @@ struct GenerateTextTests {
         ]
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             activeTools: ["tool1"]
@@ -928,17 +928,16 @@ struct GenerateTextTests {
         let tracer = MockTracer()
 
         _ = try await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [textContent("Hello, world!")],
                             finishReason: .stop,
                             usage: testUsage
                         )
                     )
-                )
-            ),
+                ),
             prompt: "prompt",
             telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, runtimeContext: true, headers: true)])
         )
@@ -957,23 +956,22 @@ struct GenerateTextTests {
         ]
 
         _ = try await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [textContent("Hello, world!")],
                             finishReason: .stop,
                             usage: testUsage,
                             providerMetadata: providerMetadata,
-                            response: LanguageModelV3ResponseInfo(
+                            response: LanguageModelV4ResponseInfo(
                                 id: "test-id-from-model",
                                 timestamp: Date(timeIntervalSince1970: 10),
                                 modelId: "test-response-model-id"
                             )
                         )
                     )
-                )
-            ),
+                ),
             prompt: "prompt",
             telemetry: TelemetryOptions(
                 functionId: "test-function-id",
@@ -1045,13 +1043,13 @@ struct GenerateTextTests {
         ]
 
         _ = try await generateText(
-            model: .v3(
-                MockLanguageModelV3(
+            model: 
+                MockLanguageModelV4(
                     doGenerate: .singleValue(
-                        LanguageModelV3GenerateResult(
+                        LanguageModelV4GenerateResult(
                             content: [
-                                LanguageModelV3Content.toolCall(
-                                    LanguageModelV3ToolCall(
+                                LanguageModelV4Content.toolCall(
+                                    LanguageModelV4ToolCall(
                                         toolCallId: "call-1",
                                         toolName: "tool1",
                                         input: #"{ "value": "value" }"#
@@ -1062,8 +1060,7 @@ struct GenerateTextTests {
                             usage: testUsage
                         )
                     )
-                )
-            ),
+                ),
             tools: tools,
             prompt: "test-input",
             telemetry: TelemetryOptions(
@@ -1094,7 +1091,7 @@ struct GenerateTextTests {
 
     @Test("result.response.messages contains assistant response when no tool calls")
     func resultResponseMessagesWithoutToolCalls() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(
                 makeGenerateResult(
                     content: [
@@ -1105,7 +1102,7 @@ struct GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input"
         )
 
@@ -1132,13 +1129,13 @@ struct GenerateTextTests {
 
     @Test("result.response.messages contains assistant and tool messages when tool results exist")
     func resultResponseMessagesWithToolResults() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, world!"),
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -1174,7 +1171,7 @@ struct GenerateTextTests {
         ]
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input"
         )
@@ -1231,7 +1228,7 @@ struct GenerateTextTests {
         let model = makeModelWithReasoning()
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "test-input"
         )
 
@@ -1274,21 +1271,21 @@ struct GenerateTextTests {
 
     @Test("result.request contains request body metadata when requested")
     func resultRequestContainsBody() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, world!")
                     ],
                     finishReason: .stop,
                     usage: testUsage,
-                    request: LanguageModelV3RequestInfo(body: "test body")
+                    request: LanguageModelV4RequestInfo(body: "test body")
                 )
             }
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             include: GenerateTextInclude(requestBody: true)
         )
@@ -1298,21 +1295,21 @@ struct GenerateTextTests {
 
     @Test("result.request excludes request body when experimentalInclude.requestBody is false")
     func resultRequestExcludesBodyWhenIncludeRequestBodyFalse() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, world!")
                     ],
                     finishReason: .stop,
                     usage: testUsage,
-                    request: LanguageModelV3RequestInfo(body: "test body")
+                    request: LanguageModelV4RequestInfo(body: "test body")
                 )
             }
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             include: GenerateTextInclude(requestBody: false)
         )
@@ -1330,15 +1327,15 @@ struct GenerateTextTests {
 
     @Test("result.response contains response metadata and body when requested")
     func resultResponseContainsMetadata() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, world!")
                     ],
                     finishReason: .stop,
                     usage: testUsage,
-                    response: LanguageModelV3ResponseInfo(
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id-from-model",
                         timestamp: Date(timeIntervalSince1970: 10),
                         modelId: "test-response-model-id",
@@ -1350,7 +1347,7 @@ struct GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             include: GenerateTextInclude(responseBody: true)
         )
@@ -1378,15 +1375,15 @@ struct GenerateTextTests {
 
     @Test("result.response excludes response body when experimentalInclude.responseBody is false")
     func resultResponseExcludesBodyWhenIncludeResponseBodyFalse() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, world!")
                     ],
                     finishReason: .stop,
                     usage: testUsage,
-                    response: LanguageModelV3ResponseInfo(
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id-from-model",
                         timestamp: Date(timeIntervalSince1970: 10),
                         modelId: "test-response-model-id",
@@ -1398,7 +1395,7 @@ struct GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             prompt: "prompt",
             include: GenerateTextInclude(responseBody: false)
         )
@@ -1421,13 +1418,13 @@ struct GenerateTextTests {
     func optionsOnFinishReceivesCorrectPayload() async throws {
         let finishRecorder = ValueRecorder<GenerateTextEndEvent>()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
-                LanguageModelV3GenerateResult(
+                LanguageModelV4GenerateResult(
                     content: [
                         textContent("Hello, World!"),
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -1436,7 +1433,7 @@ struct GenerateTextTests {
                     ],
                     finishReason: .stop,
                     usage: testUsage,
-                    response: LanguageModelV3ResponseInfo(
+                    response: LanguageModelV4ResponseInfo(
                         id: "id-0",
                         timestamp: Date(timeIntervalSince1970: 0),
                         modelId: "mock-model-id",
@@ -1457,7 +1454,7 @@ struct GenerateTextTests {
         ]
 
         _ = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "irrelevant",
             onEnd: { event in
@@ -1711,7 +1708,7 @@ private extension GenerateTextTests {
             )
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 let current = await counter.next()
                 switch current {
@@ -1721,18 +1718,18 @@ private extension GenerateTextTests {
                     }
                     #expect(options.toolChoice == .auto)
 
-                    let expectedPrompt: LanguageModelV3Prompt = [
+                    let expectedPrompt: LanguageModelV4Prompt = [
                         .user(
-                            content: [.text(LanguageModelV3TextPart(text: "test-input", providerOptions: nil))],
+                            content: [.text(LanguageModelV4TextPart(text: "test-input", providerOptions: nil))],
                             providerOptions: nil
                         )
                     ]
                     #expect(options.prompt == expectedPrompt)
 
-                    return LanguageModelV3GenerateResult(
+                    return LanguageModelV4GenerateResult(
                         content: [
-                            LanguageModelV3Content.toolCall(
-                                LanguageModelV3ToolCall(
+                            LanguageModelV4Content.toolCall(
+                                LanguageModelV4ToolCall(
                                     toolCallId: "call-1",
                                     toolName: "tool1",
                                     input: #"{ "value": "value" }"#
@@ -1740,24 +1737,24 @@ private extension GenerateTextTests {
                             )
                         ],
                         finishReason: .toolCalls,
-                        usage: LanguageModelV3Usage(
+                        usage: LanguageModelV4Usage(
                             inputTokens: .init(total: 10),
                             outputTokens: .init(total: 5)
                         ),
-                        response: LanguageModelV3ResponseInfo(
+                        response: LanguageModelV4ResponseInfo(
                             id: "test-id-1-from-model",
                             timestamp: Date(timeIntervalSince1970: 0),
                             modelId: "test-response-model-id"
                         )
                     )
                 case 1:
-                    return LanguageModelV3GenerateResult(
+                    return LanguageModelV4GenerateResult(
                         content: [
                             textContent("Hello, world!")
                         ],
                         finishReason: .stop,
                         usage: testUsage,
-                        response: LanguageModelV3ResponseInfo(
+                        response: LanguageModelV4ResponseInfo(
                             id: "test-id-2-from-model",
                             timestamp: Date(timeIntervalSince1970: 10),
                             modelId: "test-response-model-id",
@@ -1771,7 +1768,7 @@ private extension GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             stopWhen: [isStepCount(3)],
@@ -1806,7 +1803,7 @@ private extension GenerateTextTests {
         let finishRecorder = ValueRecorder<GenerateTextEndEvent>()
         let stepRecorder = ValueRecorder<StepSnapshot>()
         let prepareRecorder = ValueRecorder<PrepareStepCallSnapshot>()
-        let doGenerateRecorder = ValueRecorder<LanguageModelV3CallOptions>()
+        let doGenerateRecorder = ValueRecorder<LanguageModelV4CallOptions>()
         let counter = IntCounter()
 
         let tools: ToolSet = [
@@ -1829,16 +1826,16 @@ private extension GenerateTextTests {
             )
         ]
 
-        let trueModel = MockLanguageModelV3(
+        let trueModel = MockLanguageModelV4(
             doGenerate: .function { options in
                 await doGenerateRecorder.append(options)
                 let index = await counter.next()
                 switch index {
                 case 0:
-                    return LanguageModelV3GenerateResult(
+                    return LanguageModelV4GenerateResult(
                         content: [
-                            LanguageModelV3Content.toolCall(
-                                LanguageModelV3ToolCall(
+                            LanguageModelV4Content.toolCall(
+                                LanguageModelV4ToolCall(
                                     toolCallId: "call-1",
                                     toolName: "tool1",
                                     input: #"{ "value": "value" }"#
@@ -1846,22 +1843,22 @@ private extension GenerateTextTests {
                             )
                         ],
                         finishReason: .toolCalls,
-                        usage: LanguageModelV3Usage(
+                        usage: LanguageModelV4Usage(
                             inputTokens: .init(total: 10),
                             outputTokens: .init(total: 5)
                         ),
-                        response: LanguageModelV3ResponseInfo(
+                        response: LanguageModelV4ResponseInfo(
                             id: "test-id-1-from-model",
                             timestamp: Date(timeIntervalSince1970: 0),
                             modelId: "test-response-model-id"
                         )
                     )
                 case 1:
-                    return LanguageModelV3GenerateResult(
+                    return LanguageModelV4GenerateResult(
                         content: [textContent("Hello, world!")],
                         finishReason: .stop,
                         usage: testUsage,
-                        response: LanguageModelV3ResponseInfo(
+                        response: LanguageModelV4ResponseInfo(
                             id: "test-id-2-from-model",
                             timestamp: Date(timeIntervalSince1970: 10),
                             modelId: "test-response-model-id",
@@ -1877,7 +1874,7 @@ private extension GenerateTextTests {
         let baseModel = makeModelWithFiles()
 
         let result = try await generateText(
-            model: .v3(baseModel),
+            model: baseModel,
             tools: tools,
             prompt: "test-input",
             stopWhen: [isStepCount(3)],
@@ -1896,7 +1893,7 @@ private extension GenerateTextTests {
                         .user(UserModelMessage(content: .text("new input from prepareStep")))
                     ]
                     return PrepareStepResult(
-                        model: .v3(trueModel),
+                        model: trueModel,
                         toolChoice: .tool(toolName: "tool1"),
                         instructions: "system-message-0",
                         messages: newMessages
@@ -1906,7 +1903,7 @@ private extension GenerateTextTests {
                 if options.stepNumber == 1 {
                     #expect(options.steps.count == 1)
                     return PrepareStepResult(
-                        model: .v3(trueModel),
+                        model: trueModel,
                         activeTools: [],
                         instructions: "system-message-1"
                     )
@@ -1974,16 +1971,16 @@ private extension GenerateTextTests {
 
         let counter = IntCounter()
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { _ in
                 let index = await counter.next()
                 guard index == 0 else {
                     throw NSError(domain: "StopConditionsScenario", code: 1, userInfo: nil)
                 }
-                return LanguageModelV3GenerateResult(
+                return LanguageModelV4GenerateResult(
                     content: [
-                        LanguageModelV3Content.toolCall(
-                            LanguageModelV3ToolCall(
+                        LanguageModelV4Content.toolCall(
+                            LanguageModelV4ToolCall(
                                 toolCallId: "call-1",
                                 toolName: "tool1",
                                 input: #"{ "value": "value" }"#
@@ -1991,11 +1988,11 @@ private extension GenerateTextTests {
                         )
                     ],
                     finishReason: .toolCalls,
-                    usage: LanguageModelV3Usage(
+                    usage: LanguageModelV4Usage(
                         inputTokens: .init(total: 10),
                         outputTokens: .init(total: 5)
                     ),
-                    response: LanguageModelV3ResponseInfo(
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id-1-from-model",
                         timestamp: Date(timeIntervalSince1970: 0),
                         modelId: "test-response-model-id"
@@ -2005,7 +2002,7 @@ private extension GenerateTextTests {
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test-input",
             stopWhen: [
@@ -2048,7 +2045,7 @@ private struct PrepareStepScenario: Sendable {
     let result: DefaultGenerateTextResult<String>
     let finishEvent: GenerateTextEndEvent?
     let onStepFinishSnapshots: [StepSnapshot]
-    let doGenerateCalls: [LanguageModelV3CallOptions]
+    let doGenerateCalls: [LanguageModelV4CallOptions]
     let prepareSnapshots: [PrepareStepCallSnapshot]
 }
 

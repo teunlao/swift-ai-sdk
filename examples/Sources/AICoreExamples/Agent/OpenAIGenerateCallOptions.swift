@@ -20,7 +20,7 @@ struct AgentOpenAIGenerateCallOptionsExample: Example {
 
       let settings = ToolLoopAgentSettings<Never, Recipe, JSONValue>(
         instructions: "You are a helpful assistant.",
-        model: .v4(try openai("gpt-4o")),
+        model: try openai("gpt-4o"),
         output: outputSpec,
         providerOptions: providerOptions
       )

@@ -126,7 +126,7 @@ public typealias StreamTextOnEndCallback<OutputValue: Sendable> = @Sendable (Str
 /// Everything a `streamText` call is configured with.
 struct StreamTextConfiguration<OutputValue: Sendable, PartialOutput: Sendable>: Sendable {
     var model: any LanguageModelV4
-    var modelArgument: LanguageModel
+    var modelArgument: any LanguageModelConvertible
     var tools: ToolSet?
     var toolChoice: ToolChoice?
     var experimentalToolCallers: ToolCallers?
@@ -179,7 +179,7 @@ struct StreamTextConfiguration<OutputValue: Sendable, PartialOutput: Sendable>: 
  - Throws: `InvalidArgumentError` for an invalid `toolCallConcurrency` or retry setting.
  */
 public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
-    model modelArg: LanguageModel,
+    model modelArg: any LanguageModelConvertible,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     experimentalToolCallers: ToolCallers? = nil,
@@ -220,7 +220,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
     settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<OutputValue, PartialOutput> {
     try makeStreamTextResult(StreamTextConfiguration(
-        model: try resolveLanguageModelV4(modelArg),
+        model: try resolveLanguageModel(modelArg),
         modelArgument: modelArg,
         tools: tools,
         toolChoice: toolChoice,
@@ -274,7 +274,7 @@ public func streamText<OutputValue: Sendable, PartialOutput: Sendable>(
  Same as `streamText(model:output:…)` with `Output.text()`.
  */
 public func streamText(
-    model modelArg: LanguageModel,
+    model modelArg: any LanguageModelConvertible,
     tools: ToolSet? = nil,
     toolChoice: ToolChoice? = nil,
     experimentalToolCallers: ToolCallers? = nil,
@@ -314,7 +314,7 @@ public func streamText(
     settings: CallSettings = CallSettings()
 ) throws -> DefaultStreamTextResult<String, String> {
     try makeStreamTextResult(StreamTextConfiguration(
-        model: try resolveLanguageModelV4(modelArg),
+        model: try resolveLanguageModel(modelArg),
         modelArgument: modelArg,
         tools: tools,
         toolChoice: toolChoice,

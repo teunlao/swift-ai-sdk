@@ -9,7 +9,7 @@ import AISDKProviderUtils
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func embedMany(
-    model modelArg: EmbeddingModel,
+    model modelArg: any EmbeddingModelConvertible,
     values: [String],
     dimensions: Int? = nil,
     maxParallelCalls: Int? = nil,
@@ -23,7 +23,7 @@ public func embedMany(
     onEnd: EmbedCallback<EmbedEndEvent<[String], [Embedding]>>? = nil
 ) async throws -> DefaultEmbedManyResult<String> {
     try validateEmbeddingDimensions(dimensions)
-    let model = try resolveEmbeddingModelV4(modelArg)
+    let model = try resolveEmbeddingModel(modelArg)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -210,70 +210,6 @@ public func embedMany(
         await dispatcher.onError(callId: callId, error: error)
         throw error
     }
-}
-
-// MARK: - Convenience overloads (DX parity with TS)
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany(
-    model: any EmbeddingModelV4,
-    values: [String],
-    dimensions: Int? = nil,
-    maxParallelCalls: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: EmbedCallback<EmbedStartEvent<[String]>>? = nil,
-    onEnd: EmbedCallback<EmbedEndEvent<[String], [Embedding]>>? = nil
-) async throws -> DefaultEmbedManyResult<String> {
-    try await embedMany(
-        model: .v4(model),
-        values: values,
-        dimensions: dimensions,
-        maxParallelCalls: maxParallelCalls,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        providerOptions: providerOptions,
-        telemetry: telemetry,
-        runtimeContext: runtimeContext,
-        onStart: onStart,
-        onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embedMany(
-    model: any EmbeddingModelV3<String>,
-    values: [String],
-    dimensions: Int? = nil,
-    maxParallelCalls: Int? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    providerOptions: ProviderOptions? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: EmbedCallback<EmbedStartEvent<[String]>>? = nil,
-    onEnd: EmbedCallback<EmbedEndEvent<[String], [Embedding]>>? = nil
-) async throws -> DefaultEmbedManyResult<String> {
-    try await embedMany(
-        model: .v3(model),
-        values: values,
-        dimensions: dimensions,
-        maxParallelCalls: maxParallelCalls,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        providerOptions: providerOptions,
-        telemetry: telemetry,
-        runtimeContext: runtimeContext,
-        onStart: onStart,
-        onEnd: onEnd
-    )
 }
 
 // MARK: - Internal Types

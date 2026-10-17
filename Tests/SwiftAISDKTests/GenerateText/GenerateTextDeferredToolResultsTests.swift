@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("GenerateText – deferred tool results")
 struct GenerateTextDeferredToolResultsTests {
-    private let usage = LanguageModelV3Usage(
+    private let usage = LanguageModelV4Usage(
         inputTokens: .init(total: 1),
         outputTokens: .init(total: 1)
     )
@@ -52,9 +52,9 @@ struct GenerateTextDeferredToolResultsTests {
             "deferred_tool": deferredTool(),
         ]
 
-        let step1 = LanguageModelV3GenerateResult(
+        let step1 = LanguageModelV4GenerateResult(
             content: [
-                .toolCall(LanguageModelV3ToolCall(
+                .toolCall(LanguageModelV4ToolCall(
                     toolCallId: "call-1",
                     toolName: "deferred_tool",
                     input: #"{ "value": "test" }"#,
@@ -65,27 +65,27 @@ struct GenerateTextDeferredToolResultsTests {
             usage: usage
         )
 
-        let step2 = LanguageModelV3GenerateResult(
+        let step2 = LanguageModelV4GenerateResult(
             content: [
-                .toolResult(LanguageModelV3ToolResult(
+                .toolResult(LanguageModelV4ToolResult(
                     toolCallId: "call-1",
                     toolName: "deferred_tool",
                     result: .string("ERROR"),
                     isError: true,
                     providerMetadata: meta
                 )),
-                .text(LanguageModelV3Text(text: "Final response")),
+                .text(LanguageModelV4Text(text: "Final response")),
             ],
             finishReason: .stop,
             usage: usage
         )
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .array([step1, step2])
         )
 
         let result = try await generateText(
-            model: .v3(model),
+            model: model,
             tools: tools,
             prompt: "test",
             stopWhen: [isStepCount(3)]

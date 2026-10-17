@@ -11,10 +11,6 @@ import AISDKProviderUtils
 
 // MARK: - Usage Helpers
 
-func makeEmbeddingUsage(from usage: EmbeddingModelV3Usage?) -> EmbeddingModelUsage {
-    EmbeddingModelUsage(tokens: usage.map { Double($0.tokens) } ?? .nan)
-}
-
 func makeEmbeddingUsage(from usage: EmbeddingModelV4Usage?) -> EmbeddingModelUsage {
     EmbeddingModelUsage(tokens: usage.map { Double($0.tokens) } ?? .nan)
 }
@@ -64,25 +60,6 @@ func splitEmbeddingValues(
     }
     if !chunk.isEmpty { chunks.append(chunk) }
     return chunks
-}
-
-// MARK: - Response and Warning Helpers
-
-/// Converts legacy V3 response information into the public V4 embed result surface.
-func makeEmbeddingResponseInfo(from response: EmbeddingModelV3ResponseInfo?) -> EmbeddingModelV4ResponseInfo? {
-    response.map { EmbeddingModelV4ResponseInfo(headers: $0.headers, body: $0.body) }
-}
-
-/// Converts legacy V3 warnings into the V4 warning shape used by AI SDK results.
-func makeEmbeddingWarning(from warning: SharedV3Warning) -> SharedV4Warning {
-    switch warning {
-    case let .unsupported(feature, details):
-        return .unsupported(feature: feature, details: details)
-    case let .compatibility(feature, details):
-        return .compatibility(feature: feature, details: details)
-    case .other(let message):
-        return .other(message: message)
-    }
 }
 
 // MARK: - Provider Metadata Merge

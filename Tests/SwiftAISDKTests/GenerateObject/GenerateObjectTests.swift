@@ -6,7 +6,7 @@ import AISDKProvider
 
 @Suite("generateObject", .serialized)
 struct GenerateObjectTests {
-    private let dummyUsageV3 = LanguageModelV3Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 20))
+    private let dummyUsageV4 = LanguageModelV4Usage(inputTokens: .init(total: 10), outputTokens: .init(total: 20))
 
     private let expectedUsage = LanguageModelUsage(
         inputTokens: 10,
@@ -14,25 +14,25 @@ struct GenerateObjectTests {
         totalTokens: 30
     )
 
-    private let dummyResponseInfo = LanguageModelV3ResponseInfo(
+    private let dummyResponseInfo = LanguageModelV4ResponseInfo(
         id: "id-1",
         timestamp: Date(timeIntervalSince1970: 123),
         modelId: "m-1"
     )
 
     private func makeGenerateResult(
-        content: [LanguageModelV3Content],
-        finishReason: LanguageModelV3FinishReason = .stop,
-        usage: LanguageModelV3Usage? = nil,
-        warnings: [SharedV3Warning] = [],
-        request: LanguageModelV3RequestInfo? = nil,
-        response: LanguageModelV3ResponseInfo? = nil,
+        content: [LanguageModelV4Content],
+        finishReason: LanguageModelV4FinishReason = .stop,
+        usage: LanguageModelV4Usage? = nil,
+        warnings: [SharedV4Warning] = [],
+        request: LanguageModelV4RequestInfo? = nil,
+        response: LanguageModelV4ResponseInfo? = nil,
         providerMetadata: ProviderMetadata? = nil
-    ) -> LanguageModelV3GenerateResult {
-        LanguageModelV3GenerateResult(
+    ) -> LanguageModelV4GenerateResult {
+        LanguageModelV4GenerateResult(
             content: content,
             finishReason: finishReason,
-            usage: usage ?? dummyUsageV3,
+            usage: usage ?? dummyUsageV4,
             providerMetadata: providerMetadata,
             request: request,
             response: response ?? dummyResponseInfo,
@@ -120,13 +120,13 @@ struct GenerateObjectTests {
         )
     }
 
-    private final class SupportedUrlsLanguageModel: LanguageModelV3 {
+    private final class SupportedUrlsLanguageModel: LanguageModelV4 {
         let provider: String = "mock-provider"
         let modelId: String = "mock-model-id"
         nonisolated(unsafe) var supportedUrlsCalled = false
-        let result: LanguageModelV3GenerateResult
+        let result: LanguageModelV4GenerateResult
 
-        init(result: LanguageModelV3GenerateResult) {
+        init(result: LanguageModelV4GenerateResult) {
             self.result = result
         }
 
@@ -137,11 +137,11 @@ struct GenerateObjectTests {
             }
         }
 
-        func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+        func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
             result
         }
 
-        func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+        func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
             throw NotImplementedError()
         }
     }
@@ -218,13 +218,13 @@ struct GenerateObjectTests {
         }
 
         let generateResult = makeGenerateResult(
-            content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+            content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
         )
 
-        let model = MockLanguageModelV3(doGenerate: .singleValue(generateResult))
+        let model = MockLanguageModelV4(doGenerate: .singleValue(generateResult))
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -239,7 +239,7 @@ struct GenerateObjectTests {
 
     @Test("should use name and description")
     func usesNameAndDescription() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 let schema = try await self.defaultObjectSchema().resolve().jsonSchema()
                 #expect(options.responseFormat == .json(
@@ -248,13 +248,13 @@ struct GenerateObjectTests {
                     description: "test description"
                 ))
                 return self.makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
                 )
             }
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(
                 schema: defaultObjectSchema(),
                 schemaName: "test-name",
@@ -269,47 +269,47 @@ struct GenerateObjectTests {
 
     @Test("should return warnings")
     func returnsWarnings() async throws {
-        let warnings: [SharedV3Warning] = [
+        let warnings: [SharedV4Warning] = [
             .other(message: "Setting is not supported")
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                 warnings: warnings
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
 
-        #expect(result.warnings == warnings.map(asCallWarning))
+        #expect(result.warnings == warnings)
     }
 
     @Test("should call logWarnings with the correct warnings")
     func logsWarnings() async throws {
-        let expectedWarnings: [SharedV3Warning] = [
+        let expectedWarnings: [SharedV4Warning] = [
             .other(message: "Setting is not supported"),
             .unsupported(feature: "temperature", details: "Temperature parameter not supported")
         ]
 
         let (_, logged) = try await captureLoggedWarnings {
             try await generateObject(
-                model: .v3(MockLanguageModelV3(
+                model: MockLanguageModelV4(
                     doGenerate: .singleValue(makeGenerateResult(
-                        content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                        content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                         warnings: expectedWarnings
                     ))
-                )),
+                ),
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt"
             )
         }
 
-        let expectedEntry = expectedWarnings.map { Warning.languageModel(asCallWarning($0)) }
+        let expectedEntry = expectedWarnings.map { Warning.languageModel($0) }
         #expect(logged.contains(expectedEntry))
     }
 
@@ -317,12 +317,12 @@ struct GenerateObjectTests {
     func logsEmptyWarnings() async throws {
         let (_, logged) = try await captureLoggedWarnings {
             try await generateObject(
-                model: .v3(MockLanguageModelV3(
+                model: MockLanguageModelV4(
                     doGenerate: .singleValue(makeGenerateResult(
-                        content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                        content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                         warnings: []
                     ))
-                )),
+                ),
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt"
             )
@@ -333,16 +333,16 @@ struct GenerateObjectTests {
 
     @Test("should contain request information")
     func resultContainsRequestMetadata() async throws {
-        let requestInfo = LanguageModelV3RequestInfo(body: "test body")
-        let model = MockLanguageModelV3(
+        let requestInfo = LanguageModelV4RequestInfo(body: "test body")
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                 request: requestInfo
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -352,7 +352,7 @@ struct GenerateObjectTests {
 
     @Test("should contain response information")
     func resultContainsResponseMetadata() async throws {
-        let response = LanguageModelV3ResponseInfo(
+        let response = LanguageModelV4ResponseInfo(
             id: "test-id-from-model",
             timestamp: Date(timeIntervalSince1970: 10),
             modelId: "test-response-model-id",
@@ -363,15 +363,15 @@ struct GenerateObjectTests {
             body: "test body"
         )
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                 response: response
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -385,9 +385,9 @@ struct GenerateObjectTests {
 
     @Test("should generate object with custom schema")
     func generatesObjectWithCustomSchema() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
             ))
         )
 
@@ -403,7 +403,7 @@ struct GenerateObjectTests {
         ))
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: customSchema),
             prompt: "prompt"
         )
@@ -413,14 +413,14 @@ struct GenerateObjectTests {
 
     @Test("should generate object when using transform schema")
     func generatesObjectWithTransformSchema() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             schema: transformSchema(),
             prompt: "prompt"
         )
@@ -431,14 +431,14 @@ struct GenerateObjectTests {
 
     @Test("should generate object when using preprocess schema")
     func generatesObjectWithPreprocessSchema() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": 42 }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": 42 }"))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             schema: preprocessSchema(),
             prompt: "prompt"
         )
@@ -448,14 +448,14 @@ struct GenerateObjectTests {
 
     @Test("should return JSON response")
     func jsonResponse() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -469,15 +469,15 @@ struct GenerateObjectTests {
     @Test("should contain provider metadata")
     func resultContainsProviderMetadata() async throws {
         let metadata: ProviderMetadata = ["exampleProvider": ["a": 10, "b": 20]]
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
                 providerMetadata: metadata
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )
@@ -488,18 +488,18 @@ struct GenerateObjectTests {
     @Test("should pass headers to model")
     func passesHeadersToModel() async throws {
         let headers: [String: String] = ["custom-request-header": "request-header-value"]
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 #expect(options.headers?["custom-request-header"] == "request-header-value")
                 #expect(options.headers?["user-agent"] == "ai/\(VERSION)")
                 return self.makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"headers test\" }"))]
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"headers test\" }"))]
                 )
             }
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             settings: CallSettings(headers: headers)
@@ -511,14 +511,14 @@ struct GenerateObjectTests {
 
     @Test("should repair JSON parse errors")
     func repairsJSONParseError() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"provider metadata test\" "))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"provider metadata test\" "))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             repairText: { options in
@@ -533,14 +533,14 @@ struct GenerateObjectTests {
 
     @Test("should repair validation errors")
     func repairsValidationError() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content-a\": \"provider metadata test\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content-a\": \"provider metadata test\" }"))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             repairText: { options in
@@ -554,15 +554,15 @@ struct GenerateObjectTests {
 
     @Test("should tolerate repair returning nil")
     func repairReturnsNil() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content-a\": \"provider metadata test\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content-a\": \"provider metadata test\" }"))]
             ))
         )
 
         await #expect(throws: NoObjectGeneratedError.self) {
             _ = try await generateObject(
-                model: .v3(model),
+                model: model,
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt",
                 repairText: { _ in nil }
@@ -574,17 +574,17 @@ struct GenerateObjectTests {
     func passesProviderOptions() async throws {
         let providerOptions: ProviderOptions = ["aProvider": ["someKey": .string("someValue")]]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .function { options in
                 #expect(options.providerOptions?["aProvider"]?["someKey"] == .string("someValue"))
                 return self.makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"provider options test\" }"))]
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"provider options test\" }"))]
                 )
             }
         )
 
         let result: GenerateObjectResult<JSONValue> = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             providerOptions: providerOptions
@@ -596,15 +596,15 @@ struct GenerateObjectTests {
     
     @Test("should throw NoObjectGeneratedError when schema validation fails")
     func schemaValidationFailure() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": 123 }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": 123 }"))]
             ))
         )
 
         do {
             _ = try await generateObject(
-                model: .v3(model),
+                model: model,
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt"
             ) as GenerateObjectResult<JSONValue>
@@ -616,15 +616,15 @@ struct GenerateObjectTests {
 
     @Test("should throw NoObjectGeneratedError when parsing fails")
     func parsingFailure() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ broken json"))]
+                content: [.text(LanguageModelV4Text(text: "{ broken json"))]
             ))
         )
 
         do {
             _ = try await generateObject(
-                model: .v3(model),
+                model: model,
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt"
             ) as GenerateObjectResult<JSONValue>
@@ -636,15 +636,15 @@ struct GenerateObjectTests {
 
     @Test("should throw NoObjectGeneratedError when parsing fails with repairText")
     func parsingFailureWithRepair() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ broken json"))]
+                content: [.text(LanguageModelV4Text(text: "{ broken json"))]
             ))
         )
 
         do {
             _ = try await generateObject(
-                model: .v3(model),
+                model: model,
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt",
                 repairText: { options in
@@ -660,7 +660,7 @@ struct GenerateObjectTests {
 
     @Test("should throw NoObjectGeneratedError when no text is available")
     func noTextAvailable() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
                 content: []
             ))
@@ -668,7 +668,7 @@ struct GenerateObjectTests {
 
         do {
             _ = try await generateObject(
-                model: .v3(model),
+                model: model,
                 output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
                 prompt: "prompt"
             ) as GenerateObjectResult<JSONValue>
@@ -700,14 +700,14 @@ struct GenerateObjectTests {
 
         let jsonText = "{ \"elements\": [{\"content\":\"element 1\"},{\"content\":\"element 2\"},{\"content\":\"element 3\"}] }"
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: jsonText))]
+                content: [.text(LanguageModelV4Text(text: jsonText))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.array(schema: arraySchema),
             prompt: "prompt"
         )
@@ -717,14 +717,14 @@ struct GenerateObjectTests {
 
     @Test("should generate an enum value")
     func generatesEnumValue() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"result\": \"sunny\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"result\": \"sunny\" }"))]
             ))
         )
 
         let result: GenerateObjectResult<String> = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.enumeration(values: ["sunny", "rainy", "snowy"]),
             prompt: "prompt"
         )
@@ -734,14 +734,14 @@ struct GenerateObjectTests {
 
     @Test("should generate object without schema")
     func generatesWithoutSchema() async throws {
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
             ))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.noSchema(),
             prompt: "prompt"
         )
@@ -754,11 +754,11 @@ struct GenerateObjectTests {
         let tracer = MockTracer()
 
         _ = try await generateObject(
-            model: .v3(MockLanguageModelV3(
+            model: MockLanguageModelV4(
                 doGenerate: .singleValue(makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
                 ))
-            )),
+            ),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             telemetry: TelemetryOptions(isEnabled: false, integrations: [OpenTelemetry(tracer: tracer, providerMetadata: true, headers: true, schema: true)])
@@ -773,17 +773,17 @@ struct GenerateObjectTests {
         let providerMetadata: ProviderMetadata = ["testProvider": ["testKey": .string("testValue")]]
 
         _ = try await generateObject(
-            model: .v3(MockLanguageModelV3(
+            model: MockLanguageModelV4(
                 doGenerate: .singleValue(makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
-                    response: LanguageModelV3ResponseInfo(
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id-from-model",
                         timestamp: Date(timeIntervalSince1970: 10),
                         modelId: "test-response-model-id"
                     ),
                     providerMetadata: providerMetadata
                 ))
-            )),
+            ),
             output: GenerateObjectOutput.object(
                 schema: defaultObjectSchema(),
                 schemaName: "test-name",
@@ -843,16 +843,16 @@ struct GenerateObjectTests {
         let tracer = MockTracer()
 
         _ = try await generateObject(
-            model: .v3(MockLanguageModelV3(
+            model: MockLanguageModelV4(
                 doGenerate: .singleValue(makeGenerateResult(
-                    content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))],
-                    response: LanguageModelV3ResponseInfo(
+                    content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))],
+                    response: LanguageModelV4ResponseInfo(
                         id: "test-id-from-model",
                         timestamp: Date(timeIntervalSince1970: 10),
                         modelId: "test-response-model-id"
                     )
                 ))
-            )),
+            ),
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt",
             telemetry: TelemetryOptions(
@@ -880,7 +880,7 @@ struct GenerateObjectTests {
     func supportedUrlsUsesSelf() async throws {
         let model = SupportedUrlsLanguageModel(
             result: makeGenerateResult(
-                content: [.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))]
+                content: [.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))]
             )
         )
 
@@ -894,7 +894,7 @@ struct GenerateObjectTests {
         ]
 
         let result: GenerateObjectResult<JSONValue> = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             messages: messages
         )
@@ -906,17 +906,17 @@ struct GenerateObjectTests {
     @Test("should include reasoning in the result")
     func reasoningIncludedInResult() async throws {
         let reasoningContent = [
-            LanguageModelV3Content.reasoning(LanguageModelV3Reasoning(text: "This is a test reasoning.")),
-            LanguageModelV3Content.reasoning(LanguageModelV3Reasoning(text: "This is another test reasoning.")),
-            LanguageModelV3Content.text(LanguageModelV3Text(text: "{ \"content\": \"Hello, world!\" }"))
+            LanguageModelV4Content.reasoning(LanguageModelV4Reasoning(text: "This is a test reasoning.")),
+            LanguageModelV4Content.reasoning(LanguageModelV4Reasoning(text: "This is another test reasoning.")),
+            LanguageModelV4Content.text(LanguageModelV4Text(text: "{ \"content\": \"Hello, world!\" }"))
         ]
 
-        let model = MockLanguageModelV3(
+        let model = MockLanguageModelV4(
             doGenerate: .singleValue(makeGenerateResult(content: reasoningContent))
         )
 
         let result = try await generateObject(
-            model: .v3(model),
+            model: model,
             output: GenerateObjectOutput.object(schema: defaultObjectSchema()),
             prompt: "prompt"
         )

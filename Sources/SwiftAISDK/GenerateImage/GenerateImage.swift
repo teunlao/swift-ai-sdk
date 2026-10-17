@@ -13,7 +13,7 @@ import AISDKProviderUtils
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateImage(
-    model: ImageModel,
+    model: any ImageModelConvertible,
     prompt: GenerateImagePrompt,
     n: Int = 1,
     maxImagesPerCall: Int? = nil,
@@ -45,7 +45,7 @@ public func generateImage(
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func generateImage(
-    model: ImageModel,
+    model: any ImageModelConvertible,
     prompt: String,
     n: Int = 1,
     maxImagesPerCall: Int? = nil,
@@ -77,132 +77,8 @@ public func generateImage(
 }
 
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
-    model: any ImageModelV4,
-    prompt: GenerateImagePrompt,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v4(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
-    model: any ImageModelV3,
-    prompt: GenerateImagePrompt,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v3(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
-    model: any ImageModelV4,
-    prompt: String,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    files: [ImageModelV4File]? = nil,
-    mask: ImageModelV4File? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v4(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        files: files,
-        mask: mask,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func generateImage(
-    model: any ImageModelV3,
-    prompt: String,
-    n: Int = 1,
-    maxImagesPerCall: Int? = nil,
-    size: String? = nil,
-    aspectRatio: String? = nil,
-    seed: Int? = nil,
-    files: [ImageModelV3File]? = nil,
-    mask: ImageModelV3File? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil
-) async throws -> DefaultGenerateImageResult {
-    try await generateImage(
-        model: .v3(model),
-        prompt: prompt,
-        n: n,
-        maxImagesPerCall: maxImagesPerCall,
-        size: size,
-        aspectRatio: aspectRatio,
-        seed: seed,
-        files: try files?.map(convertImageModelV3FileToV4),
-        mask: try mask.map(convertImageModelV3FileToV4),
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 private func generateImageInternal(
-    model: ImageModel,
+    model: any ImageModelConvertible,
     prompt: String?,
     n: Int,
     maxImagesPerCall: Int?,
@@ -216,7 +92,7 @@ private func generateImageInternal(
     abortSignal: (@Sendable () -> Bool)?,
     headers: [String: String]?
 ) async throws -> DefaultGenerateImageResult {
-    let model = try resolveImageModelV4(model)
+    let model = try resolveImageModel(model)
 
     let headersWithUserAgent = withUserAgentSuffix(
         headers ?? [:],
@@ -444,28 +320,6 @@ private func addDecimalStrings(_ lhs: String, _ rhs: String) -> String? {
         if result.last == "." { result.removeLast() }
     }
     return result
-}
-
-private func convertImageModelV3FileToV4(_ value: ImageModelV3File) throws -> ImageModelV4File {
-    switch value {
-    case let .file(mediaType, data, providerOptions):
-        return .file(
-            mediaType: mediaType,
-            data: convertImageModelV3FileDataToV4(data),
-            providerOptions: providerOptions
-        )
-    case let .url(url, providerOptions):
-        return .url(url: url, providerOptions: providerOptions)
-    }
-}
-
-private func convertImageModelV3FileDataToV4(_ value: ImageModelV3FileData) -> ImageModelV4FileData {
-    switch value {
-    case .base64(let base64):
-        return .base64(base64)
-    case .binary(let data):
-        return .binary(data)
-    }
 }
 
 private func imageProviderMetadata(_ metadata: ImageModelProviderMetadata?, index: Int) -> ProviderMetadata? {

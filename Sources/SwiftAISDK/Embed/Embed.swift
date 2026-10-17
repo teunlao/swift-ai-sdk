@@ -12,7 +12,7 @@ public typealias EmbedCallback<Event: Sendable> = @Sendable (Event) async throws
  */
 @available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
 public func embed(
-    model modelArg: EmbeddingModel,
+    model modelArg: any EmbeddingModelConvertible,
     value: String,
     dimensions: Int? = nil,
     providerOptions: ProviderOptions? = nil,
@@ -25,7 +25,7 @@ public func embed(
     onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
 ) async throws -> DefaultEmbedResult<String> {
     try validateEmbeddingDimensions(dimensions)
-    let model = try resolveEmbeddingModelV4(modelArg)
+    let model = try resolveEmbeddingModel(modelArg)
 
     let preparedRetries = try prepareRetries(
         maxRetries: maxRetries,
@@ -120,62 +120,3 @@ public func embed(
     }
 }
 
-// MARK: - Convenience overloads (DX parity with TS)
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embed(
-    model: any EmbeddingModelV4,
-    value: String,
-    dimensions: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: EmbedCallback<EmbedStartEvent<String>>? = nil,
-    onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
-) async throws -> DefaultEmbedResult<String> {
-    try await embed(
-        model: .v4(model),
-        value: value,
-        dimensions: dimensions,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        telemetry: telemetry,
-        runtimeContext: runtimeContext,
-        onStart: onStart,
-        onEnd: onEnd
-    )
-}
-
-@available(macOS 13.0, iOS 16.0, watchOS 9.0, tvOS 16.0, *)
-public func embed(
-    model: any EmbeddingModelV3<String>,
-    value: String,
-    dimensions: Int? = nil,
-    providerOptions: ProviderOptions? = nil,
-    maxRetries: Int? = nil,
-    abortSignal: (@Sendable () -> Bool)? = nil,
-    headers: [String: String]? = nil,
-    telemetry: TelemetryOptions? = nil,
-    runtimeContext: Context = [:],
-    onStart: EmbedCallback<EmbedStartEvent<String>>? = nil,
-    onEnd: EmbedCallback<EmbedEndEvent<String, Embedding>>? = nil
-) async throws -> DefaultEmbedResult<String> {
-    try await embed(
-        model: .v3(model),
-        value: value,
-        dimensions: dimensions,
-        providerOptions: providerOptions,
-        maxRetries: maxRetries,
-        abortSignal: abortSignal,
-        headers: headers,
-        telemetry: telemetry,
-        runtimeContext: runtimeContext,
-        onStart: onStart,
-        onEnd: onEnd
-    )
-}

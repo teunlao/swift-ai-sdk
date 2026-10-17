@@ -35,44 +35,6 @@ private final class MockFilesAPI: FilesV4 {
     }
 }
 
-private final class MockFilesProvider: ProviderV3, FilesProvider {
-    private let filesAPI: any FilesV4
-
-    init(filesAPI: any FilesV4) {
-        self.filesAPI = filesAPI
-    }
-
-    func files() -> any FilesV4 {
-        filesAPI
-    }
-
-    func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-}
-
-private final class UnsupportedUploadProvider: ProviderV3 {
-    func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-}
-
 private final class MockFilesProviderV4: ProviderV4 {
     private let filesAPI: any FilesV4
 
@@ -211,7 +173,7 @@ struct UploadFileTests {
                 filename: "guide.pdf"
             )
         )
-        let provider = MockFilesProvider(filesAPI: api)
+        let provider = MockFilesProviderV4(filesAPI: api)
 
         let result = try await uploadFile(
             api: provider,
@@ -267,16 +229,6 @@ struct UploadFileTests {
             Issue.record("Expected URL upload to throw")
         } catch let error as InvalidArgumentError {
             #expect(error.message == "URL data is not supported for file uploads. Fetch the URL content first and pass the bytes.")
-        }
-
-        do {
-            _ = try await uploadFile(
-                api: UnsupportedUploadProvider(),
-                data: DataContentOrURL.data(Data([0x01, 0x02]))
-            )
-            Issue.record("Expected unsupported provider to throw")
-        } catch {
-            #expect(error.localizedDescription == "The provider does not support file uploads. Make sure it exposes a files() method.")
         }
 
         do {

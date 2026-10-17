@@ -15,7 +15,7 @@ public struct PrepareStepOptions: Sendable {
     public let stepNumber: Int
 
     /// The model of the call.
-    public let model: LanguageModel
+    public let model: any LanguageModelConvertible
 
     /// Instructions the step would use: the previous step's instructions.
     public let instructions: Instructions?
@@ -41,7 +41,7 @@ public struct PrepareStepOptions: Sendable {
     public init(
         steps: [StepResult],
         stepNumber: Int,
-        model: LanguageModel,
+        model: any LanguageModelConvertible,
         instructions: Instructions? = nil,
         initialInstructions: Instructions? = nil,
         messages: [ModelMessage],
@@ -70,7 +70,7 @@ public struct PrepareStepOptions: Sendable {
  including the per-step model call setting overrides.
  */
 public struct PrepareStepResult: Sendable {
-    public var model: LanguageModel?
+    public var model: (any LanguageModelConvertible)?
     public var toolChoice: ToolChoice?
     public var activeTools: [String]?
     public var toolOrder: [String]?
@@ -83,7 +83,7 @@ public struct PrepareStepResult: Sendable {
     public var callOptions: LanguageModelCallOptions
 
     public init(
-        model: LanguageModel? = nil,
+        model: (any LanguageModelConvertible)? = nil,
         toolChoice: ToolChoice? = nil,
         activeTools: [String]? = nil,
         toolOrder: [String]? = nil,

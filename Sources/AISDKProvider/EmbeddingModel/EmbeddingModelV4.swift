@@ -3,7 +3,7 @@
 
  Port of `@ai-sdk/provider/src/embedding-model/v4/embedding-model-v4.ts`.
  */
-public protocol EmbeddingModelV4: Sendable {
+public protocol EmbeddingModelV4: EmbeddingModelConvertible {
     var specificationVersion: String { get }
     var provider: String { get }
     var modelId: String { get }

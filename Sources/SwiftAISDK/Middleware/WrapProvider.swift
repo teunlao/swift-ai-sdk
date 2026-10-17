@@ -23,22 +23,6 @@ public func wrapProvider(
     wrapProvider(provider: provider, languageModelMiddleware: [languageModelMiddleware])
 }
 
-/// Wraps a V3 provider, resolving it to V4 first.
-public func wrapProvider(
-    provider: any ProviderV3,
-    languageModelMiddleware: [LanguageModelV4Middleware]
-) -> any ProviderV4 {
-    wrapProvider(provider: asProviderV4(provider), languageModelMiddleware: languageModelMiddleware)
-}
-
-/// Wraps a V3 provider, resolving it to V4 first.
-public func wrapProvider(
-    provider: any ProviderV3,
-    languageModelMiddleware: LanguageModelV4Middleware
-) -> any ProviderV4 {
-    wrapProvider(provider: asProviderV4(provider), languageModelMiddleware: [languageModelMiddleware])
-}
-
 private struct MiddlewareProvider: ProviderV4 {
     let provider: any ProviderV4
     let languageModelMiddleware: [LanguageModelV4Middleware]

@@ -113,19 +113,19 @@ struct DefaultSettingsMiddlewareTests {
         ))
     }
 
-    @Test("applies defaults on the V3 path")
+    @Test("applies defaults on the V4 path")
     func v3() async throws {
-        let middleware: LanguageModelV3Middleware = defaultSettingsMiddleware(settings: DefaultSettings(
+        let middleware: LanguageModelV4Middleware = defaultSettingsMiddleware(settings: DefaultSettings(
             temperature: 0.7,
             providerOptions: ["openai": ["nested": .object(["a": .bool(true)])]]
         ))
         let result = try await middleware.transformParams!(
             .generate,
-            LanguageModelV3CallOptions(
-                prompt: [.user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)],
+            LanguageModelV4CallOptions(
+                prompt: [.user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)],
                 providerOptions: ["openai": ["nested": .object(["b": .bool(true)])]]
             ),
-            MockLanguageModelV3()
+            MockLanguageModelV4()
         )
 
         #expect(result.temperature == 0.7)

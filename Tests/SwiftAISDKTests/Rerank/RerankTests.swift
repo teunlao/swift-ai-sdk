@@ -10,8 +10,8 @@ import Testing
 struct RerankTests {
     @Test("out-of-range ranking indices are invalid provider responses")
     func invalidRankingIndices() async throws {
-        let model = TestRerankingModel(provider: "test", modelId: "test-model") { _ in
-            RerankingModelV3DoRerankResult(ranking: [.init(index: 1, relevanceScore: 0.8)])
+        let model = TestRerankingModelV4(provider: "test", modelId: "test-model") { _ in
+            RerankingModelV4Result(ranking: [.init(index: 1, relevanceScore: 0.8)])
         }
         await #expect(throws: InvalidResponseDataError.self) {
             _ = try await rerank(model: model, documents: ["only-document"], query: "query")
@@ -27,9 +27,9 @@ struct RerankTests {
         }
 
         let counter = CallCounter()
-        let model = TestRerankingModel(provider: "test", modelId: "test-model") { _ in
+        let model = TestRerankingModelV4(provider: "test", modelId: "test-model") { _ in
             await counter.increment()
-            return RerankingModelV3DoRerankResult(ranking: [])
+            return RerankingModelV4Result(ranking: [])
         }
 
         let result = try await rerank(
@@ -49,23 +49,23 @@ struct RerankTests {
     func mapsRankingAndResponse() async throws {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-        let model = TestRerankingModel(provider: "test", modelId: "test-model") { options in
+        let model = TestRerankingModelV4(provider: "test", modelId: "test-model") { options in
             guard case .text(let values) = options.documents else {
                 Issue.record("Expected text documents")
-                return RerankingModelV3DoRerankResult(ranking: [])
+                return RerankingModelV4Result(ranking: [])
             }
 
             #expect(values == ["a", "b", "c"])
             #expect(options.query == "query")
             #expect(options.topN == 2)
 
-            return RerankingModelV3DoRerankResult(
+            return RerankingModelV4Result(
                 ranking: [
-                    RerankingModelV3Ranking(index: 2, relevanceScore: 0.9),
-                    RerankingModelV3Ranking(index: 0, relevanceScore: 0.5),
+                    RerankingModelV4Ranking(index: 2, relevanceScore: 0.9),
+                    RerankingModelV4Ranking(index: 0, relevanceScore: 0.5),
                 ],
                 providerMetadata: ["test": ["note": .string("ok")]],
-                response: RerankingModelV3ResponseInfo(
+                response: RerankingModelV4ResponseInfo(
                     id: "resp-id",
                     timestamp: fixedDate,
                     modelId: "override-model",
@@ -154,11 +154,11 @@ struct RerankTests {
                 ranking: [RerankingModelV4Ranking(index: 0, relevanceScore: 0.8)]
             )
         }
-        let provider = customProviderV4(rerankingModels: ["rerank-model": model])
+        let provider = customProvider(rerankingModels: ["rerank-model": model])
 
-        let result = try await withGlobalProviderV4(provider) {
+        let result = try await withGlobalProvider(provider) {
             try await rerank(
-                model: .string("rerank-model"),
+                model: "rerank-model",
                 documents: ["a"],
                 query: "q"
             )
@@ -198,8 +198,8 @@ struct RerankTests {
         }
         defer { logWarningsObserver = nil }
 
-        let model = TestRerankingModel(provider: "test", modelId: "test-model") { _ in
-            RerankingModelV3DoRerankResult(
+        let model = TestRerankingModelV4(provider: "test", modelId: "test-model") { _ in
+            RerankingModelV4Result(
                 ranking: [],
                 warnings: [
                     .unsupported(feature: "object documents", details: "not supported")
@@ -649,29 +649,6 @@ struct BedrockRerankingModelTests {
 }
 
 // MARK: - Test Helpers
-
-private final class TestRerankingModel: RerankingModelV3, @unchecked Sendable {
-    let providerValue: String
-    let modelIdentifier: String
-    let handler: @Sendable (RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult
-
-    init(
-        provider: String,
-        modelId: String,
-        handler: @escaping @Sendable (RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult
-    ) {
-        self.providerValue = provider
-        self.modelIdentifier = modelId
-        self.handler = handler
-    }
-
-    var provider: String { providerValue }
-    var modelId: String { modelIdentifier }
-
-    func doRerank(options: RerankingModelV3CallOptions) async throws -> RerankingModelV3DoRerankResult {
-        try await handler(options)
-    }
-}
 
 private final class TestRerankingModelV4: RerankingModelV4, @unchecked Sendable {
     let specificationVersion = "v4"

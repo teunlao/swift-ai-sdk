@@ -677,7 +677,7 @@ final class StreamTextEngine<OutputValue: Sendable, PartialOutput: Sendable>: @u
 
             let stepRuntimeContext = prepareStepResult?.runtimeContext ?? runtimeContext
             let stepToolsContext = prepareStepResult?.toolsContext ?? toolsContext
-            let stepModel = try prepareStepResult?.model.map(resolveLanguageModelV4) ?? configuration.model
+            let stepModel = try prepareStepResult?.model.map(resolveLanguageModel) ?? configuration.model
             let stepActiveTools = prepareStepResult?.activeTools ?? configuration.activeTools
             let callerTools = prepareCallerTools(
                 tools: filterActiveTools(configuration.tools, activeTools: stepActiveTools),
