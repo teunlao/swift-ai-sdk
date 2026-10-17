@@ -2,13 +2,6 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/huggingface/src/huggingface-provider.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct HuggingFaceProviderSettings: Sendable {
     public var apiKey: String?
     public var baseURL: String?
@@ -31,26 +24,22 @@ public struct HuggingFaceProviderSettings: Sendable {
     }
 }
 
-public final class HuggingFaceProvider: ProviderV3 {
+public final class HuggingFaceProvider: ProviderV4 {
     private let responsesFactory: @Sendable (HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel
 
     init(responsesFactory: @escaping @Sendable (HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel) {
         self.responsesFactory = responsesFactory
     }
 
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        responses(modelId: HuggingFaceResponsesModelId(rawValue: modelId))
-    }
-
-    public func responses(modelId: HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel {
-        responsesFactory(modelId)
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        responsesFactory(HuggingFaceResponsesModelId(rawValue: modelId))
     }
 
     public func responses(_ modelId: HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel {
         responsesFactory(modelId)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
         throw NoSuchModelError(
             modelId: modelId,
             modelType: .embeddingModel,
@@ -58,7 +47,7 @@ public final class HuggingFaceProvider: ProviderV3 {
         )
     }
 
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
+    public func imageModel(modelId: String) throws -> any ImageModelV4 {
         throw NoSuchModelError(
             modelId: modelId,
             modelType: .imageModel,
@@ -66,82 +55,38 @@ public final class HuggingFaceProvider: ProviderV3 {
         )
     }
 
-    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
-        throw NoSuchModelError(modelId: modelId, modelType: .transcriptionModel)
-    }
-
-    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
-        throw NoSuchModelError(modelId: modelId, modelType: .speechModel)
-    }
-
     public func callAsFunction(_ modelId: HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel {
-        responses(modelId: modelId)
+        responsesFactory(modelId)
     }
 }
 
-private func createHuggingFaceAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            let resolved = try loadAPIKey(
-                apiKey: apiKey,
-                environmentVariableName: "HUGGINGFACE_API_KEY",
-                description: "Hugging Face"
-            )
-            headers["Authorization"] = "Bearer \(resolved)"
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
-    }
-}
-
-public func createHuggingFaceProvider(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
+public func createHuggingFace(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
     let baseURL = withoutTrailingSlash(settings.baseURL) ?? "https://router.huggingface.co/v1"
-    let fetch = createHuggingFaceAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var baseHeaders: [String: String?] = [:]
-
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                baseHeaders[key] = value
-            }
-        }
-
-        return withUserAgentSuffix(baseHeaders.compactMapValues { $0 }, "ai-sdk/huggingface/\(HUGGINGFACE_VERSION)")
-            .mapValues { Optional($0) }
+    let headers: @Sendable () throws -> [String: String?] = {
+        let key = try loadAPIKey(
+            apiKey: settings.apiKey,
+            environmentVariableName: "HUGGINGFACE_API_KEY",
+            description: "Hugging Face"
+        )
+        let headers = combineHeaders(
+            ["Authorization": "Bearer \(key)"],
+            settings.headers?.mapValues { Optional($0) }
+        ).compactMapValues { $0 }
+        return withUserAgentSuffix(headers, "ai-sdk-huggingface/\(HUGGINGFACE_VERSION)").mapValues { Optional($0) }
     }
 
-    let responsesFactory: @Sendable (HuggingFaceResponsesModelId) -> HuggingFaceResponsesLanguageModel = { modelId in
+    return HuggingFaceProvider { modelId in
         HuggingFaceResponsesLanguageModel(
             modelId: modelId,
             config: HuggingFaceConfig(
                 provider: "huggingface.responses",
-                url: { options in
-                    "\(baseURL)\(options.path)"
-                },
-                headers: headersClosure,
-                fetch: fetch,
-                generateId: settings.generateId
+                url: { "\(baseURL)\($0.path)" },
+                headers: headers,
+                fetch: settings.fetch,
+                generateId: settings.generateId ?? { generateID() }
             )
         )
     }
-
-    return HuggingFaceProvider(responsesFactory: responsesFactory)
 }
 
-/// Alias matching upstream naming (`createHuggingFace`).
-public func createHuggingFace(settings: HuggingFaceProviderSettings = .init()) -> HuggingFaceProvider {
-    createHuggingFaceProvider(settings: settings)
-}
-
-public let huggingface = createHuggingFaceProvider()
+public let huggingFace = createHuggingFace()

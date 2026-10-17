@@ -4,7 +4,7 @@ import Foundation
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/huggingface/src/responses/huggingface-responses-settings.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 public struct HuggingFaceResponsesModelId: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {

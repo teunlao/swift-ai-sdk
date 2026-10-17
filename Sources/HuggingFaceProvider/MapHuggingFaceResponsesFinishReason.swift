@@ -4,10 +4,10 @@ import AISDKProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/huggingface/src/responses/map-huggingface-responses-finish-reason.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
-func mapHuggingFaceResponsesFinishReason(_ reason: String?) -> LanguageModelV3FinishReason.Unified {
+func mapHuggingFaceResponsesFinishReason(_ reason: String?) -> LanguageModelV4FinishReason.Unified {
     switch reason {
     case "stop":
         return .stop

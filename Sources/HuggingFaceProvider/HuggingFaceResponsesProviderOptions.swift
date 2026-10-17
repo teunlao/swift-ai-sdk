@@ -2,14 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/huggingface/src/responses/huggingface-responses-settings.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-public struct HuggingFaceResponsesProviderOptions: Sendable, Equatable, Codable {
+public struct HuggingFaceResponsesSettings: Sendable, Equatable, Codable {
     public var metadata: [String: String]?
     public var instructions: String?
     public var strictJsonSchema: Bool?
@@ -21,22 +14,28 @@ public struct HuggingFaceResponsesProviderOptions: Sendable, Equatable, Codable 
     }
 }
 
-private let huggingfaceResponsesProviderOptionsSchemaJSON: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "properties": .object([
-        "metadata": .object([
-            "type": .string("object"),
-            "additionalProperties": .object(["type": .string("string")])
-        ]),
-        "instructions": .object(["type": .string("string")]),
-        "strictJsonSchema": .object(["type": .string("boolean")])
-    ])
-])
+struct HuggingFaceLanguageModelResponsesOptions: Sendable, Decodable {
+    let metadata: [String: String]?
+    let instructions: String?
+    let strictJsonSchema: Bool?
+    let reasoningEffort: String?
 
-public let huggingfaceResponsesProviderOptionsSchema = FlexibleSchema(
-    Schema<HuggingFaceResponsesProviderOptions>.codable(
-        HuggingFaceResponsesProviderOptions.self,
-        jsonSchema: huggingfaceResponsesProviderOptionsSchemaJSON
+    private enum CodingKeys: String, CodingKey {
+        case metadata, instructions, strictJsonSchema, reasoningEffort
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        metadata = try container.contains(.metadata) ? container.decode([String: String].self, forKey: .metadata) : nil
+        instructions = try container.contains(.instructions) ? container.decode(String.self, forKey: .instructions) : nil
+        strictJsonSchema = try container.contains(.strictJsonSchema) ? container.decode(Bool.self, forKey: .strictJsonSchema) : nil
+        reasoningEffort = try container.contains(.reasoningEffort) ? container.decode(String.self, forKey: .reasoningEffort) : nil
+    }
+}
+
+let huggingfaceLanguageModelResponsesOptions = FlexibleSchema(
+    Schema<HuggingFaceLanguageModelResponsesOptions>.codable(
+        HuggingFaceLanguageModelResponsesOptions.self,
+        jsonSchema: .object(["type": .string("object")])
     )
 )

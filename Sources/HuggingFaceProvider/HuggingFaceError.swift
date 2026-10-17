@@ -1,48 +1,29 @@
 import Foundation
 import AISDKProvider
 import AISDKProviderUtils
+import OpenAICompatibleProvider
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/huggingface/src/huggingface-error.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
+public typealias HuggingFaceErrorData = OpenAICompatibleErrorData
 
-public struct HuggingFaceErrorData: Codable, Sendable, Equatable {
-    public struct ErrorPayload: Codable, Sendable, Equatable {
-        public let message: String
-        public let type: String?
-        public let code: String?
+private struct APIErrorData: Decodable, Sendable {
+    struct Payload: Decodable, Sendable {
+        let message: String
+        let type: String?
+        let code: String?
+        private enum CodingKeys: String, CodingKey { case message, type, code }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            message = try container.decode(String.self, forKey: .message)
+            type = try container.contains(.type) ? container.decode(String.self, forKey: .type) : nil
+            code = try container.contains(.code) ? container.decode(String.self, forKey: .code) : nil
+        }
     }
-
-    public let error: ErrorPayload
+    let error: Payload
 }
 
-private let huggingfaceErrorJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "required": .array([.string("error")]),
-    "additionalProperties": .bool(true),
-    "properties": .object([
-        "error": .object([
-            "type": .string("object"),
-            "required": .array([.string("message")]),
-            "additionalProperties": .bool(true),
-            "properties": .object([
-                "message": .object(["type": .string("string")]),
-                "type": .object(["type": .array([.string("string"), .string("null")])]),
-                "code": .object(["type": .array([.string("string"), .string("null")])])
-            ])
-        ])
-    ])
-])
-
-public let huggingfaceFailedResponseHandler = createJsonErrorResponseHandler(
+let huggingfaceFailedResponseHandler = createJsonErrorResponseHandler(
     errorSchema: FlexibleSchema(
-        Schema<HuggingFaceErrorData>.codable(
-            HuggingFaceErrorData.self,
-            jsonSchema: huggingfaceErrorJSONSchema
-        )
+        Schema<APIErrorData>.codable(APIErrorData.self, jsonSchema: .object(["type": .string("object")]))
     ),
     errorToMessage: { $0.error.message }
 )

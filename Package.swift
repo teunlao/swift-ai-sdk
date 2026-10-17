@@ -108,7 +108,7 @@ let package = Package(
         .target(name: "FalProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "FireworksProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "GladiaProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
-        .target(name: "HuggingFaceProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
+        .target(name: "HuggingFaceProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
         .target(name: "HumeProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "AssemblyAIProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils"]),
         .target(name: "CerebrasProvider", dependencies: ["AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),

@@ -2,19 +2,7 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/huggingface/src/responses/huggingface-responses-language-model.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
-public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
-    private static let imageRegex = try! NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
-    private static let supportedUrlMap: [String: [NSRegularExpression]] = [
-        "image/*": [HuggingFaceResponsesLanguageModel.imageRegex]
-    ]
-
+public final class HuggingFaceResponsesLanguageModel: LanguageModelV4 {
     private let modelIdentifier: HuggingFaceResponsesModelId
     private let config: HuggingFaceConfig
 
@@ -23,57 +11,96 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
         self.config = config
     }
 
-    public let specificationVersion: String = "v3"
     public var provider: String { config.provider }
     public var modelId: String { modelIdentifier.rawValue }
-
     public var supportedUrls: [String: [NSRegularExpression]] {
-        get async throws { Self.supportedUrlMap }
+        get async throws { ["image/*": [try NSRegularExpression(pattern: "^https?://.*$")]] }
     }
 
-    // MARK: - Generation
-
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareArguments(options: options)
-
         var body = prepared.body
         body["stream"] = .bool(false)
-
+        let url = config.url(.init(modelId: modelId, path: "/responses"))
         let response = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            url: url,
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(body),
             failedResponseHandler: huggingfaceFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: huggingfaceResponsesResponseSchema),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: responsesResponseSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
-
-        if let errorPayload = response.value.error {
+        let value = response.value
+        if let error = value.error, error.isTruthy {
+            let responseBody = try response.rawValue.map { raw in
+                if let text = raw as? String { return text }
+                return String(decoding: try JSONEncoder().encode(jsonValue(from: raw)), as: UTF8.self)
+            }
             throw APICallError(
-                message: errorPayload.message,
-                url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses")),
+                message: error.objectValue?["message"]?.stringValue ?? String(describing: error),
+                url: url,
                 requestBodyValues: body,
                 statusCode: 400,
                 responseHeaders: response.responseHeaders,
-                responseBody: response.rawValue as? String,
-                isRetryable: false,
-                data: errorPayload
+                responseBody: responseBody,
+                isRetryable: false
             )
         }
 
-        let generation = try buildGenerationResult(from: response.value)
+        var content: [LanguageModelV4Content] = []
+        for item in value.output {
+            switch item {
+            case .message(let message):
+                for part in message.content {
+                    content.append(.text(.init(text: part.text, providerMetadata: itemMetadata(message.id))))
+                    for annotation in part.annotations ?? [] {
+                        guard let url = annotation.objectValue?["url"]?.stringValue else { continue }
+                        content.append(.source(.url(
+                            id: config.generateId?() ?? generateID(),
+                            url: url,
+                            title: annotation.objectValue?["title"]?.stringValue,
+                            providerMetadata: nil
+                        )))
+                    }
+                }
+            case .reasoning(let reasoning):
+                for part in reasoning.content {
+                    content.append(.reasoning(.init(text: part.text, providerMetadata: itemMetadata(reasoning.id))))
+                }
+            case .mcpCall(let call):
+                content.append(.toolCall(.init(
+                    toolCallId: call.id, toolName: call.name, input: call.arguments, providerExecuted: true
+                )))
+                if let output = call.output, !output.isEmpty {
+                    content.append(.toolResult(.init(toolCallId: call.id, toolName: call.name, result: .string(output))))
+                }
+            case .functionCall(let call):
+                content.append(.toolCall(.init(toolCallId: call.callId, toolName: call.name, input: call.arguments)))
+                if let output = call.output, !output.isEmpty {
+                    content.append(.toolResult(.init(toolCallId: call.callId, toolName: call.name, result: .string(output))))
+                }
+            case .mcpListTools(let list):
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.withoutEscapingSlashes]
+                let input = String(decoding: try encoder.encode(["server_label": list.serverLabel]), as: UTF8.self)
+                content.append(.toolCall(.init(toolCallId: list.id, toolName: "list_tools", input: input, providerExecuted: true)))
+                if let tools = list.tools {
+                    content.append(.toolResult(.init(toolCallId: list.id, toolName: "list_tools", result: .object(["tools": .array(tools)]))))
+                }
+            }
+        }
 
-        return LanguageModelV3GenerateResult(
-            content: generation.content,
-            finishReason: generation.finishReason,
-            usage: generation.usage,
-            providerMetadata: generation.providerMetadata,
-            request: LanguageModelV3RequestInfo(body: body),
-            response: LanguageModelV3ResponseInfo(
-                id: response.value.id,
-                timestamp: Date(timeIntervalSince1970: response.value.createdAt),
-                modelId: response.value.model,
+        return LanguageModelV4GenerateResult(
+            content: content,
+            finishReason: finishReason(value.incompleteDetails?.reason),
+            usage: convertResponsesUsage(value.usage?.raw),
+            providerMetadata: responseMetadata(.string(value.id)),
+            request: .init(body: body),
+            response: .init(
+                id: value.id,
+                timestamp: Date(timeIntervalSince1970: value.createdAt),
+                modelId: value.model,
                 headers: response.responseHeaders,
                 body: response.rawValue
             ),
@@ -81,790 +108,534 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModelV3 {
         )
     }
 
-    // MARK: - Streaming
-
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         let prepared = try await prepareArguments(options: options)
-
         var body = prepared.body
         body["stream"] = .bool(true)
-
-        let streamResponse = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+        let response = try await postJsonToAPI(
+            url: config.url(.init(modelId: modelId, path: "/responses")),
+            headers: combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(body),
             failedResponseHandler: huggingfaceFailedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: huggingfaceResponsesChunkSchema),
+            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: responsesChunkSchema),
             isAborted: options.abortSignal,
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
-
-            Task {
-                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
-                var responseId: String? = nil
-
+            let task = Task {
+                var finish = LanguageModelV4FinishReason(unified: .other, raw: nil)
+                var usage: JSONValue?
+                var responseId: JSONValue? = .null
                 do {
-                    for try await parseResult in streamResponse.value {
-                        if options.includeRawChunks == true, let raw = parseResult.rawJSONValue {
-                            continuation.yield(.raw(rawValue: raw))
-                        }
-
-                        switch parseResult {
+                    for try await result in response.value {
+                        switch result {
                         case .failure(let error, _):
-                            finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
-
+                            finish = .init(unified: .error, raw: nil)
+                            continuation.yield(.error(error: .error(error)))
                         case .success(let chunk, _):
-                            try handleStreamChunk(
-                                chunk,
-                                continuation: continuation,
-                                finishReason: &finishReason,
-                                usage: &usage,
-                                responseId: &responseId
-                            )
+                            switch chunk {
+                            case .providerError(let error):
+                                let raw: String?
+                                switch error.code {
+                                case .string(let code): raw = code
+                                case .number(let code): raw = try streamErrorCodeString(code)
+                                case nil: raw = error.type
+                                }
+                                finish = .init(unified: .error, raw: raw)
+                                continuation.yield(.error(error: .providerStreamError(error)))
+                            case .created(let metadata):
+                                responseId = .string(metadata.id)
+                                continuation.yield(.responseMetadata(
+                                    id: metadata.id, modelId: metadata.model,
+                                    timestamp: Date(timeIntervalSince1970: metadata.createdAt)
+                                ))
+                            case .itemAdded(let item):
+                                switch item {
+                                case .message(let id, let role) where role == "assistant":
+                                    continuation.yield(.textStart(id: id, providerMetadata: itemMetadata(id)))
+                                case .functionStart(let call):
+                                    continuation.yield(.toolInputStart(
+                                        id: call.callId, toolName: call.name, providerMetadata: nil,
+                                        providerExecuted: nil, dynamic: nil, title: nil
+                                    ))
+                                case .reasoning(let id):
+                                    continuation.yield(.reasoningStart(id: id, providerMetadata: itemMetadata(id)))
+                                default: break
+                                }
+                            case .itemDone(let item):
+                                switch item {
+                                case .message(let id, let role) where role == "assistant":
+                                    continuation.yield(.textEnd(id: id, providerMetadata: nil))
+                                case .functionCall(let call):
+                                    continuation.yield(.toolInputEnd(id: call.callId, providerMetadata: nil))
+                                    continuation.yield(.toolCall(.init(toolCallId: call.callId, toolName: call.name, input: call.arguments)))
+                                    if let output = call.output, output.isTruthy {
+                                        continuation.yield(.toolResult(.init(toolCallId: call.callId, toolName: call.name, result: output)))
+                                    }
+                                default: break
+                                }
+                            case .completed(let completed):
+                                responseId = completed.id
+                                finish = finishReason(completed.reason)
+                                if let completedUsage = completed.usage, completedUsage.isTruthy { usage = completedUsage }
+                            case .textDelta(let id, let delta):
+                                continuation.yield(.textDelta(id: id, delta: delta, providerMetadata: nil))
+                            case .reasoningDelta(let id, let delta):
+                                continuation.yield(.reasoningDelta(id: id, delta: delta, providerMetadata: nil))
+                            case .reasoningEnd(let id):
+                                continuation.yield(.reasoningEnd(id: id, providerMetadata: nil))
+                            case .other: break
+                            }
                         }
                     }
-
-                    continuation.yield(.finish(
-                        finishReason: finishReason,
-                        usage: usage,
-                        providerMetadata: responseProviderMetadata(responseId: responseId)
-                    ))
+                    continuation.yield(.finish(finishReason: finish, usage: convertResponsesUsage(usage), providerMetadata: responseMetadata(responseId)))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
-
-        return LanguageModelV3StreamResult(
-            stream: stream,
-            request: LanguageModelV3RequestInfo(body: body),
-            response: LanguageModelV3StreamResponseInfo(headers: streamResponse.responseHeaders)
-        )
+        return LanguageModelV4StreamResult(stream: stream, request: .init(body: body), response: .init(headers: response.responseHeaders))
     }
 
-    // MARK: - Argument Preparation
-
-    private func prepareArguments(options: LanguageModelV3CallOptions) async throws -> (body: [String: JSONValue], warnings: [SharedV3Warning]) {
-        var warnings: [SharedV3Warning] = []
-
-        if options.topK != nil {
-            warnings.append(.unsupported(feature: "topK", details: nil))
-        }
-        if options.seed != nil {
-            warnings.append(.unsupported(feature: "seed", details: nil))
-        }
-        if options.presencePenalty != nil {
-            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
-        }
-        if options.frequencyPenalty != nil {
-            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
-        }
-        if options.stopSequences != nil {
-            warnings.append(.unsupported(feature: "stopSequences", details: nil))
-        }
-
+    private func prepareArguments(options: LanguageModelV4CallOptions) async throws -> (body: [String: JSONValue], warnings: [SharedV4Warning]) {
+        var warnings: [SharedV4Warning] = []
+        if options.topK != nil { warnings.append(.unsupported(feature: "topK", details: nil)) }
+        if options.seed != nil { warnings.append(.unsupported(feature: "seed", details: nil)) }
+        if options.presencePenalty != nil { warnings.append(.unsupported(feature: "presencePenalty", details: nil)) }
+        if options.frequencyPenalty != nil { warnings.append(.unsupported(feature: "frequencyPenalty", details: nil)) }
+        if options.stopSequences != nil { warnings.append(.unsupported(feature: "stopSequences", details: nil)) }
         let converted = try convertToHuggingFaceResponsesMessages(prompt: options.prompt)
         warnings.append(contentsOf: converted.warnings)
-
         let providerOptions = try await parseProviderOptions(
-            provider: "huggingface",
-            providerOptions: options.providerOptions,
-            schema: huggingfaceResponsesProviderOptionsSchema
+            provider: "huggingface", providerOptions: options.providerOptions, schema: huggingfaceLanguageModelResponsesOptions
         )
-
-        let preparedTools = prepareHuggingFaceResponsesTools(
-            tools: options.tools,
-            toolChoice: options.toolChoice
-        )
-        warnings.append(contentsOf: preparedTools.warnings)
-
-        var args: [String: JSONValue] = [
-            "model": .string(modelIdentifier.rawValue),
-            "input": converted.input
-        ]
-
-        if let temperature = options.temperature {
-            args["temperature"] = .number(temperature)
+        let tools = prepareHuggingFaceResponsesTools(tools: options.tools, toolChoice: options.toolChoice)
+        warnings.append(contentsOf: tools.warnings)
+        var body: [String: JSONValue] = ["model": .string(modelId), "input": converted.input]
+        if let temperature = options.temperature { body["temperature"] = .number(temperature) }
+        if let topP = options.topP { body["top_p"] = .number(topP) }
+        if let maxOutputTokens = options.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
+        if let metadata = providerOptions?.metadata { body["metadata"] = .object(metadata.mapValues(JSONValue.string)) }
+        if let instructions = providerOptions?.instructions { body["instructions"] = .string(instructions) }
+        if let effort = providerOptions?.reasoningEffort { body["reasoning"] = .object(["effort": .string(effort)]) }
+        if case let .json(schema?, name, description) = options.responseFormat {
+            var format: [String: JSONValue] = [
+                "type": .string("json_schema"), "strict": .bool(providerOptions?.strictJsonSchema ?? false),
+                "name": .string(name ?? "response"), "schema": schema
+            ]
+            if let description { format["description"] = .string(description) }
+            body["text"] = .object(["format": .object(format)])
         }
-        if let topP = options.topP {
-            args["top_p"] = .number(topP)
-        }
-        if let maxOutputTokens = options.maxOutputTokens {
-            args["max_output_tokens"] = .number(Double(maxOutputTokens))
-        }
-
-        if let metadata = providerOptions?.metadata {
-            args["metadata"] = .object(metadata.reduce(into: [:]) { result, entry in
-                result[entry.key] = .string(entry.value)
-            })
-        }
-        if let instructions = providerOptions?.instructions {
-            args["instructions"] = .string(instructions)
-        }
-
-        if let responseFormat = options.responseFormat {
-            switch responseFormat {
-            case .text:
-                break
-            case let .json(schema, name, description):
-                if let schema {
-                    var format: [String: JSONValue] = [
-                        "type": .string("json_schema"),
-                        "strict": .bool(providerOptions?.strictJsonSchema ?? false),
-                        "name": .string(name ?? "response"),
-                        "schema": schema
-                    ]
-                    if let description {
-                        format["description"] = .string(description)
-                    }
-                    args["text"] = .object([
-                        "format": .object(format)
-                    ])
-                }
-            }
-        }
-
-        if let tools = preparedTools.tools {
-            args["tools"] = tools
-        }
-        if let toolChoice = preparedTools.toolChoice {
-            args["tool_choice"] = toolChoice
-        }
-
-        return (args, warnings)
-    }
-
-    // MARK: - Helpers
-
-    private func buildGenerationResult(from response: HuggingFaceResponsesResponse) throws -> (content: [LanguageModelV3Content], finishReason: LanguageModelV3FinishReason, usage: LanguageModelV3Usage, providerMetadata: SharedV3ProviderMetadata?) {
-        var content: [LanguageModelV3Content] = []
-
-        for item in response.outputItems {
-            switch item.type {
-            case .message:
-                guard let message = item.message else { continue }
-                let providerMetadata = item.id.map { messageProviderMetadata(itemId: $0) }
-
-                for part in message.content {
-                    guard let partType = part.type else { continue }
-                    switch partType {
-                    case "output_text":
-                        if let text = part.text {
-                            content.append(.text(LanguageModelV3Text(text: text, providerMetadata: providerMetadata)))
-                        }
-                        if let annotations = part.annotations {
-                            for annotation in annotations {
-                                guard let url = annotation.url else { continue }
-                                content.append(.source(.url(
-                                    id: nextId(),
-                                    url: url,
-                                    title: annotation.title,
-                                    providerMetadata: providerMetadata
-                                )))
-                            }
-                        }
-                    default:
-                        continue
-                    }
-                }
-
-            case .mcpCall:
-                guard let call = item.mcpCall else { continue }
-                content.append(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: call.id,
-                    toolName: call.name,
-                    input: call.arguments,
-                    providerExecuted: true,
-                    providerMetadata: nil
-                )))
-                if let output = call.output {
-                    let resultValue = decodeJSONString(output) ?? .string(output)
-                    content.append(.toolResult(LanguageModelV3ToolResult(
-                        toolCallId: call.id,
-                        toolName: call.name,
-                        result: resultValue
-                    )))
-                }
-
-            case .mcpListTools:
-                guard let tools = item.mcpListTools else { continue }
-                let inputJSON = encodeJSONString(.object(["server_label": .string(tools.serverLabel)])) ?? "{}"
-                content.append(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: tools.id,
-                    toolName: "list_tools",
-                    input: inputJSON,
-                    providerExecuted: true,
-                    providerMetadata: nil
-                )))
-                let resultValue: JSONValue = .object([
-                    "tools": .array(tools.tools ?? [])
-                ])
-                content.append(.toolResult(LanguageModelV3ToolResult(
-                    toolCallId: tools.id,
-                    toolName: "list_tools",
-                    result: resultValue
-                )))
-
-            case .functionCall:
-                guard let function = item.functionCall else { continue }
-                content.append(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: function.callId,
-                    toolName: function.name,
-                    input: function.arguments,
-                    providerExecuted: nil,
-                    providerMetadata: nil
-                )))
-                if let output = function.output {
-                    let resultValue = decodeJSONString(output) ?? .string(output)
-                    content.append(.toolResult(LanguageModelV3ToolResult(
-                        toolCallId: function.callId,
-                        toolName: function.name,
-                        result: resultValue
-                    )))
-                }
-
-            case .unknown:
-                continue
-            }
-        }
-
-        let usage: LanguageModelV3Usage = {
-            guard let usage = response.usage else {
-                return LanguageModelV3Usage()
-            }
-
-            let inputTokens = usage.inputTokens
-            let outputTokens = usage.outputTokens
-            let cachedTokens = usage.inputTokensDetails?.cachedTokens ?? 0
-            let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
-
-            return LanguageModelV3Usage(
-                inputTokens: .init(
-                    total: inputTokens,
-                    noCache: inputTokens.map { $0 - cachedTokens },
-                    cacheRead: cachedTokens,
-                    cacheWrite: nil
-                ),
-                outputTokens: .init(
-                    total: outputTokens,
-                    text: outputTokens.map { $0 - reasoningTokens },
-                    reasoning: reasoningTokens
-                ),
-                raw: try? jsonValue(from: usage)
-            )
-        }()
-
-        let rawFinishReason = response.incompleteDetails?.reason
-        let finishReason = LanguageModelV3FinishReason(
-            unified: mapHuggingFaceResponsesFinishReason(rawFinishReason ?? "stop"),
-            raw: rawFinishReason
-        )
-        let providerMetadata = responseProviderMetadata(responseId: response.id)
-
-        return (content, finishReason, usage, providerMetadata)
-    }
-
-    private func handleStreamChunk(
-        _ chunk: HuggingFaceResponsesChunk,
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation,
-        finishReason: inout LanguageModelV3FinishReason,
-        usage: inout LanguageModelV3Usage,
-        responseId: inout String?
-    ) throws {
-        switch chunk {
-        case .responseCreated(let created):
-            responseId = created.response.id
-            continuation.yield(.responseMetadata(
-                id: created.response.id,
-                modelId: created.response.model,
-                timestamp: Date(timeIntervalSince1970: created.response.createdAt)
-            ))
-
-        case .responseOutputItemAdded(let added):
-            switch added.item.type {
-            case .message:
-                if let id = added.item.id {
-                    continuation.yield(.textStart(id: id, providerMetadata: messageProviderMetadata(itemId: id)))
-                }
-                if let message = added.item.message {
-                    for part in message.content {
-                        guard let annotations = part.annotations, let id = added.item.id else { continue }
-                        for annotation in annotations {
-                            guard let url = annotation.url else { continue }
-                            continuation.yield(.source(.url(
-                                id: nextId(),
-                                url: url,
-                                title: annotation.title,
-                                providerMetadata: messageProviderMetadata(itemId: id)
-                            )))
-                        }
-                    }
-                }
-
-            case .mcpCall:
-                guard let call = added.item.mcpCall else { return }
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: call.id,
-                    toolName: call.name,
-                    input: call.arguments,
-                    providerExecuted: true,
-                    providerMetadata: nil
-                )))
-                if let output = call.output {
-                    let resultValue = decodeJSONString(output) ?? .string(output)
-                    continuation.yield(.toolResult(LanguageModelV3ToolResult(
-                        toolCallId: call.id,
-                        toolName: call.name,
-                        result: resultValue
-                    )))
-                }
-
-            case .mcpListTools:
-                guard let tools = added.item.mcpListTools else { return }
-                let inputJSON = encodeJSONString(.object(["server_label": .string(tools.serverLabel)])) ?? "{}"
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: tools.id,
-                    toolName: "list_tools",
-                    input: inputJSON,
-                    providerExecuted: true,
-                    providerMetadata: nil
-                )))
-                let resultValue: JSONValue = .object([
-                    "tools": .array(tools.tools ?? [])
-                ])
-                continuation.yield(.toolResult(LanguageModelV3ToolResult(
-                    toolCallId: tools.id,
-                    toolName: "list_tools",
-                    result: resultValue
-                )))
-
-            case .functionCall:
-                guard let function = added.item.functionCall else { return }
-                continuation.yield(.toolInputStart(
-                    id: function.callId,
-                    toolName: function.name,
-                    providerMetadata: nil,
-                    providerExecuted: nil,
-                    dynamic: nil,
-                    title: nil
-                ))
-
-            case .unknown:
-                return
-            }
-
-        case .responseOutputItemDone(let done):
-            switch done.item.type {
-            case .message:
-                if let id = done.item.id {
-                    continuation.yield(.textEnd(id: id, providerMetadata: messageProviderMetadata(itemId: id)))
-                }
-            case .functionCall:
-                guard let function = done.item.functionCall else { return }
-                continuation.yield(.toolInputEnd(id: function.callId, providerMetadata: nil))
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                    toolCallId: function.callId,
-                    toolName: function.name,
-                    input: function.arguments,
-                    providerExecuted: nil,
-                    providerMetadata: nil
-                )))
-                if let output = function.output {
-                    let resultValue = decodeJSONString(output) ?? .string(output)
-                    continuation.yield(.toolResult(LanguageModelV3ToolResult(
-                        toolCallId: function.callId,
-                        toolName: function.name,
-                        result: resultValue
-                    )))
-                }
-            case .mcpCall, .mcpListTools, .unknown:
-                return
-            }
-
-        case .textDelta(let delta):
-            continuation.yield(.textDelta(id: delta.itemId, delta: delta.delta, providerMetadata: messageProviderMetadata(itemId: delta.itemId)))
-
-        case .responseCompleted(let completed):
-            responseId = completed.response.id
-            let rawFinishReason = completed.response.incompleteDetails?.reason
-            finishReason = LanguageModelV3FinishReason(
-                unified: mapHuggingFaceResponsesFinishReason(rawFinishReason ?? "stop"),
-                raw: rawFinishReason
-            )
-            if let usagePayload = completed.response.usage {
-                let inputTokens = usagePayload.inputTokens
-                let outputTokens = usagePayload.outputTokens
-                let cachedTokens = usagePayload.inputTokensDetails?.cachedTokens ?? 0
-                let reasoningTokens = usagePayload.outputTokensDetails?.reasoningTokens ?? 0
-
-                usage = LanguageModelV3Usage(
-                    inputTokens: .init(
-                        total: inputTokens,
-                        noCache: inputTokens.map { $0 - cachedTokens },
-                        cacheRead: cachedTokens,
-                        cacheWrite: nil
-                    ),
-                    outputTokens: .init(
-                        total: outputTokens,
-                        text: outputTokens.map { $0 - reasoningTokens },
-                        reasoning: reasoningTokens
-                    ),
-                    raw: try? jsonValue(from: usagePayload)
-                )
-            }
-
-        case .other:
-            return
-        }
-    }
-
-    private func messageProviderMetadata(itemId: String) -> SharedV3ProviderMetadata {
-        ["huggingface": ["itemId": .string(itemId)]]
-    }
-
-    private func responseProviderMetadata(responseId: String?) -> SharedV3ProviderMetadata? {
-        guard let responseId else { return nil }
-        return ["huggingface": ["responseId": .string(responseId)]]
-    }
-
-    private func nextId() -> String {
-        config.generateId?() ?? generateID()
-    }
-
-    private func encodeJSONString(_ value: JSONValue) -> String? {
-        guard let data = try? JSONEncoder().encode(value) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    private func decodeJSONString(_ string: String) -> JSONValue? {
-        guard let data = string.data(using: .utf8),
-              let jsonObject = try? JSONSerialization.jsonObject(with: data)
-        else {
-            return nil
-        }
-        return try? jsonValue(from: jsonObject)
+        if let preparedTools = tools.tools { body["tools"] = preparedTools }
+        if let choice = tools.toolChoice { body["tool_choice"] = choice }
+        return (body, warnings)
     }
 }
 
-// MARK: - Schemas
+private func itemMetadata(_ id: String) -> SharedV4ProviderMetadata {
+    ["huggingface": ["itemId": .string(id)]]
+}
 
-private let huggingfaceResponsesResponseSchema = FlexibleSchema(
-    Schema<HuggingFaceResponsesResponse>.codable(
-        HuggingFaceResponsesResponse.self,
-        jsonSchema: .object(["type": .string("object")])
+private func responseMetadata(_ id: JSONValue?) -> SharedV4ProviderMetadata {
+    var metadata: [String: JSONValue] = [:]
+    metadata["responseId"] = id
+    return ["huggingface": metadata]
+}
+
+private func finishReason(_ raw: String?) -> LanguageModelV4FinishReason {
+    .init(unified: mapHuggingFaceResponsesFinishReason(raw ?? "stop"), raw: raw)
+}
+
+private func streamErrorCodeString(_ value: Double) throws -> String {
+    if value == 0 { return "0" }
+    let encoded = String(value).lowercased()
+    let sign = encoded.hasPrefix("-") ? "-" : ""
+    let magnitude = sign.isEmpty ? encoded[...] : encoded.dropFirst()
+    let parts = magnitude.split(separator: "e", maxSplits: 1)
+    let exponent: Int
+    if parts.count == 2 {
+        guard let parsed = Int(parts[1]) else {
+            throw InvalidResponseDataError(data: encoded, message: "Invalid numeric stream error code")
+        }
+        exponent = parsed
+    } else { exponent = 0 }
+    let integerDigits = parts[0].prefix { $0 != "." }.count
+    let rawDigits = parts[0].filter { $0 != "." }
+    let zeros = rawDigits.prefix { $0 == "0" }.count
+    var digits = rawDigits.dropFirst(zeros)
+    while digits.last == "0" { digits = digits.dropLast() }
+    let position = integerDigits + exponent - zeros
+    let power = position - 1
+    // Provider error codes use ECMAScript's decimal/exponent thresholds.
+    if power >= -6 && power < 21 {
+        if position <= 0 { return sign + "0." + String(repeating: "0", count: -position) + digits }
+        if position >= digits.count { return sign + digits + String(repeating: "0", count: position - digits.count) }
+        let point = digits.index(digits.startIndex, offsetBy: position)
+        return sign + digits[..<point] + "." + digits[point...]
+    }
+    let tail = digits.dropFirst()
+    let coefficient = String(digits.prefix(1)) + (tail.isEmpty ? "" : "." + tail)
+    return sign + coefficient + "e" + (power >= 0 ? "+" : "") + String(power)
+}
+
+private func convertResponsesUsage(_ value: JSONValue?) -> LanguageModelV4Usage {
+    guard let raw = value, raw != .null else { return .init() }
+    let usage = raw.objectValue ?? [:]
+    func defaultedCount(_ value: JSONValue?) -> Double? {
+        switch value {
+        case .none, .some(.null): 0
+        case .some(.number(let value)): value
+        default: nil
+        }
+    }
+    func project(_ value: Double?) -> Int? { value.flatMap { Int(exactly: $0) } }
+    func subtract(_ lhs: Double?, _ rhs: Double?) -> Int? {
+        guard let lhs, let rhs else { return nil }
+        if let left = Int(exactly: lhs), let right = Int(exactly: rhs) {
+            let difference = left.subtractingReportingOverflow(right)
+            return difference.overflow ? nil : difference.partialValue
+        }
+        return Int(exactly: lhs - rhs)
+    }
+    let input = usage["input_tokens"]?.numberValue
+    let output = usage["output_tokens"]?.numberValue
+    let cached = defaultedCount(usage["input_tokens_details"]?.objectValue?["cached_tokens"])
+    let reasoning = defaultedCount(usage["output_tokens_details"]?.objectValue?["reasoning_tokens"])
+    return .init(
+        inputTokens: .init(total: project(input), noCache: subtract(input, cached), cacheRead: project(cached)),
+        outputTokens: .init(total: project(output), text: subtract(output, reasoning), reasoning: project(reasoning)),
+        raw: raw
     )
+}
+
+private let responsesResponseSchema = FlexibleSchema(
+    Schema<ResponsesResponse>.codable(ResponsesResponse.self, jsonSchema: .object(["type": .string("object")]))
+)
+private let responsesChunkSchema = FlexibleSchema(
+    Schema<ResponsesChunk>.codable(ResponsesChunk.self, jsonSchema: .object(["type": .string("object")]))
 )
 
-private let huggingfaceResponsesChunkSchema = FlexibleSchema(
-    Schema<HuggingFaceResponsesChunk>.codable(
-        HuggingFaceResponsesChunk.self,
-        jsonSchema: .object(["type": .string("object")])
-    )
-)
-
-// MARK: - Response Types
-
-private struct HuggingFaceResponsesResponse: Decodable {
-    struct ErrorPayload: Decodable {
-        let message: String
-        let type: String?
-        let code: String?
-    }
-
-    struct Usage: Decodable {
-        struct OutputTokensDetails: Decodable {
-            let reasoningTokens: Int?
-
-            private enum CodingKeys: String, CodingKey {
-                case reasoningTokens = "reasoning_tokens"
-            }
-        }
-
-        struct InputTokensDetails: Decodable {
-            let cachedTokens: Int?
-
-            private enum CodingKeys: String, CodingKey {
-                case cachedTokens = "cached_tokens"
-            }
-        }
-
-        let inputTokens: Int?
-        let outputTokens: Int?
-        let totalTokens: Int?
-        let outputTokensDetails: OutputTokensDetails?
-        let inputTokensDetails: InputTokensDetails?
-
-        private enum CodingKeys: String, CodingKey {
-            case inputTokens = "input_tokens"
-            case outputTokens = "output_tokens"
-            case totalTokens = "total_tokens"
-            case outputTokensDetails = "output_tokens_details"
-            case inputTokensDetails = "input_tokens_details"
-        }
-    }
-
-    struct IncompleteDetails: Decodable {
-        let reason: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case reason
-        }
-    }
-
+private struct ResponsesResponse: Decodable {
+    struct IncompleteDetails: Decodable { let reason: String }
     let id: String
     let model: String
-    let object: String
     let createdAt: Double
-    let status: String
-    let error: ErrorPayload?
-    let usage: Usage?
+    let error: JSONValue?
     let incompleteDetails: IncompleteDetails?
-    let output: [HuggingFaceResponsesOutputItem]
+    let usage: ResponsesUsage?
+    let output: [ResponsesOutput]
 
     private enum CodingKeys: String, CodingKey {
-        case id
-        case model
-        case object
-        case createdAt = "created_at"
-        case status
-        case error
-        case usage
-        case incompleteDetails = "incomplete_details"
-        case output
+        case id, model, object, status, error, tools, temperature, output, usage
+        case createdAt = "created_at", incompleteDetails = "incomplete_details", topP = "top_p", outputText = "output_text"
     }
 
-    var outputItems: [HuggingFaceResponsesOutputItem] { output }
-}
-
-private struct HuggingFaceResponsesMessageContent: Decodable {
-    let type: String?
-    let text: String?
-    let annotations: [Annotation]?
-
-    struct Annotation: Decodable {
-        let url: String?
-        let title: String?
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        model = try container.decode(String.self, forKey: .model)
+        createdAt = try container.decode(Double.self, forKey: .createdAt)
+        _ = try container.decode(String.self, forKey: .object)
+        _ = try container.decode(String.self, forKey: .status)
+        _ = try container.decode([JSONValue].self, forKey: .tools)
+        _ = try container.decode(Double.self, forKey: .temperature)
+        _ = try container.decode(Double.self, forKey: .topP)
+        _ = try container.decodeIfPresent(String.self, forKey: .outputText)
+        error = try container.decodeIfPresent(JSONValue.self, forKey: .error)
+        incompleteDetails = try container.decodeIfPresent(IncompleteDetails.self, forKey: .incompleteDetails)
+        usage = try container.decodeIfPresent(ResponsesUsage.self, forKey: .usage)
+        output = try container.decode([ResponsesOutput].self, forKey: .output)
     }
 }
 
-private enum HuggingFaceResponsesOutputItemType: String, Decodable {
-    case message
-    case mcpListTools = "mcp_list_tools"
-    case mcpCall = "mcp_call"
-    case functionCall = "function_call"
-    case unknown
+private struct ResponsesUsage: Decodable {
+    let raw: JSONValue
+
+    private struct InputDetails: Decodable { let cached_tokens: Double }
+    private struct OutputDetails: Decodable { let reasoning_tokens: Double }
+    private enum CodingKeys: String, CodingKey {
+        case input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var value: [String: JSONValue] = [
+            "input_tokens": .number(try container.decode(Double.self, forKey: .input_tokens)),
+            "output_tokens": .number(try container.decode(Double.self, forKey: .output_tokens)),
+            "total_tokens": .number(try container.decode(Double.self, forKey: .total_tokens))
+        ]
+        if let details = try container.decodeOptional(InputDetails.self, forKey: .input_tokens_details) {
+            value["input_tokens_details"] = .object(["cached_tokens": .number(details.cached_tokens)])
+        }
+        if let details = try container.decodeOptional(OutputDetails.self, forKey: .output_tokens_details) {
+            value["output_tokens_details"] = .object(["reasoning_tokens": .number(details.reasoning_tokens)])
+        }
+        raw = .object(value)
+    }
 }
 
-private struct HuggingFaceResponsesOutputItem: Decodable {
+private enum ResponsesOutput: Decodable {
+    struct Text: Decodable {
+        let text: String
+        let annotations: [JSONValue]?
+        private enum CodingKeys: String, CodingKey { case type, text, annotations }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard try container.decode(String.self, forKey: .type) == "output_text" else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected output_text")
+            }
+            text = try container.decode(String.self, forKey: .text)
+            annotations = try container.decodeOptional([JSONValue].self, forKey: .annotations)
+        }
+    }
+    struct ReasoningText: Decodable {
+        let text: String
+        private enum CodingKeys: String, CodingKey { case type, text }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard try container.decode(String.self, forKey: .type) == "reasoning_text" else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected reasoning_text")
+            }
+            text = try container.decode(String.self, forKey: .text)
+        }
+    }
     struct Message: Decodable {
-        let content: [HuggingFaceResponsesMessageContent]
+        let id: String
+        let content: [Text]
+        private enum CodingKeys: String, CodingKey { case id, role, content }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            _ = try container.decodeOptional(String.self, forKey: .role)
+            content = try container.decode([Text].self, forKey: .content)
+        }
     }
-
+    struct Reasoning: Decodable {
+        struct Summary: Decodable {
+            let text: String
+            private enum CodingKeys: String, CodingKey { case type, text }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                guard try container.decode(String.self, forKey: .type) == "reasoning_summary" else {
+                    throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected reasoning_summary")
+                }
+                text = try container.decode(String.self, forKey: .text)
+            }
+        }
+        let id: String
+        let content: [ReasoningText]
+        private enum CodingKeys: String, CodingKey { case id, content, summary }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            content = try container.decode([ReasoningText].self, forKey: .content)
+            _ = try container.decodeOptional([Summary].self, forKey: .summary)
+        }
+    }
     struct MCPCall: Decodable {
         let id: String
-        let serverLabel: String
         let name: String
         let arguments: String
         let output: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case id
-            case serverLabel = "server_label"
-            case name
-            case arguments
-            case output
+        private enum CodingKeys: String, CodingKey { case id, name, arguments, output }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            arguments = try container.decode(String.self, forKey: .arguments)
+            output = try container.decodeOptional(String.self, forKey: .output)
         }
     }
-
     struct MCPListTools: Decodable {
         let id: String
         let serverLabel: String
         let tools: [JSONValue]?
-
-        private enum CodingKeys: String, CodingKey {
-            case id
-            case serverLabel = "server_label"
-            case tools
+        private enum CodingKeys: String, CodingKey { case id, tools, serverLabel = "server_label" }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            serverLabel = try container.decode(String.self, forKey: .serverLabel)
+            tools = try container.decodeOptional([JSONValue].self, forKey: .tools)
         }
     }
+    case message(Message)
+    case reasoning(Reasoning)
+    case mcpCall(MCPCall)
+    case functionCall(ResponsesFunctionCall)
+    case mcpListTools(MCPListTools)
 
-    struct FunctionCall: Decodable {
+    private enum CodingKeys: String, CodingKey { case type, id, status }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        _ = try container.decode(String.self, forKey: .id)
+        _ = try container.decodeOptional(String.self, forKey: .status)
+        switch try container.decode(String.self, forKey: .type) {
+        case "message": self = .message(try Message(from: decoder))
+        case "reasoning": self = .reasoning(try Reasoning(from: decoder))
+        case "mcp_call": self = .mcpCall(try MCPCall(from: decoder))
+        case "function_call": self = .functionCall(try ResponsesFunctionCall(from: decoder))
+        case "mcp_list_tools": self = .mcpListTools(try MCPListTools(from: decoder))
+        default: throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown Responses output type")
+        }
+    }
+}
+
+private struct ResponsesFunctionCall: Decodable {
+    let callId: String
+    let name: String
+    let arguments: String
+    let output: String?
+    private enum CodingKeys: String, CodingKey { case id, name, arguments, output, callId = "call_id" }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        callId = try container.decode(String.self, forKey: .callId)
+        name = try container.decode(String.self, forKey: .name)
+        arguments = try container.decode(String.self, forKey: .arguments)
+        output = try container.decodeOptional(String.self, forKey: .output)
+    }
+}
+
+private enum ResponsesChunk: Decodable {
+    struct Metadata: Decodable {
         let id: String
+        let model: String
+        let createdAt: Double
+        private enum CodingKeys: String, CodingKey { case id, model, createdAt = "created_at" }
+    }
+    struct Completion {
+        let id: JSONValue?
+        let reason: String?
+        let usage: JSONValue?
+    }
+    struct FunctionStart: Decodable {
+        let callId: String
+        let name: String
+        private enum CodingKeys: String, CodingKey { case callId = "call_id", name }
+    }
+    struct FunctionCall: Decodable {
         let callId: String
         let name: String
         let arguments: String
-        let output: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case id
-            case callId = "call_id"
-            case name
-            case arguments
-            case output
-        }
+        let output: JSONValue?
+        private enum CodingKeys: String, CodingKey { case callId = "call_id", name, arguments, output }
     }
-
-    let type: HuggingFaceResponsesOutputItemType
-    let id: String?
-    let message: Message?
-    let mcpCall: MCPCall?
-    let mcpListTools: MCPListTools?
-    let functionCall: FunctionCall?
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case id
-        case content
-        case serverLabel = "server_label"
-        case name
-        case arguments
-        case output
-        case tools
-        case callId = "call_id"
+    enum Item {
+        case message(id: String, role: String?)
+        case reasoning(id: String)
+        case functionStart(FunctionStart)
+        case functionCall(FunctionCall)
+        case other
     }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decodeIfPresent(HuggingFaceResponsesOutputItemType.self, forKey: .type) ?? .unknown
-        id = try container.decodeIfPresent(String.self, forKey: .id)
-
-        switch type {
-        case .message:
-            let content = try container.decodeIfPresent([HuggingFaceResponsesMessageContent].self, forKey: .content) ?? []
-            message = Message(content: content)
-            mcpCall = nil
-            mcpListTools = nil
-            functionCall = nil
-        case .mcpCall:
-            mcpCall = try MCPCall(from: decoder)
-            message = nil
-            mcpListTools = nil
-            functionCall = nil
-        case .mcpListTools:
-            mcpListTools = try MCPListTools(from: decoder)
-            message = nil
-            mcpCall = nil
-            functionCall = nil
-        case .functionCall:
-            functionCall = try FunctionCall(from: decoder)
-            message = nil
-            mcpCall = nil
-            mcpListTools = nil
-        case .unknown:
-            message = nil
-            mcpCall = nil
-            mcpListTools = nil
-            functionCall = nil
-        }
-    }
-}
-
-// MARK: - Streaming Chunk Types
-
-private enum HuggingFaceResponsesChunk: Decodable {
-    struct ResponseCreated: Decodable {
-        struct ResponseMetadata: Decodable {
-            let id: String
-            let object: String
-            let createdAt: Double
-            let status: String
-            let model: String
-
-            private enum CodingKeys: String, CodingKey {
-                case id
-                case object
-                case createdAt = "created_at"
-                case status
-                case model
-            }
-        }
-
-        let response: ResponseMetadata
-    }
-
-    struct ResponseOutputItemAdded: Decodable {
-        let outputIndex: Int
-        let item: HuggingFaceResponsesOutputItem
-
-        private enum CodingKeys: String, CodingKey {
-            case outputIndex = "output_index"
-            case item
-        }
-    }
-
-    struct ResponseOutputItemDone: Decodable {
-        let outputIndex: Int
-        let item: HuggingFaceResponsesOutputItem
-
-        private enum CodingKeys: String, CodingKey {
-            case outputIndex = "output_index"
-            case item
-        }
-    }
-
-    struct TextDelta: Decodable {
-        let itemId: String
-        let outputIndex: Int
-        let contentIndex: Int
-        let delta: String
-
-        private enum CodingKeys: String, CodingKey {
-            case itemId = "item_id"
-            case outputIndex = "output_index"
-            case contentIndex = "content_index"
-            case delta
-        }
-    }
-
-    struct ResponseCompleted: Decodable {
-        let response: HuggingFaceResponsesResponse
-    }
-
-    case responseCreated(ResponseCreated)
-    case responseOutputItemAdded(ResponseOutputItemAdded)
-    case responseOutputItemDone(ResponseOutputItemDone)
-    case textDelta(TextDelta)
-    case responseCompleted(ResponseCompleted)
+    case providerError(ProviderStreamError)
+    case created(Metadata)
+    case itemAdded(Item)
+    case itemDone(Item)
+    case textDelta(id: String, delta: String)
+    case reasoningDelta(id: String, delta: String)
+    case reasoningEnd(id: String)
+    case completed(Completion)
     case other
 
-    private enum CodingKeys: String, CodingKey {
-        case type
-    }
-
+    private enum CodingKeys: String, CodingKey { case type, response, item }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(String.self, forKey: .type)
-
+        let raw = try JSONValue(from: decoder)
+        let object = raw.objectValue ?? [:]
+        if type == "error" || type == "response.failed" {
+            let details = type == "response.failed"
+                ? object["response"]?.objectValue?["error"]?.objectValue
+                : object["error"]?.recordValue ?? object
+            if let details, let message = details["message"]?.stringValue {
+                let code: ProviderStreamError.Code?
+                switch details["code"] {
+                case .string(let value): code = .string(value)
+                case .number(let value): code = .number(value)
+                default: code = nil
+                }
+                self = .providerError(createProviderStreamError(message: message, type: type, code: code, data: raw))
+                return
+            }
+        }
+        // Upstream's loose fallback dispatches known events even when unused fields are missing.
         switch type {
         case "response.created":
-            self = .responseCreated(try ResponseCreated(from: decoder))
-        case "response.output_item.added":
-            self = .responseOutputItemAdded(try ResponseOutputItemAdded(from: decoder))
-        case "response.output_item.done":
-            self = .responseOutputItemDone(try ResponseOutputItemDone(from: decoder))
-        case "response.output_text.delta":
-            self = .textDelta(try TextDelta(from: decoder))
+            self = .created(try container.decode(Metadata.self, forKey: .response))
         case "response.completed":
-            self = .responseCompleted(try ResponseCompleted(from: decoder))
-        default:
-            self = .other
+            if let response = try? container.decode(ResponsesResponse.self, forKey: .response) {
+                self = .completed(.init(id: .string(response.id), reason: response.incompleteDetails?.reason, usage: response.usage?.raw))
+            } else if let response = object["response"]?.objectValue {
+                let usage = response["usage"] == .null ? Optional<JSONValue>.none : response["usage"]
+                self = .completed(.init(id: response["id"], reason: response["incomplete_details"]?.objectValue?["reason"]?.stringValue, usage: usage))
+            } else {
+                self = .other
+            }
+        case "response.output_item.added", "response.output_item.done":
+            let item: Item
+            if let value = object["item"]?.objectValue {
+                switch value["type"]?.stringValue {
+                case "message":
+                    guard let id = value["id"]?.stringValue else { self = .other; return }
+                    item = .message(id: id, role: value["role"]?.stringValue)
+                case "reasoning":
+                    guard let id = value["id"]?.stringValue else { self = .other; return }
+                    item = .reasoning(id: id)
+                case "function_call":
+                    item = type == "response.output_item.added"
+                        ? .functionStart(try container.decode(FunctionStart.self, forKey: .item))
+                        : .functionCall(try container.decode(FunctionCall.self, forKey: .item))
+                default: item = .other
+                }
+            } else { item = .other }
+            self = type == "response.output_item.added" ? .itemAdded(item) : .itemDone(item)
+        case "response.output_text.delta", "response.reasoning_text.delta":
+            guard let id = object["item_id"]?.stringValue, let delta = object["delta"]?.stringValue else { self = .other; return }
+            self = type == "response.output_text.delta" ? .textDelta(id: id, delta: delta) : .reasoningDelta(id: id, delta: delta)
+        case "response.reasoning_text.done":
+            guard let id = object["item_id"]?.stringValue else { self = .other; return }
+            self = .reasoningEnd(id: id)
+        default: self = .other
         }
     }
 }
 
-private extension ParseJSONResult where Output == HuggingFaceResponsesChunk {
-    var rawJSONValue: JSONValue? {
+private extension KeyedDecodingContainer {
+    func decodeOptional<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
+        contains(key) ? try decode(type, forKey: key) : nil
+    }
+}
+
+private extension JSONValue {
+    var objectValue: [String: JSONValue]? {
+        if case .object(let value) = self { return value }
+        return nil
+    }
+    var recordValue: [String: JSONValue]? {
         switch self {
-        case .success(_, let raw):
-            return try? jsonValue(from: raw)
-        case .failure(_, let raw):
-            return raw.flatMap { try? jsonValue(from: $0) }
+        case .object(let value): value
+        case .array: [:]
+        default: nil
+        }
+    }
+    var stringValue: String? {
+        if case .string(let value) = self { return value }
+        return nil
+    }
+    var numberValue: Double? {
+        if case .number(let value) = self { return value }
+        return nil
+    }
+    var isTruthy: Bool {
+        switch self {
+        case .null: false
+        case .bool(let value): value
+        case .string(let value): !value.isEmpty
+        case .number(let value): value != 0
+        case .array, .object: true
         }
     }
 }

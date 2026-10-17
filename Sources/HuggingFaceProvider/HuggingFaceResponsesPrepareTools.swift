@@ -5,21 +5,21 @@ import AISDKProvider
 //=== Upstream Reference ====================================================//
 //===----------------------------------------------------------------------===//
 // Ported from packages/huggingface/src/responses/huggingface-responses-prepare-tools.ts
-// Upstream commit: 77db222ee
+// Upstream commit: 8a5233b15b1e69573d63faee6cd0014559252ee4
 //===----------------------------------------------------------------------===//
 
 struct HuggingFacePreparedTools {
     let tools: JSONValue?
     let toolChoice: JSONValue?
-    let warnings: [SharedV3Warning]
+    let warnings: [SharedV4Warning]
 }
 
 func prepareHuggingFaceResponsesTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?
 ) -> HuggingFacePreparedTools {
     let normalizedTools = tools?.isEmpty == false ? tools : nil
-    var warnings: [SharedV3Warning] = []
+    var warnings: [SharedV4Warning] = []
 
     guard let normalizedTools else {
         return HuggingFacePreparedTools(tools: nil, toolChoice: nil, warnings: warnings)
@@ -46,7 +46,7 @@ func prepareHuggingFaceResponsesTools(
         }
     }
 
-    let toolsValue: JSONValue? = huggingfaceTools.isEmpty ? nil : .array(huggingfaceTools)
+    let toolsValue: JSONValue = .array(huggingfaceTools)
 
     var mappedToolChoice: JSONValue? = nil
     if let toolChoice {
