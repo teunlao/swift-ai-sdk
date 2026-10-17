@@ -38,23 +38,15 @@ public final class AnthropicSkills: SkillsV4 {
             )
         }
 
-        let multipart = builder.build()
         let baseHeaders = try requestHeaders(
             extra: [
                 "anthropic-beta": "skills-2025-10-02"
             ]
         )
-        let postHeaders = combineHeaders(
-            baseHeaders.mapValues { Optional($0) },
-            [
-                "Content-Type": multipart.contentType
-            ]
-        ).compactMapValues { $0 }
-
         let response = try await postToAPI(
             url: "\(config.baseURL)/skills",
-            headers: postHeaders,
-            body: PostBody(content: .data(multipart.data), values: nil),
+            headers: baseHeaders,
+            body: PostBody(content: .multipartFormData(builder), values: nil),
             failedResponseHandler: anthropicFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: anthropicSkillResponseSchema),
             fetch: config.fetch

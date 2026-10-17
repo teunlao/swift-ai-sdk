@@ -82,7 +82,7 @@ struct AnthropicFilesTests {
         let capture = URLRequestCapture()
         let provider: any ProviderV4 = createAnthropic(settings: .init(
             apiKey: "provider-key",
-            headers: ["x-upload-scope": "provider", "x-provider-only": "retained"],
+            headers: ["x-upload-scope": "provider", "x-provider-only": "retained", "Content-Type": "application/custom-file"],
             fetch: makeFetch(capture: capture)
         ))
 
@@ -98,6 +98,7 @@ struct AnthropicFilesTests {
         let request = try #require(await capture.first())
         #expect(request.value(forHTTPHeaderField: "x-upload-scope") == "request")
         #expect(request.value(forHTTPHeaderField: "x-provider-only") == "retained")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/custom-file")
         #expect(request.value(forHTTPHeaderField: "x-upload-extra") == "forwarded")
         #expect(request.value(forHTTPHeaderField: "x-api-key") == "request-key")
         #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "custom-upload-beta")

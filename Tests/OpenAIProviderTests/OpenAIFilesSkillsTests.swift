@@ -545,6 +545,7 @@ struct OpenAIFilesSkillsTests {
         let capture = OpenAIUploadRequestCapture()
         let provider: any ProviderV4 = try createOpenAIProvider(settings: .init(
             apiKey: "test-api-key",
+            headers: ["Content-Type": "application/custom-skill"],
             fetch: openAIFetch(capture: capture) { _ in
                 [
                     "id": "skill_699fc58f408c8191825d8d06ae75fd5c06de7b381a5db7f5",
@@ -567,13 +568,12 @@ struct OpenAIFilesSkillsTests {
             )
         )
 
-        guard let request = await capture.first(),
-              let contentType = request.value(forHTTPHeaderField: "Content-Type"),
-              let boundary = openAIExtractBoundary(from: contentType),
-              let body = request.httpBody else {
+        guard let request = await capture.first(), let body = request.httpBody else {
             Issue.record("Missing OpenAI skill upload request")
             return
         }
+        let boundary = String(try #require(String(decoding: body, as: UTF8.self).components(separatedBy: "\r\n").first).dropFirst(2))
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/custom-skill")
 
         #expect(request.httpMethod == "POST")
         #expect(request.url?.absoluteString == "https://api.openai.com/v1/skills")

@@ -103,6 +103,7 @@ struct AnthropicSkillsTests {
         let provider: any ProviderV4 = createAnthropic(settings: .init(
             baseURL: "https://api.anthropic.com/v1",
             apiKey: "test-api-key",
+            headers: ["Content-Type": "application/custom-skill"],
             fetch: makeFetch(capture: capture)
         ))
 
@@ -131,7 +132,8 @@ struct AnthropicSkillsTests {
         #expect(requests.count == 2)
         let versionHeaders = requests.last?.allHTTPHeaderFields ?? [:]
         #expect(versionHeaders["anthropic-beta"] == "skills-2025-10-02")
-        #expect(versionHeaders["Content-Type"] == nil)
+        #expect(requests.first?.value(forHTTPHeaderField: "Content-Type") == "application/custom-skill")
+        #expect(requests.last?.value(forHTTPHeaderField: "Content-Type") == "application/custom-skill")
     }
 
     @Test("uploadSkill keeps skill and version identifiers inside encoded metadata URL segments", arguments: ["skill/part?# %", ".", ".."])

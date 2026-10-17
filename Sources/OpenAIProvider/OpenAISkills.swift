@@ -77,16 +77,10 @@ public final class OpenAISkills: SkillsV4 {
             )
         }
 
-        let multipart = builder.build()
-        let headers = combineHeaders(
-            try config.headers(),
-            ["Content-Type": multipart.contentType]
-        ).compactMapValues { $0 }
-
         let response = try await postToAPI(
             url: config.url("/skills"),
-            headers: headers,
-            body: PostBody(content: .data(multipart.data), values: nil),
+            headers: try config.headers().compactMapValues { $0 },
+            body: PostBody(content: .multipartFormData(builder), values: nil),
             failedResponseHandler: openAIFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: openAIUploadSkillResponseSchema),
             fetch: config.fetch

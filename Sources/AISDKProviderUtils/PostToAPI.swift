@@ -42,8 +42,10 @@ public func postJsonToAPI<T>(
     encoder.outputFormatting = [.sortedKeys]
     let jsonData = try encoder.encode(body)
 
-    var mergedHeaders = headers ?? [:]
-    mergedHeaders["Content-Type"] = "application/json"
+    let mergedHeaders = combineHeaders(
+        ["Content-Type": "application/json"],
+        headers?.mapValues { Optional($0) }
+    ).compactMapValues { $0 }
 
     return try await postToAPI(
         url: url,
@@ -65,7 +67,7 @@ public func postJsonToAPI<T>(
 
  - Parameters:
    - url: The URL to post to
-   - headers: Optional HTTP headers (will be merged with Content-Type: application/x-www-form-urlencoded)
+   - headers: Optional HTTP headers; multipart Content-Type is inferred when absent
    - formData: Form data as key-value pairs
    - failedResponseHandler: Handler for non-2xx responses
    - successfulResponseHandler: Handler for successful responses
@@ -192,11 +194,15 @@ public func postToAPI<T>(
             let builder = convertToFormData(fields)
             let multipart = builder.build()
             request.httpBody = multipart.data
-            request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
+            if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
+            }
         case .multipartFormData(let builder):
             let multipart = builder.build()
             request.httpBody = multipart.data
-            request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
+            if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type")
+            }
         }
 
         // Check cancellation before fetch

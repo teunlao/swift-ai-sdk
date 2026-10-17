@@ -48,6 +48,77 @@ struct APIRequestContractTests {
 
     private static let anyJSON = FlexibleSchema(jsonSchema(["type": "object"]))
 
+    @Test("JSON preserves explicit Content-Type including an empty value", arguments: ["application/vnd.example+json", ""])
+    func jsonPreservesContentType(contentType: String) async throws {
+        let capture = RequestCapture()
+        let result = try await postJsonToAPI(
+            url: "https://api.example.com/json",
+            headers: ["cOnTeNt-TyPe": contentType],
+            body: ["name": "file"],
+            failedResponseHandler: createStatusCodeErrorResponseHandler(),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: Self.anyJSON),
+            fetch: { request in
+                await capture.record(request)
+                return Self.response(request, body: .data(Data(#"{"accepted":true}"#.utf8)))
+            }
+        )
+        let request = try #require(await capture.requests.first)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == contentType)
+        #expect(request.httpBody == Data(#"{"name":"file"}"#.utf8))
+        #expect(result.value == ["accepted": true])
+    }
+
+    @Test("buffered multipart defaults its boundary only when Content-Type is absent", arguments: [nil, "application/custom", ""] as [String?])
+    func multipartContentTypeDefault(contentType: String?) async throws {
+        var builder = MultipartFormDataBuilder(boundary: "upload-boundary")
+        builder.appendFile(name: "file", filename: "file.bin", data: Data([0, 255]))
+        let upload = builder
+        let capture = RequestCapture()
+        let error = await #expect(throws: APICallError.self) {
+            _ = try await postToAPI(
+                url: "https://api.example.com/files",
+                headers: contentType.map { ["cOnTeNt-TyPe": $0] },
+                body: PostBody(content: .multipartFormData(upload), values: ["filename": "file.bin"]),
+                failedResponseHandler: createStatusCodeErrorResponseHandler(),
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: Self.anyJSON),
+                fetch: { request in
+                    await capture.record(request)
+                    return Self.response(request, statusCode: 429, body: .data(Data("limited".utf8)))
+                }
+            )
+        }
+        let request = try #require(await capture.requests.first)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == (contentType ?? "multipart/form-data; boundary=upload-boundary"))
+        var expected = Data("--upload-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"file.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8)
+        expected.append(contentsOf: [0, 255])
+        expected.append(Data("\r\n--upload-boundary--\r\n".utf8))
+        #expect(request.httpBody == expected)
+        #expect(error?.statusCode == 429)
+        #expect(error?.responseBody == "limited")
+        #expect(error?.requestBodyValues as? [String: String] == ["filename": "file.bin"])
+    }
+
+    @Test("field form data preserves caller Content-Type without changing field bytes")
+    func fieldsPreserveContentType() async throws {
+        let capture = RequestCapture()
+        _ = try await postToAPI(
+            url: "https://api.example.com/form",
+            headers: ["content-type": "application/custom"],
+            body: PostBody(content: .formData(["name": "file"]), values: ["name": "file"]),
+            failedResponseHandler: createStatusCodeErrorResponseHandler(),
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: Self.anyJSON),
+            fetch: { request in
+                await capture.record(request)
+                return Self.response(request)
+            }
+        )
+        let request = try #require(await capture.requests.first)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/custom")
+        let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+        let boundary = String(try #require(body.components(separatedBy: "\r\n").first).dropFirst(2))
+        #expect(body == "--\(boundary)\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nfile\r\n--\(boundary)--\r\n")
+    }
+
     @Test("a successful stream that fails mid-read surfaces a retryable APICallError")
     func midStreamNetworkFailureIsRetryable() async throws {
         let body = AsyncThrowingStream<Data, Error> { continuation in
@@ -167,6 +238,7 @@ struct APIRequestContractTests {
 
         _ = try await postMultipartStreamToAPI(
             url: "https://api.example.com/files",
+            headers: ["Content-Type": "application/custom"],
             parts: [
                 .field(name: "expires_after", value: "3600"),
                 .file(name: "file", filename: "a\"b.txt", mediaType: "text/plain", content: .stream(fileStream)),

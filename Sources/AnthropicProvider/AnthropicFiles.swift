@@ -86,18 +86,14 @@ public final class AnthropicFiles: FilesV4 {
             data: fileData
         )
 
-        let multipart = builder.build()
         let headers = try requestHeaders(
-            extra: [
-                "anthropic-beta": "files-api-2025-04-14",
-                "Content-Type": multipart.contentType
-            ]
+            extra: ["anthropic-beta": "files-api-2025-04-14"]
         )
 
         let response = try await postToAPI(
             url: "\(config.baseURL)/files",
             headers: combineHeaders(headers.mapValues { Optional($0) }, options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: PostBody(content: .data(multipart.data), values: nil),
+            body: PostBody(content: .multipartFormData(builder), values: nil),
             failedResponseHandler: anthropicFailedResponseHandler,
             successfulResponseHandler: createJsonResponseHandler(responseSchema: anthropicUploadFileResponseSchema),
             isAborted: options.abortSignal,
