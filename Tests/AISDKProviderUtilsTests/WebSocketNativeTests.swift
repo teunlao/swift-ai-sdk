@@ -6,7 +6,7 @@ import AISDKProviderUtils
 
 @Suite("Native WebSocket transport")
 struct WebSocketNativeTests {
-    @Test("URLSession upgrades HTTP and receives text, binary, then normal close in order")
+    @Test("URLSession delivers ordered text, binary, and typed close diagnostics")
     func nativeFrames() async throws {
         let completed = AsyncStream<Void>.makeStream()
         let server = try await LoopbackHTTPServer { connection in
@@ -37,7 +37,12 @@ struct WebSocketNativeTests {
             url: url.absoluteString, protocols: ["transcription"], headers: ["Authorization": "Bearer loopback-key"]
         )
         var received: [String] = []
-        for try await text in connection.messages { received.append(text) }
+        do {
+            for try await text in connection.messages { received.append(text) }
+            Issue.record("The close frame was not reported")
+        } catch let error as WebSocketError {
+            #expect(error == .closed(code: 1000, reason: ""))
+        }
         #expect(received == ["first", "second"])
         for await _ in completed.stream {}
     }

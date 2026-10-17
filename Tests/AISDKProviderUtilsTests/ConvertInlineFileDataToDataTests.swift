@@ -27,7 +27,7 @@ struct ConvertInlineFileDataToDataTests {
     @Test("throws for invalid base64")
     func throwsForInvalidBase64() {
         #expect(throws: DecodingError.self) {
-            _ = try convertInlineFileDataToData(SharedV4DataContent.base64("not valid base64"))
+            _ = try convertInlineFileDataToData(SharedV4DataContent.base64("not%base64"))
         }
     }
 
