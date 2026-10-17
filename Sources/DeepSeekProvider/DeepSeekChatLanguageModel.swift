@@ -83,10 +83,10 @@ public final class DeepSeekChatLanguageModel: LanguageModelV4 {
             content.append(.text(.init(text: text)))
         }
         var metadata = deepSeekMetadata(value.usage?.raw)
-        if let object = value.object { metadata["responseObject"] = .string(object) }
+        if let object = value.object { metadata["responseObject"] = .string(object.rawValue) }
         if let index = choice.index { metadata["choiceIndex"] = .number(index) }
-        if let role = choice.message.role { metadata["messageRole"] = .string(role) }
-        if let tools = choice.message.toolCalls { metadata["toolCallTypes"] = .array(tools.compactMap { $0.type.map(JSONValue.string) }) }
+        if let role = choice.message.role { metadata["messageRole"] = .string(role.rawValue) }
+        if let tools = choice.message.toolCalls { metadata["toolCallTypes"] = .array(tools.compactMap { $0.type.map { .string($0.rawValue) } }) }
         if let logprobs = choice.logprobs { metadata["logprobs"] = logprobs.raw }
         if let fingerprint = value.systemFingerprint { metadata["systemFingerprint"] = .string(fingerprint) }
         return .init(content: content, finishReason: deepSeekFinishReason(choice.finishReason),
@@ -146,7 +146,7 @@ public final class DeepSeekChatLanguageModel: LanguageModelV4 {
                                                                         timestamp: value.created.map(Date.init(timeIntervalSince1970:))))
                                 }
                                 if let current = value.usage?.raw, current != .null { usage = current }
-                                if let object = value.object { metadata["responseObject"] = .string(object) }
+                                if let object = value.object { metadata["responseObject"] = .string(object.rawValue) }
                                 if let fingerprint = value.systemFingerprint { metadata["systemFingerprint"] = .string(fingerprint) }
                                 guard let choice = value.choices.first else { continue }
                                 if let index = choice.index { metadata["choiceIndex"] = .number(index) }
@@ -156,7 +156,7 @@ public final class DeepSeekChatLanguageModel: LanguageModelV4 {
                                     if case .array(let values) = logprobs["reasoning_content"] { reasoningLogprobs += values }
                                 }
                                 guard let delta = choice.delta else { continue }
-                                if let role = delta.role { metadata["messageRole"] = .string(role) }
+                                if let role = delta.role { metadata["messageRole"] = .string(role.rawValue) }
                                 if let reasoning = delta.reasoningContent, !reasoning.isEmpty {
                                     if !activeReasoning {
                                         continuation.yield(.reasoningStart(id: "reasoning-0", providerMetadata: nil))
@@ -181,8 +181,8 @@ public final class DeepSeekChatLanguageModel: LanguageModelV4 {
                                         activeReasoning = false
                                     }
                                     for tool in tools {
-                                        if let type = tool.type { toolTypes[tool.index] = type }
-                                        try tracker.processDelta(.init(index: tool.index, id: tool.id, type: tool.type,
+                                        if let type = tool.type { toolTypes[tool.index] = type.rawValue }
+                                        try tracker.processDelta(.init(index: tool.index, id: tool.id, type: tool.type?.rawValue,
                                                                        function: .init(name: tool.function.name, arguments: tool.function.arguments)))
                                     }
                                 }
@@ -299,11 +299,6 @@ private func deepSeekMetadata(_ usage: JSONValue?) -> [String: JSONValue] {
     if let hit = value["prompt_cache_hit_tokens"], hit != .null { result["promptCacheHitTokens"] = hit }
     if let miss = value["prompt_cache_miss_tokens"], miss != .null { result["promptCacheMissTokens"] = miss }
     return result
-}
-
-func deepSeekObject(_ value: JSONValue?) -> [String: JSONValue] {
-    guard case .object(let object) = value else { return [:] }
-    return object
 }
 
 private func deepSeekNumber(_ value: JSONValue?) -> Int? {

@@ -8,6 +8,7 @@ public struct DeepSeekLanguageModelChatOptions: Codable, Sendable, Equatable {
         public init(type: String? = nil) { self.type = type }
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: Key.self)
+            try rejectDeepSeekNullOptions(container, keys: [.type])
             type = try container.decodeIfPresent(String.self, forKey: .type)
             if let type, !["adaptive", "enabled", "disabled"].contains(type) {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid DeepSeek thinking type")
@@ -28,6 +29,7 @@ public struct DeepSeekLanguageModelChatOptions: Codable, Sendable, Equatable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        try rejectDeepSeekNullOptions(c, keys: [.logprobs, .topLogprobs, .userId, .thinking, .reasoningEffort, .strictJsonSchema])
         logprobs = try c.decodeIfPresent(Bool.self, forKey: .logprobs)
         topLogprobs = try c.decodeIfPresent(Int.self, forKey: .topLogprobs)
         userId = try c.decodeIfPresent(String.self, forKey: .userId)
@@ -37,7 +39,7 @@ public struct DeepSeekLanguageModelChatOptions: Codable, Sendable, Equatable {
         if let value = topLogprobs, !(0...20).contains(value) {
             throw DecodingError.dataCorruptedError(forKey: .topLogprobs, in: c, debugDescription: "topLogprobs must be between 0 and 20")
         }
-        if let value = userId, value.count > 512 || value.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil {
+        if let value = userId, value.count > 512 || value.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != (value.startIndex..<value.endIndex) {
             throw DecodingError.dataCorruptedError(forKey: .userId, in: c, debugDescription: "Invalid DeepSeek userId")
         }
         if let value = reasoningEffort, !["low", "medium", "high", "xhigh", "max"].contains(value) {
@@ -49,6 +51,11 @@ public struct DeepSeekLanguageModelChatOptions: Codable, Sendable, Equatable {
 public struct DeepSeekMessageProviderOptions: Codable, Sendable, Equatable {
     public var name: String?
     public init(name: String? = nil) { self.name = name }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try rejectDeepSeekNullOptions(c, keys: [.name])
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+    }
 }
 
 public struct DeepSeekAssistantMessageProviderOptions: Codable, Sendable, Equatable {
@@ -57,6 +64,7 @@ public struct DeepSeekAssistantMessageProviderOptions: Codable, Sendable, Equata
     public init(name: String? = nil, prefix: Bool? = nil) { self.name = name; self.prefix = prefix }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        try rejectDeepSeekNullOptions(c, keys: [.name, .prefix])
         name = try c.decodeIfPresent(String.self, forKey: .name)
         prefix = try c.decodeIfPresent(Bool.self, forKey: .prefix)
         if prefix == false { throw DecodingError.dataCorruptedError(forKey: .prefix, in: c, debugDescription: "prefix must be true") }
@@ -69,12 +77,21 @@ public struct DeepSeekFilePartProviderOptions: Codable, Sendable, Equatable {
     public init(imageDetail: String? = nil, fileData: Bool? = nil) { self.imageDetail = imageDetail; self.fileData = fileData }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        try rejectDeepSeekNullOptions(c, keys: [.imageDetail, .fileData])
         imageDetail = try c.decodeIfPresent(String.self, forKey: .imageDetail)
         fileData = try c.decodeIfPresent(Bool.self, forKey: .fileData)
         if let imageDetail, !["low", "high", "original", "auto"].contains(imageDetail) {
             throw DecodingError.dataCorruptedError(forKey: .imageDetail, in: c, debugDescription: "Invalid DeepSeek image detail")
         }
         if fileData == false { throw DecodingError.dataCorruptedError(forKey: .fileData, in: c, debugDescription: "fileData must be true") }
+    }
+}
+
+func rejectDeepSeekNullOptions<Key: CodingKey>(_ container: KeyedDecodingContainer<Key>, keys: [Key]) throws {
+    for key in keys where container.contains(key) {
+        if try container.decodeNil(forKey: key) {
+            throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "\(key.stringValue) must not be null")
+        }
     }
 }
 

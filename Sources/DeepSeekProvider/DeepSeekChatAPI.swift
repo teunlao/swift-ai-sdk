@@ -2,6 +2,11 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+func deepSeekObject(_ value: JSONValue?) -> [String: JSONValue] {
+    guard case .object(let object) = value else { return [:] }
+    return object
+}
+
 struct DeepSeekTokenUsage: Decodable, Sendable {
     let raw: JSONValue
     init(from decoder: Decoder) throws {
@@ -25,7 +30,18 @@ struct DeepSeekTokenUsage: Decodable, Sendable {
 struct DeepSeekLogprobs: Decodable, Sendable {
     let raw: JSONValue
     private struct Token: Decodable {
-        struct Alternative: Decodable { let token: String; let logprob: Double; let bytes: [Double]? }
+        struct Alternative: Decodable {
+            let token: String
+            let logprob: Double
+            let bytes: [Double]?
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: Key.self)
+                token = try c.decode(String.self, forKey: .token)
+                logprob = try c.decode(Double.self, forKey: .logprob)
+                bytes = try c.decode([Double]?.self, forKey: .bytes)
+            }
+            private enum Key: String, CodingKey { case token, logprob, bytes }
+        }
         let token: String
         let logprob: Double
         let bytes: [Double]?
@@ -43,20 +59,39 @@ struct DeepSeekLogprobs: Decodable, Sendable {
         let c = try decoder.container(keyedBy: Key.self)
         _ = try c.decodeIfPresent([Token].self, forKey: .content)
         _ = try c.decodeIfPresent([Token].self, forKey: .reasoning)
-        raw = try JSONValue(from: decoder)
+        let object = deepSeekObject(try JSONValue(from: decoder))
+        var parsed: [String: JSONValue] = [:]
+        for key in ["content", "reasoning_content"] {
+            guard let value = object[key] else { continue }
+            if case .array(let tokens) = value {
+                parsed[key] = .array(tokens.map { value in
+                    var token = deepSeekObject(value).filter { ["token", "logprob", "bytes", "top_logprobs"].contains($0.key) }
+                    if case .array(let alternatives) = token["top_logprobs"] {
+                        token["top_logprobs"] = .array(alternatives.map { .object(deepSeekObject($0).filter { ["token", "logprob", "bytes"].contains($0.key) }) })
+                    }
+                    return .object(token)
+                })
+            } else { parsed[key] = value }
+        }
+        raw = .object(parsed)
     }
     private enum Key: String, CodingKey { case content; case reasoning = "reasoning_content" }
 }
+
+enum DeepSeekAssistantRole: String, Decodable, Sendable { case assistant }
+enum DeepSeekToolType: String, Decodable, Sendable { case function }
+enum DeepSeekResponseObject: String, Decodable, Sendable { case completion = "chat.completion" }
+enum DeepSeekChunkObject: String, Decodable, Sendable { case chunk = "chat.completion.chunk" }
 
 struct DeepSeekResponse: Decodable, Sendable {
     struct ToolCall: Decodable, Sendable {
         struct Function: Decodable, Sendable { let name: String; let arguments: String }
         let id: String?
-        let type: String?
+        let type: DeepSeekToolType?
         let function: Function
     }
     struct Message: Decodable, Sendable {
-        let role: String?
+        let role: DeepSeekAssistantRole?
         let content: String?
         let reasoningContent: String?
         let toolCalls: [ToolCall]?
@@ -76,7 +111,7 @@ struct DeepSeekResponse: Decodable, Sendable {
     let id: String?
     let created: Double?
     let model: String?
-    let object: String?
+    let object: DeepSeekResponseObject?
     let systemFingerprint: String?
     let choices: [Choice]
     let usage: DeepSeekTokenUsage?
@@ -88,11 +123,11 @@ struct DeepSeekChunk: Decodable, Sendable {
         struct Function: Decodable, Sendable { let name: String?; let arguments: String? }
         let index: Int
         let id: String?
-        let type: String?
+        let type: DeepSeekToolType?
         let function: Function
     }
     struct Delta: Decodable, Sendable {
-        let role: String?
+        let role: DeepSeekAssistantRole?
         let content: String?
         let reasoningContent: String?
         let toolCalls: [ToolCall]?
@@ -112,7 +147,7 @@ struct DeepSeekChunk: Decodable, Sendable {
     let id: String?
     let created: Double?
     let model: String?
-    let object: String?
+    let object: DeepSeekChunkObject?
     let systemFingerprint: String?
     let choices: [Choice]
     let usage: DeepSeekTokenUsage?
@@ -124,7 +159,20 @@ public struct DeepSeekErrorData: Decodable, Sendable {
         public let message: String
         public let type: String?
         public let param: JSONValue?
-        public let code: JSONValue?
+        public let code: ProviderStreamError.Code?
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: Key.self)
+            message = try container.decode(String.self, forKey: .message)
+            type = try container.decodeIfPresent(String.self, forKey: .type)
+            param = try container.decodeIfPresent(JSONValue.self, forKey: .param)
+            switch try container.decodeIfPresent(JSONValue.self, forKey: .code) {
+            case .string(let value): code = .string(value)
+            case .number(let value): code = .number(value)
+            case nil, .null: code = nil
+            default: throw DecodingError.dataCorruptedError(forKey: .code, in: container, debugDescription: "Expected string or number error code")
+            }
+        }
+        private enum Key: String, CodingKey { case message, type, param, code }
     }
     public let error: Detail
 }
@@ -150,7 +198,7 @@ func deepSeekStreamError(_ error: DeepSeekErrorData.Detail, raw: JSONValue) -> P
     let codeText: String?
     switch error.code {
     case .string(let value): code = .string(value); codeText = value
-    case .number(let value): code = .number(value); codeText = String(Int(value))
+    case .number(let value): code = .number(value); codeText = Int(exactly: value).map(String.init) ?? String(value)
     default: code = nil; codeText = nil
     }
     var status: Int?

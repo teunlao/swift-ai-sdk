@@ -7,6 +7,7 @@ public struct DeepSeekFilesOptions: Codable, Sendable, Equatable {
     public init(expiresAfter: Int? = nil) { self.expiresAfter = expiresAfter }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        try rejectDeepSeekNullOptions(c, keys: [.expiresAfter])
         expiresAfter = try c.decodeIfPresent(Int.self, forKey: .expiresAfter)
         if let expiresAfter, !(3600...2592000).contains(expiresAfter) {
             throw DecodingError.dataCorruptedError(forKey: .expiresAfter, in: c, debugDescription: "expiresAfter must be between 3600 and 2592000 seconds")
