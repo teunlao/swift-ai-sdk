@@ -367,8 +367,8 @@ struct GenerateTextAdvancedTests {
                     #expect(staticError.toolName == "web_search")
                     #expect(staticError.providerExecuted == true)
                     #expect(staticError.input == JSONValue.object(["value": .string("value")]))
-                    // Upstream keeps the provider's raw error result as the error value.
-                    #expect(String(describing: staticError.error) == #""ERROR""#)
+                    // Upstream keeps the provider's raw error result as the error value; a string is the message.
+                    #expect(String(describing: staticError.error) == "ERROR")
                 } else {
                     Issue.record("Expected static tool error result")
                 }

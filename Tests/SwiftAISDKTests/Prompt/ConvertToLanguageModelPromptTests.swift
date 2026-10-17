@@ -1133,16 +1133,16 @@ struct ConvertToLanguageModelPromptTests {
         #expect(data1 == Data([137, 80, 78, 71, 13, 10, 26, 10, 0]))
         #expect(file1.mediaType == "image/png")
 
-        // Second file could not be downloaded, kept as string URL
+        // Second file was not downloaded, so its URL is passed through
         guard case .file(let file2) = content[1] else {
             Issue.record("Expected file part")
             return
         }
-        guard case .base64(let url2) = file2.data else {
-            Issue.record("Expected base64/string")
+        guard case .url(let url2, _) = file2.data else {
+            Issue.record("Expected URL")
             return
         }
-        #expect(url2 == "http://127.0.0.1:3000/file")
+        #expect(url2.absoluteString == "http://127.0.0.1:3000/file")
         #expect(file2.mediaType == "application/octet-stream")
 
         // Third image downloaded successfully

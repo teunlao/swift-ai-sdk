@@ -209,7 +209,8 @@ struct AbortReleaseTests {
             _ = try await generateText(
                 model: model,
                 messages: [.user(UserModelMessage(content: .parts([
-                    .file(FilePart(data: .url(URL(string: "https://example.invalid/report.pdf")!), mediaType: "application/pdf"))
+                    // An IP literal: no host resolution runs before the abort check.
+                    .file(FilePart(data: .url(URL(string: "https://1.1.1.1/report.pdf")!), mediaType: "application/pdf"))
                 ])))],
                 settings: CallSettings(abortSignal: { true })
             )

@@ -546,13 +546,16 @@ private struct StreamObjectRun<ResultValue: Sendable, PartialValue: Sendable, El
                 pendingDelta.append(delta)
 
                 let parseResult = await parsePartialJson(accumulatedText)
-                guard let currentJSON = parseResult.value, latestJSON != currentJSON else { continue }
+                let isFinalDelta = parseResult.state == .successfulParse
+                // The completed JSON can equal the last repaired one (an array's last element arriving whole);
+                // it is still validated, since only the final delta publishes that element.
+                guard let currentJSON = parseResult.value, isFinalDelta || latestJSON != currentJSON else { continue }
 
                 let validation = await output.strategy.validatePartial(
                     currentJSON,
                     pendingDelta,
                     isFirstDelta,
-                    parseResult.state == .successfulParse,
+                    isFinalDelta,
                     latestPartial
                 )
                 guard case let .success(validationResult) = validation else { continue }
