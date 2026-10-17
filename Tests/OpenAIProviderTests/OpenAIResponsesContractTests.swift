@@ -787,7 +787,7 @@ struct OpenAIResponsesContractTests {
         #expect(usage?.inputTokens.cacheWrite == 3)
         #expect(usage?.outputTokens.total == 5)
         #expect(usage?.outputTokens.reasoning == 1)
-        #expect(providerMetadata?["openai"]?["serviceTier"] == .string("auto"))
+        #expect(providerMetadata?["openai"]?["serviceTier"] == nil)
         #expect(providerMetadata?["openai"]?["responseId"] == .string("resp-failed-late"))
         #expect(providerMetadata?["openai"]?["reasoningContext"] == .string("current_turn"))
     }

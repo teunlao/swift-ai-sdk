@@ -118,15 +118,20 @@ struct OpenAIResponsesStreamContractTests {
             }
             var raw = projected
             raw["future"] = .object(["kept": .bool(true)])
-            let parts = try await collect([start, .object(raw), completed])
+            let created: JSONValue = .object(["type": .string("response.created"), "response": .object([
+                "id": .string("resp"), "created_at": .number(1), "model": .string("gpt-4.1"), "service_tier": .string("priority")
+            ])])
+            let parts = try await collect([created, start, .object(raw), completed])
             let error = try #require(parts.compactMap { part -> ProviderStreamError? in
                 if case .error(.providerStreamError(let value)) = part { return value }; return nil
             }.first)
             #expect(error.data == .object(projected))
             #expect(error.statusCode == 500)
             #expect(parts.contains { if case .raw(let value) = $0 { return value == .object(raw) }; return false })
-            guard case .finish(let reason, _, _)? = parts.last else { Issue.record("Missing finish"); return }
+            guard case .finish(let reason, _, let metadata)? = parts.last else { Issue.record("Missing finish"); return }
             #expect(reason.unified == .error)
+            #expect(reason.raw == "error")
+            #expect(metadata?["openai"]?["serviceTier"] == nil)
         }
     }
 
@@ -192,6 +197,26 @@ struct OpenAIResponsesStreamContractTests {
         }
         guard case .finish(let reason, _, _)? = parts.last else { Issue.record("Missing finish"); return }
         #expect(reason.unified == .toolCalls)
+    }
+
+    @Test("Default store retains final encrypted reasoning before ending the summary")
+    func defaultStoreReasoning() async throws {
+        let done: JSONValue = .object(["type": .string("response.output_item.done"), "output_index": .number(0), "item": .object([
+            "type": .string("reasoning"), "id": .string("rs"), "encrypted_content": .string("final-encrypted")
+        ])])
+        let parts = try await collect([
+            .object(["type": .string("response.output_item.added"), "output_index": .number(0), "item": .object(["type": .string("reasoning"), "id": .string("rs")])]),
+            .object(["type": .string("response.reasoning_summary_part.done"), "item_id": .string("rs"), "summary_index": .number(0)]),
+            done, completed
+        ])
+        let endIndex = try #require(parts.firstIndex { if case .reasoningEnd = $0 { return true }; return false })
+        guard case .reasoningEnd(let id, let metadata) = parts[endIndex] else { return }
+        #expect(id == "rs:0")
+        #expect(metadata?["openai"]?["reasoningEncryptedContent"] == .string("final-encrypted"))
+        let doneIndex = try #require(parts.firstIndex { if case .raw(let value) = $0 { return value == done }; return false })
+        #expect(doneIndex < endIndex)
+        guard case .finish(_, _, let finishMetadata)? = parts.last else { Issue.record("Missing finish"); return }
+        #expect(finishMetadata?["openai"]?["responseId"] == .null)
     }
 
     @Test("Sparse reasoning indices retain ECMAScript number IDs", arguments: [(1.5, "1.5"), (1e20, "100000000000000000000"), (1e21, "1e+21")])

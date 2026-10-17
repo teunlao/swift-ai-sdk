@@ -90,15 +90,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             )
         }
 
-        let logprobsRequested: Bool = {
-            guard let logprobs = prepared.openAIOptions?.logprobs else { return false }
-            switch logprobs {
-            case .bool(let flag):
-                return flag
-            case .number:
-                return true
-            }
-        }()
+        let logprobsRequested = requestsLogprobs(options)
 
         let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
 
@@ -113,7 +105,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         )
 
         let providerMetadata = makeProviderMetadata(
-            responseId: value.id,
+            responseId: value.id.map(JSONValue.string),
             logprobs: mapped.logprobs,
             serviceTier: value.serviceTier,
             reasoningContext: value.reasoning?.context
@@ -185,15 +177,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             responseHeaders: response.responseHeaders
         )
         let webSearchToolName = prepared.toolNameMapping.toCustomToolName(prepared.webSearchToolName ?? "web_search")
-        let logprobsRequested: Bool = {
-            guard let logprobs = prepared.openAIOptions?.logprobs else { return false }
-            switch logprobs {
-            case .bool(let flag):
-                return flag
-            case .number:
-                return true
-            }
-        }()
+        let logprobsRequested = requestsLogprobs(options)
 
         let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
 
@@ -348,7 +332,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                             case "response.created":
                                 if let metadata = makeResponseMetadata(from: chunkObject) {
                                     responseId = metadata.id
-                                    serviceTier = metadata.serviceTier ?? serviceTier
                                     continuation.yield(.responseMetadata(
                                         id: metadata.id,
                                         modelId: metadata.modelId,
@@ -391,14 +374,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                                     hasFunctionCall: hasFunctionCall,
                                     finishReason: &finishReason,
                                     usage: &usage,
-                                    responseId: &responseId,
-                                    serviceTier: &serviceTier,
                                     encounteredStreamError: &encounteredStreamError,
                                     continuation: continuation
                                 )
                             case "error":
                                 encounteredStreamError = true
-                                finishReason = .init(unified: .error, raw: nil)
+                                finishReason = .init(unified: .error, raw: "error")
                                 continuation.yield(.error(error: createOpenAIProviderStreamError(chunk.rawValue).map(LanguageModelV4StreamError.providerStreamError) ?? .value(chunk.rawValue)))
                             default:
                                 break
@@ -436,7 +417,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                         for delta in call.bufferedInputDeltas { continuation.yield(.toolInputDelta(id: call.toolCallId, delta: delta, providerMetadata: nil)) }
                     }
                     let metadata = makeProviderMetadata(
-                        responseId: responseId,
+                        responseId: responseId.map(JSONValue.string) ?? .null,
                         logprobs: logprobs,
                         serviceTier: serviceTier,
                         reasoningContext: reasoningContext
@@ -467,8 +448,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         let warnings: [SharedV4Warning]
         let webSearchToolName: String?
         let toolNameMapping: ToolNameMapping
-        let store: Bool
-        let openAIOptions: OpenAIResponsesProviderOptions?
+        let store: Bool?
         let isShellProviderExecuted: Bool
         let functionTools: [LanguageModelV4FunctionTool]
     }
@@ -741,8 +721,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             warnings: warnings + preparedTools.warnings,
             webSearchToolName: webSearchToolName,
             toolNameMapping: toolNameMapping,
-            store: storeForInput,
-            openAIOptions: openAIOptions,
+            store: storeOption,
             isShellProviderExecuted: shellToolIsProviderExecuted(options.tools),
             functionTools: functionTools
         )
@@ -873,7 +852,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 guard case .toolCall(let toolCall) = part else { continue }
                 let providerOptions = toolCall.providerOptions
                 let approvalRequestId = providerOptions?["openai"]?["approvalRequestId"]?.stringValue
-                    ?? providerOptions?[providerOptionsName]?["approvalRequestId"]?.stringValue
                 if let approvalRequestId {
                     mapping[Data(approvalRequestId.utf8)] = toolCall.toolCallId
                 }
@@ -1399,32 +1377,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
             case "local_shell_call":
                 guard let toolCallId = object["call_id"]?.stringValue,
-                      let actionObject = object["action"]?.objectValue,
-                      let actionType = actionObject["type"]?.stringValue,
-                      let commands = actionObject["command"]?.arrayValue?.compactMap({ $0.stringValue }),
-                      let itemId = object["id"]?.stringValue else {
-                    continue
-                }
-
-                var actionPayload: [String: JSONValue] = [
-                    "type": .string(actionType),
-                    "command": .array(commands.map(JSONValue.string))
-                ]
-                if let timeoutMs = actionObject["timeout_ms"]?.numberValue {
-                    actionPayload["timeoutMs"] = .number(timeoutMs)
-                }
-                if let user = actionObject["user"]?.stringValue {
-                    actionPayload["user"] = .string(user)
-                }
-                if let workingDirectory = actionObject["working_directory"]?.stringValue {
-                    actionPayload["workingDirectory"] = .string(workingDirectory)
-                }
-                if let env = actionObject["env"]?.objectValue {
-                    let mappedEnv = env.compactMapValues { value in value.stringValue.map(JSONValue.string) }
-                    actionPayload["env"] = .object(mappedEnv)
-                }
-
-                let inputValue: JSONValue = .object(["action": .object(actionPayload)])
+                      let itemId = object["id"]?.stringValue else { continue }
+                let inputValue: JSONValue = .object(["action": object["action"]!])
                 let inputString = try openAIJSONStringify(inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
 
@@ -1444,15 +1398,20 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         return MappedResponse(content: content, logprobs: logprobs, hasFunctionCall: hasFunctionCall)
     }
 
+    private func requestsLogprobs(_ options: LanguageModelV4CallOptions) -> Bool {
+        let value = options.providerOptions?[providerOptionsName]?["logprobs"]
+        return value == .bool(true) || value?.numberValue != nil
+    }
+
     private func makeProviderMetadata(
-        responseId: String?,
+        responseId: JSONValue?,
         logprobs: [JSONValue],
         serviceTier: String?,
         reasoningContext: String?
     ) -> SharedV4ProviderMetadata? {
         var inner: [String: JSONValue] = [:]
         if let responseId {
-            inner["responseId"] = .string(responseId)
+            inner["responseId"] = responseId
         }
         if !logprobs.isEmpty {
             inner["logprobs"] = .array(logprobs)
@@ -1463,7 +1422,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         if let reasoningContext {
             inner["reasoningContext"] = .string(reasoningContext)
         }
-        return inner.isEmpty ? nil : [providerOptionsName: inner]
+        return [providerOptionsName: inner]
     }
 
     private func nextSourceId() -> String {
@@ -1532,7 +1491,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         let id: String
         let modelId: String?
         let timestamp: Date?
-        let serviceTier: String?
     }
 
     private func openAIProviderMetadata(_ items: [String: JSONValue]) -> SharedV4ProviderMetadata {
@@ -2565,14 +2523,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleReasoningSummaryPartDone(
         _ chunk: [String: JSONValue],
-        store: Bool,
+        store: Bool?,
         activeOutputItemIds: IndexMap<String>,
         activeReasoning: inout [Data: ReasoningState],
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         let itemId = resolveOutputItemId(chunk["item_id"]!.stringValue!, outputIndex: chunk["output_index"]?.numberValue, activeOutputItemIds: activeOutputItemIds)
         guard let summaryIndex = chunk["summary_index"]?.numberValue, let state = activeReasoning[Data(itemId.utf8)] else { return }
-        if store {
+        if store == true {
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
             continuation.yield(.reasoningEnd(id: "\(itemId):\(jsNumberString(summaryIndex))", providerMetadata: metadata))
             state.summaryParts[summaryIndex] = .concluded
@@ -2622,8 +2580,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         hasFunctionCall: Bool,
         finishReason: inout LanguageModelV4FinishReason,
         usage: inout LanguageModelV4Usage,
-        responseId: inout String?,
-        serviceTier: inout String?,
         encounteredStreamError: inout Bool,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
@@ -2645,14 +2601,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         }
 
         usage = convertOpenAIResponsesUsage(parsedUsage)
-
-        if let tier = responseObject["service_tier"]?.stringValue {
-            serviceTier = tier
-        }
-
-        if responseId == nil, let id = responseObject["id"]?.stringValue {
-            responseId = id
-        }
 
         guard !encounteredStreamError,
               let errorPayload = makeResponseFailedStreamErrorPayload(from: chunk) else {
@@ -2691,8 +2639,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         }
         let timestamp = response["created_at"]?.numberValue.map { Date(timeIntervalSince1970: $0) }
         let modelId = response["model"]?.stringValue
-        let serviceTier = response["service_tier"]?.stringValue
-        return ResponseMetadata(id: id, modelId: modelId, timestamp: timestamp, serviceTier: serviceTier)
+        return ResponseMetadata(id: id, modelId: modelId, timestamp: timestamp)
     }
 
     private func escapeJSONString(_ value: String) -> String {

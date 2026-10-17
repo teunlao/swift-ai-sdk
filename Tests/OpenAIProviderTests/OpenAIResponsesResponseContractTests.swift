@@ -61,6 +61,61 @@ struct OpenAIResponsesResponseContractTests {
         #expect(try jsonValue(from: #require(result.response?.body)) == response)
     }
 
+    @Test("Fallback call options preserve namespace-specific metadata policy", arguments: [false, true])
+    func namespaceMetadata(streaming: Bool) async throws {
+        let logprobs = JSONValue.array([])
+        let mcp: JSONValue = .object([
+            "type": .string("mcp_call"), "id": .string("mcp-wire"), "status": .string("completed"),
+            "name": .string("lookup"), "arguments": .string("{}"), "server_label": .string("docs"), "approval_request_id": .string("approval")
+        ])
+        let body: Data
+        if streaming {
+            let frames: [JSONValue] = [
+                .object(["type": .string("response.output_item.added"), "output_index": .number(0), "item": .object(["type": .string("message"), "id": .string("msg")])]),
+                .object(["type": .string("response.output_text.delta"), "item_id": .string("msg"), "delta": .string("x"), "logprobs": logprobs]),
+                .object(["type": .string("response.output_item.done"), "output_index": .number(0), "item": .object(["type": .string("message"), "id": .string("msg")])]),
+                .object(["type": .string("response.output_item.done"), "output_index": .number(1), "item": mcp]),
+                .object(["type": .string("response.completed"), "response": .object([:])])
+            ]
+            body = Data(try frames.map { "data: \(String(decoding: try JSONEncoder().encode($0), as: UTF8.self))\n\n" }.joined().utf8)
+        } else {
+            body = try JSONEncoder().encode(JSONValue.object(["output": .array([
+                .object(["type": .string("message"), "role": .string("assistant"), "id": .string("msg"), "content": .array([
+                    .object(["type": .string("output_text"), "text": .string("x"), "annotations": .array([]), "logprobs": logprobs])
+                ])]), mcp
+            ])]))
+        }
+        let model = OpenAIResponsesLanguageModel(modelId: "gpt-4.1", config: .init(
+            provider: "proxy.azure.responses", url: { _ in "https://example.com/responses" }, fetch: { request in
+                guard case .object(let requestBody) = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody)) else {
+                    throw URLError(.badServerResponse)
+                }
+                #expect(requestBody["top_logprobs"] == .number(20))
+                return FetchResponse(body: .data(body), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"])!)
+            }
+        ))
+        let options = LanguageModelV4CallOptions(prompt: [.assistant(content: [.toolCall(.init(
+            toolCallId: "approved", toolName: "mcp.lookup", input: .object([:]), providerExecuted: true,
+            providerOptions: ["azure": ["approvalRequestId": .string("approval")]]
+        ))], providerOptions: nil)], providerOptions: ["openai": ["logprobs": .bool(true)]])
+        var metadata: SharedV4ProviderMetadata?
+        var results: [LanguageModelV4ToolResult] = []
+        if streaming {
+            let result = try await model.doStream(options: options)
+            for try await part in result.stream {
+                if case .finish(_, _, let value) = part { metadata = value }
+                if case .toolResult(let value) = part { results.append(value) }
+            }
+        } else {
+            let result = try await model.doGenerate(options: options)
+            metadata = result.providerMetadata
+            results = result.content.compactMap { if case .toolResult(let value) = $0 { return value }; return nil }
+        }
+        #expect(metadata?["azure"] == (streaming ? ["responseId": .null] : [:]))
+        #expect(results.first?.toolCallId == "mcp-wire")
+    }
+
     @Test("Failed web searches return provider tool errors", arguments: ["failed", "incomplete"])
     func webSearchFailure(status: String) async throws {
         let result = try await generate(.object(["output": .array([.object([

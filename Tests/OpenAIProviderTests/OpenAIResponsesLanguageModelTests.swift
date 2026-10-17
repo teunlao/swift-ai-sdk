@@ -2510,7 +2510,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV4CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt, providerOptions: ["openai": ["store": .bool(true)]])
         )
 
         var parts: [LanguageModelV4StreamPart] = []
@@ -3563,8 +3563,8 @@ struct OpenAIResponsesLanguageModelTests {
         })
     }
 
-    @Test("doGenerate maps local shell input to camelCase fields")
-    func testDoGenerateMapsLocalShellInputCamelCase() async throws {
+    @Test("doGenerate preserves the local shell response action")
+    func testDoGeneratePreservesLocalShellAction() async throws {
         let responseJSON: [String: Any] = [
             "id": "resp_local_shell",
             "created_at": 1_742_150_000.0,
@@ -3643,11 +3643,10 @@ struct OpenAIResponsesLanguageModelTests {
             return
         }
 
-        #expect(action["timeoutMs"] as? Double == 1200)
-        #expect(action["workingDirectory"] as? String == "/workspace")
+        #expect(action["timeout_ms"] as? Double == 1200)
+        #expect(action["working_directory"] as? String == "/workspace")
         #expect(action["user"] as? String == "dev")
-        #expect(action["timeout_ms"] == nil)
-        #expect(action["working_directory"] == nil)
+        #expect(action["env"] as? [String: String] == ["PATH": "/usr/bin"])
     }
 
     @Test("doGenerate maps shell providerExecuted and shell_call_output")

@@ -837,8 +837,7 @@ struct OpenAIResponsesFixtureTests {
 
         #expect(action["type"] as? String == "exec")
         #expect(command == ["ls"])
-        #expect(action["workingDirectory"] as? String == "/root")
-        #expect(action["working_directory"] == nil)
+        #expect(action["working_directory"] as? String == "/root")
         #expect(env.isEmpty)
 
         guard let requestBody = decodeRequestBody(await capture.current()),
