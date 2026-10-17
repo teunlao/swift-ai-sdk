@@ -21,5 +21,7 @@ public struct AssemblyAITranscriptionModelId: RawRepresentable, Hashable, Sendab
 
 public extension AssemblyAITranscriptionModelId {
     static let best: Self = "best"
-    static let nano: Self = "nano"
+    static let universal2: Self = "universal-2"
+    static let universal3Pro: Self = "universal-3-pro"
+    static let universal35Pro: Self = "universal-3-5-pro"
 }

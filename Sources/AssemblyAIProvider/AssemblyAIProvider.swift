@@ -2,122 +2,35 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/assemblyai/src/assemblyai-provider.ts
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
 public struct AssemblyAIProviderSettings: Sendable {
     public var apiKey: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
-
     public init(apiKey: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
-        self.apiKey = apiKey
-        self.headers = headers
-        self.fetch = fetch
+        self.apiKey = apiKey; self.headers = headers; self.fetch = fetch
     }
 }
 
-public final class AssemblyAIProvider: ProviderV3 {
-    private let transcriptionFactory: @Sendable (AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel
-
-    init(transcriptionFactory: @escaping @Sendable (AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel) {
-        self.transcriptionFactory = transcriptionFactory
-    }
-
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-
-    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV3)? {
-        transcription(modelId: AssemblyAITranscriptionModelId(rawValue: modelId))
-    }
-
-    public func transcription(modelId: AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel {
-        transcriptionFactory(modelId)
-    }
-
-    public func callAsFunction(_ modelId: AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel {
-        transcription(modelId: modelId)
-    }
-}
-
-private func createAssemblyAIAuthFetch(
-    apiKey: String?,
-    customFetch: FetchFunction?
-) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let resolved = try loadAPIKey(
-            apiKey: apiKey,
-            environmentVariableName: "ASSEMBLYAI_API_KEY",
-            description: "AssemblyAI"
-        )
-
-        let hasAuthorization = headers.keys.contains { $0.lowercased() == "authorization" }
-        if !hasAuthorization {
-            headers["authorization"] = resolved
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
-    }
-}
-
-public func createAssemblyAIProvider(settings: AssemblyAIProviderSettings = .init()) -> AssemblyAIProvider {
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var computed: [String: String?] = [:]
-        if let custom = settings.headers {
-            for (key, value) in custom {
-                computed[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(computed.compactMapValues { $0 }, "ai-sdk/assemblyai/\(ASSEMBLYAI_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let fetch = createAssemblyAIAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let transcriptionFactory: @Sendable (AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel = { modelId in
-        AssemblyAITranscriptionModel(
-            modelId: modelId,
-            config: AssemblyAITranscriptionModel.Config(
-                provider: "assemblyai.transcription",
-                url: { options in
-                    "https://api.assemblyai.com\(options.path)"
-                },
-                headers: headersClosure,
-                fetch: fetch,
-                currentDate: { Date() }
+public final class AssemblyAIProvider: ProviderV4 {
+    public struct Models: Sendable { public let transcription: AssemblyAITranscriptionModel }
+    private let config: AssemblyAITranscriptionModel.Config
+    init(settings: AssemblyAIProviderSettings) {
+        config = .init(provider: "assemblyai.transcription", headers: {
+            let headers = combineHeaders(
+                ["authorization": try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "ASSEMBLYAI_API_KEY", description: "AssemblyAI")],
+                settings.headers?.mapValues(Optional.some)
             )
-        )
+            return withUserAgentSuffix(headers, "ai-sdk-assemblyai/\(ASSEMBLYAI_VERSION)").mapValues(Optional.some)
+        }, fetch: settings.fetch)
     }
-
-    return AssemblyAIProvider(transcriptionFactory: transcriptionFactory)
+    public func transcription(modelId: AssemblyAITranscriptionModelId) -> AssemblyAITranscriptionModel { .init(modelId: modelId, config: config) }
+    public func transcriptionModel(modelId: String) -> (any TranscriptionModelV4)? { transcription(modelId: .init(rawValue: modelId)) }
+    public func callAsFunction(_ modelId: AssemblyAITranscriptionModelId) -> Models { .init(transcription: transcription(modelId: modelId)) }
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 {
+        throw NoSuchModelError(modelId: "unknown", modelType: .languageModel, message: "AssemblyAI does not provide language models")
+    }
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
+    public func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
 }
-
-/// Alias matching the upstream naming (`createAssemblyAI`).
-public func createAssemblyAI(settings: AssemblyAIProviderSettings = .init()) -> AssemblyAIProvider {
-    createAssemblyAIProvider(settings: settings)
-}
-
-public let assemblyai = createAssemblyAIProvider()
+public func createAssemblyAI(settings: AssemblyAIProviderSettings = .init()) -> AssemblyAIProvider { .init(settings: settings) }
+public let assemblyai = createAssemblyAI()

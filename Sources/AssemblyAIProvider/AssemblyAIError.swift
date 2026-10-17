@@ -1,33 +1,11 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/assemblyai/src/assemblyai-error.ts
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
-public struct AssemblyAIErrorPayload: Codable, Sendable {
-    public struct ErrorBody: Codable, Sendable {
-        public let message: String
-        public let code: Int
-    }
-
-    public let error: ErrorBody
+struct AssemblyAIErrorData: Codable, Sendable {
+    struct ErrorBody: Codable, Sendable { let message: String; let code: Double }
+    let error: ErrorBody
 }
-
-private let assemblyaiErrorJSONSchema: JSONValue = .object([
-    "type": .string("object")
-])
-
-public let assemblyaiFailedResponseHandler: ResponseHandler<APICallError> = createJsonErrorResponseHandler(
-    errorSchema: FlexibleSchema(
-        Schema<AssemblyAIErrorPayload>.codable(
-            AssemblyAIErrorPayload.self,
-            jsonSchema: assemblyaiErrorJSONSchema
-        )
-    ),
+let assemblyaiFailedResponseHandler = createJsonErrorResponseHandler(
+    errorSchema: FlexibleSchema(Schema<AssemblyAIErrorData>.codable(AssemblyAIErrorData.self, jsonSchema: ["type": "object"])),
     errorToMessage: { $0.error.message }
 )

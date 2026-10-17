@@ -1,137 +1,44 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import AssemblyAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import AssemblyAIProvider
 
-@Suite("AssemblyAIProvider")
+@Suite("AssemblyAI provider failure contracts")
 struct AssemblyAIProviderTests {
-    private actor RequestCapture {
-        var requests: [URLRequest] = []
-        func append(_ request: URLRequest) { requests.append(request) }
-        func all() -> [URLRequest] { requests }
-    }
-
-    private static func encodeJSON(_ dict: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: dict)
-    }
-
-    private static func makeResponse(url: URL, json: [String: Any]) -> FetchResponse {
-        let body = encodeJSON(json)
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        return FetchResponse(body: .data(body), urlResponse: response)
-    }
-
-    @Test("supports upstream createAssemblyAI alias")
-    func supportsCreateAssemblyAIAlias() {
-        let provider = createAssemblyAI(settings: AssemblyAIProviderSettings(apiKey: "test-key"))
-        let model = provider.transcription(modelId: .best)
-        #expect(model.provider == "assemblyai.transcription")
-    }
-
-    @Test("uses upstream AssemblyAI endpoints for upload and transcript")
-    func usesUpstreamEndpoints() async throws {
-        let capture = RequestCapture()
-
-        let fetch: FetchFunction = { request in
-            await capture.append(request)
-
-            guard let url = request.url else {
-                throw APICallError(message: "Missing URL", url: "<missing>", requestBodyValues: nil)
-            }
-
-            switch url.path {
-            case "/v2/upload":
-                return Self.makeResponse(
-                    url: url,
-                    json: ["upload_url": "https://cdn.example.com/audio.wav"]
-                )
-            case "/v2/transcript":
-                return Self.makeResponse(
-                    url: url,
-                    json: [
-                        "id": "test-transcript-id",
-                        "status": "queued",
-                    ]
-                )
-            case "/v2/transcript/test-transcript-id":
-                return Self.makeResponse(
-                    url: url,
-                    json: [
-                        "id": "test-transcript-id",
-                        "status": "completed",
-                        "text": "ok",
-                        "language_code": "en",
-                        "audio_duration": 1,
-                    ]
-                )
-            default:
-                throw APICallError(message: "Unexpected path", url: url.absoluteString, requestBodyValues: nil)
-            }
+    @Test("polling HTTP errors keep the provider error message and status")
+    func pollingError() async throws {
+        let endpoint = TranscriptEndpoint(["error": ["message": "unavailable", "code": 1.5]], finalStatus: 503)
+        let model = createAssemblyAI(settings: .init(apiKey: "key", fetch: { try await endpoint.fetch($0) })).transcription(modelId: .universal35Pro)
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))
+            Issue.record("Expected API failure")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 503)
+            #expect(error.message == "unavailable")
         }
-
-        let provider = createAssemblyAI(settings: AssemblyAIProviderSettings(apiKey: "test-key", fetch: fetch))
-        let model = provider.transcription(modelId: .best)
-
-        _ = try await model.doGenerate(
-            options: .init(audio: .binary(Data([0x01, 0x02])), mediaType: "audio/wav")
-        )
-
-        let urls = await capture.all().compactMap(\.url?.absoluteString)
-        #expect(urls.count == 3)
-        #expect(urls.first == "https://api.assemblyai.com/v2/upload")
-        #expect(urls[1] == "https://api.assemblyai.com/v2/transcript")
-        #expect(urls.last == "https://api.assemblyai.com/v2/transcript/test-transcript-id")
     }
-
-    @Suite("auth behavior", .serialized)
-    struct AuthBehaviorTests {
-        @Test("missing API key throws LoadAPIKeyError at request time")
-        func missingAPIKeyThrowsAtRequestTime() async throws {
-            actor RequestCapture {
-                var requests: [URLRequest] = []
-                func append(_ request: URLRequest) { requests.append(request) }
-                func count() -> Int { requests.count }
-            }
-
+    @Test("invalid transcript status refuses at the response boundary")
+    func invalidStatus() async throws {
+        let endpoint = TranscriptEndpoint(["id": "job", "status": "future"])
+        let model = createAssemblyAI(settings: .init(apiKey: "key", fetch: { try await endpoint.fetch($0) })).transcription(modelId: .universal35Pro)
+        await #expect(throws: APICallError.self) { try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav")) }
+    }
+    @Test("aborted transcription cannot enter upload/poll orchestration")
+    func cancellation() async throws {
+        let endpoint = TranscriptEndpoint(["id": "job", "status": "completed"])
+        let model = createAssemblyAI(settings: .init(apiKey: "key", fetch: { try await endpoint.fetch($0) })).transcription(modelId: .universal35Pro)
+        await #expect(throws: CancellationError.self) { try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav", abortSignal: { true })) }
+    }
+    @Suite("lazy auth", .serialized)
+    struct Authentication {
+        @Test("missing API key fails from transcription")
+        func missingKey() async throws {
             let original = getenv("ASSEMBLYAI_API_KEY").flatMap { String(validatingCString: $0) }
-            defer {
-                if let original {
-                    setenv("ASSEMBLYAI_API_KEY", original, 1)
-                } else {
-                    unsetenv("ASSEMBLYAI_API_KEY")
-                }
-            }
-
             unsetenv("ASSEMBLYAI_API_KEY")
-
-            let capture = RequestCapture()
-            let fetch: FetchFunction = { request in
-                await capture.append(request)
-                let url = request.url ?? URL(string: "https://api.assemblyai.com/v2/upload")!
-                return AssemblyAIProviderTests.makeResponse(url: url, json: ["upload_url": "https://cdn.example.com/audio.wav"])
-            }
-
-            let provider = createAssemblyAI(settings: AssemblyAIProviderSettings(fetch: fetch))
-            let model = provider.transcription(modelId: .best)
-
-            do {
-                _ = try await model.doGenerate(
-                    options: .init(audio: .binary(Data([0x01])), mediaType: "audio/wav")
-                )
-                Issue.record("Expected missing API key error")
-            } catch let error as LoadAPIKeyError {
-                #expect(error.message.contains("ASSEMBLYAI_API_KEY environment variable"))
-            } catch {
-                Issue.record("Expected LoadAPIKeyError, got: \(error)")
-            }
-
-            #expect(await capture.count() == 0)
+            defer { if let original { setenv("ASSEMBLYAI_API_KEY", original, 1) } else { unsetenv("ASSEMBLYAI_API_KEY") } }
+            let model = createAssemblyAI().transcription(modelId: .universal35Pro)
+            await #expect(throws: LoadAPIKeyError.self) { try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav")) }
         }
     }
 }

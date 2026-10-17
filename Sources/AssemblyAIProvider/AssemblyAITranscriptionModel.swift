@@ -2,374 +2,164 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/assemblyai/src/assemblyai-transcription-model.ts
-// Upstream commit: 73d5c5920e
-//===----------------------------------------------------------------------===//
-
-public final class AssemblyAITranscriptionModel: TranscriptionModelV3 {
-    public struct Config: Sendable {
-        public struct RequestOptions: Sendable {
-            public let modelId: AssemblyAITranscriptionModelId
-            public let path: String
-
-            public init(modelId: AssemblyAITranscriptionModelId, path: String) {
-                self.modelId = modelId
-                self.path = path
-            }
-        }
-
-        public let provider: String
-        public let url: @Sendable (RequestOptions) -> String
-        public let headers: @Sendable () -> [String: String?]
-        public let fetch: FetchFunction?
-        public let currentDate: @Sendable () -> Date
-        /// The polling interval for checking transcript status, in milliseconds.
-        /// Matches upstream `pollingInterval` (default: 3000ms).
-        public let pollingIntervalMs: Int?
-
-        public init(
-            provider: String,
-            url: @escaping @Sendable (RequestOptions) -> String,
-            headers: @escaping @Sendable () -> [String: String?],
-            fetch: FetchFunction? = nil,
-            currentDate: @escaping @Sendable () -> Date = { Date() },
-            pollingIntervalMs: Int? = nil
-        ) {
-            self.provider = provider
-            self.url = url
-            self.headers = headers
-            self.fetch = fetch
-            self.currentDate = currentDate
-            self.pollingIntervalMs = pollingIntervalMs
-        }
+public final class AssemblyAITranscriptionModel: TranscriptionModelV4 {
+    struct Config: Sendable {
+        let provider: String
+        let headers: @Sendable () throws -> [String: String?]
+        let fetch: FetchFunction?
+        var currentDate: @Sendable () -> Date = { Date() }
+        var pollingInterval: Duration = .seconds(3)
     }
-
-    private struct PreparedRequest {
-        let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
-    }
-
-    private static let defaultPollingIntervalMs = 3000
-
-    private let modelIdentifier: AssemblyAITranscriptionModelId
+    private let identifier: AssemblyAITranscriptionModelId
     private let config: Config
-
-    public init(modelId: AssemblyAITranscriptionModelId, config: Config) {
-        self.modelIdentifier = modelId
-        self.config = config
-    }
-
+    init(modelId: AssemblyAITranscriptionModelId, config: Config) { identifier = modelId; self.config = config }
     public var provider: String { config.provider }
-    public var modelId: String { modelIdentifier.rawValue }
+    public var modelId: String { identifier.rawValue }
 
-    public func doGenerate(options: TranscriptionModelV3CallOptions) async throws -> TranscriptionModelV3Result {
-        let timestamp = config.currentDate()
-
-        let audioData: Data
+    public func doGenerate(options: TranscriptionModelV4CallOptions) async throws -> TranscriptionModelV4Result {
+        let now = config.currentDate()
+        let audio: Data
         switch options.audio {
-        case .binary(let data):
-            audioData = data
-        case .base64(let base64):
-            audioData = try convertBase64ToData(base64)
+        case .binary(let value): audio = value
+        case .base64(let value): audio = try convertBase64ToData(value)
         }
-
-        // Upload audio first
-        var uploadHeaders = combineHeaders(
-            config.headers(),
-            options.headers?.mapValues { Optional($0) }
+        let upload = try await postToAPI(
+            url: "https://api.assemblyai.com/v2/upload",
+            headers: combineHeaders(["Content-Type": "application/octet-stream"], try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: .init(content: .data(audio), values: audio), failedResponseHandler: assemblyaiFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiUploadResponseSchema), isAborted: options.abortSignal, fetch: config.fetch
         )
-        uploadHeaders["Content-Type"] = "application/octet-stream"
-
-        let uploadResponse = try await postToAPI(
-            url: config.url(.init(modelId: modelIdentifier, path: "/v2/upload")),
-            headers: uploadHeaders.compactMapValues { $0 },
-            body: PostBody(content: .data(audioData), values: nil),
-            failedResponseHandler: assemblyaiFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiUploadResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
-        )
-
-        let prepared = try await prepareRequest(options: options)
-        var payload = prepared.body
-        payload["audio_url"] = .string(uploadResponse.value.upload_url)
-
-        let submitResponse = try await postJsonToAPI(
-            url: config.url(.init(modelId: modelIdentifier, path: "/v2/transcript")),
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: JSONValue.object(payload),
-            failedResponseHandler: assemblyaiFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiSubmitResponseSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
-        )
-
-        let completion = try await waitForCompletion(
-            transcriptId: submitResponse.value.id,
-            headers: options.headers,
-            abortSignal: options.abortSignal
-        )
-
-        let result = completion.transcript
-        let segments = (result.words ?? []).map {
-            TranscriptionModelV3Result.Segment(text: $0.text, startSecond: $0.start, endSecond: $0.end)
+        let settings = try await parseProviderOptions(provider: "assemblyai", providerOptions: options.providerOptions, schema: assemblyaiTranscriptionModelOptionsSchema)
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var body = try settings.map { try JSONDecoder().decode(JSONObject.self, from: encoder.encode($0)) } ?? [:]
+        var warnings: [SharedV4Warning] = []
+        let docs = "https://www.assemblyai.com/docs/pre-recorded-audio/select-the-speech-model"
+        if modelId == "best" {
+            body["speech_model"] = .string(modelId)
+            warnings.append(.deprecated(setting: "model '\(modelId)'", message: "The 'best' model is a legacy AssemblyAI model. Use 'universal-3-5-pro' instead. See documentation: \(docs)"))
+        } else {
+            body["speech_models"] = [.string(modelId)]
+            if modelId == "universal-3-pro" {
+                warnings.append(.other(message: "'universal-3-5-pro' is AssemblyAI's latest flagship model and is set to replace 'universal-3-pro'. See \(docs)"))
+            } else if modelId == "universal-2" {
+                warnings.append(.other(message: "'universal-3-5-pro' is AssemblyAI's latest flagship model. See \(docs)"))
+            }
         }
-
-        let duration = result.audio_duration ?? result.words?.last?.end
-
-        return TranscriptionModelV3Result(
-            text: result.text ?? "",
-            segments: segments,
-            language: result.language_code,
-            durationInSeconds: duration,
-            warnings: prepared.warnings,
-            request: nil,
-            response: TranscriptionModelV3Result.ResponseInfo(
-                timestamp: timestamp,
-                modelId: modelIdentifier.rawValue,
-                headers: completion.responseHeaders,
-                body: completion.rawValue
-            ),
-            providerMetadata: nil
+        if let settings {
+            var boost: [String] = []
+            if settings.wordBoost != nil { boost.append("wordBoost") }
+            if settings.boostParam != nil { boost.append("boostParam") }
+            if !boost.isEmpty {
+                warnings.append(.deprecated(setting: boost.joined(separator: ", "), message: "'wordBoost' and 'boostParam' are deprecated and are rejected by 'universal-3-pro' / 'universal-3-5-pro' and 'slam-1'. Use 'keytermsPrompt' instead."))
+            }
+            if (settings.redactPiiReturnUnredacted != nil || settings.redactStaticEntities != nil), settings.redactPii != true {
+                warnings.append(.other(message: "'redactPiiReturnUnredacted' and 'redactStaticEntities' require 'redactPii' to be enabled; AssemblyAI rejects the request otherwise."))
+            }
+            if settings.redactPiiAudioOptions != nil, settings.redactPiiAudio != true {
+                warnings.append(.other(message: "'redactPiiAudioOptions' only applies when 'redactPiiAudio' is enabled; it is otherwise ignored."))
+            }
+            if settings.languageCode != nil, settings.languageDetection == true {
+                warnings.append(.other(message: "'languageDetection' cannot be combined with an explicit 'languageCode'; AssemblyAI rejects requests that set both."))
+            }
+        }
+        body["audio_url"] = .string(upload.value.uploadURL)
+        let submitted = try await postJsonToAPI(
+            url: "https://api.assemblyai.com/v2/transcript", headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(body), failedResponseHandler: assemblyaiFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiSubmitResponseSchema), isAborted: options.abortSignal, fetch: config.fetch
         )
-    }
-
-    private struct CompletionResult {
-        let transcript: AssemblyAITranscriptResponse
-        let responseHeaders: SharedV3Headers
-        let rawValue: Any?
-    }
-
-    private func waitForCompletion(
-        transcriptId: String,
-        headers: [String: String]?,
-        abortSignal: (@Sendable () -> Bool)?
-    ) async throws -> CompletionResult {
-        let pollingIntervalMs = config.pollingIntervalMs ?? Self.defaultPollingIntervalMs
-
         while true {
-            if abortSignal?() == true {
-                throw CancellationError()
-            }
-
-            let response = try await getFromAPI(
-                url: config.url(.init(modelId: modelIdentifier, path: "/v2/transcript/\(transcriptId)")),
-                headers: combineHeaders(
-                    config.headers(),
-                    headers?.mapValues { Optional($0) }
-                ).compactMapValues { $0 },
+            try Task.checkCancellation()
+            if options.abortSignal?() == true { throw CancellationError() }
+            let completed = try await getFromAPI(
+                url: "https://api.assemblyai.com/v2/transcript/\(submitted.value.id)",
+                headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
                 failedResponseHandler: assemblyaiFailedResponseHandler,
-                successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiTranscriptionResponseSchema),
-                isAborted: abortSignal,
-                fetch: config.fetch
+                successfulResponseHandler: createJsonResponseHandler(responseSchema: assemblyaiTranscriptionResponseSchema), isAborted: options.abortSignal, fetch: config.fetch
             )
-
-            let transcript = response.value
-
-            if transcript.status == "completed" {
-                return CompletionResult(
-                    transcript: transcript,
-                    responseHeaders: response.responseHeaders,
-                    rawValue: response.rawValue
-                )
-            }
-
-            if transcript.status == "error" {
-                throw AssemblyAITranscriptionFailedError(message: "Transcription failed: \(transcript.error ?? "Unknown error")")
-            }
-
-            if pollingIntervalMs > 0 {
-                try await Task.sleep(nanoseconds: UInt64(pollingIntervalMs) * 1_000_000)
-            } else {
-                await Task.yield()
-            }
-        }
-    }
-
-    private func prepareRequest(options: TranscriptionModelV3CallOptions) async throws -> PreparedRequest {
-        let parsedOptions: AssemblyAITranscriptionOptions? = try await parseProviderOptions(
-            provider: "assemblyai",
-            providerOptions: options.providerOptions,
-            schema: assemblyaiTranscriptionOptionsSchema
-        )
-
-        var body: [String: JSONValue] = [
-            "speech_model": .string(modelIdentifier.rawValue)
-        ]
-
-        if let opts = parsedOptions {
-            if let value = opts.audioEndAt {
-                body["audio_end_at"] = .number(Double(value))
-            }
-            if let value = opts.audioStartFrom {
-                body["audio_start_from"] = .number(Double(value))
-            }
-            if let value = opts.autoChapters {
-                body["auto_chapters"] = .bool(value)
-            }
-            if let value = opts.autoHighlights {
-                body["auto_highlights"] = .bool(value)
-            }
-            if let value = opts.boostParam {
-                body["boost_param"] = .string(value)
-            }
-            if let value = opts.contentSafety {
-                body["content_safety"] = .bool(value)
-            }
-            if let value = opts.contentSafetyConfidence {
-                body["content_safety_confidence"] = .number(Double(value))
-            }
-            if let value = opts.customSpelling {
-                let entries = value.map { entry -> JSONValue in
-                    .object([
-                        "from": .array(entry.from.map(JSONValue.string)),
-                        "to": .string(entry.to)
-                    ])
+            let result = completed.value
+            if result.status == .error { throw TranscriptionFailure(message: "Transcription failed: \(result.error ?? "Unknown error")") }
+            if result.status == .completed {
+                guard let rawValue = completed.rawValue, case .object(let raw) = try jsonValue(from: rawValue) else {
+                    throw InvalidResponseDataError(data: completed.rawValue, message: "Expected a transcript object")
                 }
-                body["custom_spelling"] = .array(entries)
+                var metadata: JSONObject = [:]
+                for (wire, field) in [("utterances", "utterances"), ("sentiment_analysis_results", "sentimentAnalysisResults"), ("entities", "entities"), ("content_safety_labels", "contentSafetyLabels"), ("iab_categories_result", "iabCategoriesResult"), ("auto_highlights_result", "autoHighlightsResult")] {
+                    if let value = raw[wire], value != .null { metadata[field] = value }
+                }
+                return .init(text: result.text ?? "", segments: result.words?.map { .init(text: $0.text, startSecond: $0.start / 1000, endSecond: $0.end / 1000) } ?? [],
+                             language: result.languageCode, durationInSeconds: result.audioDuration ?? result.words?.last.map { $0.end / 1000 }, warnings: warnings,
+                             response: .init(timestamp: now, modelId: modelId, headers: completed.responseHeaders, body: completed.rawValue), providerMetadata: metadata.isEmpty ? nil : ["assemblyai": metadata])
             }
-            if let value = opts.disfluencies {
-                body["disfluencies"] = .bool(value)
-            }
-            if let value = opts.entityDetection {
-                body["entity_detection"] = .bool(value)
-            }
-            if let value = opts.filterProfanity {
-                body["filter_profanity"] = .bool(value)
-            }
-            if let value = opts.formatText {
-                body["format_text"] = .bool(value)
-            }
-            if let value = opts.iabCategories {
-                body["iab_categories"] = .bool(value)
-            }
-            if let value = opts.languageCode {
-                body["language_code"] = .string(value)
-            }
-            if let value = opts.languageConfidenceThreshold {
-                body["language_confidence_threshold"] = .number(value)
-            }
-            if let value = opts.languageDetection {
-                body["language_detection"] = .bool(value)
-            }
-            if let value = opts.multichannel {
-                body["multichannel"] = .bool(value)
-            }
-            if let value = opts.punctuate {
-                body["punctuate"] = .bool(value)
-            }
-            if let value = opts.redactPii {
-                body["redact_pii"] = .bool(value)
-            }
-            if let value = opts.redactPiiAudio {
-                body["redact_pii_audio"] = .bool(value)
-            }
-            if let value = opts.redactPiiAudioQuality {
-                body["redact_pii_audio_quality"] = .string(value)
-            }
-            if let value = opts.redactPiiPolicies {
-                body["redact_pii_policies"] = .array(value.map(JSONValue.string))
-            }
-            if let value = opts.redactPiiSub {
-                body["redact_pii_sub"] = .string(value)
-            }
-            if let value = opts.sentimentAnalysis {
-                body["sentiment_analysis"] = .bool(value)
-            }
-            if let value = opts.speakerLabels {
-                body["speaker_labels"] = .bool(value)
-            }
-            if let value = opts.speakersExpected {
-                body["speakers_expected"] = .number(Double(value))
-            }
-            if let value = opts.speechThreshold {
-                body["speech_threshold"] = .number(value)
-            }
-            if let value = opts.summarization {
-                body["summarization"] = .bool(value)
-            }
-            if let value = opts.summaryModel {
-                body["summary_model"] = .string(value)
-            }
-            if let value = opts.summaryType {
-                body["summary_type"] = .string(value)
-            }
-            if let value = opts.webhookAuthHeaderName {
-                body["webhook_auth_header_name"] = .string(value)
-            }
-            if let value = opts.webhookAuthHeaderValue {
-                body["webhook_auth_header_value"] = .string(value)
-            }
-            if let value = opts.webhookUrl {
-                body["webhook_url"] = .string(value)
-            }
-            if let value = opts.wordBoost {
-                body["word_boost"] = .array(value.map(JSONValue.string))
-            }
+            try await Task.sleep(for: config.pollingInterval)
         }
-
-        return PreparedRequest(body: body, warnings: [])
     }
 }
 
-// MARK: - Response Schemas
-
-private struct AssemblyAIUploadResponse: Codable, Sendable {
-    let upload_url: String
+private enum TranscriptStatus: String, Decodable { case queued, processing, completed, error }
+private struct UploadResponse: Decodable {
+    let uploadURL: String
+    enum CodingKeys: String, CodingKey { case uploadURL = "upload_url" }
 }
-
-private let assemblyaiUploadResponseSchema = FlexibleSchema(
-    Schema<AssemblyAIUploadResponse>.codable(
-        AssemblyAIUploadResponse.self,
-        jsonSchema: .object([
-            "type": .string("object")
-        ])
-    )
-)
-
-private struct AssemblyAISubmitResponse: Codable, Sendable {
-    let id: String
-    let status: String
-}
-
-private let assemblyaiSubmitResponseSchema = FlexibleSchema(
-    Schema<AssemblyAISubmitResponse>.codable(
-        AssemblyAISubmitResponse.self,
-        jsonSchema: .object([
-            "type": .string("object")
-        ])
-    )
-)
-
-private struct AssemblyAITranscriptionWord: Codable, Sendable {
+private struct SubmitResponse: Decodable { let id: String; let status: TranscriptStatus }
+private struct Word: Decodable {
     let start: Double
     let end: Double
     let text: String
+    let confidence: Double?
+    let speaker: String?
+    let channel: String?
 }
-
-private struct AssemblyAITranscriptResponse: Codable, Sendable {
+private struct TranscriptResponse: Decodable {
+    struct Utterance: Decodable {
+        let start: Double
+        let end: Double
+        let text: String
+        let confidence: Double?
+        let speaker: String?
+        let channel: String?
+        let words: [Word]?
+    }
+    struct Sentiment: Decodable {
+        let text: String
+        let start: Double?
+        let end: Double?
+        let sentiment: String
+        let confidence: Double?
+        let speaker: String?
+    }
+    struct Entity: Decodable {
+        let entityType: String
+        let text: String
+        let start: Double?
+        let end: Double?
+        enum CodingKeys: String, CodingKey { case text, start, end; case entityType = "entity_type" }
+    }
     let id: String
-    let status: String
+    let status: TranscriptStatus
     let text: String?
-    let language_code: String?
-    let words: [AssemblyAITranscriptionWord]?
-    let audio_duration: Double?
+    let languageCode: String?
+    let speechModelUsed: String?
+    let words: [Word]?
+    let utterances: [Utterance]?
+    let sentimentAnalysisResults: [Sentiment]?
+    let entities: [Entity]?
+    let contentSafetyLabels: JSONObject?
+    let iabCategoriesResult: JSONObject?
+    let autoHighlightsResult: JSONObject?
+    let audioDuration: Double?
     let error: String?
+    enum CodingKeys: String, CodingKey {
+        case id, status, text, words, utterances, entities, error
+        case languageCode = "language_code", speechModelUsed = "speech_model_used", sentimentAnalysisResults = "sentiment_analysis_results"
+        case contentSafetyLabels = "content_safety_labels", iabCategoriesResult = "iab_categories_result", autoHighlightsResult = "auto_highlights_result", audioDuration = "audio_duration"
+    }
 }
-
-private let assemblyaiTranscriptionResponseSchema = FlexibleSchema(
-    Schema<AssemblyAITranscriptResponse>.codable(
-        AssemblyAITranscriptResponse.self,
-        jsonSchema: .object([
-            "type": .string("object")
-        ])
-    )
-)
-
-private struct AssemblyAITranscriptionFailedError: LocalizedError, Sendable {
+private let assemblyaiUploadResponseSchema = FlexibleSchema(Schema<UploadResponse>.codable(UploadResponse.self, jsonSchema: ["type": "object"]))
+private let assemblyaiSubmitResponseSchema = FlexibleSchema(Schema<SubmitResponse>.codable(SubmitResponse.self, jsonSchema: ["type": "object"]))
+private let assemblyaiTranscriptionResponseSchema = FlexibleSchema(Schema<TranscriptResponse>.codable(TranscriptResponse.self, jsonSchema: ["type": "object"]))
+private struct TranscriptionFailure: Error, LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
