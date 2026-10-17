@@ -192,12 +192,19 @@ struct StreamTextConcurrencyTests {
         )
     }
 
+    private enum ToolEvent: Sendable {
+        case started, cancelled
+    }
+
     @Test("an abort cancels in-flight tool executions",
           .timeLimit(.minutes(1)))
     func abortCancelsInFlightToolExecutions() async throws {
-        let toolStarted = Flag()
-        let toolCancelled = Flag()
+        let lifecycle = AsyncStream<ToolEvent>.makeStream()
         let aborted = AbortFlag()
+        defer {
+            aborted.set()
+            lifecycle.continuation.finish()
+        }
 
         let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { c in
             _ = Task {
@@ -225,13 +232,12 @@ struct StreamTextConcurrencyTests {
                 inputSchema: FlexibleSchema(jsonSchema(.object(["type": .string("object")]))),
                 needsApproval: .never,
                 execute: { _, _ in
-                    await toolStarted.set()
-                    // Sleep for a long time — stop() should cancel this task,
-                    // causing Task.sleep to throw CancellationError
+                    defer { lifecycle.continuation.finish() }
+                    lifecycle.continuation.yield(.started)
                     do {
                         try await Task.sleep(for: .seconds(60))
                     } catch is CancellationError {
-                        await toolCancelled.set()
+                        lifecycle.continuation.yield(.cancelled)
                     }
                     return .value(.null)
                 }
@@ -247,13 +253,19 @@ struct StreamTextConcurrencyTests {
         )
 
         let consumer = Task { try await result.collectFullStream() }
-        let started = await waitUntil(2.0) { await toolStarted.get() }
-        #expect(started, "Tool execute closure should have started")
+        defer { consumer.cancel() }
+        var events = lifecycle.stream.makeAsyncIterator()
+        let started = await events.next()
+        try #require(started == .started, "Tool execute closure should have started")
 
         aborted.set()
 
-        let cancelled = await waitUntil(2.0) { await toolCancelled.get() }
-        #expect(cancelled, "Tool task should be cancelled when the call is aborted")
-        _ = try? await consumer.value
+        let cancelled = await events.next()
+        #expect(cancelled == .cancelled, "Tool task should be cancelled when the call is aborted")
+        let parts = try await consumer.value
+        guard case .abort = parts.last else {
+            Issue.record("Expected the stream to end with an abort part")
+            return
+        }
     }
 }
