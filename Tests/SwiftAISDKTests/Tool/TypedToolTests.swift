@@ -128,6 +128,109 @@ struct TypedToolTests {
         #expect(type == "string")
     }
 
+    private func toolCallModel(input: String, toolName: String = "weather") -> MockLanguageModelV4 {
+        let usage = LanguageModelV4Usage(inputTokens: .init(total: 1), outputTokens: .init(total: 1))
+        return MockLanguageModelV4(doGenerate: .array([
+            LanguageModelV4GenerateResult(
+                content: [.toolCall(LanguageModelV4ToolCall(toolCallId: "call-1", toolName: toolName, input: input))],
+                finishReason: LanguageModelV4FinishReason(unified: .toolCalls),
+                usage: usage
+            ),
+            LanguageModelV4GenerateResult(
+                content: [.text(LanguageModelV4Text(text: "done"))],
+                finishReason: LanguageModelV4FinishReason(unified: .stop),
+                usage: usage
+            )
+        ]))
+    }
+
+    @Test("a typed tool returning a scalar produces that scalar as its result")
+    func scalarOutputThroughGenerateText() async throws {
+        let model = toolCallModel(input: #"{"location":"Paris"}"#)
+        let weather = tool(inputSchema: WeatherQuery.self, execute: { (query: WeatherQuery, _) async throws -> String in
+            "Sunny in \(query.location)"
+        })
+
+        let result = try await generateText(
+            model: model,
+            tools: ["weather": weather.tool],
+            prompt: "weather?",
+            stopWhen: [isStepCount(2)]
+        )
+
+        #expect(result.steps.first?.toolResults.map(\.output) == [.string("Sunny in Paris")])
+        let secondPrompt = model.doGenerateCalls.last?.prompt ?? []
+        let toolOutputs = secondPrompt.flatMap { message -> [LanguageModelV4ToolResultOutput] in
+            guard case .tool(let content, _) = message else { return [] }
+            return content.compactMap { part in
+                if case .toolResult(let result) = part { return result.output }
+                return nil
+            }
+        }
+        #expect(toolOutputs == [.text(value: "Sunny in Paris")])
+    }
+
+    @Test("an input the typed schema rejects goes to tool-call repair")
+    func invalidTypedInputIsRepaired() async throws {
+        let model = toolCallModel(input: #"{"city":"Paris"}"#)
+        let executed = LockedInputs()
+        let weather = tool(inputSchema: WeatherQuery.self, execute: { (query: WeatherQuery, _) async throws -> String in
+            executed.append(query.location)
+            return "Sunny"
+        })
+
+        let result = try await generateText(
+            model: model,
+            tools: ["weather": weather.tool],
+            prompt: "weather?",
+            stopWhen: [isStepCount(2)],
+            repairToolCall: { options in
+                LanguageModelV4ToolCall(
+                    toolCallId: options.toolCall.toolCallId,
+                    toolName: options.toolCall.toolName,
+                    input: #"{"location":"Paris"}"#
+                )
+            }
+        )
+
+        #expect(result.steps.first?.toolCalls.first?.invalid != true)
+        #expect(executed.values == ["Paris"])
+    }
+
+    @Test("callbacks, the recorded call and execute see the input the typed schema produced")
+    func transformedInputIsShared() async throws {
+        let trimmed = FlexibleSchema<WeatherQuery>(Schema(
+            jsonSchemaResolver: { ["type": "object", "properties": ["location": ["type": "string"]]] },
+            validator: { value in
+                guard let object = value as? [String: Any], let location = object["location"] as? String else {
+                    return .failure(error: TypeValidationError.wrap(value: value, cause: CancellationError()))
+                }
+                return .success(value: WeatherQuery(location: location.trimmingCharacters(in: .whitespaces)))
+            }
+        ))
+        let model = toolCallModel(input: #"{"location":"  Paris  "}"#)
+        let seen = LockedInputs()
+        let weather = tool(
+            inputSchema: trimmed,
+            onInputAvailable: { options in seen.append("callback:\(options.input)") },
+            execute: { (query: WeatherQuery, _) async throws -> String in
+                seen.append("execute:\(query.location)")
+                return "Sunny"
+            }
+        )
+
+        let result = try await generateText(
+            model: model,
+            tools: ["weather": weather.tool],
+            prompt: "weather?",
+            stopWhen: [isStepCount(2)]
+        )
+
+        let expectedInput: JSONValue = ["location": "Paris"]
+        #expect(result.steps.first?.toolCalls.first?.input == expectedInput)
+        #expect(seen.values == ["callback:\(expectedInput)", "execute:Paris"])
+    }
+
     @Test("toModelOutput receives the tool call id with typed input and output")
     func toModelOutputReceivesTypedCall() async throws {
         let weatherTool = tool(
@@ -151,4 +254,13 @@ struct TypedToolTests {
 
         #expect(modelOutput == .text(value: "call-1:Paris:Sunny"))
     }
+}
+
+private final class LockedInputs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+
+    var values: [String] { lock.withLock { stored } }
+
+    func append(_ value: String) { lock.withLock { stored.append(value) } }
 }

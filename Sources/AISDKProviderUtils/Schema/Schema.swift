@@ -199,7 +199,8 @@ public extension Schema where Output: Decodable & Sendable {
         configureDecoder: (@Sendable (JSONDecoder) -> JSONDecoder)? = nil
     ) -> Schema<Output> {
         Schema(jsonSchemaResolver: { jsonSchema }) { value in
-            guard JSONSerialization.isValidJSONObject(value) else {
+            // Wrapped so a top-level scalar, valid JSON, passes the object-only check.
+            guard JSONSerialization.isValidJSONObject([value]) else {
                 let serializationError = SchemaJSONSerializationError(value: value)
                 return .failure(
                     error: TypeValidationError.wrap(value: value, cause: serializationError)
@@ -207,7 +208,7 @@ public extension Schema where Output: Decodable & Sendable {
             }
 
             do {
-                let data = try JSONSerialization.data(withJSONObject: value, options: [])
+                let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
                 let decoder = configureDecoder?(JSONDecoder()) ?? JSONDecoder()
                 let decoded = try decoder.decode(Output.self, from: data)
                 return .success(value: decoded)

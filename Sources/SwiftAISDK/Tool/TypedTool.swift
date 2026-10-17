@@ -50,9 +50,7 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
     toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> TypedTool<Input, Output> {
     let resolvedInputSchema = inputSchema.resolve()
-    let jsonInputSchema = FlexibleSchema<JSONValue>(
-        jsonSchema { try await resolvedInputSchema.jsonSchema() }
-    )
+    let jsonInputSchema = erasedInputSchema(resolvedInputSchema)
 
     let resolvedOutputSchema = outputSchema?.resolve()
     let jsonOutputSchema = resolvedOutputSchema.map { schema in
@@ -61,16 +59,12 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 
     let wrappedExecute: (@Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue>)?
     if let execute = execute {
-        wrappedExecute = { rawInput, options in
-            let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
+        wrappedExecute = { input, options in
+            let typedInput = try decodeAcceptedInput(input, as: Input.self)
             let typedResult = try await execute(typedInput, options)
 
             return try mapToolExecutionResult(typedResult) { output in
-                if Output.self == JSONValue.self, let json = output as? JSONValue {
-                    return json
-                }
-
-                return try encodeOutput(output)
+                try encodeOutput(output)
             }
         }
     } else {
@@ -109,9 +103,9 @@ public func tool<Input: Codable & Sendable, Output: Codable & Sendable>(
 
 
 public extension TypedTool {
-    /// Decode a tool call payload into the strongly typed input.
+    /// Decode a tool call payload — the input after the tool's schema accepted it — into the typed input.
     func decodeInput(from json: JSONValue) async throws -> Input {
-        try await decodeTypedInput(json, schema: inputSchema.resolve())
+        try decodeAcceptedInput(json, as: Input.self)
     }
 
     /// Convenience overload that decodes the input from a typed tool call.
@@ -230,17 +224,15 @@ public func dynamicTool<Input: Codable & Sendable, Output: Codable & Sendable>(
     toModelOutput: (@Sendable (TypedToolModelOutputOptions<Input, Output>) async throws -> ToolResultOutput)? = nil
 ) -> Tool {
     let resolvedInputSchema = inputSchema.resolve()
-    let jsonInputSchema = FlexibleSchema<JSONValue>(
-        jsonSchema { try await resolvedInputSchema.jsonSchema() }
-    )
+    let jsonInputSchema = erasedInputSchema(resolvedInputSchema)
 
     let resolvedOutputSchema = outputSchema?.resolve()
     let jsonOutputSchema = resolvedOutputSchema.map { schema in
         FlexibleSchema<JSONValue>(jsonSchema { try await schema.jsonSchema() })
     }
 
-    let wrappedExecute: @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue> = { rawInput, options in
-        let typedInput = try await decodeTypedInput(rawInput, schema: resolvedInputSchema)
+    let wrappedExecute: @Sendable (JSONValue, ToolExecutionOptions) async throws -> ToolExecutionResult<JSONValue> = { input, options in
+        let typedInput = try decodeAcceptedInput(input, as: Input.self)
         let typedResult = try await execute(typedInput, options)
         return try mapToolExecutionResult(typedResult) { output in
             try encodeOutput(output)
@@ -349,7 +341,7 @@ private func wrapTypedToModelOutput<Input: Codable & Sendable, Output: Codable &
 ) -> (@Sendable (ToolModelOutputOptions) async throws -> ToolResultOutput)? {
     guard let toModelOutput else { return nil }
     return { options in
-        let input = try await decodeTypedInput(options.input, schema: inputSchema)
+        let input = try decodeAcceptedInput(options.input, as: Input.self)
         let output = try decodeTypedOutput(options.output, schema: outputSchema)
         return try await toModelOutput(
             TypedToolModelOutputOptions(toolCallId: options.toolCallId, input: input, output: output)
@@ -357,23 +349,65 @@ private func wrapTypedToModelOutput<Input: Codable & Sendable, Output: Codable &
     }
 }
 
-private func decodeTypedInput<Input: Codable & Sendable>(
-    _ input: JSONValue,
-    schema: Schema<Input>
-) async throws -> Input {
-    if Input.self == JSONValue.self, let casted = input as? Input {
-        return casted
-    }
+/// The erased input schema runs the typed schema when the call is parsed, so an invalid input
+/// reaches tool-call repair and approval, callbacks and `execute` all see the accepted input.
+private func erasedInputSchema<Input: Codable & Sendable>(
+    _ schema: Schema<Input>
+) -> FlexibleSchema<JSONValue> {
+    FlexibleSchema(Schema(
+        jsonSchemaResolver: { try await schema.jsonSchema() },
+        validator: { value in
+            switch await schema.validate(value) {
+            case .success(let input):
+                return .success(value: try encodeAcceptedInput(input))
+            case .failure(let error):
+                return .failure(error: error)
+            }
+        }
+    ))
+}
 
-    let foundation = try foundationObject(from: input)
-    let validation = await schema.validate(foundation)
-
-    switch validation {
-    case .success(let value):
-        return value
-    case .failure(let error):
-        throw error
+private func encodeAcceptedInput<Input: Encodable>(_ input: Input) throws -> JSONValue {
+    if let json = input as? JSONValue {
+        return json
     }
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .custom { date, encoder in
+        var container = encoder.singleValueContainer()
+        try container.encode(acceptedInputDateFormatter().string(from: date))
+    }
+    return try JSONDecoder().decode(JSONValue.self, from: encoder.encode(input))
+}
+
+/// Decodes an input `encodeAcceptedInput` produced, without running the schema again.
+private func decodeAcceptedInput<Input: Decodable>(_ json: JSONValue, as _: Input.Type) throws -> Input {
+    if let input = json as? Input {
+        return input
+    }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .custom { decoder in
+        let container = try decoder.singleValueContainer()
+        let text = try container.decode(String.self)
+        let formatter = acceptedInputDateFormatter()
+        if let date = formatter.date(from: text) {
+            return date
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: text) {
+            return date
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Expected date string to be ISO8601-formatted."
+        )
+    }
+    return try decoder.decode(Input.self, from: JSONEncoder().encode(json))
+}
+
+private func acceptedInputDateFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
 }
 
 private func decodeTypedOutput<Output: Decodable & Sendable>(
@@ -433,14 +467,5 @@ private func encodeOutput<Output: Encodable>(_ value: Output) throws -> JSONValu
         return json
     }
 
-    let encoder = JSONEncoder()
-    let data = try encoder.encode(value)
-    let object = try JSONSerialization.jsonObject(with: data)
-    return try jsonValue(from: object)
-}
-
-private func foundationObject(from value: JSONValue) throws -> Any {
-    let encoder = JSONEncoder()
-    let data = try encoder.encode(value)
-    return try JSONSerialization.jsonObject(with: data)
+    return try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
 }
