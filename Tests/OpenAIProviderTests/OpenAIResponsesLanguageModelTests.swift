@@ -40,7 +40,7 @@ struct OpenAIResponsesLanguageModelTests {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    @Test("doGenerate maps response content, metadata, and warnings")
+    @Test("doGenerate maps response content and metadata")
     func testDoGenerateMapsResponse() async throws {
         actor RequestCapture {
             var request: URLRequest?
@@ -100,14 +100,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "output_tokens": 7,
                 "output_tokens_details": ["reasoning_tokens": 2]
             ],
-            "warnings": [
-                [
-                    "type": "unsupported-setting",
-                    "setting": "topK",
-                    "message": "topK is not supported"
-                ]
-            ],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -188,16 +181,6 @@ struct OpenAIResponsesLanguageModelTests {
             Issue.record("Missing provider metadata")
         }
 
-        #expect(result.warnings.count == 1)
-        if result.warnings.count == 1 {
-            switch result.warnings[0] {
-            case .unsupported(let feature, _):
-                #expect(feature == "topK")
-            default:
-                Issue.record("Unexpected warning type")
-            }
-        }
-
         guard let request = await capture.current(),
               let body = request.httpBody,
               let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
@@ -226,6 +209,7 @@ struct OpenAIResponsesLanguageModelTests {
                 [
                     "id": "mcp_item_1",
                     "type": "mcp_call",
+                    "status": "completed",
                     "name": "list_files",
                     "arguments": "{\"path\":\"/\"}",
                     "server_label": "My MCP",
@@ -239,7 +223,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "output_tokens": 1
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -324,7 +308,7 @@ struct OpenAIResponsesLanguageModelTests {
             "service_tier": NSNull(),
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -376,7 +360,7 @@ struct OpenAIResponsesLanguageModelTests {
             "service_tier": NSNull(),
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -463,6 +447,7 @@ struct OpenAIResponsesLanguageModelTests {
                 [
                     "id": "mcp_req_item_1",
                     "type": "mcp_approval_request",
+                    "server_label": "My MCP",
                     "name": "list_files",
                     "arguments": "{\"path\":\"/\"}",
                     "approval_request_id": "approval_1"
@@ -474,7 +459,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "output_tokens": 1
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -554,6 +539,7 @@ struct OpenAIResponsesLanguageModelTests {
                 [
                     "id": "mcp_item_2",
                     "type": "mcp_call",
+                    "status": "completed",
                     "name": "list_files",
                     "arguments": "{\"path\":\"/\"}",
                     "server_label": "My MCP",
@@ -568,7 +554,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "output_tokens": 1
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -882,7 +868,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "output_tokens_details": ["reasoning_tokens": 2]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -963,7 +949,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "total_tokens": 8
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1188,7 +1174,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "total_tokens": 2
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1245,7 +1231,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1303,7 +1289,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1363,7 +1349,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1414,7 +1400,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1471,7 +1457,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1538,7 +1524,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1597,7 +1583,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1663,7 +1649,7 @@ struct OpenAIResponsesLanguageModelTests {
             "output": [],
             "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -1898,7 +1884,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -2003,7 +1989,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -2089,7 +2075,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -2160,7 +2146,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -3594,7 +3580,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -3692,7 +3678,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -3919,7 +3905,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -4018,7 +4004,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -4103,7 +4089,7 @@ struct OpenAIResponsesLanguageModelTests {
                 "input_tokens_details": ["cached_tokens": 0]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -4476,7 +4462,7 @@ struct OpenAIResponsesLanguageModelTests {
             "service_tier": "default",
             "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -4545,7 +4531,7 @@ struct OpenAIResponsesLanguageModelTests {
             "service_tier": "default",
             "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -4596,7 +4582,7 @@ struct OpenAIResponsesLanguageModelTests {
             "service_tier": "default",
             "usage": ["input_tokens": 2, "output_tokens": 1, "total_tokens": 3],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ]
@@ -6415,52 +6401,6 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(format["strict"] as? Bool == false)
     }
 
-    @Test("should warn about unsupported settings")
-    func testShouldWarnAboutUnsupportedSettings() async throws {
-        let responseJSON: [String: Any] = [
-            "id": "resp_warn_unsupported",
-            "created_at": 1_700_000_000.0,
-            "model": "gpt-4o",
-            "output": [],
-            "usage": ["input_tokens": 1, "output_tokens": 1, "total_tokens": 2],
-            "warnings": [
-                [
-                    "type": "unsupported-setting",
-                    "setting": "temperature",
-                    "message": "temperature is not supported"
-                ]
-            ]
-        ]
-
-        let responseData = try JSONSerialization.data(withJSONObject: responseJSON)
-        let fetch: FetchFunction = { _ in
-            let httpResponse = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/responses")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let model = OpenAIResponsesLanguageModel(
-            modelId: "gpt-4o",
-            config: makeConfig(fetch: fetch)
-        )
-
-        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
-
-        #expect(result.warnings.count == 1)
-        if let warning = result.warnings.first {
-            if case let .unsupported(feature, details) = warning {
-                #expect(feature == "temperature")
-                #expect(details == "temperature is not supported")
-            } else {
-                Issue.record("Expected unsupported warning")
-            }
-        }
-    }
-
     @Test("should extract logprobs in providerMetadata")
     func testShouldExtractLogprobsInProviderMetadata() async throws {
         let responseJSON: [String: Any] = [
@@ -7182,6 +7122,7 @@ struct OpenAIResponsesLanguageModelTests {
             "created_at": 1_741_257_730,
             "status": "completed",
             "error": [
+                "type": "server_error",
                 "code": "ERR_SOMETHING",
                 "message": "Something went wrong"
             ],

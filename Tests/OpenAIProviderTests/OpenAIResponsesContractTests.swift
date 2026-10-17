@@ -56,7 +56,7 @@ struct OpenAIResponsesContractTests {
                 "output_tokens_details": ["reasoning_tokens": 3]
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ])
@@ -160,7 +160,7 @@ struct OpenAIResponsesContractTests {
                             "output_tokens_details": ["reasoning_tokens": 4]
                         ],
                         "warnings": [],
-                        "incomplete_details": ["reason": NSNull()],
+                        "incomplete_details": NSNull(),
                         "finish_reason": NSNull(),
                         "error": NSNull()
                     ])),
@@ -340,7 +340,7 @@ struct OpenAIResponsesContractTests {
                             "output_tokens": 0
                         ],
                         "warnings": [],
-                        "incomplete_details": ["reason": NSNull()],
+                        "incomplete_details": NSNull(),
                         "finish_reason": NSNull(),
                         "error": NSNull()
                     ])),
@@ -383,6 +383,7 @@ struct OpenAIResponsesContractTests {
                 [
                     "id": "tsc-1",
                     "type": "tool_search_call",
+                    "call_id": NSNull(),
                     "execution": "server",
                     "status": "completed",
                     "arguments": ["query": "weather"]
@@ -390,6 +391,7 @@ struct OpenAIResponsesContractTests {
                 [
                     "id": "tso-1",
                     "type": "tool_search_output",
+                    "call_id": NSNull(),
                     "execution": "server",
                     "status": "completed",
                     "tools": [
@@ -406,7 +408,7 @@ struct OpenAIResponsesContractTests {
                 "output_tokens": 2
             ],
             "warnings": [],
-            "incomplete_details": ["reason": NSNull()],
+            "incomplete_details": NSNull(),
             "finish_reason": NSNull(),
             "error": NSNull()
         ])
@@ -497,7 +499,7 @@ struct OpenAIResponsesContractTests {
                         "output": [],
                         "usage": ["input_tokens": 0, "output_tokens": 0],
                         "warnings": [],
-                        "incomplete_details": ["reason": NSNull()],
+                        "incomplete_details": NSNull(),
                         "finish_reason": NSNull(),
                         "error": NSNull()
                     ])),
@@ -588,7 +590,7 @@ struct OpenAIResponsesContractTests {
                         ],
                         "usage": ["input_tokens": 1, "output_tokens": 1],
                         "warnings": [],
-                        "incomplete_details": ["reason": NSNull()],
+                        "incomplete_details": NSNull(),
                         "finish_reason": NSNull(),
                         "error": NSNull()
                     ])),

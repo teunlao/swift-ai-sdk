@@ -69,9 +69,22 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 requestBodyValues: prepared.body,
                 statusCode: 400,
                 responseHeaders: response.responseHeaders,
-                responseBody: nil,
+                responseBody: try response.rawValue.map { try jsonString(from: jsonValue(from: $0)) },
                 isRetryable: false,
                 data: ["code": errorPayload.code]
+            )
+        }
+
+        guard let output = value.output else {
+            let detail = value.incompleteDetails?.reason
+            throw APICallError(
+                message: detail.flatMap { $0.isEmpty ? nil : "Responses API returned no output (\($0))" } ?? "Responses API returned no output",
+                url: url,
+                requestBodyValues: prepared.body,
+                statusCode: 500,
+                responseHeaders: response.responseHeaders,
+                responseBody: try response.rawValue.map { try jsonString(from: jsonValue(from: $0)) },
+                isRetryable: false
             )
         }
 
@@ -88,7 +101,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
 
         let mapped = try mapResponseOutput(
-            value.output ?? [],
+            output,
             approvalRequestIdToToolCallIdFromPrompt: approvalRequestIdToToolCallIdFromPrompt,
             webSearchToolName: prepared.webSearchToolName,
             toolNameMapping: prepared.toolNameMapping,
@@ -2770,16 +2783,8 @@ private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?
             text: outputTokens - reasoningTokens,
             reasoning: reasoningTokens
         ),
-        raw: try? JSONEncoder().encodeToJSONValue(usage)
+        raw: usage.rawValue
     )
-}
-
-private extension JSONEncoder {
-    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
-        let data = try encode(value)
-        let raw = try JSONSerialization.jsonObject(with: data, options: [])
-        return try jsonValue(from: raw)
-    }
 }
 
 private extension JSONValue {
