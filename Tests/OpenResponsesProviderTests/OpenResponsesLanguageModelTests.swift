@@ -1,519 +1,190 @@
 import Foundation
 import Testing
-@testable import OpenResponsesProvider
 import AISDKProvider
 import AISDKProviderUtils
+import OpenResponsesProvider
 
-private let openResponsesTestPrompt: LanguageModelV3Prompt = [
-    .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-]
-
-private let openResponsesTestURL = "https://localhost:1234/v1/responses"
-
-private actor RequestCapture {
-    private var requests: [URLRequest] = []
-    func store(_ request: URLRequest) { requests.append(request) }
-    func first() -> URLRequest? { requests.first }
-}
-
-private func makeHTTPResponse(url: URL, statusCode: Int = 200, headers: [String: String] = [:]) -> HTTPURLResponse {
-    HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
-}
-
-private func makeBasicOpenResponsesGenerateData() throws -> Data {
-    let response: [String: Any] = [
-        "id": "resp_test",
-        "object": "response",
-        "created_at": 1_768_900_049,
-        "status": "completed",
-        "incomplete_details": NSNull(),
-        "model": "gemma-7b-it",
-        "output": [
-            [
-                "id": "rs_1",
-                "type": "reasoning",
-                "content": [
-                    ["type": "reasoning_text", "text": "reasoning content"]
-                ]
-            ],
-            [
-                "id": "msg_1",
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    ["type": "output_text", "text": "text content"]
-                ]
-            ],
-        ],
-        "usage": [
-            "input_tokens": 136,
-            "output_tokens": 3677,
-            "total_tokens": 3813,
-            "input_tokens_details": ["cached_tokens": 0],
-            "output_tokens_details": ["reasoning_tokens": 2456],
-        ],
-        "error": NSNull(),
-    ]
-
-    return try JSONSerialization.data(withJSONObject: response)
-}
-
-private func makeToolCallOpenResponsesGenerateData() throws -> Data {
-    let response: [String: Any] = [
-        "id": "resp_tool",
-        "object": "response",
-        "created_at": 1_769_005_553,
-        "status": "completed",
-        "incomplete_details": NSNull(),
-        "model": "gemma-7b-it",
-        "output": [
-            [
-                "id": "fc_1",
-                "call_id": "call_123",
-                "type": "function_call",
-                "name": "weather",
-                "arguments": "{\"location\":\"San Francisco\"}",
-                "status": "completed",
-            ],
-        ],
-        "usage": [
-            "input_tokens": 10,
-            "output_tokens": 2,
-            "total_tokens": 12,
-            "input_tokens_details": ["cached_tokens": 3],
-            "output_tokens_details": ["reasoning_tokens": 0],
-        ],
-        "error": NSNull(),
-    ]
-
-    return try JSONSerialization.data(withJSONObject: response)
-}
-
-private func makeSSEData(from jsonLines: [String]) -> Data {
-    let chunks = (jsonLines.map { "data: \($0)\n\n" } + ["data: [DONE]\n\n"]).joined()
-    return Data(chunks.utf8)
-}
-
-@Suite("OpenResponsesLanguageModel", .serialized)
+@Suite("Open Responses public model")
 struct OpenResponsesLanguageModelTests {
-    private func makeModel(fetch: @escaping FetchFunction) -> OpenResponsesLanguageModel {
-        OpenResponsesLanguageModel(
-            modelId: "gemma-7b-it",
-            config: OpenResponsesConfig(
-                provider: "lmstudio",
-                url: openResponsesTestURL,
-                headers: { [:] },
-                fetch: fetch,
-                generateId: generateID
-            )
-        )
-    }
-
-    @Test("doGenerate: sends correct basic request body and parses content/usage")
-    func doGenerateBasic() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: .init(prompt: openResponsesTestPrompt))
-
-        let request = await capture.first()
-        let bodyData = try #require(request?.httpBody)
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-
-        #expect(body["model"] == .string("gemma-7b-it"))
-        #expect(body["instructions"] == nil)
-        #expect(body["text"] == nil)
-
-        guard case .array(let input)? = body["input"] else {
-            Issue.record("Expected input array")
-            return
-        }
-        #expect(input.count == 1)
-
-        // Content
-        #expect(result.content.count == 2)
-        if case .reasoning(let r0) = result.content[0] {
-            #expect(r0.text == "reasoning content")
-        } else {
-            Issue.record("Expected reasoning content first")
-        }
-        if case .text(let t1) = result.content[1] {
-            #expect(t1.text == "text content")
-        } else {
-            Issue.record("Expected text content second")
-        }
-
-        // Usage
+    @Test("captured generation preserves reasoning boundaries, item metadata and usage")
+    func capturedGeneration() async throws {
+        let fields = try JSONDecoder().decode(JSONObject.self, from: openResponsesFixture("lmstudio-basic.json"))
+        let endpoint = OpenResponsesTestEndpoint(fields)
+        let provider = try openResponsesProvider(endpoint)
+        let result = try await provider("model").doGenerate(options: .init(prompt: openResponsesTestPrompt))
+        #expect(result.content == [
+            .reasoning(.init(text: "reasoning content", providerMetadata: ["acme": ["itemId": "rs_3l1z5wpifxkwxhj459ya7", "reasoningSummary": [], "reasoningContent": [["type": "reasoning_text", "text": "reasoning content"]]]])),
+            .text(.init(text: "text content", providerMetadata: ["acme": ["itemId": "msg_p1y190hl7hj1xyfqr1cir"]]))
+        ])
         #expect(result.usage.inputTokens.total == 136)
-        #expect(result.usage.inputTokens.cacheRead == 0)
         #expect(result.usage.inputTokens.noCache == 136)
         #expect(result.usage.outputTokens.total == 3677)
-        #expect(result.usage.outputTokens.reasoning == 2456)
         #expect(result.usage.outputTokens.text == 1221)
-        #expect(result.usage.raw != nil)
+        #expect(result.usage.outputTokens.reasoning == 2456)
+        #expect(result.usage.raw == fields["usage"])
+        #expect(result.response?.timestamp == Date(timeIntervalSince1970: 1_768_900_049))
+        #expect(result.response?.headers?["x-response"] == "response-value")
+        #expect(result.finishReason == .init(unified: .stop))
+        #expect(try await endpoint.lastBody() == ["model": "model", "input": [["type": "message", "role": "user", "content": [["type": "input_text", "text": "Hello"]]]]])
     }
 
-    @Test("doGenerate: request parameters map to snake_case + json_schema format")
-    func doGenerateRequestParameters() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: .init(
-            prompt: openResponsesTestPrompt,
-            maxOutputTokens: 100,
-            temperature: 0.5,
-            topP: 0.9,
-            presencePenalty: 0.1,
-            frequencyPenalty: 0.2,
-            responseFormat: .json(
-                schema: .object([
-                    "type": .string("object"),
-                    "properties": .object(["status": .object(["type": .string("string")])]),
-                    "required": .array([.string("status")])
-                ]),
-                name: "response",
-                description: "Example response schema"
-            )
-        ))
-
-        let request = await capture.first()
-        let bodyData = try #require(request?.httpBody)
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-
-        #expect(body["max_output_tokens"] == .number(100))
-        #expect(body["temperature"] == .number(0.5))
-        #expect(body["top_p"] == .number(0.9))
-        #expect(body["presence_penalty"] == .number(0.1))
-        #expect(body["frequency_penalty"] == .number(0.2))
-
-        guard case .object(let text)? = body["text"],
-              case .object(let format)? = text["format"] else {
-            Issue.record("Expected text.format object")
-            return
-        }
-
-        #expect(format["type"] == .string("json_schema"))
-        #expect(format["name"] == .string("response"))
-        #expect(format["description"] == .string("Example response schema"))
-        #expect(format["strict"] == .bool(true))
-        #expect(format["schema"] != nil)
+    @Test("request settings and reasoning use provider-native names and precedence", arguments: [false, true])
+    func requestSettings(structured: Bool) async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try createOpenResponses(options: .init(url: openResponsesTestURL, name: "acme", fetch: { request in try await endpoint.fetch(request) }, structuredOutputs: structured))
+        let result = try await provider("model").doGenerate(options: .init(
+            prompt: openResponsesTestPrompt, maxOutputTokens: 100, temperature: 0.5, stopSequences: ["END"], topP: 0.9, topK: 1,
+            presencePenalty: 0.1, frequencyPenalty: 0.2, responseFormat: .json(schema: ["type": "object"], name: "answer", description: "description"), seed: 1,
+            reasoning: .high, providerOptions: ["acme": ["reasoningEffort": "endpoint-level", "reasoningSummary": "auto"]]))
+        let body = try await endpoint.lastBody()
+        #expect(body["max_output_tokens"] == 100)
+        #expect(body["temperature"] == 0.5)
+        #expect(body["top_p"] == 0.9)
+        #expect(body["presence_penalty"] == 0.1)
+        #expect(body["frequency_penalty"] == 0.2)
+        #expect(body["reasoning"] == ["effort": "endpoint-level", "summary": "auto"])
+        if structured { #expect(body["text"] == ["format": ["type": "json_schema", "name": "answer", "description": "description", "schema": ["type": "object"], "strict": true]]) }
+        else { #expect(body["text"] == nil) }
+        var warnings: [SharedV4Warning] = [.unsupported(feature: "stopSequences", details: nil), .unsupported(feature: "topK", details: nil), .unsupported(feature: "seed", details: nil)]
+        if !structured { warnings.append(.unsupported(feature: "responseFormat", details: nil)) }
+        #expect(result.warnings == warnings)
     }
 
-    @Test("doGenerate: tools map to tools[] with parameters + strict")
-    func doGenerateTools() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: .init(
-            prompt: openResponsesTestPrompt,
-            tools: [
-                .function(.init(
-                    name: "get_weather",
-                    inputSchema: .object([
-                        "type": .string("object"),
-                        "properties": .object(["location": .object(["type": .string("string")])]),
-                        "required": .array([.string("location")])
-                    ]),
-                    description: "Get the current weather for a location"
-                )),
-                .function(.init(
-                    name: "search",
-                    inputSchema: .object([
-                        "type": .string("object"),
-                        "properties": .object(["query": .object(["type": .string("string")])]),
-                        "required": .array([.string("query")])
-                    ]),
-                    description: "Search for information",
-                    strict: true
-                )),
-            ]
-        ))
-
-        let request = await capture.first()
-        let bodyData = try #require(request?.httpBody)
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-
-        guard case .array(let tools)? = body["tools"] else {
-            Issue.record("Expected tools array")
-            return
-        }
-        #expect(tools.count == 2)
-
-        guard case .object(let tool0) = tools[0] else { Issue.record("Expected tool object"); return }
-        #expect(tool0["type"] == .string("function"))
-        #expect(tool0["name"] == .string("get_weather"))
-        #expect(tool0["description"] == .string("Get the current weather for a location"))
-        #expect(tool0["parameters"] != nil)
-        #expect(tool0["strict"] == nil)
-
-        guard case .object(let tool1) = tools[1] else { Issue.record("Expected tool object"); return }
-        #expect(tool1["name"] == .string("search"))
-        #expect(tool1["strict"] == .bool(true))
+    @Test("nullish reasoning options fall back to top-level effort and schema-less JSON uses json_object")
+    func nullishReasoning() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint)
+        let result = try await provider("model").doGenerate(options: .init(prompt: openResponsesTestPrompt, responseFormat: .json(schema: nil, name: nil, description: nil), reasoning: .minimal, providerOptions: ["acme": ["reasoningEffort": .null, "reasoningSummary": .null]]))
+        let body = try await endpoint.lastBody()
+        #expect(body["reasoning"] == ["effort": "low"])
+        #expect(body["text"] == ["format": ["type": "json_object"]])
+        #expect(result.warnings == [.compatibility(feature: "reasoning", details: "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\".")])
     }
 
-    @Test("doGenerate: tool_choice required and specific tool map correctly")
-    func doGenerateToolChoice() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
+    @Test("function tools and named or aggregate choices use the endpoint schema", arguments: ["auto", "none", "required", "named"])
+    func functionRequest(choice: String) async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint)
+        let selected: LanguageModelV4ToolChoice
+        switch choice {
+        case "auto": selected = .auto
+        case "none": selected = .none
+        case "required": selected = .required
+        default: selected = .tool(toolName: "lookup")
         }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: .init(
-            prompt: openResponsesTestPrompt,
-            toolChoice: .required
-        ))
-
-        var request = await capture.first()
-        var bodyData = try #require(request?.httpBody)
-        var body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-        #expect(body["tool_choice"] == .string("required"))
-
-        // Specific tool
-        let capture2 = RequestCapture()
-        let fetch2: FetchFunction = { req in
-            await capture2.store(req)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-        let model2 = makeModel(fetch: fetch2)
-        _ = try await model2.doGenerate(options: .init(
-            prompt: openResponsesTestPrompt,
-            toolChoice: .tool(toolName: "get_weather")
-        ))
-
-        request = await capture2.first()
-        bodyData = try #require(request?.httpBody)
-        body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-
-        guard case .object(let toolChoice)? = body["tool_choice"] else {
-            Issue.record("Expected tool_choice object")
-            return
-        }
-        #expect(toolChoice["type"] == .string("function"))
-        #expect(toolChoice["name"] == .string("get_weather"))
+        _ = try await provider("model").doGenerate(options: .init(prompt: [], tools: [.function(.init(name: "lookup", inputSchema: ["type": "object"], description: "Lookup", strict: true))], toolChoice: selected))
+        let body = try await endpoint.lastBody()
+        #expect(body["tools"] == [["type": "function", "name": "lookup", "description": "Lookup", "parameters": ["type": "object"], "strict": true]])
+        #expect(body["tool_choice"] == (choice == "named" ? ["type": "function", "name": "lookup"] : .string(choice)))
     }
 
-    @Test("doGenerate: system messages map to instructions")
-    func doGenerateSystemInstructions() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        _ = try await model.doGenerate(options: .init(
-            prompt: [
-                .system(content: "You are a helpful assistant.", providerOptions: nil),
-                .system(content: "Always be concise.", providerOptions: nil),
-                .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-            ]
-        ))
-
-        let request = await capture.first()
-        let bodyData = try #require(request?.httpBody)
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-        #expect(body["instructions"] == .string("You are a helpful assistant.\nAlways be concise."))
+    @Test("custom string tools retain grammar, choice, final input and replay metadata")
+    func customTool() async throws {
+        let output: JSONValue = ["type": "custom_tool_call", "id": "custom-item", "call_id": "call", "name": "code", "input": "print(1)", "status": "completed"]
+        let endpoint = OpenResponsesTestEndpoint(openResponsesTestResponse(output: [output]))
+        let provider = try createOpenResponses(options: .init(url: openResponsesTestURL, name: "acme", fetch: { request in try await endpoint.fetch(request) }, customToolId: "acme.raw"))
+        let custom = provider.tools.customTool(.init(description: "Run", format: .grammar(syntax: .lark, definition: "start: /.+/")))
+        let tool = LanguageModelV4Tool.provider(.init(id: try #require(custom.id), name: "code", args: custom.args ?? [:]))
+        let result = try await provider("model").doGenerate(options: .init(prompt: openResponsesTestPrompt, tools: [tool], toolChoice: .tool(toolName: "code")))
+        let body = try await endpoint.lastBody()
+        #expect(body["tools"] == [["type": "custom", "name": "code", "description": "Run", "format": ["type": "grammar", "syntax": "lark", "definition": "start: /.+/"]]])
+        #expect(body["tool_choice"] == ["type": "custom", "name": "code"])
+        #expect(result.content == [.toolCall(.init(toolCallId: "call", toolName: "code", input: #""print(1)""#, providerMetadata: ["acme": ["itemId": "custom-item"]]))])
+        let input = try JSONDecoder().decode(JSONValue.self, from: Data(#""print(1)""#.utf8))
+        let validated = try await validateTypes(ValidateTypesOptions(value: input, schema: custom.inputSchema))
+        #expect(validated == .string("print(1)"))
+        _ = try await provider("model").doGenerate(options: .init(prompt: [.assistant(content: [.toolCall(.init(toolCallId: "call", toolName: "code", input: input, providerOptions: ["acme": ["itemId": "custom-item"]]))], providerOptions: nil), .tool(content: [.toolResult(.init(toolCallId: "call", toolName: "code", output: .text(value: "done")))], providerOptions: nil)], tools: [tool]))
+        let replay = try await endpoint.lastBody()
+        #expect(replay["input"] == [["type": "custom_tool_call", "id": "custom-item", "call_id": "call", "name": "code", "input": "print(1)"], ["type": "custom_tool_call_output", "call_id": "call", "output": "done"]])
     }
 
-    @Test("doGenerate: multi-turn tool conversation prompt maps to input items")
-    func doGenerateMultiTurnToolConversation() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeBasicOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
+    @Test("captured reasoning-summary streams do not repeat done text and retain replay metadata")
+    func capturedReasoningStream() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let lines = String(decoding: try openResponsesFixture("reasoning-summary.chunks.txt"), as: UTF8.self).split(separator: "\n").map(String.init)
+        await endpoint.setLines(lines)
+        let provider = try openResponsesProvider(endpoint)
+        let parts = try await openResponsesCollect(provider("model").doStream(options: .init(prompt: openResponsesTestPrompt)))
+        #expect(Array(parts.dropLast()) == [
+            .streamStart(warnings: []), .reasoningStart(id: "rs_1", providerMetadata: nil),
+            .reasoningDelta(id: "rs_1", delta: "Think", providerMetadata: nil), .reasoningDelta(id: "rs_1", delta: "ing.", providerMetadata: nil),
+            .reasoningEnd(id: "rs_1", providerMetadata: ["acme": ["itemId": "rs_1", "reasoningSummary": [["type": "summary_text", "text": "Thinking."]], "reasoningContent": .null]])
+        ])
+        guard case .finish(let reason, let usage, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .stop)
+        #expect(usage.inputTokens.total == 1)
+        #expect(usage.outputTokens.text == 1)
+    }
 
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        let toolConversationPrompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "What is the weather in Tokyo?"))], providerOptions: nil),
-            .assistant(content: [
-                .toolCall(.init(
-                    toolCallId: "call_weather_123",
-                    toolName: "get_weather",
-                    input: .object(["location": .string("Tokyo")])
-                ))
-            ], providerOptions: nil),
-            .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "call_weather_123",
-                    toolName: "get_weather",
-                    output: .json(value: .object([
-                        "temperature": .number(22),
-                        "condition": .string("sunny"),
-                        "humidity": .number(65),
-                    ]))
-                ))
-            ], providerOptions: nil),
+    @Test("completed function arguments take precedence over partial argument events")
+    func functionStream() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let events: [JSONValue] = [
+            ["type": "response.output_item.added", "item": ["type": "function_call", "id": "function", "call_id": "call", "name": "lookup", "arguments": ""]],
+            ["type": "response.function_call_arguments.delta", "item_id": "function", "delta": "{"],
+            ["type": "response.function_call_arguments.done", "item_id": "function", "arguments": #"{"buffered":true}"#],
+            ["type": "response.output_item.done", "item": ["type": "function_call", "id": "function", "call_id": "call", "name": "lookup", "arguments": #"{"final":true}"#]],
+            ["type": "response.completed", "response": ["usage": ["input_tokens": 10, "output_tokens": 4, "input_tokens_details": ["cached_tokens": 2, "cache_write_tokens": 3], "output_tokens_details": ["reasoning_tokens": 6]]]]
         ]
-
-        _ = try await model.doGenerate(options: .init(
-            prompt: toolConversationPrompt,
-            tools: [
-                .function(.init(
-                    name: "get_weather",
-                    inputSchema: .object([
-                        "type": .string("object"),
-                        "properties": .object(["location": .object(["type": .string("string")])]),
-                        "required": .array([.string("location")])
-                    ]),
-                    description: "Get the current weather for a location"
-                ))
-            ]
-        ))
-
-        let request = await capture.first()
-        let bodyData = try #require(request?.httpBody)
-        let body = try JSONDecoder().decode([String: JSONValue].self, from: bodyData)
-
-        guard case .array(let input)? = body["input"] else {
-            Issue.record("Expected input array")
-            return
-        }
-
-        #expect(input.count == 3)
-        guard case .object(let user) = input[0] else { Issue.record("Expected user object"); return }
-        guard case .object(let toolCall) = input[1] else { Issue.record("Expected tool call object"); return }
-        guard case .object(let toolResult) = input[2] else { Issue.record("Expected tool result object"); return }
-        #expect(user["role"] == .string("user"))
-        #expect(toolCall["type"] == .string("function_call"))
-        #expect(toolResult["type"] == .string("function_call_output"))
+        try await endpoint.setEvents(events)
+        let provider = try openResponsesProvider(endpoint)
+        let parts = try await openResponsesCollect(provider("model").doStream(options: .init(prompt: openResponsesTestPrompt)))
+        #expect(Array(parts.dropFirst().dropLast()) == [.toolCall(.init(toolCallId: "call", toolName: "lookup", input: #"{"final":true}"#, providerMetadata: ["acme": ["itemId": "function"]]))])
+        guard case .finish(let reason, let usage, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .toolCalls)
+        #expect(usage.inputTokens.noCache == 5)
+        #expect(usage.inputTokens.cacheWrite == 3)
+        #expect(usage.outputTokens.text == -2)
     }
 
-    @Test("doGenerate: parses tool-call response + tool-calls finish reason")
-    func doGenerateToolCallResponse() async throws {
-        let capture = RequestCapture()
-        let responseData = try makeToolCallOpenResponsesGenerateData()
-        let url = try #require(URL(string: openResponsesTestURL))
-
-        let fetch: FetchFunction = { request in
-            await capture.store(request)
-            return FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url))
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doGenerate(options: .init(
-            prompt: openResponsesTestPrompt,
-            toolChoice: .required
-        ))
-
-        #expect(result.content.count == 1)
-        if case .toolCall(let toolCall) = result.content[0] {
-            #expect(toolCall.toolName == "weather")
-            #expect(toolCall.toolCallId == "call_123")
-            #expect(toolCall.input == "{\"location\":\"San Francisco\"}")
-        } else {
-            Issue.record("Expected tool-call content")
-        }
-
-        #expect(result.finishReason.unified == .toolCalls)
-        #expect(result.finishReason.raw == nil)
-        #expect(result.usage.inputTokens.cacheRead == 3)
-        #expect(result.usage.inputTokens.noCache == 7)
-    }
-
-    @Test("doStream: streams text parts and finishes with stop")
-    func doStreamBasic() async throws {
-        let responseData = makeSSEData(from: [
-            "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_1\",\"type\":\"message\"}}",
-            "{\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"delta\":\"Hi\"}",
-            "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_1\",\"type\":\"message\"}}",
-            "{\"type\":\"response.completed\",\"response\":{\"incomplete_details\":null,\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":1},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}",
+    @Test("custom tool streams accumulate raw text but expose a JSON string final input")
+    func customStream() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        try await endpoint.setEvents([
+            ["type": "response.output_item.added", "item": ["type": "custom_tool_call", "id": "custom", "call_id": "call", "name": "code", "input": ""]],
+            ["type": "response.custom_tool_call_input.delta", "item_id": "custom", "delta": "print("],
+            ["type": "response.custom_tool_call_input.done", "item_id": "custom", "input": "print(1)"],
+            ["type": "response.output_item.done", "item": ["type": "custom_tool_call", "id": "custom", "call_id": "call", "name": "code", "input": ""]],
+            ["type": "response.completed", "response": [:]]
         ])
-
-        let url = try #require(URL(string: openResponsesTestURL))
-        let fetch: FetchFunction = { _ in
-            FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url, headers: ["Content-Type": "text/event-stream"]))
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doStream(options: .init(prompt: openResponsesTestPrompt))
-
-        var parts: [LanguageModelV3StreamPart] = []
-        for try await p in result.stream { parts.append(p) }
-
-        #expect(parts.count >= 5)
-        if case .streamStart = parts.first {
-            // ok
-        } else {
-            Issue.record("Expected stream-start first")
-        }
-
-        #expect(parts.contains { if case .textDelta(_, let delta, _) = $0 { return delta == "Hi" } else { return false } })
-
-        guard let finish = parts.last, case .finish(let finishReason, let usage, _) = finish else {
-            Issue.record("Expected finish last")
-            return
-        }
-        #expect(finishReason.unified == .stop)
-        #expect(usage.inputTokens.total == 2)
-        #expect(usage.inputTokens.cacheRead == 1)
-        #expect(usage.inputTokens.noCache == 1)
+        let parts = try await openResponsesCollect(openResponsesProvider(endpoint)("model").doStream(options: .init(prompt: openResponsesTestPrompt)))
+        #expect(Array(parts.dropFirst().dropLast()) == [
+            .toolInputStart(id: "call", toolName: "code", providerMetadata: nil, providerExecuted: nil, dynamic: nil, title: nil),
+            .toolInputDelta(id: "call", delta: "print(", providerMetadata: nil), .toolInputEnd(id: "call", providerMetadata: nil),
+            .toolCall(.init(toolCallId: "call", toolName: "code", input: #""print(1)""#, providerMetadata: ["acme": ["itemId": "custom"]]))
+        ])
+        guard case .finish(let reason, _, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .toolCalls)
     }
 
-    @Test("doStream: streams reasoning + tool-call and finishes with tool-calls")
-    func doStreamReasoningWithToolCall() async throws {
-        let responseData = makeSSEData(from: [
-            "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\"}}",
-            "{\"type\":\"response.reasoning_text.delta\",\"item_id\":\"rs_1\",\"delta\":\"reason\"}",
-            "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\"}}",
-            "{\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"call_id\":\"call_123\",\"name\":\"weather\",\"arguments\":\"\"}}",
-            "{\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"location\\\":\\\"San Francisco\\\"}\"}",
-            "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"call_id\":\"call_123\",\"name\":\"weather\",\"arguments\":\"{\\\"location\\\":\\\"San Francisco\\\"}\"}}",
-            "{\"type\":\"response.completed\",\"response\":{\"incomplete_details\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":3},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}",
+    @Test("text streaming ignores redundant done text and preserves citation metadata at item end")
+    func textStream() async throws {
+        let citation: JSONValue = ["type": "url_citation", "start_index": 0, "end_index": 5, "url": "https://example.com", "title": "Source"]
+        let endpoint = OpenResponsesTestEndpoint()
+        try await endpoint.setEvents([
+            ["type": "response.output_item.added", "item": ["type": "message", "id": "message", "content": []]],
+            ["type": "response.output_text.delta", "item_id": "message", "delta": "Hel"],
+            ["type": "response.output_text.delta", "item_id": "message", "delta": "lo"],
+            ["type": "response.output_text.done", "item_id": "message", "text": "Hello"],
+            ["type": "response.output_item.done", "item": ["type": "message", "id": "message", "content": [["type": "output_text", "text": "Hello", "annotations": .array([citation])]]]],
+            ["type": "response.completed", "response": [:]]
         ])
+        let provider = try openResponsesProvider(endpoint)
+        let parts = try await openResponsesCollect(provider("model").doStream(options: .init(prompt: [])))
+        #expect(Array(parts.dropFirst().dropLast()) == [.textStart(id: "message", providerMetadata: nil), .textDelta(id: "message", delta: "Hel", providerMetadata: nil), .textDelta(id: "message", delta: "lo", providerMetadata: nil), .textEnd(id: "message", providerMetadata: ["acme": ["itemId": "message", "annotations": .array([citation])]])])
+    }
 
-        let url = try #require(URL(string: openResponsesTestURL))
-        let fetch: FetchFunction = { _ in
-            FetchResponse(body: .data(responseData), urlResponse: makeHTTPResponse(url: url, headers: ["Content-Type": "text/event-stream"]))
-        }
-
-        let model = makeModel(fetch: fetch)
-        let result = try await model.doStream(options: .init(prompt: openResponsesTestPrompt))
-
-        var parts: [LanguageModelV3StreamPart] = []
-        for try await p in result.stream { parts.append(p) }
-
-        #expect(parts.contains { if case .reasoningDelta(_, let delta, _) = $0 { return delta == "reason" } else { return false } })
-        #expect(parts.contains { if case .toolCall(let call) = $0 { return call.toolName == "weather" } else { return false } })
-
-        guard let finish = parts.last, case .finish(let finishReason, let usage, _) = finish else {
-            Issue.record("Expected finish last")
-            return
-        }
-        #expect(finishReason.unified == .toolCalls)
-        #expect(usage.inputTokens.cacheRead == 3)
-        #expect(usage.inputTokens.noCache == 7)
+    @Test("unfinished reasoning closes its original ID and malformed JSON remains a typed error")
+    func unfinishedReasoning() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        await endpoint.setLines([#"{"type":"response.output_item.added","item":{"type":"reasoning","id":"original","summary":[]}}"#, "{invalid}"])
+        let provider = try openResponsesProvider(endpoint)
+        let parts = try await openResponsesCollect(provider("model").doStream(options: .init(prompt: openResponsesTestPrompt)))
+        #expect(parts.contains(.reasoningEnd(id: "original", providerMetadata: nil)))
+        let errors = parts.compactMap { part -> (any Error)? in if case .error(.error(let error)) = part { return error }; return nil }
+        #expect(errors.first is JSONParseError)
+        guard case .finish(let reason, let usage, _) = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .other)
+        #expect(usage.inputTokens.noCache == nil)
     }
 }

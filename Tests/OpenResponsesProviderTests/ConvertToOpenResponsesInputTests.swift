@@ -1,288 +1,91 @@
 import Foundation
 import Testing
-@testable import OpenResponsesProvider
 import AISDKProvider
+import OpenResponsesProvider
 
-@Suite("convertToOpenResponsesInput", .serialized)
+@Suite("Open Responses history HTTP boundaries")
 struct ConvertToOpenResponsesInputTests {
-    private func decodeJSONString(_ text: String) throws -> JSONValue {
-        try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
-    }
+    private let annotation: JSONValue = ["type": "url_citation", "start_index": 0, "end_index": 1, "url": "https://example.com", "title": "Source"]
 
-    @Test("system messages: single system message becomes instructions")
-    func systemSingle() async {
-        let prompt: LanguageModelV3Prompt = [
-            .system(content: "You are a helpful assistant.", providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-
-        #expect(result.instructions == "You are a helpful assistant.")
-        #expect(result.input.isEmpty)
-    }
-
-    @Test("system messages: multiple system messages join with newlines")
-    func systemJoin() async {
-        let prompt: LanguageModelV3Prompt = [
-            .system(content: "You are a helpful assistant.", providerOptions: nil),
-            .system(content: "Always be concise.", providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-
-        #expect(result.instructions == "You are a helpful assistant.\nAlways be concise.")
-        #expect(result.input.isEmpty)
-    }
-
-    @Test("system messages: no system messages yields nil instructions")
-    func systemNone() async {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.instructions == nil)
-    }
-
-    @Test("user messages: text -> input_text")
-    func userText() async {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.input == [
-            .object([
-                "type": .string("message"),
-                "role": .string("user"),
-                "content": .array([
-                    .object(["type": .string("input_text"), "text": .string("Hello")])
-                ])
-            ])
-        ])
-    }
-
-    @Test("user messages: image file (base64) -> input_image data URL")
-    func userImageBase64() async {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [
-                .file(.init(data: .base64("ZmFrZS1kYXRh"), mediaType: "image/png"))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.input == [
-            .object([
-                "type": .string("message"),
-                "role": .string("user"),
-                "content": .array([
-                    .object([
-                        "type": .string("input_image"),
-                        "image_url": .string("data:image/png;base64,ZmFrZS1kYXRh")
-                    ])
-                ])
-            ])
-        ])
-    }
-
-    @Test("user messages: image file (URL) -> input_image url")
-    func userImageURL() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [
-                .file(.init(data: .url(try #require(URL(string: "https://example.com/image.png"))), mediaType: "image/png"))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.input == [
-            .object([
-                "type": .string("message"),
-                "role": .string("user"),
-                "content": .array([
-                    .object([
-                        "type": .string("input_image"),
-                        "image_url": .string("https://example.com/image.png")
-                    ])
-                ])
-            ])
-        ])
-    }
-
-    @Test("user messages: non-image files add warning and are skipped")
-    func userUnsupportedFileWarning() async {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [
-                .file(.init(data: .base64("ZmFrZS1kYXRh"), mediaType: "application/pdf"))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.warnings == [.other(message: "unsupported file content type: application/pdf")])
-        #expect(result.input == [
-            .object([
-                "type": .string("message"),
-                "role": .string("user"),
-                "content": .array([])
-            ])
-        ])
-    }
-
-    @Test("assistant messages: tool-call object input becomes JSON string")
-    func assistantToolCallObjectInput() async throws {
-        let prompt: LanguageModelV3Prompt = [
+    @Test("strict history distinguishes easy messages from complete item replay", arguments: [false, true])
+    func strictInput(strict: Bool) async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint, strict: strict)
+        let history: LanguageModelV4Prompt = [
+            .system(content: "one", providerOptions: nil), .system(content: "two", providerOptions: nil),
             .assistant(content: [
-                .toolCall(.init(toolCallId: "call_123", toolName: "get_weather", input: .object([
-                    "location": .string("San Francisco")
-                ])))
+                .text(.init(text: "easy-")), .text(.init(text: "text")),
+                .text(.init(text: "complete", providerOptions: ["acme": ["itemId": "message", "annotations": .array([annotation])]])),
+                .toolCall(.init(toolCallId: "call", toolName: "tool", input: .string(#"{"arg":1}"#), providerOptions: ["acme": ["itemId": "function"]])),
+                .text(.init(text: "after", providerOptions: ["acme": ["itemId": "next-message"]]))
             ], providerOptions: nil)
         ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        guard case .object(let item) = try #require(result.input.first) else {
-            Issue.record("Expected object item")
-            return
+        _ = try await provider("model").doGenerate(options: .init(prompt: history))
+        let body = try await endpoint.lastBody()
+        #expect(body["instructions"] == "one\ntwo")
+        let easy: JSONValue = strict ? ["type": "message", "role": "assistant", "content": "easy-text"] : ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "easy-"], ["type": "output_text", "text": "text"]]]
+        var complete: JSONObject = ["type": "message", "role": "assistant", "id": "message", "content": [["type": "output_text", "text": "complete", "annotations": .array([annotation])]]]
+        var next: JSONObject = ["type": "message", "role": "assistant", "id": "next-message", "content": [["type": "output_text", "text": "after"]]]
+        if strict {
+            complete["status"] = "completed"
+            complete["content"] = [["type": "output_text", "text": "complete", "annotations": .array([annotation]), "logprobs": []]]
+            next["status"] = "completed"
+            next["content"] = [["type": "output_text", "text": "after", "annotations": [], "logprobs": []]]
         }
-
-        #expect(item["type"] == .string("function_call"))
-        #expect(item["call_id"] == .string("call_123"))
-        #expect(item["name"] == .string("get_weather"))
-
-        guard case .string(let args) = item["arguments"] else {
-            Issue.record("Expected arguments string")
-            return
-        }
-        #expect(try decodeJSONString(args) == .object(["location": .string("San Francisco")]))
+        #expect(body["input"] == .array([easy, .object(complete), ["type": "function_call", "id": "function", "call_id": "call", "name": "tool", "arguments": #"{"arg":1}"#], .object(next)]))
     }
 
-    @Test("assistant messages: tool-call string input passes through")
-    func assistantToolCallStringInput() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .assistant(content: [
-                .toolCall(.init(toolCallId: "call_124", toolName: "get_weather", input: .string("{\"location\":\"Berlin\"}")))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        guard case .object(let item) = try #require(result.input.first) else {
-            Issue.record("Expected object item")
-            return
+    @Test("summary-only encrypted reasoning stays summary-only while full content boundaries replay")
+    func reasoningReplay() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint)
+        let summary: JSONValue = [["type": "summary_text", "text": "Summary"]]
+        _ = try await provider("model").doGenerate(options: .init(prompt: [.assistant(content: [.reasoning(.init(text: "Summary", providerOptions: ["acme": ["itemId": "summary", "reasoningSummary": summary, "reasoningContent": .null, "reasoningEncryptedContent": "cipher"]]))], providerOptions: nil)]))
+        let summaryBody = try await endpoint.lastBody()
+        #expect(summaryBody["input"] == [["type": "reasoning", "id": "summary", "summary": summary, "encrypted_content": "cipher"]])
+        let wire: JSONValue = ["type": "reasoning", "id": "reasoning", "summary": summary, "content": [["type": "reasoning_text", "text": "First"], ["type": "reasoning_text", "text": "Second"]], "encrypted_content": "cipher"]
+        await endpoint.setResponse(openResponsesTestResponse(output: [wire]))
+        let generated = try await provider("model").doGenerate(options: .init(prompt: openResponsesTestPrompt))
+        let parts = generated.content.compactMap { part -> LanguageModelV4MessagePart? in
+            if case .reasoning(let value) = part { return .reasoning(.init(text: value.text, providerOptions: value.providerMetadata)) }
+            return nil
         }
-
-        guard case .string(let args) = item["arguments"] else {
-            Issue.record("Expected arguments string")
-            return
-        }
-        #expect(try decodeJSONString(args) == .object(["location": .string("Berlin")]))
+        _ = try await provider("model").doGenerate(options: .init(prompt: [.assistant(content: parts, providerOptions: nil)]))
+        let body = try await endpoint.lastBody()
+        #expect(body["input"] == [wire])
     }
 
-    @Test("assistant messages: text + tool-call produces message then function_call")
-    func assistantTextAndToolCall() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .assistant(content: [
-                .text(.init(text: "Let me check the weather for you.")),
-                .toolCall(.init(toolCallId: "call_456", toolName: "get_weather", input: .object([
-                    "location": .string("New York")
-                ])))
-            ], providerOptions: nil)
+    @Test("user and tool files preserve image details, file URLs and inline media data")
+    func mediaInput() async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint)
+        let history: LanguageModelV4Prompt = [
+            .user(content: [
+                .file(.init(data: .base64("AAECAw=="), mediaType: "image/png", providerOptions: ["acme": ["imageDetail": "high"]])),
+                .file(.init(data: .url(URL(string: "https://media.example/document.pdf")!), mediaType: "application/pdf", filename: "ignored.pdf")),
+                .file(.init(data: .data(Data([0, 1, 2, 3])), mediaType: "application/pdf"))
+            ], providerOptions: nil),
+            .tool(content: [.toolResult(.init(toolCallId: "call", toolName: "tool", output: .content(value: [
+                .text(text: "Result", providerOptions: nil),
+                .file(data: .base64("AAECAw=="), mediaType: "image/png", filename: nil, providerOptions: ["acme": ["imageDetail": "low"]]),
+                .file(data: .text("unsupported"), mediaType: "text/plain", filename: nil, providerOptions: nil),
+                .custom(providerOptions: nil)
+            ])))], providerOptions: nil)
         ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        #expect(result.input.count == 2)
-
-        // assistant message
-        guard case .object(let message) = result.input[0] else {
-            Issue.record("Expected assistant message object")
-            return
-        }
-        #expect(message["type"] == .string("message"))
-        #expect(message["role"] == .string("assistant"))
-
-        // tool call
-        guard case .object(let toolCall) = result.input[1] else {
-            Issue.record("Expected tool call object")
-            return
-        }
-        guard case .string(let args) = toolCall["arguments"] else {
-            Issue.record("Expected arguments string")
-            return
-        }
-        #expect(try decodeJSONString(args) == .object(["location": .string("New York")]))
-    }
-
-    @Test("tool messages: json output is JSON string")
-    func toolJSONOutput() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "call_123",
-                    toolName: "get_weather",
-                    output: .json(value: .object(["temperature": .number(72), "condition": .string("sunny")]))
-                ))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        guard case .object(let item) = try #require(result.input.first) else {
-            Issue.record("Expected object item")
-            return
-        }
-
-        guard case .string(let output) = item["output"] else {
-            Issue.record("Expected output string")
-            return
-        }
-        #expect(try decodeJSONString(output) == .object(["temperature": .number(72), "condition": .string("sunny")]))
-    }
-
-    @Test("tool messages: execution-denied uses default message when reason is nil")
-    func toolExecutionDeniedDefaultMessage() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "call_denied",
-                    toolName: "dangerous_action",
-                    output: .executionDenied(reason: nil)
-                ))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        guard case .object(let item) = try #require(result.input.first) else {
-            Issue.record("Expected object item")
-            return
-        }
-        #expect(item["output"] == .string("Tool execution denied."))
-    }
-
-    @Test("tool messages: content output converts text and image-data")
-    func toolContentOutputTextAndImage() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .tool(content: [
-                .toolResult(.init(
-                    toolCallId: "call_content",
-                    toolName: "multi_output",
-                    output: .content(value: [
-                        .text(text: "First result"),
-                        .media(data: "ZmFrZS1kYXRh", mediaType: "image/png"),
-                    ])
-                ))
-            ], providerOptions: nil)
-        ]
-
-        let result = await convertToOpenResponsesInput(prompt: prompt)
-        guard case .object(let item) = try #require(result.input.first) else {
-            Issue.record("Expected object item")
-            return
-        }
-
-        guard case .array(let parts)? = item["output"] else {
-            Issue.record("Expected output array")
-            return
-        }
-
-        #expect(parts == [
-            .object(["type": .string("input_text"), "text": .string("First result")]),
-            .object(["type": .string("input_image"), "image_url": .string("data:image/png;base64,ZmFrZS1kYXRh")]),
+        let result = try await provider("model").doGenerate(options: .init(prompt: history))
+        let body = try await endpoint.lastBody()
+        #expect(body["input"] == [
+            ["type": "message", "role": "user", "content": [["type": "input_image", "image_url": "data:image/png;base64,AAECAw==", "detail": "high"], ["type": "input_file", "file_url": "https://media.example/document.pdf"], ["type": "input_file", "filename": "data", "file_data": "data:application/pdf;base64,AAECAw=="]]],
+            ["type": "function_call_output", "call_id": "call", "output": [["type": "input_text", "text": "Result"], ["type": "input_image", "image_url": "data:image/png;base64,AAECAw==", "detail": "low"]]]
         ])
+        #expect(result.warnings == [.other(message: "unsupported tool content part type: file with data type: text"), .other(message: "unsupported tool content part type: custom")])
+    }
+
+    @Test("reference and text user files fail instead of being silently reinterpreted", arguments: [false, true])
+    func unsupportedData(reference: Bool) async throws {
+        let endpoint = OpenResponsesTestEndpoint()
+        let provider = try openResponsesProvider(endpoint)
+        let data: SharedV4FileData = reference ? .reference(["endpoint": "file"]) : .text("text")
+        await #expect(throws: UnsupportedFunctionalityError.self) { _ = try await provider("model").doGenerate(options: .init(prompt: [.user(content: [.file(.init(data: data, mediaType: "application/pdf"))], providerOptions: nil)])) }
     }
 }

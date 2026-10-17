@@ -1,91 +1,81 @@
+import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-import Foundation
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/open-responses/src/open-responses-provider.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
+public enum OpenResponsesHeaders: Sendable, ExpressibleByDictionaryLiteral {
+    case values([String: String])
+    case dynamic(@Sendable () throws -> [String: String])
+
+    public init(dictionaryLiteral elements: (String, String)...) {
+        self = .values(Dictionary(elements, uniquingKeysWith: { _, last in last }))
+    }
+    func resolve() throws -> [String: String] {
+        switch self {
+        case .values(let values): return values
+        case .dynamic(let resolve): return try resolve()
+        }
+    }
+}
 
 public struct OpenResponsesProviderSettings: Sendable {
-    /// URL for the Open Responses API POST endpoint.
     public var url: String
-
-    /// Provider name. Used as key for provider options and metadata.
     public var name: String
-
-    /// API key for authenticating requests.
     public var apiKey: String?
-
-    /// Custom headers to include in the requests.
-    public var headers: [String: String]?
-
-    /// Custom fetch implementation.
+    public var headers: OpenResponsesHeaders?
     public var fetch: FetchFunction?
+    public var failedResponseHandler: ResponseHandler<APICallError>?
+    public var getResponseErrorMetadata: (@Sendable (OpenResponsesResponseError) throws -> OpenResponsesResponseErrorMetadata)?
+    public var strictResponseInput: Bool
+    public var customToolId: String
+    public var structuredOutputs: Bool
+    public var userAgentSuffix: String?
+    public var experimentalExtensions: [Experimental_OpenResponsesExtensionRegistration]
 
-    public init(
-        url: String,
-        name: String,
-        apiKey: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil
-    ) {
+    public init(url: String, name: String, apiKey: String? = nil, headers: OpenResponsesHeaders? = nil, fetch: FetchFunction? = nil,
+                failedResponseHandler: ResponseHandler<APICallError>? = nil,
+                getResponseErrorMetadata: (@Sendable (OpenResponsesResponseError) throws -> OpenResponsesResponseErrorMetadata)? = nil,
+                strictResponseInput: Bool = false, customToolId: String = "open-responses.custom", structuredOutputs: Bool = true,
+                userAgentSuffix: String? = nil, experimentalExtensions: [Experimental_OpenResponsesExtensionRegistration] = []) {
         self.url = url
         self.name = name
         self.apiKey = apiKey
         self.headers = headers
         self.fetch = fetch
+        self.failedResponseHandler = failedResponseHandler
+        self.getResponseErrorMetadata = getResponseErrorMetadata
+        self.strictResponseInput = strictResponseInput
+        self.customToolId = customToolId
+        self.structuredOutputs = structuredOutputs
+        self.userAgentSuffix = userAgentSuffix
+        self.experimentalExtensions = experimentalExtensions
     }
 }
 
-public final class OpenResponsesProvider: ProviderV3 {
-    private let responsesFactory: @Sendable (String) -> OpenResponsesLanguageModel
+public final class OpenResponsesProvider: ProviderV4 {
+    private let config: OpenResponsesConfig
+    public let tools: OpenResponsesTools
 
-    init(responses: @escaping @Sendable (String) -> OpenResponsesLanguageModel) {
-        self.responsesFactory = responses
-    }
-
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        responsesFactory(modelId)
-    }
-
-    public func languageModel(_ modelId: String) throws -> any LanguageModelV3 {
-        try languageModel(modelId: modelId)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-}
-
-public func createOpenResponses(options: OpenResponsesProviderSettings) -> OpenResponsesProvider {
-    let providerName = options.name
-
-    let headersClosure: @Sendable () -> [String: String] = {
-        let apiKeyHeader: [String: String?] = options.apiKey.map { ["Authorization": "Bearer \($0)"] } ?? [:]
-        let merged = combineHeaders(apiKeyHeader, options.headers?.mapValues { Optional($0) })
-        return withUserAgentSuffix(merged, "ai-sdk/open-responses/\(OPEN_RESPONSES_VERSION)")
-    }
-
-    let responsesFactory: @Sendable (String) -> OpenResponsesLanguageModel = { modelId in
-        OpenResponsesLanguageModel(
-            modelId: modelId,
-            config: OpenResponsesConfig(
-                provider: "\(providerName).responses",
-                url: options.url,
-                headers: headersClosure,
-                fetch: options.fetch,
-                generateId: generateID
-            )
+    init(settings: OpenResponsesProviderSettings) throws {
+        let extensions = try OpenResponsesExtensionRegistry(settings.experimentalExtensions)
+        tools = OpenResponsesTools(customToolId: settings.customToolId)
+        config = OpenResponsesConfig(
+            provider: "\(settings.name).responses", providerOptionsName: settings.name, url: settings.url,
+            headers: {
+                var authorization: [String: String?] = [:]
+                if let key = settings.apiKey, !key.isEmpty { authorization["Authorization"] = "Bearer \(key)" }
+                let headers = combineHeaders(authorization, try settings.headers?.resolve().mapValues(Optional.some))
+                return withUserAgentSuffix(headers, settings.userAgentSuffix ?? "ai-sdk-open-responses/\(OPEN_RESPONSES_VERSION)").mapValues(Optional.some)
+            },
+            fetch: settings.fetch, failedResponseHandler: settings.failedResponseHandler, getResponseErrorMetadata: settings.getResponseErrorMetadata,
+            generateId: generateID, extensions: extensions, strictResponseInput: settings.strictResponseInput,
+            customToolId: settings.customToolId, structuredOutputs: settings.structuredOutputs
         )
     }
-
-    return OpenResponsesProvider(responses: responsesFactory)
+    public func languageModel(modelId: String) -> any LanguageModelV4 { languageModel(modelId) }
+    public func languageModel(_ modelId: String) -> OpenResponsesLanguageModel { .init(modelId: modelId, config: config) }
+    public func callAsFunction(_ modelId: String) -> OpenResponsesLanguageModel { languageModel(modelId) }
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
+    public func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
 }
 
+public func createOpenResponses(options: OpenResponsesProviderSettings) throws -> OpenResponsesProvider { try .init(settings: options) }

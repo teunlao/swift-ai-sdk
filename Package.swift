@@ -144,7 +144,7 @@ let package = Package(
                 resources: [.copy("Fixtures")]
             ),
 	        .testTarget(name: "MoonshotAIProviderTests", dependencies: ["MoonshotAIProvider", "AISDKProvider", "AISDKProviderUtils", "OpenAICompatibleProvider"]),
-	        .testTarget(name: "OpenResponsesProviderTests", dependencies: ["OpenResponsesProvider", "AISDKProvider", "AISDKProviderUtils"]),
+	        .testTarget(name: "OpenResponsesProviderTests", dependencies: ["OpenResponsesProvider", "AISDKProvider", "AISDKProviderUtils"], resources: [.copy("Fixtures")]),
 	        .testTarget(name: "ByteDanceProviderTests", dependencies: ["ByteDanceProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "AlibabaProviderTests", dependencies: ["AlibabaProvider", "AISDKProvider", "AISDKProviderUtils"]),
 	        .testTarget(name: "KlingAIProviderTests", dependencies: ["KlingAIProvider", "AISDKProvider", "AISDKProviderUtils"]),

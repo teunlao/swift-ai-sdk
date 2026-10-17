@@ -1,532 +1,169 @@
+import Foundation
 import AISDKProvider
 import AISDKProviderUtils
-import Foundation
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/open-responses/src/responses/open-responses-language-model.ts
-// Upstream commit: 73d5c59
-//===----------------------------------------------------------------------===//
-
-private let openResponsesAnyJSONValueSchema = FlexibleSchema(
-    Schema<JSONValue>(
-        jsonSchemaResolver: { .bool(true) },
-        validator: nil
-    )
-)
-
-private let openResponsesHTTPSURLRegex: NSRegularExpression = {
-    // Safe to use try! for a static, well-formed pattern
-    try! NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
-}()
-
-public final class OpenResponsesLanguageModel: LanguageModelV3 {
-    public let specificationVersion: String = "v3"
-
+public final class OpenResponsesLanguageModel: LanguageModelV4 {
     public let modelId: String
     private let config: OpenResponsesConfig
-
-    public init(modelId: String, config: OpenResponsesConfig) {
-        self.modelId = modelId
-        self.config = config
+    private static let imageRegex = try! NSRegularExpression(pattern: "^https?://.*$")
+    private struct Request {
+        let body: JSONObject
+        let warnings: [SharedV4Warning]
     }
 
+    init(modelId: String, config: OpenResponsesConfig) { self.modelId = modelId; self.config = config }
     public var provider: String { config.provider }
+    public var supportedUrls: [String: [NSRegularExpression]] { ["image/*": [Self.imageRegex]] }
 
-    public var supportedUrls: [String: [NSRegularExpression]] {
-        get async throws {
-            [
-                "image/*": [openResponsesHTTPSURLRegex]
-            ]
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        let request = try await prepare(options)
+        let result = try await postJsonToAPI(
+            url: config.url, headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(request.body), failedResponseHandler: config.failedResponseHandler ?? openResponsesFailedResponseHandler,
+            successfulResponseHandler: createJsonResponseHandler(responseSchema: openResponsesJSONSchema), isAborted: options.abortSignal, fetch: config.fetch
+        )
+        guard case .object(let fields) = result.value else { throw InvalidResponseDataError(data: result.value, message: "Expected Responses API object") }
+        if openResponsesTruthy(fields["error"]), let value = fields["error"] {
+            let error = try OpenResponsesResponseError(wire: value)
+            let metadata = try config.getResponseErrorMetadata?(error)
+            throw APICallError(message: error.message, url: config.url, requestBodyValues: request.body,
+                               statusCode: metadata?.statusCode ?? 400, responseHeaders: result.responseHeaders,
+                               responseBody: try openResponsesJSONString(result.value), isRetryable: metadata?.isRetryable, data: error.fields)
         }
-    }
-
-    private struct PreparedRequest {
-        let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
-    }
-
-    private func getArgs(_ options: LanguageModelV3CallOptions) async -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
-
-        if options.stopSequences != nil {
-            warnings.append(.unsupported(feature: "stopSequences", details: nil))
+        let response = try OpenResponsesResponse(fields)
+        guard let output = response.output else {
+            let detail = response.incompleteReason ?? response.status ?? ""
+            throw APICallError(message: detail.isEmpty ? "Responses API returned no output" : "Responses API returned no output (\(detail))",
+                               url: config.url, requestBodyValues: request.body, statusCode: 500, responseHeaders: result.responseHeaders,
+                               responseBody: try openResponsesJSONString(result.value), isRetryable: false)
         }
-        if options.topK != nil {
-            warnings.append(.unsupported(feature: "topK", details: nil))
-        }
-        if options.seed != nil {
-            warnings.append(.unsupported(feature: "seed", details: nil))
-        }
-
-        let inputResult = await convertToOpenResponsesInput(prompt: options.prompt)
-        warnings.append(contentsOf: inputResult.warnings)
-
-        // Convert function tools to the Open Responses format.
-        let functionTools: [JSONValue] = options.tools?
-            .compactMap { tool in
-                guard case .function(let functionTool) = tool else { return nil }
-
-                var payload: [String: JSONValue] = [
-                    "type": .string("function"),
-                    "name": .string(functionTool.name),
-                    "parameters": functionTool.inputSchema
-                ]
-
-                if let description = functionTool.description {
-                    payload["description"] = .string(description)
+        var content: [LanguageModelV4Content] = []
+        var hasToolCalls = false
+        for item in output {
+            switch item {
+            case .reasoning(let value):
+                if let parts = value.content, !parts.isEmpty {
+                    for part in parts {
+                        guard let text = part.text else { throw InvalidResponseDataError(data: value.id, message: "Expected reasoning text") }
+                        content.append(.reasoning(.init(text: text, providerMetadata: try openResponsesReasoningMetadata(value, namespace: config.providerOptionsName, content: [part], useExplicitContent: true))))
+                    }
+                } else {
+                    guard let summary = value.summary else { throw InvalidResponseDataError(data: value.id, message: "Expected reasoning summary") }
+                    let text = try summary.map { part -> String in
+                        guard let text = part.text else { throw InvalidResponseDataError(data: value.id, message: "Expected reasoning summary text") }
+                        return text
+                    }.joined()
+                    content.append(.reasoning(.init(text: text, providerMetadata: try openResponsesReasoningMetadata(value, namespace: config.providerOptionsName))))
                 }
-
-                if let strict = functionTool.strict {
-                    payload["strict"] = .bool(strict)
+            case .message(let value):
+                guard let parts = value.content else { throw InvalidResponseDataError(data: value.id, message: "Expected message content") }
+                for part in parts {
+                    if let text = part.text { content.append(.text(.init(text: text, providerMetadata: openResponsesItemMetadata(id: value.id, annotations: part.annotations ?? [], namespace: config.providerOptionsName)))) }
                 }
-
-                return .object(payload)
-            } ?? []
-
-        // Convert tool choice to the Open Responses format.
-        let convertedToolChoice: JSONValue? = {
-            guard let toolChoice = options.toolChoice else { return nil }
-
-            switch toolChoice {
-            case .tool(let toolName):
-                return .object([
-                    "type": .string("function"),
-                    "name": .string(toolName)
-                ])
-            case .auto:
-                return .string("auto")
-            case .none:
-                return .string("none")
-            case .required:
-                return .string("required")
+            case .function(let value):
+                guard let id = value.callId, let name = value.name, let arguments = value.arguments else { throw InvalidResponseDataError(data: value.id, message: "Incomplete function call") }
+                hasToolCalls = true
+                content.append(.toolCall(.init(toolCallId: id, toolName: name, input: arguments, providerMetadata: openResponsesItemMetadata(id: value.id, namespace: config.providerOptionsName))))
+            case .custom(let value):
+                guard let id = value.callId, let name = value.name, let input = value.input else { throw InvalidResponseDataError(data: value.id, message: "Incomplete custom tool call") }
+                hasToolCalls = true
+                content.append(.toolCall(.init(toolCallId: id, toolName: name, input: try openResponsesJSONString(input), providerMetadata: openResponsesItemMetadata(id: value.id, namespace: config.providerOptionsName))))
+            case .other(let fields):
+                if let item = Experimental_OpenResponsesExtensionItem(wire: fields), let decoded = try await config.extensions.decode(item, mode: .generate, namespace: config.providerOptionsName) {
+                    content += decoded.map(\.content)
+                    hasToolCalls = hasToolCalls || decoded.contains(where: \.isToolCall)
+                }
             }
-        }()
-
-        let textFormat: JSONValue? = {
-            guard case let .json(schema, name, description) = options.responseFormat else { return nil }
-
-            var payload: [String: JSONValue] = [
-                "type": .string("json_schema")
-            ]
-
-            if let schema {
-                payload["name"] = .string(name ?? "response")
-                if let description {
-                    payload["description"] = .string(description)
-                }
-                payload["schema"] = schema
-                payload["strict"] = .bool(true)
-            }
-
-            return .object(payload)
-        }()
-
-        var body: [String: JSONValue] = [
-            "model": .string(modelId),
-            "input": .array(inputResult.input)
-        ]
-
-        if let instructions = inputResult.instructions {
-            body["instructions"] = .string(instructions)
         }
-
-        if let maxOutputTokens = options.maxOutputTokens {
-            body["max_output_tokens"] = .number(Double(maxOutputTokens))
-        }
-
-        if let temperature = options.temperature {
-            body["temperature"] = .number(temperature)
-        }
-
-        if let topP = options.topP {
-            body["top_p"] = .number(topP)
-        }
-
-        if let presencePenalty = options.presencePenalty {
-            body["presence_penalty"] = .number(presencePenalty)
-        }
-
-        if let frequencyPenalty = options.frequencyPenalty {
-            body["frequency_penalty"] = .number(frequencyPenalty)
-        }
-
-        if !functionTools.isEmpty {
-            body["tools"] = .array(functionTools)
-        }
-
-        if let convertedToolChoice {
-            body["tool_choice"] = convertedToolChoice
-        }
-
-        if let textFormat {
-            body["text"] = .object([
-                "format": textFormat
-            ])
-        }
-
-        return PreparedRequest(body: body, warnings: warnings)
+        return .init(content: content,
+                     finishReason: .init(unified: mapOpenResponsesFinishReason(finishReason: response.incompleteReason, hasToolCalls: hasToolCalls), raw: response.incompleteReason),
+                     usage: openResponsesGenerationUsage(response.usage), request: .init(body: request.body),
+                     response: .init(id: response.id, timestamp: response.createdAt.map { Date(timeIntervalSince1970: $0) }, modelId: response.model, headers: result.responseHeaders, body: result.rawValue),
+                     warnings: request.warnings)
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        let prepared = await getArgs(options)
-
-        let defaultHeaders = config.headers().mapValues { Optional($0) }
-        let requestHeaders = options.headers?.mapValues { Optional($0) }
-        let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
-
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        let request = try await prepare(options)
+        var body = request.body
+        body["stream"] = true
         let response = try await postJsonToAPI(
-            url: config.url,
-            headers: headers,
-            body: JSONValue.object(prepared.body),
-            failedResponseHandler: openResponsesFailedResponseHandler,
-            successfulResponseHandler: createJsonResponseHandler(responseSchema: openResponsesAnyJSONValueSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
+            url: config.url, headers: combineHeaders(try config.headers(), options.headers?.mapValues(Optional.some)).compactMapValues { $0 },
+            body: JSONValue.object(body), failedResponseHandler: config.failedResponseHandler ?? openResponsesFailedResponseHandler,
+            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: openResponsesJSONSchema), isAborted: options.abortSignal, fetch: config.fetch
         )
-
-        let json = response.value
-        let dict = json.objectValue ?? [:]
-
-        let content = parseContent(from: dict)
-        let hasToolCalls = content.contains { if case .toolCall = $0 { return true } else { return false } }
-
-        let reason = dict["incomplete_details"]?.objectValue?["reason"]?.stringValue
-        let finishReason = LanguageModelV3FinishReason(
-            unified: mapOpenResponsesFinishReason(finishReason: reason, hasToolCalls: hasToolCalls),
-            raw: reason
-        )
-
-        let usage = mapGenerateUsage(from: dict["usage"])
-
-        let responseId = dict["id"]?.stringValue
-        let responseModel = dict["model"]?.stringValue
-        let createdAt = dict["created_at"]?.doubleValue
-        let timestamp = createdAt.map { Date(timeIntervalSince1970: $0) }
-
-        return LanguageModelV3GenerateResult(
-            content: content,
-            finishReason: finishReason,
-            usage: usage,
-            providerMetadata: nil,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
-                id: responseId,
-                timestamp: timestamp,
-                modelId: responseModel,
-                headers: response.responseHeaders,
-                body: response.rawValue
-            ),
-            warnings: prepared.warnings
-        )
-    }
-
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        let prepared = await getArgs(options)
-
-        var streamBody = prepared.body
-        streamBody["stream"] = .bool(true)
-
-        let defaultHeaders = config.headers().mapValues { Optional($0) }
-        let requestHeaders = options.headers?.mapValues { Optional($0) }
-        let headers = combineHeaders(defaultHeaders, requestHeaders).compactMapValues { $0 }
-
-        let eventStream = try await postJsonToAPI(
-            url: config.url,
-            headers: headers,
-            body: JSONValue.object(streamBody),
-            failedResponseHandler: openResponsesFailedResponseHandler,
-            successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: openResponsesAnyJSONValueSchema),
-            isAborted: options.abortSignal,
-            fetch: config.fetch
-        )
-
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error>(bufferingPolicy: .unbounded) { continuation in
-            continuation.yield(.streamStart(warnings: prepared.warnings))
-
-            Task {
-                var usage = LanguageModelV3Usage()
-                var isActiveReasoning = false
-                var hasToolCalls = false
-                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
-                var toolCallsByItemId: [String: ToolCallState] = [:]
-
-                func updateUsage(_ responseUsage: JSONValue?) {
-                    guard let responseUsage, responseUsage != .null else { return }
-                    usage = mapGenerateUsage(from: responseUsage)
-                }
-
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
+            continuation.yield(.streamStart(warnings: request.warnings))
+            let task = Task {
+                var state = OpenResponsesStream(config: config)
                 do {
-                    for try await parseResult in eventStream.value {
-                        if options.includeRawChunks == true, let raw = parseResult.rawJSONValue {
-                            continuation.yield(.raw(rawValue: raw))
-                        }
-
-                        switch parseResult {
-                        case .failure(let error, _):
-                            finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .string(String(describing: error))))
-
-                        case .success(let chunk, _):
-                            guard let chunkObject = chunk.objectValue,
-                                  let type = chunkObject["type"]?.stringValue else {
-                                continue
-                            }
-
-                            // Tool call events (single-shot tool-call when complete)
-                            if type == "response.output_item.added",
-                               let item = chunkObject["item"]?.objectValue,
-                               item["type"]?.stringValue == "function_call",
-                               let itemId = item["id"]?.stringValue {
-                                toolCallsByItemId[itemId] = ToolCallState(
-                                    toolName: item["name"]?.stringValue,
-                                    toolCallId: item["call_id"]?.stringValue,
-                                    arguments: item["arguments"]?.stringValue
-                                )
-                            } else if type == "response.function_call_arguments.delta" {
-                                let itemId = chunkObject["item_id"]?.stringValue
-                                let delta = chunkObject["delta"]?.stringValue
-                                guard let itemId, let delta else { continue }
-                                var state = toolCallsByItemId[itemId] ?? ToolCallState()
-                                state.arguments = (state.arguments ?? "") + delta
-                                toolCallsByItemId[itemId] = state
-                            } else if type == "response.function_call_arguments.done" {
-                                let itemId = chunkObject["item_id"]?.stringValue
-                                let arguments = chunkObject["arguments"]?.stringValue
-                                guard let itemId, let arguments else { continue }
-                                var state = toolCallsByItemId[itemId] ?? ToolCallState()
-                                state.arguments = arguments
-                                toolCallsByItemId[itemId] = state
-                            } else if type == "response.output_item.done",
-                                      let item = chunkObject["item"]?.objectValue,
-                                      item["type"]?.stringValue == "function_call",
-                                      let itemId = item["id"]?.stringValue {
-                                let state = toolCallsByItemId[itemId]
-                                let toolName = state?.toolName ?? item["name"]?.stringValue
-                                let toolCallId = state?.toolCallId ?? item["call_id"]?.stringValue
-                                let input = state?.arguments ?? item["arguments"]?.stringValue ?? ""
-
-                                if let toolName, let toolCallId {
-                                    continuation.yield(.toolCall(LanguageModelV3ToolCall(
-                                        toolCallId: toolCallId,
-                                        toolName: toolName,
-                                        input: input,
-                                        providerExecuted: nil,
-                                        dynamic: nil,
-                                        providerMetadata: nil
-                                    )))
-                                    hasToolCalls = true
-                                }
-
-                                toolCallsByItemId.removeValue(forKey: itemId)
-                            }
-
-                            // Reasoning events (note: response.reasoning_text.delta is an LM Studio extension, not in official spec)
-                            else if type == "response.output_item.added",
-                                    let item = chunkObject["item"]?.objectValue,
-                                    item["type"]?.stringValue == "reasoning",
-                                    let itemId = item["id"]?.stringValue {
-                                continuation.yield(.reasoningStart(id: itemId, providerMetadata: nil))
-                                isActiveReasoning = true
-                            } else if type == "response.reasoning_text.delta" {
-                                let itemId = chunkObject["item_id"]?.stringValue
-                                let delta = chunkObject["delta"]?.stringValue
-                                guard let itemId, let delta else { continue }
-                                continuation.yield(.reasoningDelta(id: itemId, delta: delta, providerMetadata: nil))
-                            } else if type == "response.output_item.done",
-                                      let item = chunkObject["item"]?.objectValue,
-                                      item["type"]?.stringValue == "reasoning",
-                                      let itemId = item["id"]?.stringValue {
-                                continuation.yield(.reasoningEnd(id: itemId, providerMetadata: nil))
-                                isActiveReasoning = false
-                            }
-
-                            // Text events
-                            else if type == "response.output_item.added",
-                                    let item = chunkObject["item"]?.objectValue,
-                                    item["type"]?.stringValue == "message",
-                                    let itemId = item["id"]?.stringValue {
-                                continuation.yield(.textStart(id: itemId, providerMetadata: nil))
-                            } else if type == "response.output_text.delta" {
-                                let itemId = chunkObject["item_id"]?.stringValue
-                                let delta = chunkObject["delta"]?.stringValue
-                                guard let itemId, let delta else { continue }
-                                continuation.yield(.textDelta(id: itemId, delta: delta, providerMetadata: nil))
-                            } else if type == "response.output_item.done",
-                                      let item = chunkObject["item"]?.objectValue,
-                                      item["type"]?.stringValue == "message",
-                                      let itemId = item["id"]?.stringValue {
-                                continuation.yield(.textEnd(id: itemId, providerMetadata: nil))
-                            }
-
-                            // Completion / failure
-                            else if type == "response.completed" || type == "response.incomplete" {
-                                let responseObject = chunkObject["response"]?.objectValue ?? [:]
-                                let reason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
-                                finishReason = .init(
-                                    unified: mapOpenResponsesFinishReason(finishReason: reason, hasToolCalls: hasToolCalls),
-                                    raw: reason
-                                )
-                                updateUsage(responseObject["usage"])
-                            } else if type == "response.failed" {
-                                let responseObject = chunkObject["response"]?.objectValue ?? [:]
-                                let status = responseObject["status"]?.stringValue
-                                let errorCode = responseObject["error"]?.objectValue?["code"]?.stringValue
-                                finishReason = .init(unified: .error, raw: errorCode ?? status)
-                                updateUsage(responseObject["usage"])
+                    for try await parsed in response.value {
+                        if options.includeRawChunks == true {
+                            switch parsed {
+                            case .success(_, let raw): continuation.yield(.raw(rawValue: try jsonValue(from: raw)))
+                            case .failure(_, let raw): if let raw { continuation.yield(.raw(rawValue: try jsonValue(from: raw))) }
                             }
                         }
+                        switch parsed {
+                        case .failure(let error, _): continuation.yield(.error(error: .error(error)))
+                        case .success(let value, _): for part in try await state.process(value) { continuation.yield(part) }
+                        }
                     }
-
-                    if isActiveReasoning {
-                        continuation.yield(.reasoningEnd(id: "reasoning-0", providerMetadata: nil))
-                    }
-
-                    continuation.yield(.finish(
-                        finishReason: finishReason,
-                        usage: usage,
-                        providerMetadata: nil
-                    ))
+                    for part in state.flush() { continuation.yield(part) }
                     continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+                } catch { continuation.finish(throwing: error) }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
-
-        return LanguageModelV3StreamResult(
-            stream: stream,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3StreamResponseInfo(headers: eventStream.responseHeaders)
-        )
+        return .init(stream: stream, request: .init(body: body), response: .init(headers: response.responseHeaders))
     }
 
-    private func parseContent(from response: [String: JSONValue]) -> [LanguageModelV3Content] {
-        guard case .array(let output)? = response["output"] else { return [] }
-
-        var content: [LanguageModelV3Content] = []
-
-        for part in output {
-            guard case .object(let dict) = part else { continue }
-            guard let type = dict["type"]?.stringValue else { continue }
-
-            switch type {
-            case "reasoning":
-                if case .array(let parts)? = dict["content"] {
-                    for item in parts {
-                        guard let text = item.objectValue?["text"]?.stringValue else { continue }
-                        content.append(.reasoning(LanguageModelV3Reasoning(text: text)))
-                    }
-                }
-
-            case "message":
-                if case .array(let parts)? = dict["content"] {
-                    for item in parts {
-                        guard let text = item.objectValue?["text"]?.stringValue else { continue }
-                        content.append(.text(LanguageModelV3Text(text: text)))
-                    }
-                }
-
-            case "function_call":
-                let toolCallId = dict["call_id"]?.stringValue
-                let toolName = dict["name"]?.stringValue
-                let arguments = dict["arguments"]?.stringValue
-
-                if let toolCallId, let toolName, let arguments {
-                    content.append(.toolCall(LanguageModelV3ToolCall(
-                        toolCallId: toolCallId,
-                        toolName: toolName,
-                        input: arguments,
-                        providerExecuted: nil,
-                        dynamic: nil,
-                        providerMetadata: nil
-                    )))
-                }
-
-            default:
-                continue
-            }
+    private func prepare(_ call: LanguageModelV4CallOptions) async throws -> Request {
+        var warnings: [SharedV4Warning] = []
+        for (name, present) in [("stopSequences", call.stopSequences != nil), ("topK", call.topK != nil), ("seed", call.seed != nil)] where present { warnings.append(.unsupported(feature: name, details: nil)) }
+        var providers: [String: LanguageModelV4ProviderTool] = [:]
+        for tool in call.tools ?? [] { if case .provider(let value) = tool { providers[value.name] = value } }
+        let input = try await convertToOpenResponsesInput(prompt: call.prompt, config: config, providerTools: providers)
+        warnings += input.warnings
+        let tools = await prepareOpenResponsesTools(call.tools, choice: call.toolChoice, config: config, providerTools: providers)
+        warnings += tools.warnings
+        var textFormat: JSONValue?
+        if case .json(let schema, let name, let description) = call.responseFormat {
+            if config.structuredOutputs {
+                if let schema {
+                    var fields: JSONObject = ["type": "json_schema", "name": .string(name ?? "response"), "schema": schema, "strict": true]
+                    if let description { fields["description"] = .string(description) }
+                    textFormat = .object(fields)
+                } else { textFormat = ["type": "json_object"] }
+            } else { warnings.append(.unsupported(feature: "responseFormat", details: nil)) }
         }
-
-        return content
-    }
-
-    private func mapGenerateUsage(from responseUsage: JSONValue?) -> LanguageModelV3Usage {
-        guard let responseUsage, responseUsage != .null else {
-            // Match upstream: totals undefined but derived token buckets computed with ?? 0.
-            return LanguageModelV3Usage(
-                inputTokens: .init(total: nil, noCache: 0, cacheRead: nil, cacheWrite: nil),
-                outputTokens: .init(total: nil, text: 0, reasoning: nil),
-                raw: nil
-            )
+        let options = try await parseProviderOptions(provider: config.providerOptionsName, providerOptions: call.providerOptions, schema: openResponsesLanguageModelOptions)
+        var effort = options?.reasoningEffort
+        if effort == nil, let reasoning = call.reasoning, isCustomReasoning(reasoning) {
+            effort = reasoning == .none ? "none" : mapReasoningToProviderEffort(reasoning: reasoning, effortMap: [.minimal: "low", .low: "low", .medium: "medium", .high: "high", .xhigh: "xhigh", .max: "max"], warnings: &warnings)
         }
-
-        guard let dict = responseUsage.objectValue else {
-            return LanguageModelV3Usage(raw: responseUsage)
+        var body: JSONObject = ["model": .string(modelId), "input": .array(input.input)]
+        if let instructions = input.instructions { body["instructions"] = .string(instructions) }
+        if let value = call.maxOutputTokens { body["max_output_tokens"] = .number(Double(value)) }
+        if let value = call.temperature { body["temperature"] = .number(value) }
+        if let value = call.topP { body["top_p"] = .number(value) }
+        if let value = call.presencePenalty { body["presence_penalty"] = .number(value) }
+        if let value = call.frequencyPenalty { body["frequency_penalty"] = .number(value) }
+        if effort != nil || options?.reasoningSummary != nil {
+            var reasoning: JSONObject = [:]
+            if let effort { reasoning["effort"] = .string(effort) }
+            if let summary = options?.reasoningSummary { reasoning["summary"] = .string(summary.rawValue) }
+            body["reasoning"] = .object(reasoning)
         }
-
-        let inputTokens = dict["input_tokens"]?.intValue
-        let cachedInputTokens = dict["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue
-        let outputTokens = dict["output_tokens"]?.intValue
-        let reasoningTokens = dict["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue
-
-        return LanguageModelV3Usage(
-            inputTokens: .init(
-                total: inputTokens,
-                noCache: (inputTokens ?? 0) - (cachedInputTokens ?? 0),
-                cacheRead: cachedInputTokens,
-                cacheWrite: nil
-            ),
-            outputTokens: .init(
-                total: outputTokens,
-                text: (outputTokens ?? 0) - (reasoningTokens ?? 0),
-                reasoning: reasoningTokens
-            ),
-            raw: responseUsage
-        )
-    }
-
-    private struct ToolCallState {
-        var toolName: String?
-        var toolCallId: String?
-        var arguments: String?
+        if !tools.tools.isEmpty { body["tools"] = .array(tools.tools) }
+        if let choice = tools.choice { body["tool_choice"] = choice }
+        if let textFormat { body["text"] = ["format": textFormat] }
+        return .init(body: body, warnings: warnings)
     }
 }
 
-private extension JSONValue {
-    var objectValue: [String: JSONValue]? {
-        guard case .object(let dict) = self else { return nil }
-        return dict
-    }
-
-    var stringValue: String? {
-        guard case .string(let s) = self else { return nil }
-        return s
-    }
-
-    var doubleValue: Double? {
-        guard case .number(let d) = self else { return nil }
-        return d
-    }
-
-    var intValue: Int? {
-        guard case .number(let d) = self else { return nil }
-        return Int(d)
-    }
-}
-
-private extension ParseJSONResult {
-    var rawJSONValue: JSONValue? {
-        let raw: Any?
-        switch self {
-        case .success(_, let rawValue):
-            raw = rawValue
-        case .failure(_, let rawValue):
-            raw = rawValue
-        }
-
-        guard let raw else { return nil }
-        return try? jsonValue(from: raw)
-    }
+func openResponsesItemMetadata(id: String?, annotations: [OpenResponsesAnnotation] = [], namespace: String) -> SharedV4ProviderMetadata {
+    var value: JSONObject = [:]
+    if let id { value["itemId"] = .string(id) }
+    if !annotations.isEmpty { value["annotations"] = .array(annotations.map { .object($0.fields) }) }
+    return [namespace: value]
 }
