@@ -33,8 +33,8 @@ public struct SecureJsonParseError: Error, Equatable {
 }
 
 // Regular expressions to detect suspicious property names
-private let suspectProtoRx = try! NSRegularExpression(pattern: #""__proto__"\s*:"#)
-private let suspectConstructorRx = try! NSRegularExpression(pattern: #""constructor"\s*:"#)
+private let suspectProtoRx = try! NSRegularExpression(pattern: #""(?:_|\\u005[Ff])(?:_|\\u005[Ff])(?:p|\\u0070)(?:r|\\u0072)(?:o|\\u006[Ff])(?:t|\\u0074)(?:o|\\u006[Ff])(?:_|\\u005[Ff])(?:_|\\u005[Ff])"\s*:"#)
+private let suspectConstructorRx = try! NSRegularExpression(pattern: #""(?:c|\\u0063)(?:o|\\u006[Ff])(?:n|\\u006[Ee])(?:s|\\u0073)(?:t|\\u0074)(?:r|\\u0072)(?:u|\\u0075)(?:c|\\u0063)(?:t|\\u0074)(?:o|\\u006[Ff])(?:r|\\u0072)"\s*:"#)
 
 /// Securely parses a JSON string, protecting against prototype pollution attacks.
 ///
@@ -61,8 +61,7 @@ public func secureJsonParse(_ text: String) throws -> Any {
     let obj = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
 
     // Ignore null and non-objects
-    guard let dictionary = obj as? [String: Any] else {
-        // Return primitives, arrays, and null as-is
+    guard obj is [String: Any] || obj is [Any] else {
         return obj
     }
 
@@ -76,17 +75,17 @@ public func secureJsonParse(_ text: String) throws -> Any {
     }
 
     // Scan result for proto keys
-    try filter(obj: dictionary)
+    try filter(obj: obj)
     return obj
 }
 
 /// Recursively filters an object for forbidden prototype properties.
 /// Uses breadth-first search to scan all nested objects.
 ///
-/// - Parameter obj: The object to scan (must be a dictionary)
+/// - Parameter obj: The parsed object or array to scan
 /// - Throws: `SecureJsonParseError` if forbidden properties are found
-private func filter(obj: [String: Any]) throws {
-    var next: [[String: Any]] = [obj]
+private func filter(obj: Any) throws {
+    var next = collectDictionaries(from: obj)
 
     while !next.isEmpty {
         let nodes = next

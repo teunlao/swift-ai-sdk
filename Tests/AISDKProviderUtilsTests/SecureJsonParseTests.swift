@@ -29,6 +29,23 @@ import Foundation
 @Suite("SecureJsonParse")
 struct SecureJsonParseTests {
 
+    @Test("rejects escaped prototype keys in objects and root arrays", arguments: [
+        #"{"\u005f\u005fproto__":{"polluted":true}}"#,
+        #"{"nested":{"\u0063onstructor":{"pr\u006ftotype":{"polluted":true}}}}"#,
+        #"[[{"\u005F_proto__":{"polluted":true}}]]"#,
+    ])
+    func rejectsEscapedPrototypeKeys(text: String) {
+        #expect(throws: SecureJsonParseError.self) { try secureJsonParse(text) }
+    }
+
+    @Test("escaped constructor fields without a prototype retain ordinary data")
+    func escapedBenignConstructor() throws {
+        let value = try secureJsonParse(#"{"\u0063onstructor":{"value":7},"__proto___":"ordinary"}"#)
+        let object = try #require(value as? [String: Any])
+        #expect((object["constructor"] as? [String: Any])?["value"] as? Int == 7)
+        #expect(object["__proto___"] as? String == "ordinary")
+    }
+
     @Test("parses object string")
     func parsesObjectString() throws {
         let result = try secureJsonParse(#"{"a": 5, "b": 6}"#)
