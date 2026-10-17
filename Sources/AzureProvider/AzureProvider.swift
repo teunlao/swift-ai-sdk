@@ -37,7 +37,7 @@ public struct AzureProviderSettings: Sendable {
 /// Mirrors `packages/azure/src/azure-openai-provider.ts`.
 public final class AzureProvider: ProviderV4 {
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
-    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
+    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
@@ -47,7 +47,7 @@ public final class AzureProvider: ProviderV4 {
 
     init(
         chatFactory: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
-        responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
+        responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
@@ -105,7 +105,7 @@ public final class AzureProvider: ProviderV4 {
         chatFactory(modelId)
     }
 
-    public func responses(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 {
+    public func responses(_ modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
         responsesFactory(modelId)
     }
 
@@ -307,8 +307,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) -> Az
         )
     }
 
-    let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 = { modelId in
-        OpenAIResponsesLanguageModelV4(
+    let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel = { modelId in
+        OpenAIResponsesLanguageModel(
             modelId: modelId,
             config: responsesConfig
         )

@@ -4,8 +4,8 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAIProvider
 
-private let samplePrompt: LanguageModelV3Prompt = [
-    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+private let samplePrompt: LanguageModelV4Prompt = [
+    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
 ]
 
 private final class SequentialIdGenerator: @unchecked Sendable {
@@ -132,7 +132,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+        let tool = LanguageModelV4Tool.function(LanguageModelV4FunctionTool(
             name: "lookup_city",
             inputSchema: .object([
                 "type": .string("object"),
@@ -145,7 +145,7 @@ struct OpenAIResponsesLanguageModelTests {
         ))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
@@ -165,7 +165,7 @@ struct OpenAIResponsesLanguageModelTests {
             return false
         })
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -261,14 +261,14 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
@@ -347,7 +347,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         guard let request = await capture.current() else {
             Issue.record("Missing captured request")
@@ -399,7 +399,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(
             prompt: samplePrompt,
             providerOptions: [
                 "openai": [
@@ -448,7 +448,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
         #expect(result.finishReason.unified == .other)
         #expect(result.finishReason.raw == "some_new_reason")
     }
@@ -496,14 +496,14 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let approvalRequests = result.content.compactMap { content -> LanguageModelV3ToolApprovalRequest? in
+        let approvalRequests = result.content.compactMap { content -> LanguageModelV4ToolApprovalRequest? in
             if case .toolApprovalRequest(let request) = content { return request }
             return nil
         }
@@ -528,10 +528,10 @@ struct OpenAIResponsesLanguageModelTests {
 
     @Test("doGenerate aliases mcp_call toolCallId using approvalRequestId from prompt")
     func testDoGenerateAliasesMcpCallUsingPromptMapping() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "dummy-tool-call",
                         toolName: "mcp.list_files",
                         input: .object([:]),
@@ -543,7 +543,7 @@ struct OpenAIResponsesLanguageModelTests {
                 ],
                 providerOptions: nil
             ),
-            .user(content: [.text(LanguageModelV3TextPart(text: "Continue"))], providerOptions: nil)
+            .user(content: [.text(LanguageModelV4TextPart(text: "Continue"))], providerOptions: nil)
         ]
 
         let responseJSON: [String: Any] = [
@@ -590,14 +590,14 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(prompt: prompt)
+            options: LanguageModelV4CallOptions(prompt: prompt)
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
@@ -765,7 +765,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let options = LanguageModelV3CallOptions(
+        let options = LanguageModelV4CallOptions(
             prompt: samplePrompt,
             includeRawChunks: false,
             providerOptions: [
@@ -777,7 +777,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         let streamResult = try await model.doStream(options: options)
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -906,10 +906,10 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: [
                     .system(content: "Be safe", providerOptions: nil),
-                    .user(content: [.text(LanguageModelV3TextPart(text: "Explain"))], providerOptions: nil)
+                    .user(content: [.text(LanguageModelV4TextPart(text: "Explain"))], providerOptions: nil)
                 ],
                 temperature: 0.5,
                 topP: 0.2
@@ -996,7 +996,7 @@ struct OpenAIResponsesLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: schema, name: "response", description: "A response")
             )
@@ -1111,19 +1111,19 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 includeRawChunks: false
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _, _) = part {
                 return id == "tool-42" && name == "lookup_weather" && executed == nil
             }
             return false
@@ -1143,7 +1143,7 @@ struct OpenAIResponsesLanguageModelTests {
             return false
         })
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -1211,7 +1211,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: nil, name: nil, description: nil)
             )
@@ -1268,7 +1268,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1326,7 +1326,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1386,7 +1386,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1436,7 +1436,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1494,7 +1494,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1561,7 +1561,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1620,7 +1620,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -1685,11 +1685,11 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
-        let codeInterpreterTool = LanguageModelV3Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let codeInterpreterTool = LanguageModelV4Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool, codeInterpreterTool],
                 providerOptions: [
@@ -1800,22 +1800,22 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _, _) = part {
                 return id == "web_call" && name == "web_search" && executed == true
             }
             return false
@@ -1920,10 +1920,10 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool]
             )
@@ -2025,16 +2025,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool]
             )
         )
 
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let value) = content {
                 return value
             }
@@ -2110,10 +2110,10 @@ struct OpenAIResponsesLanguageModelTests {
             modelId: "gpt-4o",
             config: makeConfig(fetch: fetch)
         )
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool]
             )
@@ -2181,10 +2181,10 @@ struct OpenAIResponsesLanguageModelTests {
             modelId: "gpt-4o",
             config: makeConfig(fetch: fetch)
         )
-        let webSearchTool = LanguageModelV3Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
+        let webSearchTool = LanguageModelV4Tool.provider(.init(id: "openai.web_search", name: "web_search", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [webSearchTool]
             )
@@ -2282,10 +2282,10 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -2400,10 +2400,10 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -2519,15 +2519,15 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
-        let end1Parts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let end1Parts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:1" {
                 return metadata
             }
@@ -2548,7 +2548,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(end0Index != nil)
         #expect(end1Index! < end0Index!)
 
-        let end0Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let end0Metadata = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:0" {
                 return metadata
             }
@@ -2658,7 +2658,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -2668,14 +2668,14 @@ struct OpenAIResponsesLanguageModelTests {
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
         // When store is false, reasoning_item:1 should be concluded when the next part (2) starts,
         // without encrypted content.
-        let end1Parts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let end1Parts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:1" {
                 return metadata
             }
@@ -2697,7 +2697,7 @@ struct OpenAIResponsesLanguageModelTests {
         #expect(end1Index! < start2Index!)
 
         // The remaining reasoning parts should be concluded at output_item.done with encrypted content from the done item.
-        let end0Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let end0Metadata = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:0" {
                 return metadata
             }
@@ -2705,7 +2705,7 @@ struct OpenAIResponsesLanguageModelTests {
         }.first
         #expect(end0Metadata?["openai"]?["reasoningEncryptedContent"] == .string("opaque_final"))
 
-        let end2Metadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let end2Metadata = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(let id, let metadata) = part, id == "reasoning_item:2" {
                 return metadata
             }
@@ -2745,7 +2745,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
         #expect(result.finishReason.unified == .length)
         #expect(result.finishReason.raw == "max_output_tokens")
     }
@@ -2806,9 +2806,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let streamResult = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let streamResult = try await model.doStream(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        var finishPart: LanguageModelV3StreamPart?
+        var finishPart: LanguageModelV4StreamPart?
         for try await part in streamResult.stream {
             finishPart = part
         }
@@ -2903,22 +2903,22 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.code_interpreter", name: "code_interpreter", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _, _) = part {
                 return id == "code_call" && name == "code_interpreter" && executed == true
             }
             return false
@@ -3035,16 +3035,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.image_generation", name: "image_generation", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.image_generation", name: "image_generation", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3135,16 +3135,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.file_search", name: "file_search", args: ["vectorStoreIds": .array([.string("vs_1")])]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.file_search", name: "file_search", args: ["vectorStoreIds": .array([.string("vs_1")])]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3182,6 +3182,11 @@ struct OpenAIResponsesLanguageModelTests {
                 ]
             ]),
             chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": ["id": "msg_error", "type": "message"]
+            ]),
+            chunk([
                 "type": "error",
                 "code": "ERR_SOMETHING",
                 "message": "Something went wrong"
@@ -3212,13 +3217,13 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 includeRawChunks: true
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3233,10 +3238,8 @@ struct OpenAIResponsesLanguageModelTests {
         })
 
         #expect(parts.contains { part in
-            if case .error(let error) = part {
-                if case .object(let object) = error {
-                    return object["message"] == .string("Something went wrong")
-                }
+            if case .error(.providerStreamError(let error)) = part {
+                return error.message == "Something went wrong"
             }
             return false
         })
@@ -3267,6 +3270,11 @@ struct OpenAIResponsesLanguageModelTests {
                     "model": "gpt-4o"
                 ]
             ]),
+            chunk([
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": ["id": "msg_schema_error", "type": "message"]
+            ]),
             "data:\"unexpected string payload\"\n\n",
             "data: [DONE]\n\n"
         ]
@@ -3294,33 +3302,30 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 includeRawChunks: true
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
-        #expect(parts.contains { part in
-            if case .raw(let raw) = part {
-                return raw == .string("unexpected string payload")
-            }
+        let rawIndex = try #require(parts.firstIndex { part in
+            if case .raw(let raw) = part { return raw == .string("unexpected string payload") }
             return false
         })
-
-        #expect(parts.contains { part in
-            if case .error(let error) = part,
-               case .object(let object) = error,
-               case .string(let name)? = object["name"],
-               case .string(let message)? = object["message"] {
-                return !name.isEmpty && !message.isEmpty
-            }
+        let errorIndex = try #require(parts.firstIndex { part in
+            if case .error(.error(let error)) = part { return error is TypeValidationError }
             return false
         })
+        let finishIndex = try #require(parts.firstIndex { part in
+            if case .finish = part { return true }
+            return false
+        })
+        #expect(rawIndex < errorIndex && errorIndex < finishIndex)
 
         if let finish = parts.last, case .finish(let reason, _, _) = finish {
             #expect(reason.unified == .error)
@@ -3396,22 +3401,22 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.computer_use", name: "computer_use", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
         #expect(parts.contains { part in
-            if case .toolInputStart(let id, let name, _, let executed, _, _) = part {
+            if case .toolInputStart(let id, let name, _, let executed, _, _, _) = part {
                 return id == "computer_call" && name == "computer_use" && executed == true
             }
             return false
@@ -3518,16 +3523,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3611,10 +3616,10 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.local_shell", name: "local_shell", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
@@ -3708,7 +3713,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let shellTool = LanguageModelV3Tool.provider(.init(
+        let shellTool = LanguageModelV4Tool.provider(.init(
             id: "openai.shell",
             name: "shell",
             args: [
@@ -3719,7 +3724,7 @@ struct OpenAIResponsesLanguageModelTests {
         ))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [shellTool]
             )
@@ -3836,7 +3841,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(
+        let tool = LanguageModelV4Tool.provider(.init(
             id: "openai.shell",
             name: "shell",
             args: [
@@ -3848,13 +3853,13 @@ struct OpenAIResponsesLanguageModelTests {
         ))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
@@ -3937,16 +3942,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -4036,16 +4041,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "my_apply_patch", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.apply_patch", name: "my_apply_patch", args: [:]))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -4121,7 +4126,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(
+        let tool = LanguageModelV4Tool.provider(.init(
             id: "openai.custom",
             name: "write_sql",
             args: [
@@ -4135,14 +4140,14 @@ struct OpenAIResponsesLanguageModelTests {
         ))
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool],
                 toolChoice: .tool(toolName: "write_sql")
             )
         )
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -4263,7 +4268,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(
+        let tool = LanguageModelV4Tool.provider(.init(
             id: "openai.custom",
             name: "write_sql",
             args: [
@@ -4277,7 +4282,7 @@ struct OpenAIResponsesLanguageModelTests {
         ))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool],
                 toolChoice: .tool(toolName: "write_sql")
@@ -4286,7 +4291,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         var inputDeltas: [String] = []
         var toolInputEnded = false
-        var toolCall: LanguageModelV3ToolCall?
+        var toolCall: LanguageModelV4ToolCall?
 
         for try await part in streamResult.stream {
             switch part {
@@ -4406,10 +4411,10 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let tool = LanguageModelV3Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
+        let tool = LanguageModelV4Tool.provider(.init(id: "openai.apply_patch", name: "apply_patch", args: [:]))
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 tools: [tool]
             )
@@ -4417,7 +4422,7 @@ struct OpenAIResponsesLanguageModelTests {
 
         var inputDeltas: [String] = []
         var toolInputEnded = false
-        var toolCall: LanguageModelV3ToolCall?
+        var toolCall: LanguageModelV4ToolCall?
 
         for try await part in streamResult.stream {
             switch part {
@@ -4494,7 +4499,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -4563,7 +4568,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -4613,7 +4618,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -4688,7 +4693,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.contains { content in
             if case .text(let text) = content {
@@ -4768,8 +4773,8 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content {
                 return text
             }
@@ -4897,22 +4902,22 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let streamResult = try await model.doStream(
-            options: LanguageModelV3CallOptions(prompt: samplePrompt)
+            options: LanguageModelV4CallOptions(prompt: samplePrompt)
         )
 
-        var parts: [LanguageModelV3StreamPart] = []
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in streamResult.stream {
             parts.append(part)
         }
 
-        let textStartMetadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let textStartMetadata = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .textStart(_, let providerMetadata) = part {
                 return providerMetadata
             }
             return nil
         }
-        let textEndMetadata = parts.compactMap { part -> SharedV3ProviderMetadata? in
-            if case .textEnd(_, let providerMetadata) = part {
+        let textEndMetadata = parts.compactMap { part -> SharedV4ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata, _) = part {
                 return providerMetadata
             }
             return nil
@@ -4968,7 +4973,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.usage.inputTokens.total == 345)
         #expect(result.usage.outputTokens.total == 538)
@@ -5008,7 +5013,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         if let openaiMetadata = result.providerMetadata?["openai"] {
             #expect(openaiMetadata["responseId"] == .string("resp_67c97c0203188190a025beb4a75242bc"))
@@ -5054,10 +5059,10 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: [
                     .system(content: "You are a helpful assistant.", providerOptions: nil),
-                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
                 ],
                 temperature: 0.5,
                 topP: 0.3,
@@ -5134,10 +5139,10 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: [
                     .system(content: "You are a helpful assistant.", providerOptions: nil),
-                    .user(content: [.text(LanguageModelV3TextPart(text: "Hello"))], providerOptions: nil)
+                    .user(content: [.text(LanguageModelV4TextPart(text: "Hello"))], providerOptions: nil)
                 ],
                 temperature: 0.5,
                 topP: 0.3
@@ -5226,7 +5231,7 @@ struct OpenAIResponsesLanguageModelTests {
         ])
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: schema, name: "response", description: "A response")
             )
@@ -5285,7 +5290,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: nil, name: nil, description: nil)
             )
@@ -5342,7 +5347,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5399,7 +5404,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5460,7 +5465,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5519,7 +5524,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5578,7 +5583,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5633,7 +5638,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5688,7 +5693,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5750,7 +5755,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5805,7 +5810,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5861,7 +5866,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5920,7 +5925,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -5976,7 +5981,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -6032,7 +6037,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -6088,7 +6093,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -6143,7 +6148,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -6198,7 +6203,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 providerOptions: [
                     "openai": [
@@ -6263,7 +6268,7 @@ struct OpenAIResponsesLanguageModelTests {
         )
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: nil, name: nil, description: nil)
             )
@@ -6326,7 +6331,7 @@ struct OpenAIResponsesLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: schema, name: "MyResponse", description: "Test response")
             )
@@ -6389,7 +6394,7 @@ struct OpenAIResponsesLanguageModelTests {
         ])
 
         _ = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(
+            options: LanguageModelV4CallOptions(
                 prompt: samplePrompt,
                 responseFormat: .json(schema: schema, name: "test", description: nil),
                 providerOptions: [
@@ -6443,7 +6448,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.warnings.count == 1)
         if let warning = result.warnings.first {
@@ -6505,7 +6510,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         if let openaiMetadata = result.providerMetadata?["openai"] {
             if case .array(let logprobs) = openaiMetadata["logprobs"] {
@@ -6556,9 +6561,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
@@ -6601,9 +6606,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
@@ -6647,7 +6652,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.contains { content in
             if case .reasoning(let reasoning) = content {
@@ -6692,9 +6697,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
@@ -6753,9 +6758,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
@@ -6800,9 +6805,9 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -6847,7 +6852,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.finishReason.unified == .toolCalls)
     }
@@ -6905,17 +6910,17 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch, fileIdPrefixes: ["file-"])
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
-                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                    .text(LanguageModelV4TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV4FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
                 ],
                 providerOptions: nil
             )
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let bodyData = await capture.current(),
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
@@ -6982,18 +6987,18 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch, fileIdPrefixes: ["file-", "custom-"])
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Compare these images")),
-                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg")),
-                    .file(LanguageModelV3FilePart(data: .base64("custom-xyz789"), mediaType: "image/jpeg"))
+                    .text(LanguageModelV4TextPart(text: "Compare these images")),
+                    .file(LanguageModelV4FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg")),
+                    .file(LanguageModelV4FilePart(data: .base64("custom-xyz789"), mediaType: "image/jpeg"))
                 ],
                 providerOptions: nil
             )
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let bodyData = await capture.current(),
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
@@ -7062,17 +7067,17 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch, fileIdPrefixes: nil) // No fileIdPrefixes
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
-                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                    .text(LanguageModelV4TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV4FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
                 ],
                 providerOptions: nil
             )
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let bodyData = await capture.current(),
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
@@ -7139,17 +7144,17 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch, fileIdPrefixes: ["other-"]) // Different prefix
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Analyze this image")),
-                    .file(LanguageModelV3FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
+                    .text(LanguageModelV4TextPart(text: "Analyze this image")),
+                    .file(LanguageModelV4FilePart(data: .base64("file-abc123"), mediaType: "image/jpeg"))
                 ],
                 providerOptions: nil
             )
         ]
 
-        _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+        _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
 
         guard let bodyData = await capture.current(),
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
@@ -7230,15 +7235,15 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
-                content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
+                content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                 providerOptions: nil
             )
         ]
 
         do {
-            _ = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: prompt))
+            _ = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: prompt))
             Issue.record("Expected error to be thrown")
         } catch let error as APICallError {
             #expect(error.message.contains("Something went wrong"))
@@ -7282,7 +7287,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         var order: [String] = []
         var urlSource: (id: String, url: String, title: String?)?
@@ -7291,9 +7296,9 @@ struct OpenAIResponsesLanguageModelTests {
             mediaType: String,
             title: String,
             filename: String?,
-            providerMetadata: SharedV3ProviderMetadata?
+            providerMetadata: SharedV4ProviderMetadata?
         )?
-        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+        var textEnd: (id: String, providerMetadata: SharedV4ProviderMetadata?)?
 
         for try await chunk in result.stream {
             switch chunk {
@@ -7312,7 +7317,7 @@ struct OpenAIResponsesLanguageModelTests {
                     filename: filename,
                     providerMetadata: providerMetadata
                 )
-            case .textEnd(let id, let providerMetadata):
+            case .textEnd(let id, let providerMetadata, _):
                 order.append("text-end")
                 textEnd = (id: id, providerMetadata: providerMetadata)
             case .finish:
@@ -7418,16 +7423,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         var sources: [(
             id: String,
             mediaType: String,
             title: String,
             filename: String?,
-            providerMetadata: SharedV3ProviderMetadata?
+            providerMetadata: SharedV4ProviderMetadata?
         )] = []
-        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+        var textEnd: (id: String, providerMetadata: SharedV4ProviderMetadata?)?
 
         for try await chunk in result.stream {
             switch chunk {
@@ -7439,7 +7444,7 @@ struct OpenAIResponsesLanguageModelTests {
                     filename: filename,
                     providerMetadata: providerMetadata
                 ))
-            case .textEnd(let id, let providerMetadata):
+            case .textEnd(let id, let providerMetadata, _):
                 textEnd = (id: id, providerMetadata: providerMetadata)
             default:
                 break
@@ -7536,16 +7541,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         var documentSource: (
             id: String,
             mediaType: String,
             title: String,
             filename: String?,
-            providerMetadata: SharedV3ProviderMetadata?
+            providerMetadata: SharedV4ProviderMetadata?
         )?
-        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+        var textEnd: (id: String, providerMetadata: SharedV4ProviderMetadata?)?
 
         for try await chunk in result.stream {
             switch chunk {
@@ -7557,7 +7562,7 @@ struct OpenAIResponsesLanguageModelTests {
                     filename: filename,
                     providerMetadata: providerMetadata
                 )
-            case .textEnd(let id, let providerMetadata):
+            case .textEnd(let id, let providerMetadata, _):
                 textEnd = (id: id, providerMetadata: providerMetadata)
             default:
                 break
@@ -7637,16 +7642,16 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doStream(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doStream(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         var documentSource: (
             id: String,
             mediaType: String,
             title: String,
             filename: String?,
-            providerMetadata: SharedV3ProviderMetadata?
+            providerMetadata: SharedV4ProviderMetadata?
         )?
-        var textEnd: (id: String, providerMetadata: SharedV3ProviderMetadata?)?
+        var textEnd: (id: String, providerMetadata: SharedV4ProviderMetadata?)?
 
         for try await chunk in result.stream {
             switch chunk {
@@ -7658,7 +7663,7 @@ struct OpenAIResponsesLanguageModelTests {
                     filename: filename,
                     providerMetadata: providerMetadata
                 )
-            case .textEnd(let id, let providerMetadata):
+            case .textEnd(let id, let providerMetadata, _):
                 textEnd = (id: id, providerMetadata: providerMetadata)
             default:
                 break
@@ -7782,7 +7787,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.count == 3)
 
@@ -7911,7 +7916,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.count == 2)
 
@@ -8026,7 +8031,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.count == 2)
 
@@ -8144,7 +8149,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.count == 2)
 
@@ -8260,7 +8265,7 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let result = try await model.doGenerate(options: LanguageModelV3CallOptions(prompt: samplePrompt))
+        let result = try await model.doGenerate(options: LanguageModelV4CallOptions(prompt: samplePrompt))
 
         #expect(result.content.count == 2)
 
@@ -8355,17 +8360,17 @@ struct OpenAIResponsesLanguageModelTests {
             config: makeConfig(fetch: fetch)
         )
 
-        let prompt: LanguageModelV3Prompt = [
-            LanguageModelV3Message.user(
+        let prompt: LanguageModelV4Prompt = [
+            LanguageModelV4Message.user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Use the computer to complete a task."))
+                    .text(LanguageModelV4TextPart(text: "Use the computer to complete a task."))
                 ],
                 providerOptions: nil
             )
         ]
 
-        let tools: [LanguageModelV3Tool] = [
-            .provider(LanguageModelV3ProviderTool(
+        let tools: [LanguageModelV4Tool] = [
+            .provider(LanguageModelV4ProviderTool(
                 id: "openai.computer_use",
                 name: "computer_use",
                 args: [:]
@@ -8373,7 +8378,7 @@ struct OpenAIResponsesLanguageModelTests {
         ]
 
         let result = try await model.doGenerate(
-            options: LanguageModelV3CallOptions(prompt: prompt, tools: tools)
+            options: LanguageModelV4CallOptions(prompt: prompt, tools: tools)
         )
 
         // Verify content structure

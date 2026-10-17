@@ -17,9 +17,9 @@ struct OpenAIToolNameMapping: Sendable {
     }
 
     static func create(
-        tools: [LanguageModelV3Tool]?,
+        tools: [LanguageModelV4Tool]?,
         providerToolNames: [String: String],
-        resolveProviderToolName: ((LanguageModelV3ProviderTool) -> String?)? = nil
+        resolveProviderToolName: ((LanguageModelV4ProviderTool) -> String?)? = nil
     ) -> OpenAIToolNameMapping {
         var customToProvider: [String: String] = [:]
         var providerToCustom: [String: String] = [:]

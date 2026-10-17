@@ -44,7 +44,7 @@ public final class BedrockMantleProvider: ProviderV4 {
     public func chat(modelId: BedrockMantleModelId) -> OpenAIChatLanguageModel {
         .init(modelId: .init(rawValue: modelId.rawValue), config: config(provider: "bedrock-mantle.chat"))
     }
-    public func responses(modelId: BedrockMantleModelId) -> OpenAIResponsesLanguageModelV4 {
+    public func responses(modelId: BedrockMantleModelId) -> OpenAIResponsesLanguageModel {
         .init(modelId: .init(rawValue: modelId.rawValue), config: config(provider: "bedrock-mantle.responses"))
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }

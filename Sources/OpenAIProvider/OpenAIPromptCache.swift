@@ -71,7 +71,7 @@ func parseOpenAIPromptCacheOptions(
 }
 
 func openAIPromptCacheBreakpoint(
-    from providerOptions: SharedV3ProviderOptions?,
+    from providerOptions: SharedV4ProviderOptions?,
     providerOptionsName: String = "openai"
 ) -> JSONValue? {
     guard case .object(let breakpoint)? = providerOptions?[providerOptionsName]?["promptCacheBreakpoint"],

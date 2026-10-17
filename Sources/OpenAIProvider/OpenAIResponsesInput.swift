@@ -4,38 +4,6 @@ import AISDKProviderUtils
 
 struct OpenAIResponsesInputBuilder {
     static func makeInput(
-        prompt: LanguageModelV3Prompt,
-        providerOptionsName: String = "openai",
-        toolNameMapping: OpenAIToolNameMapping = .init(),
-        customProviderToolNames: Set<String> = [],
-        systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
-        fileIdPrefixes: [String]? = ["file-"],
-        store: Bool = true,
-        hasConversation: Bool = false,
-        hasPreviousResponseId: Bool = false,
-        passThroughUnsupportedFiles: Bool = false,
-        hasLocalShellTool: Bool = false,
-        hasShellTool: Bool = false,
-        hasApplyPatchTool: Bool = false
-    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
-        try await makeInput(
-            prompt: OpenAIResponsesPrompt(v3: prompt),
-            providerOptionsName: providerOptionsName,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: customProviderToolNames,
-            systemMessageMode: systemMessageMode,
-            fileIdPrefixes: fileIdPrefixes,
-            store: store,
-            hasConversation: hasConversation,
-            hasPreviousResponseId: hasPreviousResponseId,
-            passThroughUnsupportedFiles: passThroughUnsupportedFiles,
-            hasLocalShellTool: hasLocalShellTool,
-            hasShellTool: hasShellTool,
-            hasApplyPatchTool: hasApplyPatchTool
-        )
-    }
-
-    static func makeInput(
         prompt: LanguageModelV4Prompt,
         providerOptionsName: String = "openai",
         toolNameMapping: OpenAIToolNameMapping = .init(),
@@ -49,41 +17,9 @@ struct OpenAIResponsesInputBuilder {
         hasLocalShellTool: Bool = false,
         hasShellTool: Bool = false,
         hasApplyPatchTool: Bool = false
-    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
-        try await makeInput(
-            prompt: OpenAIResponsesPrompt(v4: prompt, providerOptionsName: providerOptionsName),
-            providerOptionsName: providerOptionsName,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: customProviderToolNames,
-            systemMessageMode: systemMessageMode,
-            fileIdPrefixes: fileIdPrefixes,
-            store: store,
-            hasConversation: hasConversation,
-            hasPreviousResponseId: hasPreviousResponseId,
-            passThroughUnsupportedFiles: passThroughUnsupportedFiles,
-            hasLocalShellTool: hasLocalShellTool,
-            hasShellTool: hasShellTool,
-            hasApplyPatchTool: hasApplyPatchTool
-        )
-    }
-
-    private static func makeInput(
-        prompt: OpenAIResponsesPrompt,
-        providerOptionsName: String,
-        toolNameMapping: OpenAIToolNameMapping,
-        customProviderToolNames: Set<String>,
-        systemMessageMode: OpenAIResponsesSystemMessageMode,
-        fileIdPrefixes: [String]?,
-        store: Bool,
-        hasConversation: Bool,
-        hasPreviousResponseId: Bool,
-        passThroughUnsupportedFiles: Bool,
-        hasLocalShellTool: Bool,
-        hasShellTool: Bool,
-        hasApplyPatchTool: Bool
-    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV3Warning]) {
+    ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV4Warning]) {
         var items: [JSONValue] = []
-        var warnings: [SharedV3Warning] = []
+        var warnings: [SharedV4Warning] = []
         var reasoningReferences: Set<String> = []
         var processedApprovalIds: Set<String> = []
 
@@ -176,7 +112,6 @@ struct OpenAIResponsesInputBuilder {
                     case .toolCall(let callPart):
                         let itemId =
                             extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
-                            ?? extractOpenAIItemId(from: callPart.providerMetadata, providerOptionsName: providerOptionsName)
 
                         if hasConversation, itemId != nil {
                             continue
@@ -392,7 +327,6 @@ struct OpenAIResponsesInputBuilder {
                         if resolvedResultToolName == "tool_search" {
                             let itemId =
                                 extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
-                                ?? extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
                                 ?? resultPart.toolCallId
 
                             if store {
@@ -453,7 +387,7 @@ struct OpenAIResponsesInputBuilder {
 
                         if store {
                             let itemId =
-                                extractOpenAIItemId(from: resultPart.providerMetadata, providerOptionsName: providerOptionsName)
+                                extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
                                 ?? resultPart.toolCallId
                             items.append(.object([
                                 "type": .string("item_reference"),
@@ -544,7 +478,9 @@ struct OpenAIResponsesInputBuilder {
                         warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
 
                     case .custom(let customPart):
-                        guard customPart.kind == "openai.compaction" else { continue }
+                        guard customPart.kind == "openai.compaction" else {
+                            throw UnsupportedFunctionalityError(functionality: "language model v4 custom prompt part kind \(customPart.kind) on OpenAI Responses")
+                        }
                         let providerOptions = customPart.providerOptions?[providerOptionsName]
                         let itemId = providerOptions?["itemId"]?.stringValue
 
@@ -571,6 +507,8 @@ struct OpenAIResponsesInputBuilder {
 
                     case .file:
                         continue
+                    case .reasoningFile:
+                        throw UnsupportedFunctionalityError(functionality: "language model v4 reasoning-file prompt parts on OpenAI Responses")
                     }
                 }
 
@@ -742,7 +680,7 @@ struct OpenAIResponsesInputBuilder {
                             let jsonString = try encodeJSONValue(value)
                             items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
 
-                        case .content(let contentParts, _):
+                        case .content(let contentParts):
                             if customProviderToolNames.contains(resolvedToolName) {
                                 let converted = try contentParts.compactMap { item in
                                     try convertToolResultContentPart(
@@ -780,10 +718,10 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func convertToolResultContentPart(
-        _ part: OpenAIResponsesToolResultContentPart,
+        _ part: LanguageModelV4ToolResultContentPart,
         providerOptionsName: String,
         warningPrefix: String,
-        warnings: inout [SharedV3Warning]
+        warnings: inout [SharedV4Warning]
     ) throws -> JSONValue? {
         switch part {
         case let .text(text, providerOptions):
@@ -813,7 +751,7 @@ struct OpenAIResponsesInputBuilder {
                 fullMediaType = try resolveToolResultMediaType(mediaType, base64: value)
                 inlineBase64 = value
                 url = nil
-            case .url(let value):
+            case .url(let value, _):
                 guard isFullMediaType(mediaType) else {
                     warnings.append(.other(message: "\(warningPrefix) type: file with data type: url"))
                     return nil
@@ -889,7 +827,7 @@ struct OpenAIResponsesInputBuilder {
 
     private static func addPromptCacheBreakpoint(
         to payload: inout [String: JSONValue],
-        providerOptions: SharedV3ProviderOptions?,
+        providerOptions: SharedV4ProviderOptions?,
         providerOptionsName: String
     ) {
         if let breakpoint = openAIPromptCacheBreakpoint(
@@ -903,7 +841,7 @@ struct OpenAIResponsesInputBuilder {
     private static func systemItem(
         role: String,
         content: String,
-        providerOptions: SharedV3ProviderOptions?,
+        providerOptions: SharedV4ProviderOptions?,
         providerOptionsName: String
     ) -> JSONValue {
         let contentValue: JSONValue
@@ -926,7 +864,7 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func convertUserPart(
-        _ part: LanguageModelV3UserMessagePart,
+        _ part: LanguageModelV4UserMessagePart,
         index: Int,
         prefixes: [String]?,
         providerOptionsName: String,
@@ -965,7 +903,7 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func convertFilePart(
-        part: LanguageModelV3FilePart,
+        part: LanguageModelV4FilePart,
         index: Int,
         prefixes: [String]?,
         providerOptionsName: String,
@@ -979,7 +917,7 @@ struct OpenAIResponsesInputBuilder {
                 key: "imageDetail"
             )
             switch part.data {
-            case .url(let url):
+            case .url(let url, _):
                 var payload: [String: JSONValue] = [
                     "type": .string("input_image"),
                     "image_url": .string(url.absoluteString)
@@ -1017,12 +955,18 @@ struct OpenAIResponsesInputBuilder {
                     payload["detail"] = .string(detail)
                 }
                 return .object(payload)
+            case .reference(let reference):
+                var payload: [String: JSONValue] = ["type": .string("input_image"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))]
+                if let detail { payload["detail"] = .string(detail) }
+                return .object(payload)
+            case .text:
+                throw UnsupportedFunctionalityError(functionality: "text file parts")
             }
         }
 
         if part.mediaType == "application/pdf" {
             switch part.data {
-            case .url(let url):
+            case .url(let url, _):
                 return .object([
                     "type": .string("input_file"),
                     "file_url": .string(url.absoluteString)
@@ -1046,11 +990,15 @@ struct OpenAIResponsesInputBuilder {
                     "filename": .string(part.filename ?? "part-\(index).pdf"),
                     "file_data": .string("data:application/pdf;base64,\(base64)")
                 ])
+            case .reference(let reference):
+                return .object(["type": .string("input_file"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))])
+            case .text:
+                throw UnsupportedFunctionalityError(functionality: "text file parts")
             }
         }
 
         switch part.data {
-        case .url(let url):
+        case .url(let url, _):
             return .object([
                 "type": .string("input_file"),
                 "file_url": .string(url.absoluteString)
@@ -1080,6 +1028,10 @@ struct OpenAIResponsesInputBuilder {
                 "filename": .string(part.filename ?? "part-\(index)"),
                 "file_data": .string("data:\(part.mediaType);base64,\(base64)")
             ])
+        case .reference(let reference):
+            return .object(["type": .string("input_file"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))])
+        case .text:
+            throw UnsupportedFunctionalityError(functionality: "text file parts")
         }
     }
 
@@ -1181,7 +1133,7 @@ struct OpenAIResponsesInputBuilder {
         return stringValue
     }
 
-    private static func stringifyReasoningPart(_ part: LanguageModelV3ReasoningPart) -> String {
+    private static func stringifyReasoningPart(_ part: LanguageModelV4ReasoningPart) -> String {
         let encoder = JSONEncoder()
         var segments: [String] = []
 

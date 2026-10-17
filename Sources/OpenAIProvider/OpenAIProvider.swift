@@ -34,7 +34,7 @@ public struct OpenAIProviderSettings: Sendable {
 }
 
 public final class OpenAIProvider: ProviderV4 {
-    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4
+    private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let chatFactory: @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4
@@ -48,7 +48,7 @@ public final class OpenAIProvider: ProviderV4 {
     public let options: OpenAIOptionsFacade
 
     init(
-        responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4,
+        responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         chat: @escaping @Sendable (OpenAIChatModelId) -> OpenAIChatLanguageModel,
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModelV4,
@@ -87,11 +87,11 @@ public final class OpenAIProvider: ProviderV4 {
         try languageModel(modelId: modelId)
     }
 
-    public func responses(modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModelV4 {
+    public func responses(modelId: OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel {
         responsesFactory(modelId)
     }
 
-    public func responses(_ modelId: String) -> OpenAIResponsesLanguageModelV4 {
+    public func responses(_ modelId: String) -> OpenAIResponsesLanguageModel {
         responses(modelId: OpenAIResponsesModelId(rawValue: modelId))
     }
 
@@ -255,7 +255,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
     let transcriptionConfig = config("transcription")
     let speechConfig = config("speech")
     return OpenAIProvider(
-        responses: { OpenAIResponsesLanguageModelV4(modelId: $0, config: responsesConfig) },
+        responses: { OpenAIResponsesLanguageModel(modelId: $0, config: responsesConfig) },
         chat: { OpenAIChatLanguageModel(modelId: $0, config: chatConfig) },
         embeddings: { OpenAIEmbeddingModel(modelId: $0, config: embeddingConfig) },
         images: { OpenAIImageModelV4(modelId: $0, config: imageConfig) },

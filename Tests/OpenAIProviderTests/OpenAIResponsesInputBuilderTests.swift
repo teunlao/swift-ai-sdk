@@ -9,7 +9,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert system messages to system role")
     func systemMessagesToSystemRole() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "Hello", providerOptions: nil)
         ]
 
@@ -32,7 +32,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert system messages to developer role")
     func systemMessagesToDeveloperRole() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "Hello", providerOptions: nil)
         ]
 
@@ -55,7 +55,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should remove system messages")
     func removeSystemMessages() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .system(content: "Hello", providerOptions: nil)
         ]
 
@@ -73,9 +73,9 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with only a text part to a string content")
     func userMessageTextPartToStringContent() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
-                content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                 providerOptions: nil
             )
         ]
@@ -104,11 +104,11 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with image parts using URL")
     func userImageUsingURL() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Hello")),
-                    .file(LanguageModelV3FilePart(
+                    .text(LanguageModelV4TextPart(text: "Hello")),
+                    .file(LanguageModelV4FilePart(
                         data: .url(URL(string: "https://example.com/image.jpg")!),
                         mediaType: "image/*",
                         filename: nil,
@@ -147,10 +147,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with image parts using binary data")
     func userImageUsingBinaryData() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("AAECAw=="),
                         mediaType: "image/png",
                         filename: nil,
@@ -186,10 +186,10 @@ struct OpenAIResponsesInputBuilderTests {
     @Test("should convert messages with image parts using Uint8Array")
     func userImageUsingUint8Array() async throws {
         let data = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .data(data),
                         mediaType: "image/png",
                         filename: nil,
@@ -224,10 +224,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with image parts using file_id")
     func userImageUsingFileId() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("file-12345"),
                         mediaType: "image/png",
                         filename: nil,
@@ -263,10 +263,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should use default mime type for binary images")
     func defaultMimeTypeForBinaryImages() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("AAECAw=="),
                         mediaType: "image/*",
                         filename: nil,
@@ -301,7 +301,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should add image detail when specified through extension")
     func imageDetailWhenSpecifiedThroughExtension() async throws {
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .base64("AAECAw=="),
             mediaType: "image/png",
             filename: nil,
@@ -312,7 +312,7 @@ struct OpenAIResponsesInputBuilderTests {
             ]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
@@ -341,10 +341,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert image parts with assistant- prefix")
     func imageWithAssistantPrefix() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("assistant-img-abc123"),
                         mediaType: "image/png",
                         filename: nil,
@@ -380,16 +380,16 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should support multiple file ID prefixes")
     func multipleFileIdPrefixes() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("assistant-img-abc123"),
                         mediaType: "image/png",
                         filename: nil,
                         providerOptions: nil
                     )),
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("file-pdf-xyz789"),
                         mediaType: "application/pdf",
                         filename: nil,
@@ -431,10 +431,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with PDF file parts")
     func userPDFFileParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("AQIDBAU="),
                         mediaType: "application/pdf",
                         filename: "document.pdf",
@@ -470,10 +470,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with PDF file parts using file_id")
     func userPDFFileUsingFileId() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("file-pdf-12345"),
                         mediaType: "application/pdf",
                         filename: nil,
@@ -509,10 +509,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should use default filename for PDF file parts when not provided")
     func defaultFilenameForPDF() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("AQIDBAU="),
                         mediaType: "application/pdf",
                         filename: nil,
@@ -548,10 +548,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should throw error for unsupported file types")
     func unsupportedFileTypeError() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("AQIDBAU="),
                         mediaType: "text/plain",
                         filename: nil,
@@ -574,10 +574,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("passThroughUnsupportedFiles maps unsupported file media types to input_file")
     func passThroughUnsupportedFilesMapsUnsupportedFileMediaTypes() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("YSxiCg=="),
                         mediaType: "text/csv",
                         filename: "data.csv",
@@ -612,10 +612,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("audio file data requires pass-through and maps to input_file")
     func audioFileDataRequiresPassThroughAndMapsToInputFile() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("UklGRg=="),
                         mediaType: "audio/wav",
                         filename: "clip.wav",
@@ -659,10 +659,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("audio file URLs map to input_file file_url")
     func audioFileURLsMapToInputFileURL() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .url(URL(string: "https://example.com/audio.wav")!),
                         mediaType: "audio/wav",
                         filename: nil,
@@ -695,10 +695,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert PDF file parts with URL to input_file with file_url")
     func pdfWithURLToFileUrl() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .url(URL(string: "https://example.com/document.pdf")!),
                         mediaType: "application/pdf",
                         filename: nil,
@@ -733,10 +733,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert PDF parts with assistant- prefix")
     func pdfWithAssistantPrefix() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("assistant-pdf-abc123"),
                         mediaType: "application/pdf",
                         filename: nil,
@@ -772,16 +772,16 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should treat all file data as base64 when fileIdPrefixes is undefined")
     func fileIdPrefixesUndefinedBehavior() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("file-12345"),
                         mediaType: "image/png",
                         filename: nil,
                         providerOptions: nil
                     )),
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("assistant-abc123"),
                         mediaType: "application/pdf",
                         filename: "test.pdf",
@@ -822,10 +822,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should handle empty fileIdPrefixes array")
     func emptyFileIdPrefixesArray() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
-                    .file(LanguageModelV3FilePart(
+                    .file(LanguageModelV4FilePart(
                         data: .base64("file-12345"),
                         mediaType: "image/png",
                         filename: nil,
@@ -863,11 +863,11 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("store=false skips provider tool results and produces warning")
     func storeFalseSkipsProviderToolResults() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolResult(
-                        LanguageModelV3ToolResultPart(
+                        LanguageModelV4ToolResultPart(
                             toolCallId: "ws_call",
                             toolName: "web_search",
                             output: .json(value: .array([
@@ -899,9 +899,9 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with only a text part to a string content")
     func assistantMessageTextPartToStringContent() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
-                content: [.text(LanguageModelV3TextPart(text: "Hello"))],
+                content: [.text(LanguageModelV4TextPart(text: "Hello"))],
                 providerOptions: nil
             )
         ]
@@ -930,11 +930,11 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with tool call parts")
     func assistantMessagesWithToolCallParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "I will search for that information.")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .text(LanguageModelV4TextPart(text: "I will search for that information.")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         input: .object(["query": .string("weather in San Francisco")])
@@ -974,19 +974,19 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert messages with tool call parts that have ids")
     func assistantToolCallWithIds() async throws {
-        let textPart = LanguageModelV3TextPart(
+        let textPart = LanguageModelV4TextPart(
             text: "I will search for that information.",
             providerOptions: ["openai": ["itemId": .string("id_123")]]
         )
 
-        let toolCallPart = LanguageModelV3ToolCallPart(
+        let toolCallPart = LanguageModelV4ToolCallPart(
             toolCallId: "call_123",
             toolName: "search",
             input: .object(["query": .string("weather in San Francisco")]),
             providerOptions: ["openai": ["itemId": .string("id_456")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.text(textPart), .toolCall(toolCallPart)], providerOptions: nil)
         ]
 
@@ -1013,10 +1013,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should include commentary phase from providerOptions on assistant text messages")
     func assistantTextIncludesCommentaryPhase() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "I will search for that",
                         providerOptions: [
                             "openai": [
@@ -1056,10 +1056,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should include final_answer phase from providerOptions on assistant text messages")
     func assistantTextIncludesFinalAnswerPhase() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "The capital of France is Paris.",
                         providerOptions: [
                             "openai": [
@@ -1099,10 +1099,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should omit phase when assistant text providerOptions do not include it")
     func assistantTextOmitsPhaseWhenMissing() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Hello",
                         providerOptions: [
                             "openai": [
@@ -1140,15 +1140,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("tool call itemId supports providerMetadata fallback")
     func toolCallItemIdFromProviderMetadataFallback() async throws {
-        let toolCallPart = LanguageModelV3ToolCallPart(
+        let toolCallPart = LanguageModelV4ToolCallPart(
             toolCallId: "call_123",
             toolName: "search",
             input: .object(["query": .string("weather in San Francisco")]),
-            providerMetadata: ["openai": ["itemId": .string("id_456")]],
-            providerOptions: nil
+            providerOptions: ["openai": ["itemId": .string("id_456")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
         ]
 
@@ -1171,7 +1170,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should use item_reference for tool calls with itemId when store=true (pairs with reasoning)")
     func toolCallWithReasoningIdsStoreTrue() async throws {
-        let reasoningPart = LanguageModelV3ReasoningPart(
+        let reasoningPart = LanguageModelV4ReasoningPart(
             text: "Thinking step by step",
             providerOptions: [
                 "openai": [
@@ -1180,7 +1179,7 @@ struct OpenAIResponsesInputBuilderTests {
             ]
         )
 
-        let toolCallPart = LanguageModelV3ToolCallPart(
+        let toolCallPart = LanguageModelV4ToolCallPart(
             toolCallId: "call_123",
             toolName: "search",
             input: .object(["query": .string("weather in San Francisco")]),
@@ -1191,7 +1190,7 @@ struct OpenAIResponsesInputBuilderTests {
             ]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .reasoning(reasoningPart),
@@ -1224,12 +1223,12 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("hasConversation=true skips assistant text parts with itemId")
     func hasConversationSkipsAssistantTextPartsWithItemId() async throws {
-        let textPart = LanguageModelV3TextPart(
+        let textPart = LanguageModelV4TextPart(
             text: "Hello",
             providerOptions: ["openai": ["itemId": .string("id_123")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.text(textPart)], providerOptions: nil)
         ]
 
@@ -1247,14 +1246,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("hasConversation=true skips assistant tool-call parts with itemId")
     func hasConversationSkipsAssistantToolCallPartsWithItemId() async throws {
-        let toolCallPart = LanguageModelV3ToolCallPart(
+        let toolCallPart = LanguageModelV4ToolCallPart(
             toolCallId: "call_123",
             toolName: "search",
             input: .object(["query": .string("weather")]),
             providerOptions: ["openai": ["itemId": .string("fc_456")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
         ]
 
@@ -1272,7 +1271,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("hasPreviousResponseId skips stored reasoning and tool calls with itemId")
     func hasPreviousResponseIdSkipsStoredReasoningAndToolCallsWithItemId() async throws {
-        let reasoningPart = LanguageModelV3ReasoningPart(
+        let reasoningPart = LanguageModelV4ReasoningPart(
             text: "prior reasoning",
             providerOptions: [
                 "openai": [
@@ -1281,7 +1280,7 @@ struct OpenAIResponsesInputBuilderTests {
                 ]
             ]
         )
-        let toolCallPart = LanguageModelV3ToolCallPart(
+        let toolCallPart = LanguageModelV4ToolCallPart(
             toolCallId: "call-1",
             toolName: "weather",
             input: .object(["city": .string("Berlin")]),
@@ -1309,7 +1308,7 @@ struct OpenAIResponsesInputBuilderTests {
         let result = try await OpenAIResponsesInputBuilder.makeInput(
             prompt: [
                 .assistant(content: [
-                    .custom(LanguageModelV3CustomPart(
+                    .custom(LanguageModelV4CustomPart(
                         kind: "openai.compaction",
                         providerOptions: [
                             "openai": [
@@ -1335,11 +1334,11 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("execution-denied tool results are skipped")
     func executionDeniedToolResultsAreSkipped() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolResult(
-                        LanguageModelV3ToolResultPart(
+                        LanguageModelV4ToolResultPart(
                             toolCallId: "tool_call_1",
                             toolName: "web_search",
                             output: .executionDenied(reason: "Denied")
@@ -1363,15 +1362,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("store=true uses tool result itemId when available")
     func storeTrueToolResultUsesItemIdWhenAvailable() async throws {
-        let toolResult = LanguageModelV3ToolResultPart(
+        let toolResult = LanguageModelV4ToolResultPart(
             toolCallId: "call_1",
             toolName: "web_search",
             output: .json(value: .array([])),
-            providerMetadata: ["openai": ["itemId": .string("tr_123")]],
-            providerOptions: nil
+            providerOptions: ["openai": ["itemId": .string("tr_123")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
@@ -1394,7 +1392,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("store=true reconstructs assistant shell tool-result as shell_call_output")
     func storeTrueAssistantShellToolResultUsesShellCallOutput() async throws {
-        let toolResult = LanguageModelV3ToolResultPart(
+        let toolResult = LanguageModelV4ToolResultPart(
             toolCallId: "call_shell_1",
             toolName: "shell",
             output: .json(value: .object([
@@ -1409,10 +1407,10 @@ struct OpenAIResponsesInputBuilderTests {
                     ])
                 ])
             ])),
-            providerMetadata: ["openai": ["itemId": .string("shell_item_1")]]
+            providerOptions: ["openai": ["itemId": .string("shell_item_1")]]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
@@ -1446,15 +1444,15 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert multiple tool call parts in a single message")
     func multipleToolCallPartsInSingleMessage() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         input: .object(["query": .string("weather in San Francisco")])
                     )),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_456",
                         toolName: "calculator",
                         input: .object(["expression": .string("2 + 2")])
@@ -1493,10 +1491,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single reasoning part with text (store: false)")
     func singleReasoningPartWithTextStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Analyzing the problem step by step",
                         providerOptions: [
                             "openai": [
@@ -1535,10 +1533,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single reasoning part with encrypted content (store: false)")
     func singleReasoningPartWithEncryptedContentStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Analyzing the problem step by step",
                         providerOptions: [
                             "openai": [
@@ -1579,10 +1577,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should preserve encrypted reasoning without item id when store is false")
     func encryptedReasoningWithoutItemIdStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Analyzing the problem step by step",
                         providerOptions: [
                             "openai": [
@@ -1621,10 +1619,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single reasoning part with null encrypted content (store: false)")
     func singleReasoningPartWithNullEncryptedContentStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Analyzing the problem step by step",
                         providerOptions: [
                             "openai": [
@@ -1662,10 +1660,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should create empty summary for initial empty text (store: false)")
     func initialEmptyTextEmptySummaryStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "",
                         providerOptions: [
                             "openai": [
@@ -1699,10 +1697,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should create empty summary for initial empty text with encrypted content (store: false)")
     func initialEmptyTextWithEncryptedContentStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "",
                         providerOptions: [
                             "openai": [
@@ -1743,14 +1741,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should merge consecutive parts with same reasoning ID (store: false)")
     func mergeConsecutivePartsWithSameReasoningId() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     ))
@@ -1783,10 +1781,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should keep latest encrypted reasoning content when merging parts")
     func latestEncryptedReasoningContentWinsWhenMergingParts() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step",
                         providerOptions: [
                             "openai": [
@@ -1795,7 +1793,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step",
                         providerOptions: [
                             "openai": [
@@ -1834,14 +1832,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should create separate messages for different reasoning IDs (store: false)")
     func separateMessagesForDifferentReasoningIds() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning block",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning block",
                         providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
                     ))
@@ -1880,7 +1878,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("user image file includes OpenAI detail provider option")
     func userImageIncludesDetail() async throws {
-        let filePart = LanguageModelV3FilePart(
+        let filePart = LanguageModelV4FilePart(
             data: .base64("AAECAw=="),
             mediaType: "image/png",
             filename: nil,
@@ -1891,7 +1889,7 @@ struct OpenAIResponsesInputBuilderTests {
             ]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
@@ -1921,11 +1919,11 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("non-OpenAI reasoning parts emit warning")
     func nonOpenAIReasoningWarning() async throws {
-        let reasoningPart = LanguageModelV3ReasoningPart(
+        let reasoningPart = LanguageModelV4ReasoningPart(
             text: "This is a reasoning part without any provider options"
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(content: [.reasoning(reasoningPart)], providerOptions: nil)
         ]
 
@@ -1944,23 +1942,23 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("empty reasoning part emits warning when store is false")
     func emptyReasoningPartWarning() async throws {
-        let reasoningProviderOptions: SharedV3ProviderOptions = [
+        let reasoningProviderOptions: SharedV4ProviderOptions = [
             "openai": [
                 "itemId": .string("reasoning_001")
             ]
         ]
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .reasoning(
-                        LanguageModelV3ReasoningPart(
+                        LanguageModelV4ReasoningPart(
                             text: "First reasoning step",
                             providerOptions: reasoningProviderOptions
                         )
                     ),
                     .reasoning(
-                        LanguageModelV3ReasoningPart(
+                        LanguageModelV4ReasoningPart(
                             text: "",
                             providerOptions: reasoningProviderOptions
                         )
@@ -2000,30 +1998,30 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should handle reasoning across multiple assistant messages (store: true)")
     func reasoningAcrossMultipleMessagesStoreTrue() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "First user question"))], providerOptions: nil),
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "First user question"))], providerOptions: nil),
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 1)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step (message 1)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .text(LanguageModelV3TextPart(text: "First response"))
+                    .text(LanguageModelV4TextPart(text: "First response"))
                 ],
                 providerOptions: nil
             ),
-            .user(content: [.text(LanguageModelV3TextPart(text: "Second user question"))], providerOptions: nil),
+            .user(content: [.text(LanguageModelV4TextPart(text: "Second user question"))], providerOptions: nil),
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 2)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
                     )),
-                    .text(LanguageModelV3TextPart(text: "Second response"))
+                    .text(LanguageModelV4TextPart(text: "Second response"))
                 ],
                 providerOptions: nil
             )
@@ -2061,30 +2059,30 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should handle reasoning across multiple assistant messages (store: false)")
     func reasoningAcrossMultipleMessagesStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(LanguageModelV3TextPart(text: "First user question"))], providerOptions: nil),
+        let prompt: LanguageModelV4Prompt = [
+            .user(content: [.text(LanguageModelV4TextPart(text: "First user question"))], providerOptions: nil),
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 1)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step (message 1)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
                     )),
-                    .text(LanguageModelV3TextPart(text: "First response"))
+                    .text(LanguageModelV4TextPart(text: "First response"))
                 ],
                 providerOptions: nil
             ),
-            .user(content: [.text(LanguageModelV3TextPart(text: "Second user question"))], providerOptions: nil),
+            .user(content: [.text(LanguageModelV4TextPart(text: "Second user question"))], providerOptions: nil),
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 2)",
                         providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
                     )),
-                    .text(LanguageModelV3TextPart(text: "Second response"))
+                    .text(LanguageModelV4TextPart(text: "Second response"))
                 ],
                 providerOptions: nil
             )
@@ -2137,10 +2135,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should handle complex reasoning sequences with tool interactions (store: false)")
     func complexReasoningWithToolInteractions() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Initial analysis step 1",
                         providerOptions: [
                             "openai": [
@@ -2149,7 +2147,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Initial analysis step 2",
                         providerOptions: [
                             "openai": [
@@ -2158,7 +2156,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_001",
                         toolName: "search",
                         input: .object(["query": .string("initial search")])
@@ -2168,7 +2166,7 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_001",
                         toolName: "search",
                         output: .json(value: .object([
@@ -2180,7 +2178,7 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Processing results step 1",
                         providerOptions: [
                             "openai": [
@@ -2189,7 +2187,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Processing results step 2",
                         providerOptions: [
                             "openai": [
@@ -2198,7 +2196,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "Processing results step 3",
                         providerOptions: [
                             "openai": [
@@ -2207,7 +2205,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ]
                         ]
                     )),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_002",
                         toolName: "calculator",
                         input: .object(["expression": .string("2 + 2")])
@@ -2217,7 +2215,7 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_002",
                         toolName: "calculator",
                         output: .json(value: .object(["result": .number(4)]))
@@ -2227,7 +2225,7 @@ struct OpenAIResponsesInputBuilderTests {
             ),
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Based on my analysis and calculations, here is the final answer."
                     ))
                 ],
@@ -2274,10 +2272,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should warn when reasoning part lacks OpenAI-specific reasoning ID provider options")
     func reasoningLacksOpenAISpecificOptions() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .reasoning(LanguageModelV3ReasoningPart(
+                    .reasoning(LanguageModelV4ReasoningPart(
                         text: "This is a reasoning part without OpenAI-specific reasoning id provider options",
                         providerOptions: [
                             "openai": [
@@ -2312,10 +2310,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with json value")
     func toolResultWithJsonValue() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .json(value: .object([
@@ -2351,10 +2349,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with text value")
     func toolResultWithTextValue() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .text(value: "The weather in San Francisco is 72°F")
@@ -2384,14 +2382,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with multipart that contains text")
     func toolResultMultipartWithText() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
-                            .text(text: "The weather in San Francisco is 72°F")
+                            .text(text: "The weather in San Francisco is 72°F", providerOptions: nil)
                         ])
                     ))
                 ],
@@ -2424,14 +2422,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with multipart that contains image")
     func toolResultMultipartWithImage() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
-                            .media(data: "base64_data", mediaType: "image/png")
+                            .file(data: .base64("base64_data"), mediaType: "image/png", filename: nil, providerOptions: nil)
                         ])
                     ))
                 ],
@@ -2464,14 +2462,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with multipart that contains file (PDF)")
     func toolResultMultipartWithPDF() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
-                            .media(data: "AQIDBAU=", mediaType: "application/pdf")
+                            .file(data: .base64("AQIDBAU="), mediaType: "application/pdf", filename: nil, providerOptions: nil)
                         ])
                     ))
                 ],
@@ -2505,16 +2503,16 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert single tool result part with multipart with mixed content (text, image, file)")
     func toolResultMultipartMixedContent() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .content(value: [
-                            .text(text: "The weather in San Francisco is 72°F"),
-                            .media(data: "base64_data", mediaType: "image/png"),
-                            .media(data: "AQIDBAU=", mediaType: "application/pdf")
+                            .text(text: "The weather in San Francisco is 72°F", providerOptions: nil),
+                            .file(data: .base64("base64_data"), mediaType: "image/png", filename: nil, providerOptions: nil),
+                            .file(data: .base64("AQIDBAU="), mediaType: "application/pdf", filename: nil, providerOptions: nil)
                         ])
                     ))
                 ],
@@ -2556,10 +2554,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert multiple tool result parts in a single message")
     func multipleToolResultPartsInSingleMessage() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_123",
                         toolName: "search",
                         output: .json(value: .object([
@@ -2567,7 +2565,7 @@ struct OpenAIResponsesInputBuilderTests {
                             "condition": .string("Sunny")
                         ]))
                     )),
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_456",
                         toolName: "calculator",
                         output: .json(value: .number(4))
@@ -2601,10 +2599,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert tool approval response to mcp_approval_response when store is true")
     func toolApprovalResponseToMcpApprovalResponse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                    .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
                         approvalId: "approval_123",
                         approved: true,
                         reason: nil,
@@ -2640,16 +2638,16 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should dedupe tool approval responses by approvalId")
     func toolApprovalResponseDeduped() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                    .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
                         approvalId: "approval_123",
                         approved: true,
                         reason: nil,
                         providerOptions: nil
                     )),
-                    .toolApprovalResponse(LanguageModelV3ToolApprovalResponsePart(
+                    .toolApprovalResponse(LanguageModelV4ToolApprovalResponsePart(
                         approvalId: "approval_123",
                         approved: true,
                         reason: nil,
@@ -2684,24 +2682,24 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should exclude provider-executed tool calls and results from prompt with store: false")
     func excludeProviderExecutedToolCallsStoreFalse() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .text(LanguageModelV3TextPart(text: "Let me search for recent news from San Francisco.")),
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .text(LanguageModelV4TextPart(text: "Let me search for recent news from San Francisco.")),
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "ws_67cf2b3051e88190b006770db6fdb13d",
                         toolName: "web_search",
                         input: .object(["query": .string("San Francisco major news events June 22 2025")]),
                         providerExecuted: true
                     )),
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "ws_67cf2b3051e88190b006770db6fdb13d",
                         toolName: "web_search",
                         output: .json(value: .array([
                             .object(["url": .string("https://patch.com/california/san-francisco/calendar")])
                         ]))
                     )),
-                    .text(LanguageModelV3TextPart(
+                    .text(LanguageModelV4TextPart(
                         text: "Based on the search results, several significant events took place in San Francisco yesterday (June 22, 2025)."
                     ))
                 ],
@@ -2739,10 +2737,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should include client-side tool calls in prompt")
     func includeClientSideToolCalls() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call-1",
                         toolName: "calculator",
                         input: .object(["a": .number(1), "b": .number(2)]),
@@ -2782,10 +2780,10 @@ struct OpenAIResponsesInputBuilderTests {
             providerToolNameToCustomToolName: ["shell": "my_shell"]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call-1",
                         toolName: "my_shell",
                         input: .object([
@@ -2794,7 +2792,7 @@ struct OpenAIResponsesInputBuilderTests {
                             ])
                         ]),
                         providerExecuted: nil,
-                        providerMetadata: ["openai": ["itemId": .string("sh_1")]]
+                        providerOptions: ["openai": ["itemId": .string("sh_1")]]
                     ))
                 ],
                 providerOptions: nil
@@ -2832,10 +2830,10 @@ struct OpenAIResponsesInputBuilderTests {
             providerToolNameToCustomToolName: ["write_sql": "alias_name"]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call-custom-1",
                         toolName: "alias_name",
                         input: .string("SELECT 1"),
@@ -2871,10 +2869,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert shell tool output json to shell_call_output")
     func toolOutputShellCallOutput() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call-1",
                         toolName: "shell",
                         output: .json(value: .object([
@@ -2945,10 +2943,10 @@ struct OpenAIResponsesInputBuilderTests {
             providerToolNameToCustomToolName: ["write_sql": "alias_name"]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call-custom-2",
                         toolName: "alias_name",
                         output: .json(value: .object([
@@ -2986,10 +2984,10 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should throw when shell tool exit outcome is missing exitCode")
     func toolOutputShellExitMissingExitCodeThrows() async throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call-1",
                         toolName: "shell",
                         output: .json(value: .object([
@@ -3040,10 +3038,10 @@ struct OpenAIResponsesInputBuilderTests {
     @Test("function_call arguments serialize equal inputs to identical sorted JSON")
     func toolCallArgumentsUseSortedKeys() async throws {
         let inputs = Self.equalObjectsWithDistinctStorage(count: 20)
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: inputs.enumerated().map { index, input in
-                    .toolCall(LanguageModelV3ToolCallPart(
+                    .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call_\(index)",
                         toolName: "search",
                         input: input
@@ -3072,10 +3070,10 @@ struct OpenAIResponsesInputBuilderTests {
     @Test("function_call_output serializes equal json outputs to identical sorted JSON")
     func toolResultJSONOutputUsesSortedKeys() async throws {
         let outputs = Self.equalObjectsWithDistinctStorage(count: 20)
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: outputs.enumerated().map { index, output in
-                    .toolResult(LanguageModelV3ToolResultPart(
+                    .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call_\(index)",
                         toolName: "search",
                         output: .json(value: output)

@@ -7,8 +7,8 @@ private let openAIHTTPSURLRegex: NSRegularExpression = {
     try! NSRegularExpression(pattern: "^https?://.*$", options: [.caseInsensitive])
 }()
 
-public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
-    public let specificationVersion: String = "v3"
+public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sendable {
+    public let specificationVersion: String = "v4"
     private let modelIdentifier: OpenAIResponsesModelId
     private let config: OpenAIConfig
     private let providerOptionsName: String
@@ -43,26 +43,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
     }
 
-    public func asV4() -> OpenAIResponsesLanguageModelV4 {
-        OpenAIResponsesLanguageModelV4(modelId: modelIdentifier, config: config)
-    }
-
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
-        try await doGenerate(options: options, inputPrompt: .v3(options.prompt))
-    }
-
-    func doGenerate(
-        options: LanguageModelV3CallOptions,
-        v4Prompt: LanguageModelV4Prompt
-    ) async throws -> LanguageModelV3GenerateResult {
-        try await doGenerate(options: options, inputPrompt: .v4(v4Prompt))
-    }
-
-    private func doGenerate(
-        options: LanguageModelV3CallOptions,
-        inputPrompt: InputPrompt
-    ) async throws -> LanguageModelV3GenerateResult {
-        let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
+        let prepared = try await prepareRequest(options: options)
 
         let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
@@ -125,7 +107,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let outputWarnings = value.warnings?.map { $0.toWarning() } ?? []
         let rawFinishReason = value.incompleteDetails?.reason
-        let finishReason = LanguageModelV3FinishReason(
+        let finishReason = LanguageModelV4FinishReason(
             unified: mapOpenAIResponsesFinishReason(
                 finishReason: rawFinishReason,
                 hasFunctionCall: mapped.hasFunctionCall
@@ -133,13 +115,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             raw: rawFinishReason
         )
 
-        return LanguageModelV3GenerateResult(
+        return LanguageModelV4GenerateResult(
             content: mapped.content,
             finishReason: finishReason,
             usage: usage,
             providerMetadata: providerMetadata,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
+            request: LanguageModelV4RequestInfo(body: prepared.body),
+            response: LanguageModelV4ResponseInfo(
                 id: value.id,
                 timestamp: value.createdAt.map { Date(timeIntervalSince1970: $0) },
                 modelId: value.model,
@@ -150,22 +132,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         )
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
-        try await doStream(options: options, inputPrompt: .v3(options.prompt))
-    }
-
-    func doStream(
-        options: LanguageModelV3CallOptions,
-        v4Prompt: LanguageModelV4Prompt
-    ) async throws -> LanguageModelV3StreamResult {
-        try await doStream(options: options, inputPrompt: .v4(v4Prompt))
-    }
-
-    private func doStream(
-        options: LanguageModelV3CallOptions,
-        inputPrompt: InputPrompt
-    ) async throws -> LanguageModelV3StreamResult {
-        let prepared = try await prepareRequest(options: options, inputPrompt: inputPrompt)
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
+        let prepared = try await prepareRequest(options: options)
 
         let url = try config.url(.init(modelId: modelIdentifier.rawValue, path: "/responses"))
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) })
@@ -184,7 +152,22 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let chunkStream = response.value
+        let chunkStream = try await prepareOpenAIStream(
+            stream: response.value,
+            getError: { chunk in
+                if chunk.type == "error" { return chunk.rawValue }
+                if chunk.type == "response.failed", let error = chunk.rawValue.objectValue?["response"]?.objectValue?["error"], error != .null { return chunk.rawValue }
+                return nil
+            },
+            isOutput: { chunk in
+                guard let type = chunk.type else { return false }
+                return ["response.output_item.added", "response.output_item.done", "response.output_text.delta", "response.output_text.annotation.added", "response.completed", "response.incomplete", "response.function_call_arguments.delta", "response.function_call_arguments.done", "response.custom_tool_call_input.delta", "response.code_interpreter_call_code.delta", "response.code_interpreter_call_code.done", "response.image_generation_call.partial_image", "response.apply_patch_call_operation_diff.delta", "response.apply_patch_call_operation_diff.done", "response.reasoning_summary_part.added", "response.reasoning_summary_part.done", "response.reasoning_summary_text.delta"].contains(type)
+            },
+            isAccepted: { $0.type == "response.in_progress" },
+            url: url,
+            requestBodyValues: prepared.body,
+            responseHeaders: response.responseHeaders
+        )
         let webSearchToolName = prepared.toolNameMapping.toCustomToolName(prepared.webSearchToolName ?? "web_search")
         let logprobsRequested: Bool = {
             guard let logprobs = prepared.openAIOptions?.logprobs else { return false }
@@ -198,12 +181,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let approvalRequestIdToToolCallIdFromPrompt = extractApprovalRequestIdToToolCallIdMapping(options.prompt)
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
-            Task {
-                var finishReason: LanguageModelV3FinishReason = .init(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
+            let task = Task {
+                var finishReason: LanguageModelV4FinishReason = .init(unified: .other, raw: nil)
+                var usage = LanguageModelV4Usage()
                 var logprobs: [JSONValue] = []
                 var responseId: String?
                 var serviceTier: String?
@@ -221,6 +204,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 do {
                     for try await result in chunkStream {
+                        try Task.checkCancellation()
                         if options.includeRawChunks == true, let raw = result.rawJSONValue {
                             continuation.yield(.raw(rawValue: raw))
                         }
@@ -346,7 +330,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                             case "response.completed", "response.incomplete":
                                 if let metadata = chunkObject["response"], let responseObject = metadata.objectValue {
                                     let rawFinishReason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
-                                    finishReason = LanguageModelV3FinishReason(
+                                    finishReason = LanguageModelV4FinishReason(
                                         unified: mapOpenAIResponsesFinishReason(
                                             finishReason: rawFinishReason,
                                             hasFunctionCall: hasFunctionCall
@@ -387,14 +371,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                             case "error":
                                 encounteredStreamError = true
                                 finishReason = .init(unified: .error, raw: nil)
-                                continuation.yield(.error(error: chunk.rawValue))
+                                continuation.yield(.error(error: createOpenAIProviderStreamError(chunk.rawValue).map(LanguageModelV4StreamError.providerStreamError) ?? .value(chunk.rawValue)))
                             default:
                                 break
                             }
-                        case .failure:
+                        case .failure(let error, _):
                             encounteredStreamError = true
                             finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: result.streamErrorPayload))
+                            continuation.yield(.error(error: .error(error)))
                         }
                     }
 
@@ -415,18 +399,19 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
 
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: requestBody),
-            response: LanguageModelV3StreamResponseInfo(headers: response.responseHeaders)
+            request: LanguageModelV4RequestInfo(body: requestBody),
+            response: LanguageModelV4StreamResponseInfo(headers: response.responseHeaders)
         )
     }
 
     private struct PreparedRequest {
         let body: OpenAIResponsesRequestBody
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
         let webSearchToolName: String?
         let toolNameMapping: OpenAIToolNameMapping
         let store: Bool
@@ -434,19 +419,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let isShellProviderExecuted: Bool
     }
 
-    private enum InputPrompt {
-        case v3(LanguageModelV3Prompt)
-        case v4(LanguageModelV4Prompt)
-    }
-
-    private static func resolveProviderToolName(_ tool: LanguageModelV3ProviderTool) -> String? {
+    private static func resolveProviderToolName(_ tool: LanguageModelV4ProviderTool) -> String? {
         guard tool.id == "openai.custom" else {
             return nil
         }
         return tool.name
     }
 
-    private static func collectCustomProviderToolNames(from tools: [LanguageModelV3Tool]?) -> Set<String> {
+    private static func collectCustomProviderToolNames(from tools: [LanguageModelV4Tool]?) -> Set<String> {
         var names: Set<String> = []
 
         for tool in tools ?? [] {
@@ -460,11 +440,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return names
     }
 
-    private func prepareRequest(
-        options: LanguageModelV3CallOptions,
-        inputPrompt: InputPrompt
-    ) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: LanguageModelV4CallOptions) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
 
         func addUnsupportedSetting(_ name: String, details: String? = nil) {
             warnings.append(.unsupported(feature: name, details: details))
@@ -490,6 +467,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )
         }
 
+        if openAIOptions?.reasoningEffort == nil, isCustomReasoning(options.reasoning), let reasoning = options.reasoning {
+            if openAIOptions == nil { openAIOptions = OpenAIResponsesProviderOptions() }
+            openAIOptions?.reasoningEffort = reasoning.rawValue
+        }
+        if let effort = openAIOptions?.reasoningEffort, effort != "none", openAIOptions?.reasoningSummary == nil {
+            openAIOptions?.reasoningSummary = "detailed"
+        }
+
         let storeOption = openAIOptions?.store
         let storeForInput = storeOption ?? true
         let hasConversation = openAIOptions?.conversation != nil
@@ -510,42 +495,21 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             resolveProviderToolName: Self.resolveProviderToolName
         )
 
-        let inputResult: (input: OpenAIResponsesInput, warnings: [SharedV3Warning])
-        switch inputPrompt {
-        case .v3(let prompt):
-            inputResult = try await OpenAIResponsesInputBuilder.makeInput(
-                prompt: prompt,
-                providerOptionsName: providerOptionsName,
-                toolNameMapping: toolNameMapping,
-                customProviderToolNames: customProviderToolNames,
-                systemMessageMode: systemMessageMode,
-                fileIdPrefixes: config.fileIdPrefixes,
-                store: storeForInput,
-                hasConversation: hasConversation,
-                hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
-                passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
-                hasLocalShellTool: hasLocalShellTool,
-                hasShellTool: hasShellTool,
-                hasApplyPatchTool: hasApplyPatchTool
-            )
-        case .v4(let prompt):
-            inputResult = try await OpenAIResponsesInputBuilder.makeInput(
-                prompt: prompt,
-                providerOptionsName: providerOptionsName,
-                toolNameMapping: toolNameMapping,
-                customProviderToolNames: customProviderToolNames,
-                systemMessageMode: systemMessageMode,
-                fileIdPrefixes: config.fileIdPrefixes,
-                store: storeForInput,
-                hasConversation: hasConversation,
-                hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
-                passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
-                hasLocalShellTool: hasLocalShellTool,
-                hasShellTool: hasShellTool,
-                hasApplyPatchTool: hasApplyPatchTool
-            )
-        }
-        let (input, inputWarnings) = inputResult
+        let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
+            prompt: options.prompt,
+            providerOptionsName: providerOptionsName,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames,
+            systemMessageMode: systemMessageMode,
+            fileIdPrefixes: config.fileIdPrefixes,
+            store: storeForInput,
+            hasConversation: hasConversation,
+            hasPreviousResponseId: openAIOptions?.previousResponseId != nil,
+            passThroughUnsupportedFiles: openAIOptions?.passThroughUnsupportedFiles ?? false,
+            hasLocalShellTool: hasLocalShellTool,
+            hasShellTool: hasShellTool,
+            hasApplyPatchTool: hasApplyPatchTool
+        )
         warnings.append(contentsOf: inputWarnings)
 
         let strictJsonSchema = openAIOptions?.strictJsonSchema ?? true
@@ -711,7 +675,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     private func makeTextOptions(
-        responseFormat: LanguageModelV3ResponseFormat?,
+        responseFormat: LanguageModelV4ResponseFormat?,
         textVerbosity: String?,
         strictJsonSchema: Bool
     ) -> JSONValue? {
@@ -744,7 +708,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return payload.isEmpty ? nil : .object(payload)
     }
 
-    private func containsLocalShellTool(_ tools: [LanguageModelV3Tool]?) -> Bool {
+    private func containsLocalShellTool(_ tools: [LanguageModelV4Tool]?) -> Bool {
         guard let tools else { return false }
         return tools.contains { tool in
             if case .provider(let providerTool) = tool {
@@ -754,7 +718,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
     }
 
-    private func containsProviderTool(_ tools: [LanguageModelV3Tool]?, id: String) -> Bool {
+    private func containsProviderTool(_ tools: [LanguageModelV4Tool]?, id: String) -> Bool {
         guard let tools else { return false }
         return tools.contains { tool in
             if case .provider(let providerTool) = tool {
@@ -764,7 +728,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
     }
 
-    private func findWebSearchToolName(_ tools: [LanguageModelV3Tool]?) -> String? {
+    private func findWebSearchToolName(_ tools: [LanguageModelV4Tool]?) -> String? {
         guard let tools else { return nil }
         for tool in tools {
             if case .provider(let providerTool) = tool,
@@ -775,7 +739,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return nil
     }
 
-    private func shellToolIsProviderExecuted(_ tools: [LanguageModelV3Tool]?) -> Bool {
+    private func shellToolIsProviderExecuted(_ tools: [LanguageModelV4Tool]?) -> Bool {
         guard let tools else { return false }
 
         for tool in tools {
@@ -795,12 +759,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     }
 
     private struct MappedResponse {
-        let content: [LanguageModelV3Content]
+        let content: [LanguageModelV4Content]
         let logprobs: [JSONValue]
         let hasFunctionCall: Bool
     }
 
-    private func extractApprovalRequestIdToToolCallIdMapping(_ prompt: LanguageModelV3Prompt) -> [String: String] {
+    private func extractApprovalRequestIdToToolCallIdMapping(_ prompt: LanguageModelV4Prompt) -> [String: String] {
         var mapping: [String: String] = [:]
         for message in prompt {
             guard case .assistant(let parts, _) = message else { continue }
@@ -825,7 +789,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         logprobsRequested: Bool,
         isShellProviderExecuted: Bool
     ) throws -> MappedResponse {
-        var content: [LanguageModelV3Content] = []
+        var content: [LanguageModelV4Content] = []
         var logprobs: [JSONValue] = []
         var hasFunctionCall = false
         var hostedToolSearchCallIds: [String] = []
@@ -853,7 +817,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 for entry in summary {
                     guard let entryObject = entry.objectValue,
                           let text = entryObject["text"]?.stringValue else { continue }
-                    content.append(.reasoning(LanguageModelV3Reasoning(text: text, providerMetadata: metadata)))
+                    content.append(.reasoning(LanguageModelV4Reasoning(text: text, providerMetadata: metadata)))
                 }
 
             case "message":
@@ -884,7 +848,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     }
                     let textMetadata = openAIProviderMetadata(textMetadataItems)
 
-                    content.append(.text(LanguageModelV3Text(text: text, providerMetadata: textMetadata)))
+                    content.append(.text(LanguageModelV4Text(text: text, providerMetadata: textMetadata)))
 
                     for annotation in annotations {
                         guard let annotationObject = annotation.objectValue,
@@ -977,7 +941,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "itemId": object["id"]?.stringValue.map(JSONValue.string) ?? .null
                 ])
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     input: input,
@@ -999,7 +963,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let toolName = toolNameMapping.toCustomToolName(providerToolName)
                 let input = try jsonString(from: .string(rawInput))
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     input: input,
@@ -1019,7 +983,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "arguments": object["arguments"] ?? .null,
                     "call_id": object["call_id"] ?? .null
                 ])
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("tool_search"),
                     input: try jsonString(from: inputValue),
@@ -1032,7 +996,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let toolCallId = object["call_id"]?.stringValue
                     ?? (hostedToolSearchCallIds.isEmpty ? nil : hostedToolSearchCallIds.removeFirst())
                     ?? itemId
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("tool_search"),
                     result: .object([
@@ -1052,7 +1016,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 if let encryptedContent = object["encrypted_content"]?.stringValue {
                     metadataItems["encryptedContent"] = .string(encryptedContent)
                 }
-                content.append(.custom(LanguageModelV3CustomContent(
+                content.append(.custom(LanguageModelV4CustomContent(
                     kind: "openai.compaction",
                     providerMetadata: openAIProviderMetadata(metadataItems)
                 )))
@@ -1063,7 +1027,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
                 let toolName = toolNameMapping.toCustomToolName(webSearchToolName ?? "web_search")
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     input: "{}",
@@ -1071,7 +1035,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil
                 )))
 
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     result: mappedOutput,
@@ -1092,7 +1056,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let toolCallId = approvalRequestId.flatMap { approvalRequestIdToToolCallIdFromPrompt[$0] } ?? itemId
                 let toolName = "mcp.\(name)"
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     input: arguments,
@@ -1115,7 +1079,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 }
 
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolName,
                     result: .object(resultPayload),
@@ -1139,7 +1103,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let dummyToolCallId = config.generateId?() ?? generateID()
                 let toolName = "mcp.\(name)"
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: dummyToolCallId,
                     toolName: toolName,
                     input: arguments,
@@ -1148,7 +1112,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     providerMetadata: nil
                 )))
 
-                content.append(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
+                content.append(.toolApprovalRequest(LanguageModelV4ToolApprovalRequest(
                     approvalId: approvalRequestId,
                     toolCallId: dummyToolCallId,
                     providerMetadata: nil
@@ -1158,7 +1122,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 guard let toolCallId = object["id"]?.stringValue else { continue }
                 let status = object["status"]?.stringValue ?? "completed"
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("computer_use"),
                     input: "",
@@ -1170,7 +1134,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "type": .string("computer_use_tool_result"),
                     "status": .string(status)
                 ])
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("computer_use"),
                     result: resultValue,
@@ -1182,7 +1146,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             case "file_search_call":
                 guard let toolCallId = object["id"]?.stringValue else { continue }
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("file_search"),
                     input: "{}",
@@ -1213,7 +1177,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "results": resultsArray.map(JSONValue.array) ?? .null
                 ])
 
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("file_search"),
                     result: resultValue,
@@ -1236,7 +1200,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let inputValue: JSONValue = .object(inputPayload)
                 let inputString = try jsonString(from: inputValue)
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                     input: inputString,
@@ -1249,7 +1213,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     resultPayload["outputs"] = outputs
                 }
                 let resultValue: JSONValue = .object(resultPayload)
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                     result: resultValue,
@@ -1264,7 +1228,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     continue
                 }
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("image_generation"),
                     input: "{}",
@@ -1273,7 +1237,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 )))
 
                 let resultValue: JSONValue = .object(["result": .string(resultString)])
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("image_generation"),
                     result: resultValue,
@@ -1298,7 +1262,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let inputString = try jsonString(from: inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("shell"),
                     input: inputString,
@@ -1349,7 +1313,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                     "output": .array(mappedOutputs)
                 ])
 
-                content.append(.toolResult(LanguageModelV3ToolResult(
+                content.append(.toolResult(LanguageModelV4ToolResult(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("shell"),
                     result: resultValue,
@@ -1372,7 +1336,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let inputString = try jsonString(from: inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("apply_patch"),
                     input: inputString,
@@ -1411,7 +1375,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 let inputString = try jsonString(from: inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
 
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: toolCallId,
                     toolName: toolNameMapping.toCustomToolName("local_shell"),
                     input: inputString,
@@ -1432,7 +1396,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         logprobs: [JSONValue],
         serviceTier: String?,
         reasoningContext: String?
-    ) -> SharedV3ProviderMetadata? {
+    ) -> SharedV4ProviderMetadata? {
         var inner: [String: JSONValue] = [:]
         if let responseId {
             inner["responseId"] = .string(responseId)
@@ -1461,19 +1425,19 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         return string
     }
 
-    private func makeUsage(from object: [String: JSONValue]) -> LanguageModelV3Usage {
+    private func makeUsage(from object: [String: JSONValue]) -> LanguageModelV4Usage {
         let inputTokens = object["input_tokens"]?.intValue
         let outputTokens = object["output_tokens"]?.intValue
 
         guard let inputTokens, let outputTokens else {
-            return LanguageModelV3Usage(raw: .object(object))
+            return LanguageModelV4Usage(raw: .object(object))
         }
 
         let cachedTokens = object["input_tokens_details"]?.objectValue?["cached_tokens"]?.intValue ?? 0
         let cacheWriteTokens = object["input_tokens_details"]?.objectValue?["cache_write_tokens"]?.intValue
         let reasoningTokens = object["output_tokens_details"]?.objectValue?["reasoning_tokens"]?.intValue ?? 0
 
-        return LanguageModelV3Usage(
+        return LanguageModelV4Usage(
             inputTokens: .init(
                 total: inputTokens,
                 noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),
@@ -1526,7 +1490,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         let serviceTier: String?
     }
 
-    private func openAIProviderMetadata(_ items: [String: JSONValue]) -> SharedV3ProviderMetadata {
+    private func openAIProviderMetadata(_ items: [String: JSONValue]) -> SharedV4ProviderMetadata {
         var filtered: [String: JSONValue] = [:]
         for (key, value) in items {
             filtered[key] = value
@@ -1674,7 +1638,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         activeMessagePhase: inout String?,
         ongoingToolCalls: inout [Int: ToolCallState],
         activeReasoning: inout [String: ReasoningState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) throws {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let item = chunk["item"]?.objectValue,
@@ -1738,7 +1702,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 title: nil
             ))
             continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: webSearchToolName,
                 input: "{}",
@@ -1838,7 +1802,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )
         case "file_search_call":
             guard let callId = item["id"]?.stringValue else { return }
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("file_search"),
                 input: "{}",
@@ -1847,7 +1811,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             )))
         case "image_generation_call":
             guard let callId = item["id"]?.stringValue else { return }
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("image_generation"),
                 input: "{}",
@@ -1915,7 +1879,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         activeReasoning: inout [String: ReasoningState],
         isShellProviderExecuted: Bool,
         hasFunctionCall: inout Bool,
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) throws {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let item = chunk["item"]?.objectValue,
@@ -1934,7 +1898,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let metadata = openAIProviderMetadata([
                 "itemId": item["id"]?.stringValue.map(JSONValue.string) ?? .null
             ])
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: name,
                 input: arguments,
@@ -1953,7 +1917,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ])
             let toolName = toolNameMapping.toCustomToolName(providerToolName)
             let input = try jsonString(from: .string(rawInput))
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolName,
                 input: input,
@@ -1964,7 +1928,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue,
                   let mappedOutput = mapWebSearchOutput(item["action"]) else { return }
             ongoingToolCalls[outputIndex] = nil
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: webSearchToolName,
                 result: mappedOutput,
@@ -1990,7 +1954,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
 
             let toolName = "mcp.\(name)"
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: aliasedToolCallId,
                 toolName: toolName,
                 input: arguments,
@@ -2013,7 +1977,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             }
 
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: aliasedToolCallId,
                 toolName: toolName,
                 result: .object(resultPayload),
@@ -2035,7 +1999,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             approvalRequestIdToDummyToolCallIdFromStream[approvalRequestId] = dummyToolCallId
 
             let toolName = "mcp.\(name)"
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: dummyToolCallId,
                 toolName: toolName,
                 input: arguments,
@@ -2043,7 +2007,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 dynamic: true,
                 providerMetadata: nil
             )))
-            continuation.yield(.toolApprovalRequest(LanguageModelV3ToolApprovalRequest(
+            continuation.yield(.toolApprovalRequest(LanguageModelV4ToolApprovalRequest(
                 approvalId: approvalRequestId,
                 toolCallId: dummyToolCallId,
                 providerMetadata: nil
@@ -2053,7 +2017,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
             let toolName = toolNameMapping.toCustomToolName("computer_use")
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolName,
                 input: "",
@@ -2065,7 +2029,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 "type": .string("computer_use_tool_result"),
                 "status": .string(status)
             ])
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: toolName,
                 result: resultValue,
@@ -2098,7 +2062,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 "queries": .array(queries.map(JSONValue.string)),
                 "results": resultsArray.map(JSONValue.array) ?? .null
             ])
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("file_search"),
                 result: resultValue,
@@ -2114,7 +2078,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 resultPayload["outputs"] = outputs
             }
             let resultValue: JSONValue = .object(resultPayload)
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("code_interpreter"),
                 result: resultValue,
@@ -2126,7 +2090,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             guard let callId = item["id"]?.stringValue,
                   let resultString = item["result"]?.stringValue else { return }
             let resultValue: JSONValue = .object(["result": .string(resultString)])
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("image_generation"),
                 result: resultValue,
@@ -2156,7 +2120,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 "arguments": item["arguments"] ?? .null,
                 "call_id": isHosted ? .null : .string(toolCallId)
             ])
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: toolCallId,
                 toolName: state.toolName,
                 input: try jsonString(from: inputValue),
@@ -2169,7 +2133,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let toolCallId = item["call_id"]?.stringValue
                 ?? (hostedToolSearchCallIds.isEmpty ? nil : hostedToolSearchCallIds.removeFirst())
                 ?? itemId
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: toolCallId,
                 toolName: toolNameMapping.toCustomToolName("tool_search"),
                 result: .object([
@@ -2210,7 +2174,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 ])
                 let inputString = try jsonString(from: inputValue)
                 let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-                continuation.yield(.toolCall(LanguageModelV3ToolCall(
+                continuation.yield(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: callId,
                     toolName: toolNameMapping.toCustomToolName("apply_patch"),
                     input: inputString,
@@ -2233,7 +2197,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             ])
             let inputString = try jsonString(from: inputValue)
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("shell"),
                 input: inputString,
@@ -2281,7 +2245,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let resultValue: JSONValue = .object([
                 "output": .array(mappedOutput)
             ])
-            continuation.yield(.toolResult(LanguageModelV3ToolResult(
+            continuation.yield(.toolResult(LanguageModelV4ToolResult(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("shell"),
                 result: resultValue,
@@ -2316,7 +2280,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             let inputValue: JSONValue = .object(["action": .object(actionPayload)])
             let inputString = try jsonString(from: inputValue)
             let metadata = openAIProviderMetadata(["itemId": .string(itemId)])
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: callId,
                 toolName: toolNameMapping.toCustomToolName("local_shell"),
                 input: inputString,
@@ -2359,7 +2323,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
             if let encryptedContent = item["encrypted_content"]?.stringValue {
                 metadataItems["encryptedContent"] = .string(encryptedContent)
             }
-            continuation.yield(.custom(LanguageModelV3CustomContent(
+            continuation.yield(.custom(LanguageModelV4CustomContent(
                 kind: "openai.compaction",
                 providerMetadata: openAIProviderMetadata(metadataItems)
             )))
@@ -2371,7 +2335,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleFunctionCallArgumentsDelta(
         _ chunk: [String: JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let delta = chunk["delta"]?.stringValue,
@@ -2384,7 +2348,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleApplyPatchCallOperationDiffDelta(
         _ chunk: [String: JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let delta = chunk["delta"]?.stringValue,
@@ -2402,7 +2366,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleApplyPatchCallOperationDiffDone(
         _ chunk: [String: JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let diff = chunk["diff"]?.stringValue,
@@ -2427,14 +2391,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleImageGenerationPartial(
         _ chunk: [String: JSONValue],
         toolNameMapping: OpenAIToolNameMapping,
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let toolCallId = chunk["item_id"]?.stringValue,
               let partial = chunk["partial_image_b64"]?.stringValue else {
             return
         }
         let resultValue: JSONValue = .object(["result": .string(partial)])
-        continuation.yield(.toolResult(LanguageModelV3ToolResult(
+        continuation.yield(.toolResult(LanguageModelV4ToolResult(
             toolCallId: toolCallId,
             toolName: toolNameMapping.toCustomToolName("image_generation"),
             result: resultValue,
@@ -2447,7 +2411,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleCodeInterpreterDelta(
         _ chunk: [String: JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let delta = chunk["delta"]?.stringValue,
@@ -2463,7 +2427,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleCodeInterpreterDone(
         _ chunk: [String: JSONValue],
         ongoingToolCalls: inout [Int: ToolCallState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let outputIndex = chunk["output_index"]?.intValue,
               let state = ongoingToolCalls[outputIndex],
@@ -2481,7 +2445,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         ])
         do {
             let inputString = try jsonString(from: inputValue)
-            continuation.yield(.toolCall(LanguageModelV3ToolCall(
+            continuation.yield(.toolCall(LanguageModelV4ToolCall(
                 toolCallId: state.toolCallId,
                 toolName: state.toolName,
                 input: inputString,
@@ -2489,7 +2453,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
                 providerMetadata: nil
             )))
         } catch {
-            continuation.yield(.error(error: .string(String(describing: error))))
+            continuation.yield(.error(error: .error(error)))
         }
 
         ongoingToolCalls[outputIndex] = nil
@@ -2498,7 +2462,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleReasoningSummaryPartAdded(
         _ chunk: [String: JSONValue],
         activeReasoning: inout [String: ReasoningState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
               var state = activeReasoning[itemId],
@@ -2538,7 +2502,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
     private func handleReasoningSummaryTextDelta(
         _ chunk: [String: JSONValue],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
               let summaryIndex = chunk["summary_index"]?.intValue,
@@ -2553,7 +2517,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         _ chunk: [String: JSONValue],
         store: Bool,
         activeReasoning: inout [String: ReasoningState],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
               let summaryIndex = chunk["summary_index"]?.intValue,
@@ -2577,7 +2541,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         _ chunk: [String: JSONValue],
         logprobsRequested: Bool,
         collectedLogprobs: inout [JSONValue],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let itemId = chunk["item_id"]?.stringValue,
               let delta = chunk["delta"]?.stringValue else {
@@ -2592,7 +2556,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleAnnotationAdded(
         _ chunk: [String: JSONValue],
         ongoingAnnotations: inout [JSONValue],
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let annotationValue = chunk["annotation"],
               let filteredAnnotationValue = filterOpenAIResponsesAnnotation(annotationValue),
@@ -2679,12 +2643,12 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
     private func handleResponseFailed(
         _ chunk: [String: JSONValue],
         hasFunctionCall: Bool,
-        finishReason: inout LanguageModelV3FinishReason,
-        usage: inout LanguageModelV3Usage,
+        finishReason: inout LanguageModelV4FinishReason,
+        usage: inout LanguageModelV4Usage,
         responseId: inout String?,
         serviceTier: inout String?,
         encounteredStreamError: inout Bool,
-        continuation: AsyncThrowingStream<LanguageModelV3StreamPart, Error>.Continuation
+        continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let responseObject = chunk["response"]?.objectValue else {
             return
@@ -2692,7 +2656,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
 
         let incompleteReason = responseObject["incomplete_details"]?.objectValue?["reason"]?.stringValue
         if let incompleteReason {
-            finishReason = LanguageModelV3FinishReason(
+            finishReason = LanguageModelV4FinishReason(
                 unified: mapOpenAIResponsesFinishReason(
                     finishReason: incompleteReason,
                     hasFunctionCall: hasFunctionCall
@@ -2706,7 +2670,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         if let usageObject = responseObject["usage"]?.objectValue {
             usage = makeUsage(from: usageObject)
         } else if responseObject["usage"] != nil {
-            usage = LanguageModelV3Usage()
+            usage = LanguageModelV4Usage()
         }
 
         if let tier = responseObject["service_tier"]?.stringValue {
@@ -2723,7 +2687,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV3 {
         }
 
         encounteredStreamError = true
-        continuation.yield(.error(error: errorPayload))
+        continuation.yield(.error(error: createOpenAIProviderStreamError(errorPayload).map(LanguageModelV4StreamError.providerStreamError) ?? .value(errorPayload)))
     }
 
     private func makeResponseFailedStreamErrorPayload(from chunk: [String: JSONValue]) -> JSONValue? {
@@ -2780,56 +2744,12 @@ private extension ParseJSONResult where Output == OpenAIResponsesChunk {
         }
     }
 
-    var streamErrorPayload: JSONValue {
-        switch self {
-        case .failure(let error, let raw):
-            return serializeStreamParseError(error: error, raw: raw)
-        case .success:
-            return .string("Unknown stream parsing error")
-        }
-    }
 }
 
-private func serializeStreamParseError(error: Error, raw: Any?) -> JSONValue {
-    if let typeValidationError = error as? TypeValidationError {
-        var payload: [String: JSONValue] = [
-            "name": .string(typeValidationError.name),
-            "message": .string(typeValidationError.message)
-        ]
-
-        if let value = typeValidationError.value {
-            payload["value"] = (try? jsonValue(from: value)) ?? .string(String(describing: value))
-        } else if let raw {
-            payload["value"] = (try? jsonValue(from: raw)) ?? .null
-        }
-
-        return .object(payload)
-    }
-
-    if let jsonParseError = error as? JSONParseError {
-        return .object([
-            "name": .string(jsonParseError.name),
-            "message": .string(jsonParseError.message),
-            "text": .string(jsonParseError.text)
-        ])
-    }
-
-    var payload: [String: JSONValue] = [
-        "name": .string("Error"),
-        "message": .string(AISDKProvider.getErrorMessage(error))
-    ]
-
-    if let raw {
-        payload["value"] = (try? jsonValue(from: raw)) ?? .null
-    }
-
-    return .object(payload)
-}
-
-private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?) -> LanguageModelV3Usage {
+private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?) -> LanguageModelV4Usage {
     // Port of `packages/openai/src/responses/convert-openai-responses-usage.ts`
     guard let usage else {
-        return LanguageModelV3Usage()
+        return LanguageModelV4Usage()
     }
 
     let inputTokens = usage.inputTokens
@@ -2838,7 +2758,7 @@ private func convertOpenAIResponsesUsage(_ usage: OpenAIResponsesResponse.Usage?
     let cacheWriteTokens = usage.inputTokensDetails?.cacheWriteTokens
     let reasoningTokens = usage.outputTokensDetails?.reasoningTokens ?? 0
 
-    return LanguageModelV3Usage(
+    return LanguageModelV4Usage(
         inputTokens: .init(
             total: inputTokens,
             noCache: inputTokens - cachedTokens - (cacheWriteTokens ?? 0),

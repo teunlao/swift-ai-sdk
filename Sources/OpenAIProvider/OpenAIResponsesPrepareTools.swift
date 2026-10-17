@@ -5,12 +5,12 @@ import AISDKProviderUtils
 struct OpenAIResponsesPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let warnings: [SharedV3Warning]
+    let warnings: [SharedV4Warning]
 }
 
 func prepareOpenAIResponsesTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?,
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?,
     allowedTools: OpenAIResponsesAllowedTools? = nil,
     toolNameMapping: OpenAIToolNameMapping = .init(),
     customProviderToolNames: Set<String> = []
@@ -19,7 +19,7 @@ func prepareOpenAIResponsesTools(
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
     }
 
-    let warnings: [SharedV3Warning] = []
+    let warnings: [SharedV4Warning] = []
     var openAITools: [JSONValue] = []
     var namespaceTools: [String: (description: String, index: Int)] = [:]
     var resolvedCustomProviderToolNames = customProviderToolNames
@@ -403,7 +403,7 @@ private struct OpenAIFunctionToolOptions {
     var namespace: Namespace?
 }
 
-private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV3ProviderOptions?) -> OpenAIFunctionToolOptions {
+private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV4ProviderOptions?) -> OpenAIFunctionToolOptions {
     guard let raw = providerOptions?["openai"] else {
         return OpenAIFunctionToolOptions()
     }
@@ -587,7 +587,7 @@ private extension JSONValue {
 }
 
 private func mapToolChoice(
-    _ choice: LanguageModelV3ToolChoice?,
+    _ choice: LanguageModelV4ToolChoice?,
     toolNameMapping: OpenAIToolNameMapping,
     customProviderToolNames: Set<String>
 ) throws -> JSONValue? {

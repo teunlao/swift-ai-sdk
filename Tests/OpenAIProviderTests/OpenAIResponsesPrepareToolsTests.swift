@@ -6,9 +6,9 @@ import Testing
 
 @Suite("OpenAIResponsesPrepareTools")
 struct OpenAIResponsesPrepareToolsTests {
-    private func providerTool(id: String, name: String? = nil, args: [String: JSONValue] = [:]) -> LanguageModelV3Tool {
+    private func providerTool(id: String, name: String? = nil, args: [String: JSONValue] = [:]) -> LanguageModelV4Tool {
         .provider(
-            LanguageModelV3ProviderTool(
+            LanguageModelV4ProviderTool(
                 id: id,
                 name: name ?? id,
                 args: args
@@ -106,8 +106,8 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("function tool passes through strict")
     func functionToolPassesThroughStrict() async throws {
-        let functionTool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
+        let functionTool = LanguageModelV4Tool.function(
+            LanguageModelV4FunctionTool(
                 name: "testFunction",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -149,8 +149,8 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("function tools map defer_loading and namespace grouping")
     func functionToolsMapDeferLoadingAndNamespaceGrouping() async throws {
-        let searchTool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
+        let searchTool = LanguageModelV4Tool.function(
+            LanguageModelV4FunctionTool(
                 name: "search_docs",
                 inputSchema: .object(["type": .string("object")]),
                 description: "Search docs",
@@ -165,8 +165,8 @@ struct OpenAIResponsesPrepareToolsTests {
                 ]
             )
         )
-        let summarizeTool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
+        let summarizeTool = LanguageModelV4Tool.function(
+            LanguageModelV4FunctionTool(
                 name: "summarize_docs",
                 inputSchema: .object(["type": .string("object")]),
                 description: "Summarize docs",
@@ -207,8 +207,8 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("allowed tools override normal tool choice")
     func allowedToolsOverrideNormalToolChoice() async throws {
-        let functionTool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
+        let functionTool = LanguageModelV4Tool.function(
+            LanguageModelV4FunctionTool(
                 name: "weather",
                 inputSchema: .object(["type": .string("object")])
             )
@@ -216,7 +216,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
         let result = try await prepareOpenAIResponsesTools(
             tools: [functionTool],
-            toolChoice: LanguageModelV3ToolChoice.none,
+            toolChoice: LanguageModelV4ToolChoice.none,
             allowedTools: OpenAIResponsesAllowedTools(toolNames: ["weather"], mode: "required")
         )
 
@@ -781,8 +781,8 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("tool choice for function tool maps to function type")
     func functionToolChoiceMapping() async throws {
-        let functionTool = LanguageModelV3Tool.function(
-            LanguageModelV3FunctionTool(
+        let functionTool = LanguageModelV4Tool.function(
+            LanguageModelV4FunctionTool(
                 name: "custom_tool",
                 inputSchema: .object(["type": .string("object")])
             )

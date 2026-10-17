@@ -7,7 +7,7 @@ import Testing
 @Suite("OpenAIResponses fixture scenarios")
 struct OpenAIResponsesFixtureTests {
     private let responsesURL = URL(string: "https://api.openai.com/v1/responses")!
-    private let samplePrompt: LanguageModelV3Prompt = [
+    private let samplePrompt: LanguageModelV4Prompt = [
         .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
     ]
 
@@ -137,7 +137,7 @@ struct OpenAIResponsesFixtureTests {
         }
     }
 
-    private func makeShellTool() -> LanguageModelV3Tool {
+    private func makeShellTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.shell",
             name: "shell",
@@ -149,7 +149,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeLocalShellTool() -> LanguageModelV3Tool {
+    private func makeLocalShellTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.local_shell",
             name: "shell",
@@ -157,7 +157,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makePlainShellTool() -> LanguageModelV3Tool {
+    private func makePlainShellTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.shell",
             name: "shell",
@@ -165,7 +165,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeImageGenerationTool() -> LanguageModelV3Tool {
+    private func makeImageGenerationTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.image_generation",
             name: "generateImage",
@@ -178,7 +178,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeDefaultImageGenerationTool() -> LanguageModelV3Tool {
+    private func makeDefaultImageGenerationTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.image_generation",
             name: "generateImage",
@@ -186,7 +186,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeMCPTool() -> LanguageModelV3Tool {
+    private func makeMCPTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.mcp",
             name: "MCP",
@@ -199,7 +199,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeDefaultMCPTool() -> LanguageModelV3Tool {
+    private func makeDefaultMCPTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.mcp",
             name: "MCP",
@@ -211,7 +211,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeWebSearchTool() -> LanguageModelV3Tool {
+    private func makeWebSearchTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.web_search",
             name: "webSearch",
@@ -219,7 +219,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeFileSearchTool() -> LanguageModelV3Tool {
+    private func makeFileSearchTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.file_search",
             name: "fileSearch",
@@ -241,7 +241,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeDefaultFileSearchTool() -> LanguageModelV3Tool {
+    private func makeDefaultFileSearchTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.file_search",
             name: "fileSearch",
@@ -253,7 +253,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeApplyPatchTool() -> LanguageModelV3Tool {
+    private func makeApplyPatchTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.apply_patch",
             name: "apply_patch",
@@ -263,7 +263,7 @@ struct OpenAIResponsesFixtureTests {
 
     private func makeCustomTool(
         toolName: String = "write_sql"
-    ) -> LanguageModelV3Tool {
+    ) -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.custom",
             name: toolName,
@@ -278,7 +278,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeCodeInterpreterTool() -> LanguageModelV3Tool {
+    private func makeCodeInterpreterTool() -> LanguageModelV4Tool {
         .provider(.init(
             id: "openai.code_interpreter",
             name: "codeExecution",
@@ -286,7 +286,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeCalculatorTool() -> LanguageModelV3Tool {
+    private func makeCalculatorTool() -> LanguageModelV4Tool {
         .function(.init(
             name: "calculator",
             inputSchema: .object([
@@ -323,7 +323,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeWeatherTool(deferLoading: Bool = true) -> LanguageModelV3Tool {
+    private func makeWeatherTool(deferLoading: Bool = true) -> LanguageModelV4Tool {
         .function(.init(
             name: "get_weather",
             inputSchema: .object([
@@ -358,7 +358,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeSearchFilesTool() -> LanguageModelV3Tool {
+    private func makeSearchFilesTool() -> LanguageModelV4Tool {
         .function(.init(
             name: "search_files",
             inputSchema: .object([
@@ -392,7 +392,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeSendEmailTool() -> LanguageModelV3Tool {
+    private func makeSendEmailTool() -> LanguageModelV4Tool {
         .function(.init(
             name: "send_email",
             inputSchema: .object([
@@ -428,7 +428,7 @@ struct OpenAIResponsesFixtureTests {
         ))
     }
 
-    private func makeHostedToolSearchTools() -> [LanguageModelV3Tool] {
+    private func makeHostedToolSearchTools() -> [LanguageModelV4Tool] {
         [
             .provider(.init(
                 id: "openai.tool_search",
@@ -441,7 +441,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeClientToolSearchTools() -> [LanguageModelV3Tool] {
+    private func makeClientToolSearchTools() -> [LanguageModelV4Tool] {
         [
             .provider(.init(
                 id: "openai.tool_search",
@@ -467,7 +467,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeShellContainerMultiturnPrompt() -> LanguageModelV3Prompt {
+    private func makeShellContainerMultiturnPrompt() -> LanguageModelV4Prompt {
         [
             .user(
                 content: [.text(.init(text: "Run uname -a"))],
@@ -524,7 +524,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeShellLocalMultiturnPrompt() -> LanguageModelV3Prompt {
+    private func makeShellLocalMultiturnPrompt() -> LanguageModelV4Prompt {
         [
             .user(
                 content: [.text(.init(text: "Run uname -a"))],
@@ -590,7 +590,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeMCPApprovalTurn2Prompt() -> LanguageModelV3Prompt {
+    private func makeMCPApprovalTurn2Prompt() -> LanguageModelV4Prompt {
         [
             .user(
                 content: [.text(.init(text: "shorten ai-sdk.dev"))],
@@ -624,7 +624,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeMCPApprovalTurn3Prompt() -> LanguageModelV3Prompt {
+    private func makeMCPApprovalTurn3Prompt() -> LanguageModelV4Prompt {
         [
             .user(
                 content: [.text(.init(text: "shorten ai-sdk.dev"))],
@@ -668,7 +668,7 @@ struct OpenAIResponsesFixtureTests {
         ]
     }
 
-    private func makeMCPApprovalTurn4Prompt() -> LanguageModelV3Prompt {
+    private func makeMCPApprovalTurn4Prompt() -> LanguageModelV4Prompt {
         [
             .user(
                 content: [.text(.init(text: "shorten ai-sdk.dev"))],
@@ -703,16 +703,16 @@ struct OpenAIResponsesFixtureTests {
     }
 
     private func collectStreamParts(
-        _ result: LanguageModelV3StreamResult
-    ) async throws -> [LanguageModelV3StreamPart] {
-        var parts: [LanguageModelV3StreamPart] = []
+        _ result: LanguageModelV4StreamResult
+    ) async throws -> [LanguageModelV4StreamPart] {
+        var parts: [LanguageModelV4StreamPart] = []
         for try await part in result.stream {
             parts.append(part)
         }
         return parts
     }
 
-    private func collectText(_ parts: [LanguageModelV3StreamPart]) -> String {
+    private func collectText(_ parts: [LanguageModelV4StreamPart]) -> String {
         parts.compactMap { part in
             if case .textDelta(_, let delta, _) = part {
                 return delta
@@ -734,15 +734,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeShellTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -798,19 +798,19 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeLocalShellTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
@@ -865,15 +865,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makePlainShellTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
@@ -926,19 +926,19 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeImageGenerationTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -996,19 +996,19 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeDefaultMCPTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -1073,11 +1073,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = part { return result }
             return nil
         }
@@ -1087,7 +1087,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, usage: LanguageModelV3Usage, providerMetadata: SharedV3ProviderMetadata?)? in
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV4FinishReason, usage: LanguageModelV4Usage, providerMetadata: SharedV4ProviderMetadata?)? in
             if case .finish(let finishReason, let usage, let providerMetadata) = part {
                 return (finishReason: finishReason, usage: usage, providerMetadata: providerMetadata)
             }
@@ -1106,7 +1106,7 @@ struct OpenAIResponsesFixtureTests {
         #expect(toolCalls[1].providerExecuted == true)
 
         #expect(finishParts.count == 1)
-        #expect(finishParts[0].finishReason.unified == LanguageModelV3FinishReason.Unified.stop)
+        #expect(finishParts[0].finishReason.unified == LanguageModelV4FinishReason.Unified.stop)
         #expect(finishParts[0].providerMetadata?["openai"]?["responseId"] == JSONValue.string("resp_049350089f7281c400698f717727d08191a446ae1621ed9503"))
     }
 
@@ -1124,19 +1124,19 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let reasoningStarts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let reasoningEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let reasoningEnds = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -1146,7 +1146,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, providerMetadata: SharedV3ProviderMetadata?)? in
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV4FinishReason, providerMetadata: SharedV4ProviderMetadata?)? in
             if case .finish(let finishReason, _, let providerMetadata) = part {
                 return (finishReason: finishReason, providerMetadata: providerMetadata)
             }
@@ -1209,11 +1209,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -1223,7 +1223,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, providerMetadata: SharedV3ProviderMetadata?)? in
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV4FinishReason, providerMetadata: SharedV4ProviderMetadata?)? in
             if case .finish(let finishReason, _, let providerMetadata) = part {
                 return (finishReason: finishReason, providerMetadata: providerMetadata)
             }
@@ -1284,27 +1284,27 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let reasoningStarts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let reasoningEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let reasoningEnds = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningEnd(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let textStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let textStarts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .textStart(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let textEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
-            if case .textEnd(_, let providerMetadata) = part { return providerMetadata }
+        let textEnds = parts.compactMap { part -> SharedV4ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata, _) = part { return providerMetadata }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -1314,7 +1314,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV3FinishReason, usage: LanguageModelV3Usage, providerMetadata: SharedV3ProviderMetadata?)? in
+        let finishParts = parts.compactMap { part -> (finishReason: LanguageModelV4FinishReason, usage: LanguageModelV4Usage, providerMetadata: SharedV4ProviderMetadata?)? in
             if case .finish(let finishReason, let usage, let providerMetadata) = part {
                 return (finishReason: finishReason, usage: usage, providerMetadata: providerMetadata)
             }
@@ -1386,15 +1386,15 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
-        let reasoningStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let reasoningStarts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .reasoningStart(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
@@ -1451,7 +1451,7 @@ struct OpenAIResponsesFixtureTests {
             prompt: samplePrompt
         ))
 
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -1477,12 +1477,12 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let textStarts = parts.compactMap { part -> SharedV3ProviderMetadata? in
+        let textStarts = parts.compactMap { part -> SharedV4ProviderMetadata? in
             if case .textStart(_, let providerMetadata) = part { return providerMetadata }
             return nil
         }
-        let textEnds = parts.compactMap { part -> SharedV3ProviderMetadata? in
-            if case .textEnd(_, let providerMetadata) = part { return providerMetadata }
+        let textEnds = parts.compactMap { part -> SharedV4ProviderMetadata? in
+            if case .textEnd(_, let providerMetadata, _) = part { return providerMetadata }
             return nil
         }
         let responseMetadata = parts.compactMap { part -> (id: String?, modelId: String?)? in
@@ -1518,15 +1518,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeWebSearchTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -1600,11 +1600,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -1677,23 +1677,23 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeFileSearchTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
-        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+        let sourceParts = result.content.compactMap { content -> LanguageModelV4Source? in
             if case .source(let source) = content { return source }
             return nil
         }
@@ -1776,23 +1776,23 @@ struct OpenAIResponsesFixtureTests {
             ]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
-        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+        let sourceParts = result.content.compactMap { content -> LanguageModelV4Source? in
             if case .source(let source) = content { return source }
             return nil
         }
@@ -1889,15 +1889,15 @@ struct OpenAIResponsesFixtureTests {
             if case .reasoningEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
-        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+        let sourceParts = parts.compactMap { part -> LanguageModelV4Source? in
             if case .source(let source) = part { return source }
             return nil
         }
@@ -1907,7 +1907,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4FinishReason? in
             if case .finish(let finishReason, _, _) = part { return finishReason }
             return nil
         }
@@ -1980,15 +1980,15 @@ struct OpenAIResponsesFixtureTests {
             if case .reasoningEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
-        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+        let sourceParts = parts.compactMap { part -> LanguageModelV4Source? in
             if case .source(let source) = part { return source }
             return nil
         }
@@ -1998,7 +1998,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4FinishReason? in
             if case .finish(let finishReason, _, _) = part { return finishReason }
             return nil
         }
@@ -2067,15 +2067,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeApplyPatchTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -2130,7 +2130,7 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> String? in
-            if case .toolInputStart(let id, _, _, _, _, _) = part { return id }
+            if case .toolInputStart(let id, _, _, _, _, _, _) = part { return id }
             return nil
         }
         let inputDeltas = parts.compactMap { part -> (String, String)? in
@@ -2141,11 +2141,11 @@ struct OpenAIResponsesFixtureTests {
             if case .toolInputEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -2204,7 +2204,7 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> String? in
-            if case .toolInputStart(let id, _, _, _, _, _) = part { return id }
+            if case .toolInputStart(let id, _, _, _, _, _, _) = part { return id }
             return nil
         }
         let inputDeltas = parts.compactMap { part -> (String, String)? in
@@ -2215,11 +2215,11 @@ struct OpenAIResponsesFixtureTests {
             if case .toolInputEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
@@ -2285,15 +2285,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeCustomTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -2342,7 +2342,7 @@ struct OpenAIResponsesFixtureTests {
             toolChoice: .tool(toolName: "write_sql")
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -2379,7 +2379,7 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> (String, String)? in
-            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, _, _, _, _) = part {
                 return (id, toolName)
             }
             return nil
@@ -2392,7 +2392,7 @@ struct OpenAIResponsesFixtureTests {
             if case .toolInputEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -2402,7 +2402,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> (LanguageModelV3FinishReason, SharedV3ProviderMetadata?)? in
+        let finishParts = parts.compactMap { part -> (LanguageModelV4FinishReason, SharedV4ProviderMetadata?)? in
             if case .finish(let finishReason, _, let providerMetadata) = part {
                 return (finishReason, providerMetadata)
             }
@@ -2460,16 +2460,16 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> (String, String)? in
-            if case .toolInputStart(let id, let toolName, _, _, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, _, _, _, _) = part {
                 return (id, toolName)
             }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4FinishReason? in
             if case .finish(let finishReason, _, _) = part { return finishReason }
             return nil
         }
@@ -2506,11 +2506,11 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeCodeInterpreterTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -2568,13 +2568,13 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let reasoningStarts = parts.compactMap { part -> (String, SharedV3ProviderMetadata?)? in
+        let reasoningStarts = parts.compactMap { part -> (String, SharedV4ProviderMetadata?)? in
             if case .reasoningStart(let id, let providerMetadata) = part {
                 return (id, providerMetadata)
             }
             return nil
         }
-        let reasoningEnds = parts.compactMap { part -> (String, SharedV3ProviderMetadata?)? in
+        let reasoningEnds = parts.compactMap { part -> (String, SharedV4ProviderMetadata?)? in
             if case .reasoningEnd(let id, let providerMetadata) = part {
                 return (id, providerMetadata)
             }
@@ -2584,7 +2584,7 @@ struct OpenAIResponsesFixtureTests {
             if case .reasoningDelta(_, let delta, _) = part { return delta }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -2594,7 +2594,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4FinishReason? in
             if case .finish(let finishReason, _, _) = part { return finishReason }
             return nil
         }
@@ -2649,23 +2649,23 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeCodeInterpreterTool()]
         ))
 
-        let reasoningParts = result.content.compactMap { content -> LanguageModelV3Reasoning? in
+        let reasoningParts = result.content.compactMap { content -> LanguageModelV4Reasoning? in
             if case .reasoning(let reasoning) = content { return reasoning }
             return nil
         }
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = content { return toolResult }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
-        let sourceParts = result.content.compactMap { content -> LanguageModelV3Source? in
+        let sourceParts = result.content.compactMap { content -> LanguageModelV4Source? in
             if case .source(let source) = content { return source }
             return nil
         }
@@ -2754,15 +2754,15 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let toolResult) = part { return toolResult }
             return nil
         }
-        let sourceParts = parts.compactMap { part -> LanguageModelV3Source? in
+        let sourceParts = parts.compactMap { part -> LanguageModelV4Source? in
             if case .source(let source) = part { return source }
             return nil
         }
@@ -2772,7 +2772,7 @@ struct OpenAIResponsesFixtureTests {
             }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3FinishReason? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4FinishReason? in
             if case .finish(let finishReason, _, _) = part { return finishReason }
             return nil
         }
@@ -2840,11 +2840,11 @@ struct OpenAIResponsesFixtureTests {
             tools: makeHostedToolSearchTools()
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
@@ -2911,7 +2911,7 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> (id: String, toolName: String, providerExecuted: Bool?)? in
-            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _, _) = part {
                 return (id, toolName, providerExecuted)
             }
             return nil
@@ -2920,11 +2920,11 @@ struct OpenAIResponsesFixtureTests {
             if case .toolInputEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = part { return result }
             return nil
         }
@@ -2968,7 +2968,7 @@ struct OpenAIResponsesFixtureTests {
             ]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
@@ -3015,7 +3015,7 @@ struct OpenAIResponsesFixtureTests {
         let parts = try await collectStreamParts(result)
 
         let inputStarts = parts.compactMap { part -> (id: String, toolName: String, providerExecuted: Bool?)? in
-            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _) = part {
+            if case .toolInputStart(let id, let toolName, _, let providerExecuted, _, _, _) = part {
                 return (id, toolName, providerExecuted)
             }
             return nil
@@ -3024,7 +3024,7 @@ struct OpenAIResponsesFixtureTests {
             if case .toolInputEnd(let id, _) = part { return id }
             return nil
         }
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -3059,7 +3059,7 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
@@ -3087,15 +3087,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeShellTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -3141,11 +3141,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = part { return result }
             return nil
         }
@@ -3177,7 +3177,7 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeShellTool()]
         ))
 
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -3247,7 +3247,7 @@ struct OpenAIResponsesFixtureTests {
             tools: [makePlainShellTool()]
         ))
 
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -3322,7 +3322,7 @@ struct OpenAIResponsesFixtureTests {
             ]
         ))
 
-        let customParts = result.content.compactMap { content -> LanguageModelV3CustomContent? in
+        let customParts = result.content.compactMap { content -> LanguageModelV4CustomContent? in
             if case .custom(let custom) = content { return custom }
             return nil
         }
@@ -3375,11 +3375,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let customParts = parts.compactMap { part -> LanguageModelV3CustomContent? in
+        let customParts = parts.compactMap { part -> LanguageModelV4CustomContent? in
             if case .custom(let custom) = part { return custom }
             return nil
         }
-        let finishParts = parts.compactMap { part -> LanguageModelV3Usage? in
+        let finishParts = parts.compactMap { part -> LanguageModelV4Usage? in
             if case .finish(_, let usage, _) = part { return usage }
             return nil
         }
@@ -3418,12 +3418,12 @@ struct OpenAIResponsesFixtureTests {
         }
     }
 
-    @Test("V4 doStream throws pre-output OpenAI error fixture")
-    func v4DoStreamThrowsPreOutputOpenAIErrorFixture() async throws {
+    @Test("doStream rejects pre-output quota errors without retrying")
+    func doStreamRejectsPreOutputQuotaError() async throws {
         let model = try makeModel(
             modelId: "gpt-4o-mini",
             fetch: makeStreamFetch(fixture: "openai-error.1")
-        ).asV4()
+        )
 
         let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
@@ -3435,7 +3435,13 @@ struct OpenAIResponsesFixtureTests {
         } catch let error as APICallError {
             #expect(error.message.contains("You exceeded your current quota"))
             #expect(error.statusCode == 429)
-            #expect(error.isRetryable == true)
+            #expect(error.isRetryable == false)
+            let frame = try #require(error.data as? JSONValue)
+            guard case .object(let object) = frame, case .object(let payload)? = object["error"] else {
+                Issue.record("Expected raw quota error payload")
+                return
+            }
+            #expect(payload["code"] == .string("insufficient_quota"))
         } catch {
             Issue.record("Expected APICallError, got \(type(of: error))")
         }
@@ -3454,11 +3460,11 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeMCPTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let approvalRequests = result.content.compactMap { content -> LanguageModelV3ToolApprovalRequest? in
+        let approvalRequests = result.content.compactMap { content -> LanguageModelV4ToolApprovalRequest? in
             if case .toolApprovalRequest(let request) = content { return request }
             return nil
         }
@@ -3508,11 +3514,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let approvalRequests = parts.compactMap { part -> LanguageModelV3ToolApprovalRequest? in
+        let approvalRequests = parts.compactMap { part -> LanguageModelV4ToolApprovalRequest? in
             if case .toolApprovalRequest(let request) = part { return request }
             return nil
         }
@@ -3564,7 +3570,7 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeMCPTool()]
         ))
 
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -3604,11 +3610,11 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeMCPTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let approvalRequests = result.content.compactMap { content -> LanguageModelV3ToolApprovalRequest? in
+        let approvalRequests = result.content.compactMap { content -> LanguageModelV4ToolApprovalRequest? in
             if case .toolApprovalRequest(let request) = content { return request }
             return nil
         }
@@ -3636,15 +3642,15 @@ struct OpenAIResponsesFixtureTests {
             tools: [makeMCPTool()]
         ))
 
-        let toolCalls = result.content.compactMap { content -> LanguageModelV3ToolCall? in
+        let toolCalls = result.content.compactMap { content -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = content { return call }
             return nil
         }
-        let toolResults = result.content.compactMap { content -> LanguageModelV3ToolResult? in
+        let toolResults = result.content.compactMap { content -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = content { return result }
             return nil
         }
-        let textParts = result.content.compactMap { content -> LanguageModelV3Text? in
+        let textParts = result.content.compactMap { content -> LanguageModelV4Text? in
             if case .text(let text) = content { return text }
             return nil
         }
@@ -3672,11 +3678,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let approvalRequests = parts.compactMap { part -> LanguageModelV3ToolApprovalRequest? in
+        let approvalRequests = parts.compactMap { part -> LanguageModelV4ToolApprovalRequest? in
             if case .toolApprovalRequest(let request) = part { return request }
             return nil
         }
@@ -3726,11 +3732,11 @@ struct OpenAIResponsesFixtureTests {
         ))
         let parts = try await collectStreamParts(result)
 
-        let toolCalls = parts.compactMap { part -> LanguageModelV3ToolCall? in
+        let toolCalls = parts.compactMap { part -> LanguageModelV4ToolCall? in
             if case .toolCall(let call) = part { return call }
             return nil
         }
-        let toolResults = parts.compactMap { part -> LanguageModelV3ToolResult? in
+        let toolResults = parts.compactMap { part -> LanguageModelV4ToolResult? in
             if case .toolResult(let result) = part { return result }
             return nil
         }

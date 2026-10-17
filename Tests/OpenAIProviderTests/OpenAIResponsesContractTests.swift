@@ -4,8 +4,8 @@ import Testing
 @testable import AISDKProviderUtils
 @testable import OpenAIProvider
 
-@Suite("OpenAIResponsesLanguageModelV4")
-struct OpenAIResponsesLanguageModelV4Tests {
+@Suite("OpenAIResponsesContract")
+struct OpenAIResponsesContractTests {
     actor RequestCapture {
         private var requests: [URLRequest] = []
 
@@ -18,21 +18,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         }
     }
 
-    @Test("V4 responses facade returns native Responses model")
-    func v4ResponsesFacadeReturnsNativeModel() throws {
-        let provider = try createOpenAI(settings: .init(apiKey: "test-api-key"))
-        let model = provider.responses("gpt-5")
-
-        #expect(type(of: model) == OpenAIResponsesLanguageModelV4.self)
-        #expect(model.specificationVersion == "v4")
-        #expect(model.provider == "openai.responses")
-
-        let defaultModel = try provider.languageModel("gpt-5")
-        #expect(defaultModel is OpenAIResponsesLanguageModelV4)
-    }
-
-    @Test("V4 responses sends top-level reasoning and provider reference files")
-    func v4ResponsesSendsReasoningAndProviderReferenceFiles() async throws {
+    @Test("Responses sends top-level reasoning and provider reference files")
+    func responsesSendsReasoningAndProviderReferenceFiles() async throws {
         let capture = RequestCapture()
         let responseData = try jsonData([
             "id": "resp-v4",
@@ -143,8 +130,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(warnings.contains("temperature"))
     }
 
-    @Test("V4 responses preserves cache breakpoints and GPT-5.6 reasoning metadata")
-    func v4ResponsesPreservesCacheBreakpointsAndGPT56ReasoningMetadata() async throws {
+    @Test("Responses preserves cache breakpoints and GPT-5.6 reasoning metadata")
+    func responsesPreservesCacheBreakpointsAndGPT56ReasoningMetadata() async throws {
         let capture = RequestCapture()
         let breakpoint: SharedV4ProviderOptions = [
             "openai": [
@@ -253,8 +240,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(toolOutput[1]["image_url"] as? String == "https://example.com/result.png")
     }
 
-    @Test("V4 responses sends GPT-5.6 pro mode without forcing an effort")
-    func v4ResponsesSendsGPT56ProModeWithoutForcingEffort() async throws {
+    @Test("Responses sends GPT-5.6 pro mode without forcing an effort")
+    func responsesSendsGPT56ProModeWithoutForcingEffort() async throws {
         let capture = RequestCapture()
         let provider = try createOpenAI(settings: .init(
             apiKey: "test-api-key",
@@ -290,8 +277,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(reasoning["effort"] == nil)
     }
 
-    @Test("V4 responses warns about GPT-5.6 reasoning controls on non-reasoning models")
-    func v4ResponsesWarnsAboutGPT56ControlsOnNonReasoningModels() async throws {
+    @Test("Responses warns about GPT-5.6 reasoning controls on non-reasoning models")
+    func responsesWarnsAboutGPT56ControlsOnNonReasoningModels() async throws {
         let capture = RequestCapture()
         let provider = try createOpenAI(settings: .init(
             apiKey: "test-api-key",
@@ -334,8 +321,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(body["reasoning"] == nil)
     }
 
-    @Test("V4 responses respects provider reasoning overrides")
-    func v4ResponsesRespectsProviderReasoningOverrides() async throws {
+    @Test("Responses respects provider reasoning overrides")
+    func responsesRespectsProviderReasoningOverrides() async throws {
         let capture = RequestCapture()
         let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
@@ -385,8 +372,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(reasoningBody["summary"] as? String == "auto")
     }
 
-    @Test("V4 responses maps tool_search request and response parts")
-    func v4ResponsesMapsToolSearch() async throws {
+    @Test("Responses maps tool_search request and response parts")
+    func responsesMapsToolSearch() async throws {
         let capture = RequestCapture()
         let responseData = try jsonData([
             "id": "resp-tool-search",
@@ -494,8 +481,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(toolSearch["parameters"] is [String: Any])
     }
 
-    @Test("V4 responses sends context management allowed tools and pass-through files")
-    func v4ResponsesSendsContextManagementAllowedToolsAndPassThroughFiles() async throws {
+    @Test("Responses sends context management allowed tools and pass-through files")
+    func responsesSendsContextManagementAllowedToolsAndPassThroughFiles() async throws {
         let capture = RequestCapture()
         let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
@@ -581,8 +568,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(filePart["file_data"] as? String == "data:text/csv;base64,YSxiCg==")
     }
 
-    @Test("V4 responses maps compaction generate and stream custom content")
-    func v4ResponsesMapsCompactionGenerateAndStreamCustomContent() async throws {
+    @Test("Responses maps compaction generate and stream custom content")
+    func responsesMapsCompactionGenerateAndStreamCustomContent() async throws {
         let generateProvider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
@@ -657,8 +644,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         #expect(streamedCustom?.providerMetadata?["openai"]?["encryptedContent"] == .string("stream-encrypted"))
     }
 
-    @Test("V4 responses throws API error for pre-output stream errors")
-    func v4ResponsesThrowsPreOutputStreamErrors() async throws {
+    @Test("Responses throws API error for pre-output stream errors")
+    func responsesThrowsPreOutputStreamErrors() async throws {
         let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
@@ -691,8 +678,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         }
     }
 
-    @Test("V4 responses throws API error when response.failed arrives before output")
-    func v4ResponsesThrowsPreOutputResponseFailedStreamErrors() async throws {
+    @Test("Responses throws API error when response.failed arrives before output")
+    func responsesThrowsPreOutputResponseFailedStreamErrors() async throws {
         let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
@@ -726,8 +713,8 @@ struct OpenAIResponsesLanguageModelV4Tests {
         }
     }
 
-    @Test("V4 responses emits late response.failed error and finish reason")
-    func v4ResponsesEmitsLateResponseFailedStreamErrorAndFinishReason() async throws {
+    @Test("Responses emits late response.failed error and finish reason")
+    func responsesEmitsLateResponseFailedStreamErrorAndFinishReason() async throws {
         let provider = try createOpenAI(settings: .init(
             baseURL: "https://proxy.openai.example/v1",
             apiKey: "test-api-key",
@@ -753,15 +740,15 @@ struct OpenAIResponsesLanguageModelV4Tests {
             includeRawChunks: false
         ))
 
-        var errorValue: JSONValue?
+        var providerError: ProviderStreamError?
         var finishReason: LanguageModelV4FinishReason?
         var usage: LanguageModelV4Usage?
         var providerMetadata: SharedV4ProviderMetadata?
 
         for try await part in streamResult.stream {
             switch part {
-            case .error(let error):
-                errorValue = error.jsonValue
+            case .error(.providerStreamError(let error)):
+                providerError = error
             case .finish(let reason, let finalUsage, let metadata):
                 finishReason = reason
                 usage = finalUsage
@@ -771,7 +758,10 @@ struct OpenAIResponsesLanguageModelV4Tests {
             }
         }
 
-        let streamError = try #require(errorValue)
+        let typedError = try #require(providerError)
+        #expect(typedError.statusCode == 500)
+        #expect(typedError.isRetryable == true)
+        let streamError = typedError.data
         guard case .object(let errorObject) = streamError else {
             Issue.record("Expected response.failed error object")
             return

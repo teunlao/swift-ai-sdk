@@ -58,7 +58,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     public let output: [JSONValue]?
     public let serviceTier: String?
     public let usage: Usage?
-    public let warnings: [LanguageModelV3CallWarningRecord]?
+    public let warnings: [OpenAIResponsesWarning]?
     public let incompleteDetails: IncompleteDetails?
     public let finishReason: String?
     public let error: ErrorPayload?
@@ -79,7 +79,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     }
 }
 
-public struct LanguageModelV3CallWarningRecord: Codable, Sendable {
+public struct OpenAIResponsesWarning: Codable, Sendable {
     public let type: String
     public let message: String?
     public let setting: String?
@@ -90,7 +90,7 @@ public struct LanguageModelV3CallWarningRecord: Codable, Sendable {
         self.setting = setting
     }
 
-    public func toWarning() -> SharedV3Warning {
+    public func toWarning() -> SharedV4Warning {
         switch type {
         case "unsupported-setting":
             return .unsupported(feature: setting ?? "unknown", details: message)
