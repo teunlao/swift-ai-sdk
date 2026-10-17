@@ -1,10 +1,12 @@
-import Foundation
-import AISDKProvider
-import AISDKProviderUtils
-
 struct OpenAISpeechAPITypes: Sendable, Equatable {
-    var voice: String?
+    enum Voice: String, Sendable {
+        case alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer, verse
+    }
+    enum ResponseFormat: String, Sendable {
+        case mp3, opus, aac, flac, wav, pcm
+    }
+    var voice: Voice?
     var speed: Double?
-    var responseFormat: String?
+    var responseFormat: ResponseFormat?
     var instructions: String?
 }

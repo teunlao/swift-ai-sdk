@@ -1,517 +1,195 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import OpenAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
-private let speechAudioData = Data([0x01, 0x02, 0x03])
+private let speechAudio = Data([0x00, 0xFF, 0x0D, 0x0A])
+
+private actor SpeechRequests {
+    private var request: URLRequest?
+    func store(_ request: URLRequest) { self.request = request }
+    func first() -> URLRequest? { request }
+}
+
+private final class SpeechFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    var value: Bool { lock.withLock { flag } }
+    func set() { lock.withLock { flag = true } }
+}
+
+private func speechResponse(_ request: URLRequest, body: ProviderHTTPResponseBody = .data(speechAudio), status: Int = 200) -> FetchResponse {
+    FetchResponse(body: body, urlResponse: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+        headerFields: ["Content-Type": "audio/mpeg", "X-Request-Id": "speech-request"])!)
+}
 
 @Suite("OpenAISpeechModel")
 struct OpenAISpeechModelTests {
-    // Port of openai-speech-model.test.ts: "should pass the model and text"
-    @Test("doGenerate passes model and text")
-    func testPassesModelAndText() async throws {
-        actor Capture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = Capture()
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/mp3"]
-            )!
-            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { ["Authorization": "Bearer test-api-key"] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(text: "Hello from the AI SDK!")
-        )
-
-        guard let request = await capture.value() else {
-            Issue.record("No request captured")
-            return
-        }
-
-        guard let body = request.httpBody else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        let jsonObject = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        #expect(jsonObject?["model"] as? String == "tts-1")
-        #expect(jsonObject?["input"] as? String == "Hello from the AI SDK!")
-    }
-
-    @Test("V4 doGenerate maps request, warnings, audio and response")
-    func testV4DoGenerateMapsRequestWarningsAudioAndResponse() async throws {
-        actor Capture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = Capture()
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [
-                    "Content-Type": "audio/mp3",
-                    "X-Request-ID": "test-request-id"
-                ]
-            )!
-            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: {
-                [
-                    "Authorization": "Bearer test-key",
-                    "Custom-Provider-Header": "provider-header-value"
-                ]
-            },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAISpeechModelV4(modelId: "tts-1", config: config)
-
-        #expect(model.specificationVersion == "v4")
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV4CallOptions(
-                text: "Hello from Swift V4",
-                voice: "nova",
-                outputFormat: "unsupported-format",
-                instructions: "Speak clearly",
-                speed: 1.25,
-                language: "fr",
-                providerOptions: [
-                    "openai": [
-                        "speed": .number(1.25)
-                    ]
-                ],
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        #expect(result.audio == .binary(speechAudioData))
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "tts-1")
-        #expect(result.response.headers?["content-type"] == "audio/mp3")
-        #expect(result.response.headers?["x-request-id"] == "test-request-id")
-        #expect(result.warnings.contains(.unsupported(
-            feature: "outputFormat",
-            details: "Unsupported output format: unsupported-format. Using mp3 instead."
-        )))
-        #expect(result.warnings.contains(.unsupported(
-            feature: "language",
-            details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored."
-        )))
-
-        guard let request = await capture.value(),
-              let body = request.httpBody,
-              let jsonObject = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Missing captured request")
-            return
-        }
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["authorization"] == "Bearer test-key")
-        #expect(normalizedHeaders["custom-provider-header"] == "provider-header-value")
-        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
-        #expect(normalizedHeaders["content-type"] == "application/json")
-
-        #expect(jsonObject["model"] as? String == "tts-1")
-        #expect(jsonObject["input"] as? String == "Hello from Swift V4")
-        #expect(jsonObject["voice"] as? String == "nova")
-        #expect(jsonObject["instructions"] as? String == "Speak clearly")
-        #expect(jsonObject["speed"] as? Double == 1.25)
-        #expect(jsonObject["response_format"] as? String == "mp3")
-    }
-
-    // Port of openai-speech-model.test.ts: "should pass headers"
-    @Test("doGenerate passes headers correctly")
-    func testPassesHeaders() async throws {
-        actor Capture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = Capture()
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/mp3"]
-            )!
-            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: {
-                [
-                    "Authorization": "Bearer test-api-key",
-                    "Custom-Provider-Header": "provider-header-value",
-                    "OpenAI-Organization": "test-organization",
-                    "OpenAI-Project": "test-project"
-                ]
-            },
-            fetch: mockFetch
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(
-                text: "Hello from the AI SDK!",
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        guard let request = await capture.value() else {
-            Issue.record("No request captured")
-            return
-        }
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["authorization"] == "Bearer test-api-key")
-        #expect(normalizedHeaders["content-type"] == "application/json")
-        #expect(normalizedHeaders["custom-provider-header"] == "provider-header-value")
-        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
-        #expect(normalizedHeaders["openai-organization"] == "test-organization")
-        #expect(normalizedHeaders["openai-project"] == "test-project")
-    }
-
-    // Port of openai-speech-model.test.ts: "should pass options"
-    @Test("doGenerate sends JSON request with options")
-    func testDoGenerateSendsJSON() async throws {
-        actor Capture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = Capture()
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/opus"]
-            )!
-            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { ["Authorization": "Bearer test-key"] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { Date(timeIntervalSince1970: 0) })
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(
-                text: "Hello from Swift",
-                voice: "nova",
-                outputFormat: "opus",
-                speed: 1.25,
-                headers: ["Custom-Header": "request-header-value"]
-            )
-        )
-
-        #expect(result.audio == .binary(speechAudioData))
-        #expect(result.response.timestamp == Date(timeIntervalSince1970: 0))
-        #expect(result.response.modelId == "tts-1")
-
-        guard let request = await capture.value() else {
-            Issue.record("No request captured")
-            return
-        }
-
-        #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.openai.com/v1/audio/speech")
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["authorization"] == "Bearer test-key")
-        #expect(normalizedHeaders["custom-header"] == "request-header-value")
-        #expect(normalizedHeaders["content-type"] == "application/json")
-
-        guard let body = request.httpBody else {
-            Issue.record("Missing request body")
-            return
-        }
-
-        let jsonObject = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        #expect(jsonObject?["model"] as? String == "tts-1")
-        #expect(jsonObject?["input"] as? String == "Hello from Swift")
-        #expect(jsonObject?["voice"] as? String == "nova")
-        #expect(jsonObject?["speed"] as? Double == 1.25)
-        #expect(jsonObject?["response_format"] as? String == "opus")
-    }
-
-    @Test("doGenerate reports warnings for unsupported options")
-    func testWarningForUnsupportedOptions() async throws {
-        let mockFetch: FetchFunction = { _ in
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/mp3"]
-            )!
-            return FetchResponse(body: .data(speechAudioData), urlResponse: response)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(
-                text: "Hello",
-                outputFormat: "unknown-format",
-                language: "fr"
-            )
-        )
-
-        #expect(result.warnings.contains(.unsupported(feature: "outputFormat", details: "Unsupported output format: unknown-format. Using mp3 instead.")))
-        #expect(result.warnings.contains(.unsupported(feature: "language", details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored.")))
-    }
-
-    // Port of openai-speech-model.test.ts: "should return audio data with correct content type"
-    @Test("doGenerate returns audio data with correct content type")
-    func testReturnsAudioDataWithContentType() async throws {
-        let audioData = Data(count: 100) // Mock audio data
-
-        let mockFetch: FetchFunction = { _ in
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [
-                    "Content-Type": "audio/opus",
-                    "x-request-id": "test-request-id",
-                    "x-ratelimit-remaining": "123"
-                ]
-            )!
-            return FetchResponse(body: .data(audioData), urlResponse: response)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(
-                text: "Hello from the AI SDK!",
-                outputFormat: "opus"
-            )
-        )
-
-        #expect(result.audio == .binary(audioData))
-    }
-
-    // Port of openai-speech-model.test.ts: "should include response data with timestamp, modelId and headers"
-    @Test("doGenerate includes response data with timestamp, modelId and headers")
-    func testIncludesResponseMetadata() async throws {
-        let audioData = Data(count: 100)
-
-        let mockFetch: FetchFunction = { _ in
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [
-                    "Content-Type": "audio/mp3",
-                    "x-request-id": "test-request-id",
-                    "x-ratelimit-remaining": "123"
-                ]
-            )!
-            return FetchResponse(body: .data(audioData), urlResponse: response)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "test-provider",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { [:] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(text: "Hello from the AI SDK!")
-        )
-
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "tts-1")
-
-        let headers = result.response.headers ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["content-type"] == "audio/mp3")
-        #expect(normalizedHeaders["x-request-id"] == "test-request-id")
-        #expect(normalizedHeaders["x-ratelimit-remaining"] == "123")
-    }
-
-    // Port of openai-speech-model.test.ts: "should use real date when no custom date provider is specified"
-    @Test("doGenerate uses real date when no custom date provider")
-    func testUsesRealDateWhenNoCustomProvider() async throws {
-        let audioData = Data(count: 100)
-
-        let mockFetch: FetchFunction = { _ in
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/mp3"]
-            )!
-            return FetchResponse(body: .data(audioData), urlResponse: response)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "test-provider",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { [:] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(text: "Hello from the AI SDK!")
-        )
-
-        #expect(result.response.timestamp.timeIntervalSince1970 == testDate.timeIntervalSince1970)
-        #expect(result.response.modelId == "tts-1")
-    }
-
-    // Port of openai-speech-model.test.ts: "should handle different audio formats"
-    @Test("doGenerate handles different audio formats")
-    func testHandlesDifferentAudioFormats() async throws {
-        let formats: [(String, String)] = [
-            ("mp3", "audio/mp3"),
-            ("opus", "audio/opus"),
-            ("aac", "audio/aac"),
-            ("flac", "audio/flac"),
-            ("wav", "audio/wav"),
-            ("pcm", "audio/pcm")
-        ]
-
-        for (format, contentType) in formats {
-            let audioData = Data(count: 100)
-
-            let mockFetch: FetchFunction = { _ in
-                let response = HTTPURLResponse(
-                    url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                    statusCode: 200,
-                    httpVersion: "HTTP/1.1",
-                    headerFields: ["Content-Type": contentType]
-                )!
-                return FetchResponse(body: .data(audioData), urlResponse: response)
+    @Test("provider options override portable values while audio and request metadata stay intact", arguments: [0.25, 4.0])
+    func generation(_ speed: Double) async throws {
+        let requests = SpeechRequests()
+        let provider = try createOpenAIProvider(settings: .init(
+            apiKey: "speech-key", organization: "speech-org", project: "speech-project",
+            headers: ["X-Speech": "configured"], fetch: { request in
+                await requests.store(request)
+                return speechResponse(request)
             }
-
-            let config = OpenAIConfig(
-                provider: "openai.speech",
-                url: { _ in "https://api.openai.com/v1/audio/speech" },
-                headers: { [:] },
-                fetch: mockFetch
-            )
-
-            let model = OpenAISpeechModel(modelId: "tts-1", config: config)
-
-            let result = try await model.doGenerate(
-                options: SpeechModelV3CallOptions(
-                    text: "Hello from the AI SDK!",
-                    providerOptions: [
-                        "openai": [
-                            "response_format": .string(format)
-                        ]
-                    ]
-                )
-            )
-
-            #expect(result.audio == .binary(audioData))
-        }
+        ))
+        let before = Date()
+        let result = try await provider.speech("gpt-4o-mini-tts-2025-12-15").doGenerate(options: .init(
+            text: "Hello / speech", voice: "nova", outputFormat: "opus", instructions: "portable", speed: 1.5,
+            providerOptions: ["openai": ["speed": .number(speed), "instructions": ""]], headers: ["X-Speech": "caller"]
+        ))
+        let request = try #require(await requests.first())
+        let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+        #expect(body == .object(["model": "gpt-4o-mini-tts-2025-12-15", "input": "Hello / speech",
+            "voice": "nova", "response_format": "opus", "speed": .number(speed), "instructions": ""]))
+        #expect(request.url?.absoluteString == "https://api.openai.com/v1/audio/speech")
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer speech-key")
+        #expect(request.value(forHTTPHeaderField: "OpenAI-Organization") == "speech-org")
+        #expect(request.value(forHTTPHeaderField: "OpenAI-Project") == "speech-project")
+        #expect(request.value(forHTTPHeaderField: "X-Speech") == "caller")
+        #expect(result.audio == .binary(speechAudio))
+        #expect(result.warnings == [])
+        #expect(result.response.modelId == "gpt-4o-mini-tts-2025-12-15")
+        #expect(result.response.timestamp >= before && result.response.timestamp <= Date())
+        #expect(result.response.headers?["content-type"] == "audio/mpeg")
+        #expect(result.response.headers?["x-request-id"] == "speech-request")
+        let recorded = try #require(result.request?.body as? String)
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(recorded.utf8)) == body)
     }
 
-    // Port of openai-speech-model.test.ts: "should include warnings if any are generated"
-    @Test("doGenerate includes empty warnings array when no warnings")
-    func testIncludesEmptyWarningsArray() async throws {
-        let audioData = Data(count: 100)
+    @Test("nullish and partial provider options preserve portable fields", arguments: [
+        (["speed": JSONValue.null, "instructions": .null], "portable"),
+        (["instructions": JSONValue.string("provider")], "provider")
+    ])
+    func partialOptions(_ options: JSONObject, _ instructions: String) async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { request in
+            let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+            #expect(body == .object(["model": "tts-1", "input": "hello", "voice": "alloy",
+                "response_format": "mp3", "speed": 1.5, "instructions": .string(instructions)]))
+            return speechResponse(request)
+        })).speech("tts-1")
+        let result = try await model.doGenerate(options: .init(text: "hello", instructions: "portable", speed: 1.5,
+            providerOptions: ["openai": options]))
+        #expect(result.audio == .binary(speechAudio))
+    }
 
-        let mockFetch: FetchFunction = { _ in
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/audio/speech")!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "audio/mp3"]
-            )!
-            return FetchResponse(body: .data(audioData), urlResponse: response)
+    @Test("empty portable strings preserve voice and use silent mp3 fallback")
+    func emptyOptions() async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { request in
+            let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+            #expect(body == .object(["model": "custom-tts", "input": "", "voice": "", "response_format": "mp3"]))
+            return speechResponse(request)
+        })).speech("custom-tts")
+        let result = try await model.doGenerate(options: .init(text: "", voice: "", outputFormat: "", language: "",
+            providerOptions: ["openai": ["voice": "nova", "response_format": "wav"]]))
+        #expect(result.warnings == [])
+        #expect(result.audio == .binary(speechAudio))
+    }
+
+    @Test("portable output formats reach the API", arguments: ["mp3", "opus", "aac", "flac", "wav", "pcm"])
+    func formats(_ format: String) async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { request in
+            let body = try JSONDecoder().decode([String: JSONValue].self, from: #require(request.httpBody))
+            #expect(body["response_format"] == .string(format))
+            return speechResponse(request)
+        })).speech("tts-1")
+        let result = try await model.doGenerate(options: .init(text: "hello", outputFormat: format))
+        #expect(result.audio == .binary(speechAudio))
+        #expect(result.warnings == [])
+    }
+
+    @Test("unsupported output and language produce ordered warnings with mp3 fallback")
+    func warnings() async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { request in
+            let body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+            #expect(body == .object(["model": "tts-1", "input": "hello", "voice": "alloy", "response_format": "mp3"]))
+            return speechResponse(request)
+        })).speech("tts-1")
+        let result = try await model.doGenerate(options: .init(text: "hello", outputFormat: "invalid", language: "fr"))
+        #expect(result.warnings == [
+            .unsupported(feature: "outputFormat", details: "Unsupported output format: invalid. Using mp3 instead."),
+            .unsupported(feature: "language", details: "OpenAI speech models do not support language selection. Language parameter \"fr\" was ignored.")
+        ])
+    }
+
+    @Test("provider option validation rejects invalid ratios and instructions before HTTP", arguments: [
+        ["speed": JSONValue.number(0.24)], ["speed": .number(4.1)], ["speed": .number(.nan)],
+        ["speed": .number(.infinity)], ["instructions": .number(17)]
+    ])
+    func invalidOptions(_ options: JSONObject) async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { _ in
+            Issue.record("Invalid provider options must not reach HTTP")
+            throw CancellationError()
+        })).speech("tts-1")
+        let error = await #expect(throws: InvalidArgumentError.self) {
+            try await model.doGenerate(options: .init(text: "hello", providerOptions: ["openai": options]))
         }
+        #expect(error?.argument == "providerOptions")
+    }
 
-        let config = OpenAIConfig(
-            provider: "openai.speech",
-            url: { _ in "https://api.openai.com/v1/audio/speech" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
+    @Test("buffered audio joins every chunk and preserves an injected timestamp")
+    func bufferedAudio() async throws {
+        let model = OpenAISpeechModel(modelId: "tts-1-hd-1106", config: .init(
+            provider: "custom.speech", url: { "https://example.com\($0.path)" }, fetch: { request in
+                let stream = AsyncThrowingStream<Data, Error> { continuation in
+                    continuation.yield(Data([0x00, 0xFF]))
+                    continuation.yield(Data([0x0D, 0x0A]))
+                    continuation.finish()
+                }
+                return speechResponse(request, body: .stream(stream))
+            }, _internal: .init(currentDate: { Date(timeIntervalSince1970: 42) })
+        ))
+        let result = try await model.doGenerate(options: .init(text: "hello"))
+        #expect(result.audio == .binary(speechAudio))
+        #expect(result.response.timestamp == Date(timeIntervalSince1970: 42))
+        #expect(result.response.modelId == "tts-1-hd-1106")
+    }
 
-        let model = OpenAISpeechModel(modelId: "tts-1", config: config)
+    @Test("API failure retains provider message and request diagnostics")
+    func apiError() async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: {
+            speechResponse($0, body: .data(Data(#"{"error":{"message":"speech denied","type":"invalid_request_error"}}"#.utf8)), status: 403)
+        })).speech("tts-1")
+        let error = await #expect(throws: APICallError.self) { try await model.doGenerate(options: .init(text: "hello")) }
+        #expect(error?.statusCode == 403)
+        #expect(error?.message == "speech denied")
+        #expect(error?.requestBodyValues as? JSONValue == .object(["model": "tts-1", "input": "hello", "voice": "alloy", "response_format": "mp3"]))
+    }
 
-        let result = try await model.doGenerate(
-            options: SpeechModelV3CallOptions(text: "Hello from the AI SDK!")
-        )
+    @Test("a missing binary body remains a typed API failure")
+    func emptyResponse() async throws {
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { speechResponse($0, body: .none) })).speech("tts-1")
+        let error = await #expect(throws: APICallError.self) { try await model.doGenerate(options: .init(text: "hello")) }
+        #expect(error?.statusCode == 200)
+        #expect(error?.message == "Response body is empty")
+    }
 
-        #expect(result.warnings.isEmpty)
+    @Test("abort at body handoff cancels a retained audio source before returning")
+    func abortBody() async throws {
+        let aborted = SpeechFlag()
+        let cancelled = SpeechFlag()
+        let timedOut = SpeechFlag()
+        let source = AsyncThrowingStream<Data, Error>.makeStream()
+        source.continuation.onTermination = { reason in if case .cancelled = reason { cancelled.set() } }
+        defer { source.continuation.finish() }
+        let model = try createOpenAIProvider(settings: .init(apiKey: "key", fetch: { request in
+            aborted.set()
+            return speechResponse(request, body: .stream(source.stream))
+        })).speech("tts-1")
+        let operation = Task { try await model.doGenerate(options: .init(text: "hello", abortSignal: { aborted.value })) }
+        let watchdog = Task {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            timedOut.set()
+            operation.cancel()
+        }
+        defer { watchdog.cancel(); operation.cancel() }
+        _ = await #expect(throws: CancellationError.self) { try await operation.value }
+        #expect(!timedOut.value)
+        #expect(cancelled.value)
+        withExtendedLifetime(source) {}
     }
 }

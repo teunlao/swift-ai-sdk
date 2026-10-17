@@ -40,7 +40,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
-    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
+    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     private let filesFactory: @Sendable () -> any FilesV4
     private let skillsFactory: @Sendable () -> any SkillsV4
     public let experimental_realtime: any RealtimeFactoryV4
@@ -54,7 +54,7 @@ public final class OpenAIProvider: ProviderV4 {
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
-        speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
+        speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         files: @escaping @Sendable () -> any FilesV4,
         skills: @escaping @Sendable () -> any SkillsV4,
         experimentalRealtime: any RealtimeFactoryV4,
@@ -203,11 +203,11 @@ public final class OpenAIProvider: ProviderV4 {
         transcription(modelId: modelId)
     }
 
-    public func speech(modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
+    public func speech(modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speechFactory(modelId)
     }
 
-    public func speech(_ modelId: String) -> OpenAISpeechModelV4 {
+    public func speech(_ modelId: String) -> OpenAISpeechModel {
         speech(modelId: OpenAISpeechModelId(rawValue: modelId))
     }
 
@@ -215,7 +215,7 @@ public final class OpenAIProvider: ProviderV4 {
         speech(modelId)
     }
 
-    public func speechModel(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
+    public func speechModel(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speech(modelId: modelId)
     }
 
@@ -261,7 +261,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         images: { OpenAIImageModel(modelId: $0, config: imageConfig) },
         completions: { OpenAICompletionLanguageModel(modelId: $0, config: completionConfig) },
         transcriptions: { OpenAITranscriptionModelV4(modelId: $0, config: transcriptionConfig) },
-        speeches: { OpenAISpeechModelV4(modelId: $0, config: speechConfig) },
+        speeches: { OpenAISpeechModel(modelId: $0, config: speechConfig) },
         files: { OpenAIFiles(config: .init(provider: "\(providerName).files", baseURL: baseURL, headers: headers, fetch: settings.fetch)) },
         skills: { OpenAISkills(config: .init(provider: "\(providerName).skills", url: { "\(baseURL)\($0)" }, headers: headers, fetch: settings.fetch)) },
         experimentalRealtime: OpenAIRealtimeFactory(config: .init(provider: "\(providerName).realtime", baseURL: baseURL, headers: headers, fetch: settings.fetch)),

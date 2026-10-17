@@ -47,7 +47,7 @@ public final class AzureProvider: ProviderV4 {
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
-    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4
+    private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     public let tools: AzureProviderTools
 
     init(
@@ -58,7 +58,7 @@ public final class AzureProvider: ProviderV4 {
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
-        speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4,
+        speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         tools: AzureProviderTools
     ) {
         self.chatFactory = chatFactory
@@ -148,7 +148,7 @@ public final class AzureProvider: ProviderV4 {
         transcriptionFactory(modelId)
     }
 
-    public func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModelV4 {
+    public func speech(_ modelId: OpenAISpeechModelId) -> OpenAISpeechModel {
         speechFactory(modelId)
     }
 }
@@ -349,8 +349,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
-    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModelV4 = { modelId in
-        OpenAISpeechModelV4(
+    let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel = { modelId in
+        OpenAISpeechModel(
             modelId: modelId,
             config: speechConfig
         )
