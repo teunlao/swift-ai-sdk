@@ -23,7 +23,7 @@ struct OpenAIResponsesStreamContractTests {
         let data = body
         let provider = try createOpenAI(settings: .init(apiKey: "test", fetch: { request in
             FetchResponse(body: .data(data), urlResponse: HTTPURLResponse(
-                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"]
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream", "X-Request-Id": "stream-contract"]
             )!)
         }))
         return try await provider.responses("gpt-4.1").doStream(options: .init(prompt: [], includeRawChunks: true))
@@ -54,6 +54,32 @@ struct OpenAIResponsesStreamContractTests {
         #expect(rawIndex < errorIndex && errorIndex < finishIndex)
         guard case .finish(let reason, _, _) = parts[finishIndex] else { return }
         #expect(reason.unified == .error)
+    }
+
+    @Test("Chat Completions frames surface a typed endpoint mismatch with HTTP context")
+    func endpointMismatch() async throws {
+        let frame: JSONValue = .object(["choices": .array([]), "id": .string("chat"), "model": .string("custom")])
+        let parts = try await collect([frame])
+        let rawIndex = try #require(parts.firstIndex { if case .raw(let raw) = $0 { return raw == frame }; return false })
+        let errorIndex = try #require(parts.firstIndex { if case .error(.error(let error)) = $0 { return error is APICallError }; return false })
+        guard case .error(.error(let value)) = parts[errorIndex] else { return }
+        let error = try #require(value as? APICallError)
+        #expect(error.url == "https://api.openai.com/v1/responses")
+        #expect(error.responseHeaders?["x-request-id"] == "stream-contract")
+        #expect(error.isRetryable == false)
+        #expect(error.cause is TypeValidationError)
+        #expect(error.data as? JSONValue == frame)
+        let body = try #require(error.responseBody)
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(body.utf8)) == frame)
+        let context = try #require(error.requestBodyValues as? any Encodable)
+        guard case .object(let request) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(context)) else {
+            Issue.record("Missing request context"); return
+        }
+        #expect(request["model"] == .string("gpt-4.1"))
+        #expect(request["input"] == .array([]))
+        guard case .finish(let reason, _, _)? = parts.last else { Issue.record("Missing finish"); return }
+        #expect(reason.unified == .error)
+        #expect(rawIndex < errorIndex && errorIndex < parts.count - 1)
     }
 
     @Test("Genuine unknown events and items keep raw data and allow completion", arguments: [false, true])

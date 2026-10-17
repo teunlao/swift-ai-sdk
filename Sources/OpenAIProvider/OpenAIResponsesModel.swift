@@ -404,9 +404,27 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                                 break
                             }
                         case .failure(let error, _):
+                            let streamError: any Error
+                            if let raw = result.rawJSONValue, let value = raw.objectValue,
+                               value["choices"]?.arrayValue != nil, value["type"]?.stringValue == nil {
+                                streamError = APICallError(
+                                    message: "Received a Chat Completions stream while using the OpenAI Responses API. "
+                                        + "The default OpenAI provider model uses the Responses API. If your custom baseURL targets a Chat Completions-compatible endpoint, use openai.chat(\"model-id\") or createOpenAI(...).chat(\"model-id\") instead. "
+                                        + "You can also use OpenAICompatibleProvider for OpenAI-compatible providers.",
+                                    url: url,
+                                    requestBodyValues: prepared.body,
+                                    responseHeaders: response.responseHeaders,
+                                    responseBody: try openAIJSONStringify(raw),
+                                    cause: error,
+                                    isRetryable: false,
+                                    data: raw
+                                )
+                            } else {
+                                streamError = error
+                            }
                             encounteredStreamError = true
                             finishReason = .init(unified: .error, raw: nil)
-                            continuation.yield(.error(error: .error(error)))
+                            continuation.yield(.error(error: .error(streamError)))
                         }
                     }
 
