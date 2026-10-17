@@ -73,7 +73,7 @@ public final class AzureProvider: ProviderV4 {
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV4 {
-        chatFactory(OpenAIChatModelId(rawValue: modelId))
+        responsesFactory(OpenAIResponsesModelId(rawValue: modelId))
     }
 
     public func chatModel(modelId: String) throws -> any LanguageModelV4 {

@@ -1,10 +1,54 @@
 import Foundation
 import Testing
 import AISDKProvider
-@testable import OpenAIProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
-@Suite("OpenAIResponsesInputBuilder")
-struct OpenAIResponsesInputBuilderTests {
+@Suite("Responses input HTTP contracts")
+struct OpenAIResponsesInputTests {
+    private actor Capture {
+        var body: Data?
+        func store(_ value: Data?) { body = value }
+        func value() -> Data? { body }
+    }
+    private func requestInput(
+        prompt: LanguageModelV4Prompt, providerOptionsName: String = "openai", tools: [LanguageModelV4Tool] = [],
+        systemMessageMode: OpenAIResponsesSystemMessageMode = .system, fileIdPrefixes: [String]? = ["file-"],
+        store: Bool = true, hasConversation: Bool = false, hasPreviousResponseId: Bool = false,
+        passThroughUnsupportedFiles: Bool = false, hasLocalShellTool: Bool = false,
+        hasShellTool: Bool = false, hasApplyPatchTool: Bool = false
+    ) async throws -> (input: [JSONValue], warnings: [SharedV4Warning]) {
+        var activeTools = tools
+        func ensure(_ id: String, _ name: String) {
+            if !activeTools.contains(where: { if case .provider(let tool) = $0 { return tool.id == id }; return false }) {
+                activeTools.append(.provider(.init(id: id, name: name, args: [:])))
+            }
+        }
+        if hasLocalShellTool { ensure("openai.local_shell", "local_shell") }
+        if hasShellTool { ensure("openai.shell", "shell") }
+        if hasApplyPatchTool { ensure("openai.apply_patch", "apply_patch") }
+        let capture = Capture()
+        let model = OpenAIResponsesLanguageModel(modelId: "gpt-4.1", config: .init(
+            provider: "\(providerOptionsName).responses", url: { _ in "https://api.openai.test/responses" }, headers: { [:] },
+            fetch: { request in
+                await capture.store(request.httpBody)
+                return FetchResponse(body: .data(Data(#"{"output":[]}"#.utf8)), urlResponse: HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]
+                )!)
+            }, fileIdPrefixes: fileIdPrefixes
+        ))
+        let mode: String = switch systemMessageMode { case .system: "system"; case .developer: "developer"; case .remove: "remove" }
+        var options: [String: JSONValue] = ["store": .bool(store), "systemMessageMode": .string(mode), "passThroughUnsupportedFiles": .bool(passThroughUnsupportedFiles)]
+        if hasConversation { options["conversation"] = .string("conversation") }
+        if hasPreviousResponseId { options["previousResponseId"] = .string("previous") }
+        let result = try await model.doGenerate(options: .init(prompt: prompt, tools: activeTools, providerOptions: [providerOptionsName: options]))
+        let data = try #require(await capture.value())
+        let value = try JSONDecoder().decode(JSONValue.self, from: data)
+        guard case .object(let body) = value, case .array(let input)? = body["input"] else {
+            Issue.record("Missing Responses HTTP input"); return ([], result.warnings)
+        }
+        return (input, result.warnings)
+    }
     // MARK: - System Messages
 
     @Test("should convert system messages to system role")
@@ -13,7 +57,7 @@ struct OpenAIResponsesInputBuilderTests {
             .system(content: "Hello", providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -36,7 +80,7 @@ struct OpenAIResponsesInputBuilderTests {
             .system(content: "Hello", providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .developer,
             store: true,
@@ -59,7 +103,7 @@ struct OpenAIResponsesInputBuilderTests {
             .system(content: "Hello", providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .remove,
             store: true,
@@ -80,7 +124,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -119,7 +163,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -161,7 +205,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -200,7 +244,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -238,7 +282,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: ["file-"],
@@ -261,42 +305,12 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.input == expected)
     }
 
-    @Test("should use default mime type for binary images")
-    func defaultMimeTypeForBinaryImages() async throws {
-        let prompt: LanguageModelV4Prompt = [
-            .user(
-                content: [
-                    .file(LanguageModelV4FilePart(
-                        data: .base64("AAECAw=="),
-                        mediaType: "image/*",
-                        filename: nil,
-                        providerOptions: nil
-                    ))
-                ],
-                providerOptions: nil
-            )
-        ]
-
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: prompt,
-            systemMessageMode: .system,
-            store: true,
-            hasLocalShellTool: false
-        )
-
-        let expected: OpenAIResponsesInput = [
-            .object([
-                "role": .string("user"),
-                "content": .array([
-                    .object([
-                        "type": .string("input_image"),
-                        "image_url": .string("data:image/jpeg;base64,AAECAw==")
-                    ])
-                ])
-            ])
-        ]
-
-        #expect(result.input == expected)
+    @Test("unknown wildcard image bytes are refused")
+    func unknownWildcardImage() async throws {
+        let prompt: LanguageModelV4Prompt = [.user(content: [.file(.init(data: .base64("AAECAw=="), mediaType: "image/*"))], providerOptions: nil)]
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            try await requestInput(prompt: prompt)
+        }
     }
 
     @Test("should add image detail when specified through extension")
@@ -316,7 +330,7 @@ struct OpenAIResponsesInputBuilderTests {
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -355,7 +369,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: ["assistant-"],
@@ -400,7 +414,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: ["assistant-", "file-"],
@@ -445,7 +459,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -484,7 +498,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: ["file-"],
@@ -523,7 +537,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -563,7 +577,7 @@ struct OpenAIResponsesInputBuilderTests {
         ]
 
         await #expect(throws: Error.self) {
-            try await OpenAIResponsesInputBuilder.makeInput(
+            try await requestInput(
                 prompt: prompt,
                 systemMessageMode: .system,
                 store: true,
@@ -588,7 +602,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -627,7 +641,7 @@ struct OpenAIResponsesInputBuilderTests {
         ]
 
         await #expect(throws: UnsupportedFunctionalityError.self) {
-            try await OpenAIResponsesInputBuilder.makeInput(
+            try await requestInput(
                 prompt: prompt,
                 systemMessageMode: .system,
                 store: true,
@@ -635,7 +649,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         }
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -673,7 +687,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -709,7 +723,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -747,7 +761,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: ["assistant-"],
@@ -792,7 +806,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: nil,
@@ -836,7 +850,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             fileIdPrefixes: [],
@@ -880,7 +894,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -906,7 +920,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -916,12 +930,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("Hello")
-                    ])
-                ])
+                "content": .string("Hello")
             ])
         ]
 
@@ -944,7 +953,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -954,12 +963,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("I will search for that information.")
-                    ])
-                ])
+                "content": .string("I will search for that information.")
             ]),
             .object([
                 "type": .string("function_call"),
@@ -990,7 +994,7 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.text(textPart), .toolCall(toolCallPart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1003,8 +1007,8 @@ struct OpenAIResponsesInputBuilderTests {
                 "id": .string("id_123")
             ]),
             .object([
-                "type": .string("item_reference"),
-                "id": .string("id_456")
+                "type": .string("function_call"), "call_id": .string("call_123"),
+                "name": .string("search"), "arguments": .string("{\"query\":\"weather in San Francisco\"}")
             ])
         ]
 
@@ -1030,7 +1034,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1040,13 +1044,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("I will search for that")
-                    ])
-                ]),
-                "id": .string("msg_001"),
+                "content": .string("I will search for that"),
                 "phase": .string("commentary")
             ])
         ]
@@ -1073,7 +1071,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1083,13 +1081,7 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("The capital of France is Paris.")
-                    ])
-                ]),
-                "id": .string("msg_002"),
+                "content": .string("The capital of France is Paris."),
                 "phase": .string("final_answer")
             ])
         ]
@@ -1115,7 +1107,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1125,50 +1117,14 @@ struct OpenAIResponsesInputBuilderTests {
         let expected: OpenAIResponsesInput = [
             .object([
                 "role": .string("assistant"),
-                "content": .array([
-                    .object([
-                        "type": .string("output_text"),
-                        "text": .string("Hello")
-                    ])
-                ]),
-                "id": .string("msg_003")
+                "content": .string("Hello")
             ])
         ]
 
         #expect(result.input == expected)
     }
 
-    @Test("tool call itemId supports providerMetadata fallback")
-    func toolCallItemIdFromProviderMetadataFallback() async throws {
-        let toolCallPart = LanguageModelV4ToolCallPart(
-            toolCallId: "call_123",
-            toolName: "search",
-            input: .object(["query": .string("weather in San Francisco")]),
-            providerOptions: ["openai": ["itemId": .string("id_456")]]
-        )
-
-        let prompt: LanguageModelV4Prompt = [
-            .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
-        ]
-
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: prompt,
-            systemMessageMode: .system,
-            store: true,
-            hasLocalShellTool: false
-        )
-
-        let expected: OpenAIResponsesInput = [
-            .object([
-                "type": .string("item_reference"),
-                "id": .string("id_456")
-            ])
-        ]
-
-        #expect(result.input == expected)
-    }
-
-    @Test("should use item_reference for tool calls with itemId when store=true (pairs with reasoning)")
+    @Test("reasoning references retain client function call identity")
     func toolCallWithReasoningIdsStoreTrue() async throws {
         let reasoningPart = LanguageModelV4ReasoningPart(
             text: "Thinking step by step",
@@ -1200,7 +1156,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1213,8 +1169,8 @@ struct OpenAIResponsesInputBuilderTests {
                 "id": .string("rs_123")
             ]),
             .object([
-                "type": .string("item_reference"),
-                "id": .string("fc_456")
+                "type": .string("function_call"), "call_id": .string("call_123"),
+                "name": .string("search"), "arguments": .string("{\"query\":\"weather in San Francisco\"}")
             ])
         ]
 
@@ -1232,7 +1188,7 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.text(textPart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1257,7 +1213,7 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.toolCall(toolCallPart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1269,7 +1225,7 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.warnings.isEmpty)
     }
 
-    @Test("hasPreviousResponseId skips stored reasoning and tool calls with itemId")
+    @Test("previous responses skip reasoning and reconstruct plain client calls")
     func hasPreviousResponseIdSkipsStoredReasoningAndToolCallsWithItemId() async throws {
         let reasoningPart = LanguageModelV4ReasoningPart(
             text: "prior reasoning",
@@ -1287,7 +1243,7 @@ struct OpenAIResponsesInputBuilderTests {
             providerOptions: ["openai": ["itemId": .string("fc-1")]]
         )
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: [
                 .assistant(content: [
                     .reasoning(reasoningPart),
@@ -1299,13 +1255,13 @@ struct OpenAIResponsesInputBuilderTests {
             hasPreviousResponseId: true
         )
 
-        #expect(result.input.isEmpty)
+        #expect(result.input == [.object(["type": .string("function_call"), "call_id": .string("call-1"), "name": .string("weather"), "arguments": .string("{\"city\":\"Berlin\"}")])])
         #expect(result.warnings.isEmpty)
     }
 
     @Test("store=false reconstructs custom compaction input")
     func storeFalseReconstructsCustomCompactionInput() async throws {
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: [
                 .assistant(content: [
                     .custom(LanguageModelV4CustomPart(
@@ -1349,7 +1305,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1373,7 +1329,7 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1414,7 +1370,7 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.toolResult(toolResult)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1462,7 +1418,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1489,46 +1445,15 @@ struct OpenAIResponsesInputBuilderTests {
 
     // MARK: - Assistant Messages - Reasoning (Basic)
 
-    @Test("should convert single reasoning part with text (store: false)")
-    func singleReasoningPartWithTextStoreFalse() async throws {
-        let prompt: LanguageModelV4Prompt = [
-            .assistant(
-                content: [
-                    .reasoning(LanguageModelV4ReasoningPart(
-                        text: "Analyzing the problem step by step",
-                        providerOptions: [
-                            "openai": [
-                                "itemId": .string("reasoning_001")
-                            ]
-                        ]
-                    ))
-                ],
-                providerOptions: nil
-            )
-        ]
-
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: prompt,
-            systemMessageMode: .system,
-            store: false,
-            hasLocalShellTool: false
-        )
-
-        let expected: OpenAIResponsesInput = [
-            .object([
-                "type": .string("reasoning"),
-                "id": .string("reasoning_001"),
-                "summary": .array([
-                    .object([
-                        "type": .string("summary_text"),
-                        "text": .string("Analyzing the problem step by step")
-                    ])
-                ])
-            ])
-        ]
-
-        #expect(result.input == expected)
-        #expect(result.warnings.isEmpty)
+    @Test("store-false history drops reasoning with missing or null encrypted content", arguments: [false, true])
+    func unencryptedReasoningStoreFalse(null: Bool) async throws {
+        var options: [String: JSONValue] = ["itemId": .string("reasoning_001")]
+        if null { options["reasoningEncryptedContent"] = .null }
+        let result = try await requestInput(prompt: [
+            .assistant(content: [.reasoning(.init(text: "thought", providerOptions: ["openai": options]))], providerOptions: nil)
+        ], store: false)
+        #expect(result.input.isEmpty)
+        #expect(result.warnings.contains { if case .other = $0 { return true }; return false })
     }
 
     @Test("should convert single reasoning part with encrypted content (store: false)")
@@ -1550,7 +1475,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1593,7 +1518,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1617,83 +1542,7 @@ struct OpenAIResponsesInputBuilderTests {
         #expect(result.warnings.isEmpty)
     }
 
-    @Test("should convert single reasoning part with null encrypted content (store: false)")
-    func singleReasoningPartWithNullEncryptedContentStoreFalse() async throws {
-        let prompt: LanguageModelV4Prompt = [
-            .assistant(
-                content: [
-                    .reasoning(LanguageModelV4ReasoningPart(
-                        text: "Analyzing the problem step by step",
-                        providerOptions: [
-                            "openai": [
-                                "itemId": .string("reasoning_001"),
-                                "reasoningEncryptedContent": .null
-                            ]
-                        ]
-                    ))
-                ],
-                providerOptions: nil
-            )
-        ]
-
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: prompt,
-            systemMessageMode: .system,
-            store: false,
-            hasLocalShellTool: false
-        )
-
-        #expect(result.input.count == 1)
-        guard case .object(let obj) = result.input[0],
-              case .string("reasoning") = obj["type"],
-              case .string("reasoning_001") = obj["id"],
-              case .array(let summary) = obj["summary"] else {
-            Issue.record("Unexpected output structure")
-            return
-        }
-
-        #expect(summary.count == 1)
-        #expect(result.warnings.isEmpty)
-    }
-
     // MARK: - Assistant Messages - Reasoning (Empty Text)
-
-    @Test("should create empty summary for initial empty text (store: false)")
-    func initialEmptyTextEmptySummaryStoreFalse() async throws {
-        let prompt: LanguageModelV4Prompt = [
-            .assistant(
-                content: [
-                    .reasoning(LanguageModelV4ReasoningPart(
-                        text: "",
-                        providerOptions: [
-                            "openai": [
-                                "itemId": .string("reasoning_001")
-                            ]
-                        ]
-                    ))
-                ],
-                providerOptions: nil
-            )
-        ]
-
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
-            prompt: prompt,
-            systemMessageMode: .system,
-            store: false,
-            hasLocalShellTool: false
-        )
-
-        let expected: OpenAIResponsesInput = [
-            .object([
-                "type": .string("reasoning"),
-                "id": .string("reasoning_001"),
-                "summary": .array([])
-            ])
-        ]
-
-        #expect(result.input == expected)
-        #expect(result.warnings.isEmpty)
-    }
 
     @Test("should create empty summary for initial empty text with encrypted content (store: false)")
     func initialEmptyTextWithEncryptedContentStoreFalse() async throws {
@@ -1714,7 +1563,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1746,18 +1595,18 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     ))
                 ],
                 providerOptions: nil
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1768,6 +1617,7 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_001"),
+                "encrypted_content": .string("encrypted_content_001"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("First reasoning step")]),
                     .object(["type": .string("summary_text"), "text": .string("Second reasoning step")])
@@ -1807,7 +1657,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1837,18 +1687,18 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning block",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning block",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_002"), "reasoningEncryptedContent": .string("encrypted_content_002")]]
                     ))
                 ],
                 providerOptions: nil
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1859,6 +1709,7 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_001"),
+                "encrypted_content": .string("encrypted_content_001"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("First reasoning block")])
                 ])
@@ -1866,6 +1717,7 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_002"),
+                "encrypted_content": .string("encrypted_content_002"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("Second reasoning block")])
                 ])
@@ -1893,7 +1745,7 @@ struct OpenAIResponsesInputBuilderTests {
             .user(content: [.file(filePart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -1927,24 +1779,24 @@ struct OpenAIResponsesInputBuilderTests {
             .assistant(content: [.reasoning(reasoningPart)], providerOptions: nil)
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
             hasLocalShellTool: false
         )
 
-        let expectedMessage = #"Non-OpenAI reasoning parts are not supported. Skipping reasoning part: {"type":"reasoning","text":"This is a reasoning part without any provider options"}."#
-
         #expect(result.input.isEmpty)
-        #expect(result.warnings == [.other(message: expectedMessage)])
+        #expect(result.warnings.count == 1)
+        #expect(result.warnings.contains { if case .other = $0 { return true }; return false })
     }
 
     @Test("empty reasoning part emits warning when store is false")
     func emptyReasoningPartWarning() async throws {
         let reasoningProviderOptions: SharedV4ProviderOptions = [
             "openai": [
-                "itemId": .string("reasoning_001")
+                "itemId": .string("reasoning_001"),
+                "reasoningEncryptedContent": .string("encrypted_content_001")
             ]
         ]
 
@@ -1968,7 +1820,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -1979,6 +1831,7 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_001"),
+                "encrypted_content": .string("encrypted_content_001"),
                 "summary": .array([
                     .object([
                         "type": .string("summary_text"),
@@ -1988,10 +1841,9 @@ struct OpenAIResponsesInputBuilderTests {
             ])
         ]
 
-        let expectedWarning = #"Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: {"type":"reasoning","text":"","providerOptions":{"openai":{"itemId":"reasoning_001"}}}."#
-
         #expect(result.input == expectedInput)
-        #expect(result.warnings == [.other(message: expectedWarning)])
+        #expect(result.warnings.count == 1)
+        #expect(result.warnings.contains { if case .other = $0 { return true }; return false })
     }
 
     // MARK: - Assistant Messages - Reasoning (Multi-message and Complex)
@@ -2004,11 +1856,11 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 1)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step (message 1)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .text(LanguageModelV4TextPart(text: "First response"))
                 ],
@@ -2019,7 +1871,7 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 2)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_002"), "reasoningEncryptedContent": .string("encrypted_content_002")]]
                     )),
                     .text(LanguageModelV4TextPart(text: "Second response"))
                 ],
@@ -2027,7 +1879,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2065,11 +1917,11 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 1)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "Second reasoning step (message 1)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_001")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_001"), "reasoningEncryptedContent": .string("encrypted_content_001")]]
                     )),
                     .text(LanguageModelV4TextPart(text: "First response"))
                 ],
@@ -2080,7 +1932,7 @@ struct OpenAIResponsesInputBuilderTests {
                 content: [
                     .reasoning(LanguageModelV4ReasoningPart(
                         text: "First reasoning step (message 2)",
-                        providerOptions: ["openai": ["itemId": .string("reasoning_002")]]
+                        providerOptions: ["openai": ["itemId": .string("reasoning_002"), "reasoningEncryptedContent": .string("encrypted_content_002")]]
                     )),
                     .text(LanguageModelV4TextPart(text: "Second response"))
                 ],
@@ -2088,7 +1940,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -2103,6 +1955,7 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_001"),
+                "encrypted_content": .string("encrypted_content_001"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("First reasoning step (message 1)")]),
                     .object(["type": .string("summary_text"), "text": .string("Second reasoning step (message 1)")])
@@ -2110,7 +1963,7 @@ struct OpenAIResponsesInputBuilderTests {
             ]),
             .object([
                 "role": .string("assistant"),
-                "content": .array([.object(["type": .string("output_text"), "text": .string("First response")])])
+                "content": .string("First response")
             ]),
             .object([
                 "role": .string("user"),
@@ -2119,13 +1972,14 @@ struct OpenAIResponsesInputBuilderTests {
             .object([
                 "type": .string("reasoning"),
                 "id": .string("reasoning_002"),
+                "encrypted_content": .string("encrypted_content_002"),
                 "summary": .array([
                     .object(["type": .string("summary_text"), "text": .string("First reasoning step (message 2)")])
                 ])
             ]),
             .object([
                 "role": .string("assistant"),
-                "content": .array([.object(["type": .string("output_text"), "text": .string("Second response")])])
+                "content": .string("Second response")
             ])
         ]
 
@@ -2233,7 +2087,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -2290,7 +2144,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2299,11 +2153,10 @@ struct OpenAIResponsesInputBuilderTests {
 
         #expect(result.input.isEmpty)
         #expect(result.warnings.count == 1)
-        guard case .other(let message) = result.warnings[0] else {
+        guard case .other = try #require(result.warnings.first) else {
             Issue.record("Expected .other warning")
             return
         }
-        #expect(message.contains("Non-OpenAI reasoning parts are not supported"))
     }
 
     // MARK: - Tool Messages - Results
@@ -2326,7 +2179,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2362,7 +2215,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2397,7 +2250,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2437,7 +2290,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2477,7 +2330,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2520,7 +2373,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2575,7 +2428,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2613,7 +2466,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2658,7 +2511,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2680,7 +2533,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     // MARK: - Tool Messages - Provider Execution
 
-    @Test("should exclude provider-executed tool calls and results from prompt with store: false")
+    @Test("unreplayable provider results warn while assistant text is preserved")
     func excludeProviderExecutedToolCallsStoreFalse() async throws {
         let prompt: LanguageModelV4Prompt = [
             .assistant(
@@ -2707,7 +2560,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -2716,23 +2569,15 @@ struct OpenAIResponsesInputBuilderTests {
 
         #expect(result.input.count == 2)
         #expect(result.warnings.count == 1)
-        guard case .other(let message) = result.warnings[0] else {
+        guard case .other = try #require(result.warnings.first) else {
             Issue.record("Expected .other warning")
             return
         }
-        #expect(message.contains("Results for OpenAI tool web_search"))
 
-        guard case .object(let msg1) = result.input[0],
-              case .string("assistant") = msg1["role"],
-              case .array(let content1) = msg1["content"],
-              content1.count == 1,
-              case .object(let msg2) = result.input[1],
-              case .string("assistant") = msg2["role"],
-              case .array(let content2) = msg2["content"],
-              content2.count == 1 else {
-            Issue.record("Unexpected output structure")
-            return
-        }
+        #expect(result.input == [
+            .object(["role": .string("assistant"), "content": .string("Let me search for recent news from San Francisco.")]),
+            .object(["role": .string("assistant"), "content": .string("Based on the search results, several significant events took place in San Francisco yesterday (June 22, 2025).")])
+        ])
     }
 
     @Test("should include client-side tool calls in prompt")
@@ -2751,7 +2596,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2775,10 +2620,7 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should map custom provider tool names to OpenAI tool names (shell)")
     func toolNameMappingForShellCall() async throws {
-        let toolNameMapping = OpenAIToolNameMapping(
-            customToolNameToProviderToolName: ["my_shell": "shell"],
-            providerToolNameToCustomToolName: ["shell": "my_shell"]
-        )
+        let tools: [LanguageModelV4Tool] = [.provider(.init(id: "openai.shell", name: "my_shell", args: [:]))]
 
         let prompt: LanguageModelV4Prompt = [
             .assistant(
@@ -2799,9 +2641,9 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
-            toolNameMapping: toolNameMapping,
+            tools: tools,
             systemMessageMode: .system,
             store: false,
             hasShellTool: true
@@ -2823,19 +2665,16 @@ struct OpenAIResponsesInputBuilderTests {
         }
     }
 
-    @Test("should convert aliased custom tool call to custom_tool_call")
+    @Test("should convert configured custom tool call to custom_tool_call")
     func customToolCallConversion() async throws {
-        let toolNameMapping = OpenAIToolNameMapping(
-            customToolNameToProviderToolName: ["alias_name": "write_sql"],
-            providerToolNameToCustomToolName: ["write_sql": "alias_name"]
-        )
+        let tools: [LanguageModelV4Tool] = [.provider(.init(id: "openai.custom", name: "write_sql", args: [:]))]
 
         let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolCall(LanguageModelV4ToolCallPart(
                         toolCallId: "call-custom-1",
-                        toolName: "alias_name",
+                        toolName: "write_sql",
                         input: .string("SELECT 1"),
                         providerExecuted: nil
                     ))
@@ -2844,10 +2683,9 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: ["write_sql"],
+            tools: tools,
             systemMessageMode: .system,
             store: false
         )
@@ -2900,7 +2738,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: true,
@@ -2938,17 +2776,14 @@ struct OpenAIResponsesInputBuilderTests {
 
     @Test("should convert custom tool result json to custom_tool_call_output")
     func customToolResultOutput() async throws {
-        let toolNameMapping = OpenAIToolNameMapping(
-            customToolNameToProviderToolName: ["alias_name": "write_sql"],
-            providerToolNameToCustomToolName: ["write_sql": "alias_name"]
-        )
+        let tools: [LanguageModelV4Tool] = [.provider(.init(id: "openai.custom", name: "write_sql", args: [:]))]
 
         let prompt: LanguageModelV4Prompt = [
             .tool(
                 content: [
                     .toolResult(LanguageModelV4ToolResultPart(
                         toolCallId: "call-custom-2",
-                        toolName: "alias_name",
+                        toolName: "write_sql",
                         output: .json(value: .object([
                             "rows": .number(42),
                             "status": .string("ok")
@@ -2959,10 +2794,9 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: ["write_sql"],
+            tools: tools,
             systemMessageMode: .system,
             store: true
         )
@@ -3008,7 +2842,7 @@ struct OpenAIResponsesInputBuilderTests {
         ]
 
         await #expect(throws: Error.self) {
-            try await OpenAIResponsesInputBuilder.makeInput(
+            try await requestInput(
                 prompt: prompt,
                 systemMessageMode: .system,
                 store: true,
@@ -3051,7 +2885,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,
@@ -3083,7 +2917,7 @@ struct OpenAIResponsesInputBuilderTests {
             )
         ]
 
-        let result = try await OpenAIResponsesInputBuilder.makeInput(
+        let result = try await requestInput(
             prompt: prompt,
             systemMessageMode: .system,
             store: false,

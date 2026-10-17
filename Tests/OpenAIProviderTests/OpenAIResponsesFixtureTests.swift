@@ -3203,7 +3203,8 @@ struct OpenAIResponsesFixtureTests {
         #expect(firstOutput["stdout"] as? String == "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux\n")
         #expect(outcome["type"] as? String == "exit")
         #expect(outcome["exit_code"] as? Double == 0)
-        #expect(input[3]["type"] as? String == "item_reference")
+        #expect(input[3]["role"] as? String == "assistant")
+        #expect(input[3]["content"] as? String == "Linux container-host 6.1.0 #1 SMP x86_64 GNU/Linux")
         #expect(environment["type"] as? String == "container_auto")
     }
 

@@ -16,12 +16,17 @@ struct OpenAIResponsesInputBuilder {
         passThroughUnsupportedFiles: Bool = false,
         hasLocalShellTool: Bool = false,
         hasShellTool: Bool = false,
-        hasApplyPatchTool: Bool = false
+        hasApplyPatchTool: Bool = false,
+        explicitMessageItemType: Bool = false,
+        isReasoningModel: Bool = false,
+        toolSearchToolName: String? = nil
     ) async throws -> (input: OpenAIResponsesInput, warnings: [SharedV4Warning]) {
         var items: [JSONValue] = []
         var warnings: [SharedV4Warning] = []
-        var reasoningReferences: Set<String> = []
-        var processedApprovalIds: Set<String> = []
+        var processedApprovalIds: Set<Data> = []
+        let parallelGroups = hasConversation || hasPreviousResponseId ? OpenAIParallelCalls.completeGroups(prompt, namespace: providerOptionsName) : [:]
+        var emittedParallelCalls: Set<Data> = []
+        var emittedParallelResults: Set<Data> = []
 
         for message in prompt {
             switch message {
@@ -32,14 +37,16 @@ struct OpenAIResponsesInputBuilder {
                         role: "system",
                         content: content,
                         providerOptions: providerOptions,
-                        providerOptionsName: providerOptionsName
+                        providerOptionsName: providerOptionsName,
+                        explicitMessageItemType: explicitMessageItemType
                     ))
                 case .developer:
                     items.append(systemItem(
                         role: "developer",
                         content: content,
                         providerOptions: providerOptions,
-                        providerOptionsName: providerOptionsName
+                        providerOptionsName: providerOptionsName,
+                        explicitMessageItemType: explicitMessageItemType
                     ))
                 case .remove:
                     warnings.append(.other(message: "system messages are removed for this model"))
@@ -56,13 +63,12 @@ struct OpenAIResponsesInputBuilder {
                     )
                 }
 
-                items.append(.object([
-                    "role": .string("user"),
-                    "content": .array(content)
-                ]))
+                items.append(.object(Self.message(role: "user", content: .array(content), explicit: explicitMessageItemType)))
 
             case let .assistant(parts, _):
-                var reasoningMessages: [String: ReasoningAccumulator] = [:]
+                var reasoningMessages: [Data: ReasoningAccumulator] = [:]
+                var emittedTextIds: Set<Data> = []
+                var hasPrecedingReasoning = false
 
                 for part in parts {
                     switch part {
@@ -72,44 +78,32 @@ struct OpenAIResponsesInputBuilder {
                             providerOptionsName: providerOptionsName,
                             key: "itemId"
                         )
-                        let phase = extractOpenAIStringOption(
-                            from: textPart.providerOptions,
-                            providerOptionsName: providerOptionsName,
-                            key: "phase"
-                        )
+                        let phase = textPart.providerOptions?[providerOptionsName]?["phase"]
 
                         if hasConversation, itemId != nil {
                             continue
                         }
 
-                        if store, let itemId {
-                            items.append(.object([
-                                "type": .string("item_reference"),
-                                "id": .string(itemId)
-                            ]))
+                        if store, let itemId, !isReasoningModel || hasPrecedingReasoning {
+                            if emittedTextIds.insert(Data(itemId.utf8)).inserted {
+                                items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
+                            }
                             continue
                         }
 
-                        var payload: [String: JSONValue] = [
-                            "role": .string("assistant"),
-                            "content": .array([
-                                .object([
-                                    "type": .string("output_text"),
-                                    "text": .string(textPart.text)
-                                ])
-                            ])
-                        ]
-
-                        if let itemId {
-                            payload["id"] = .string(itemId)
-                        }
-                        if let phase {
-                            payload["phase"] = .string(phase)
-                        }
+                        var payload = Self.message(role: "assistant", content: .string(textPart.text), explicit: explicitMessageItemType)
+                        if let phase, phase != .null { payload["phase"] = phase }
 
                         items.append(.object(payload))
 
                     case .toolCall(let callPart):
+                        if let metadata = OpenAIParallelCalls.metadata(callPart.providerOptions, namespace: providerOptionsName),
+                           let group = parallelGroups[metadata.key], group.metadata.matches(metadata) {
+                            if emittedParallelCalls.insert(metadata.key).inserted, !hasConversation {
+                                items.append(.object(["type": .string("function_call"), "call_id": .string(metadata.toolCallId), "name": .string(metadata.toolName), "arguments": .string(metadata.input)]))
+                            }
+                            continue
+                        }
                         let itemId =
                             extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
 
@@ -117,31 +111,8 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if callPart.providerExecuted == true {
-                            if store, let itemId {
-                                items.append(.object([
-                                    "type": .string("item_reference"),
-                                    "id": .string(itemId)
-                                ]))
-                            }
-                            continue
-                        }
-
-                        if hasPreviousResponseId, store, itemId != nil {
-                            continue
-                        }
-
-                        if store, let itemId {
-                            items.append(.object([
-                                "type": .string("item_reference"),
-                                "id": .string(itemId)
-                            ]))
-                            continue
-                        }
-
                         let resolvedToolName = toolNameMapping.toProviderToolName(callPart.toolName)
-
-                        if resolvedToolName == "tool_search" {
+                        if callPart.toolName == toolSearchToolName {
                             if store, let itemId {
                                 items.append(.object([
                                     "type": .string("item_reference"),
@@ -150,9 +121,12 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            let parsedInput = try await validateTypes(
-                                ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiToolSearchInputSchema)
-                            )
+                            let parsedInput: OpenAIToolSearchInput
+                            if case .string(let text) = callPart.input {
+                                parsedInput = try await parseJSON(ParseJSONWithSchemaOptions(text: text, schema: openaiToolSearchInputSchema))
+                            } else {
+                                parsedInput = try await validateTypes(ValidateTypesOptions(value: jsonValueToFoundation(callPart.input), schema: openaiToolSearchInputSchema))
+                            }
                             let execution = parsedInput.callId != nil ? "client" : "server"
                             var payload: [String: JSONValue] = [
                                 "type": .string("tool_search_call"),
@@ -165,6 +139,19 @@ struct OpenAIResponsesInputBuilder {
                                 payload["arguments"] = arguments
                             }
                             items.append(.object(payload))
+                            continue
+                        }
+
+                        if callPart.providerExecuted == true {
+                            if store, let itemId { items.append(.object(["type": .string("item_reference"), "id": .string(itemId)])) }
+                            if store || !hasShellTool || resolvedToolName != "shell" { continue }
+                        }
+                        let isProviderDefined = (hasLocalShellTool && resolvedToolName == "local_shell")
+                            || (hasShellTool && resolvedToolName == "shell") || (hasApplyPatchTool && resolvedToolName == "apply_patch")
+                            || customProviderToolNames.contains(resolvedToolName)
+                        if hasPreviousResponseId && store && itemId != nil && isProviderDefined { continue }
+                        if store, let itemId, isProviderDefined {
+                            items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
                             continue
                         }
 
@@ -279,7 +266,7 @@ struct OpenAIResponsesInputBuilder {
                             if case .string(let value) = callPart.input {
                                 input = value
                             } else {
-                                input = try encodeJSONStringifiedValue(callPart.input)
+                                input = try openAIJSONStringify(callPart.input)
                             }
 
                             var payload: [String: JSONValue] = [
@@ -288,22 +275,21 @@ struct OpenAIResponsesInputBuilder {
                                 "name": .string(resolvedToolName),
                                 "input": .string(input)
                             ]
-                            if let itemId {
-                                payload["id"] = .string(itemId)
-                            }
+                            if let itemId { payload["id"] = .string(itemId) }
+                            if let value = callPart.providerOptions?[providerOptionsName]?["async"], value != .null { payload["async"] = value }
                             items.append(.object(payload))
                             continue
                         }
 
-                        let arguments = try encodeJSONValue(callPart.input)
+                        let arguments = try openAIJSONStringify(callPart.input)
                         var payload: [String: JSONValue] = [
                             "type": .string("function_call"),
                             "call_id": .string(callPart.toolCallId),
                             "name": .string(resolvedToolName),
                             "arguments": .string(arguments)
                         ]
-                        if let itemId {
-                            payload["id"] = .string(itemId)
+                        for key in ["async", "namespace"] {
+                            if let value = callPart.providerOptions?[providerOptionsName]?[key], value != .null { payload[key] = value }
                         }
                         items.append(.object(payload))
 
@@ -323,8 +309,19 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                         let resolvedResultToolName = toolNameMapping.toProviderToolName(resultPart.toolName)
+                        if resolvedResultToolName == "web_search" || resolvedResultToolName == "web_search_preview" {
+                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName) ?? resultPart.toolCallId
+                            if store {
+                                items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
+                                continue
+                            }
+                            if let call = await webSearchReplay(resultPart.output, id: itemId) {
+                                items.append(call)
+                                continue
+                            }
+                        }
 
-                        if resolvedResultToolName == "tool_search" {
+                        if resultPart.toolName == toolSearchToolName {
                             let itemId =
                                 extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName)
                                 ?? resultPart.toolCallId
@@ -398,6 +395,7 @@ struct OpenAIResponsesInputBuilder {
                         }
 
                     case .reasoning(let reasoningPart):
+                        hasPrecedingReasoning = true
                         let providerOptions = try await parseProviderOptions(
                             provider: providerOptionsName,
                             providerOptions: reasoningPart.providerOptions,
@@ -410,17 +408,17 @@ struct OpenAIResponsesInputBuilder {
                             }
 
                             if store {
-                                if !reasoningReferences.contains(reasoningId) {
+                                if reasoningMessages[Data(reasoningId.utf8)] == nil {
                                     items.append(.object([
                                         "type": .string("item_reference"),
                                         "id": .string(reasoningId)
                                     ]))
-                                    reasoningReferences.insert(reasoningId)
+                                    reasoningMessages[Data(reasoningId.utf8)] = ReasoningAccumulator(id: reasoningId, encryptedContent: nil, summaryParts: [], itemIndex: items.count - 1)
                                 }
                                 continue
                             }
 
-                            var accumulator = reasoningMessages[reasoningId]
+                            var accumulator = reasoningMessages[Data(reasoningId.utf8)]
                             let isFirstPart = accumulator == nil
 
                             if accumulator == nil {
@@ -431,11 +429,11 @@ struct OpenAIResponsesInputBuilder {
                                     itemIndex: items.count
                                 )
                                 items.append(newAccumulator.asJSONValue())
-                                reasoningMessages[reasoningId] = newAccumulator
+                                reasoningMessages[Data(reasoningId.utf8)] = newAccumulator
                                 accumulator = newAccumulator
                             }
 
-                            guard var existing = accumulator else { continue }
+                            guard let existing = accumulator else { continue }
 
                             if let encryptedContent = providerOptions?.reasoningEncryptedContent {
                                 existing.encryptedContent = encryptedContent
@@ -452,8 +450,6 @@ struct OpenAIResponsesInputBuilder {
                                 warnings.append(.other(message: "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: \(partDescription)."))
                             }
 
-                            items[existing.itemIndex] = existing.asJSONValue()
-                            reasoningMessages[reasoningId] = existing
                             continue
                         }
 
@@ -478,9 +474,7 @@ struct OpenAIResponsesInputBuilder {
                         warnings.append(.other(message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: \(partDescription)."))
 
                     case .custom(let customPart):
-                        guard customPart.kind == "openai.compaction" else {
-                            throw UnsupportedFunctionalityError(functionality: "language model v4 custom prompt part kind \(customPart.kind) on OpenAI Responses")
-                        }
+                        guard customPart.kind == "openai.compaction" else { continue }
                         let providerOptions = customPart.providerOptions?[providerOptionsName]
                         let itemId = providerOptions?["itemId"]?.stringValue
 
@@ -505,23 +499,24 @@ struct OpenAIResponsesInputBuilder {
                             ]))
                         }
 
-                    case .file:
+                    case .file, .reasoningFile:
                         continue
-                    case .reasoningFile:
-                        throw UnsupportedFunctionalityError(functionality: "language model v4 reasoning-file prompt parts on OpenAI Responses")
                     }
+                }
+                if !store {
+                    for accumulator in reasoningMessages.values { items[accumulator.itemIndex] = accumulator.asJSONValue() }
                 }
 
             case let .tool(parts, _):
                 for part in parts {
                     switch part {
                     case .toolApprovalResponse(let approvalResponse):
-                        if processedApprovalIds.contains(approvalResponse.approvalId) {
+                        if processedApprovalIds.contains(Data(approvalResponse.approvalId.utf8)) {
                             continue
                         }
-                        processedApprovalIds.insert(approvalResponse.approvalId)
+                        processedApprovalIds.insert(Data(approvalResponse.approvalId.utf8))
 
-                        if store {
+                        if store && !hasConversation && !hasPreviousResponseId {
                             items.append(.object([
                                 "type": .string("item_reference"),
                                 "id": .string(approvalResponse.approvalId)
@@ -535,15 +530,37 @@ struct OpenAIResponsesInputBuilder {
                         ]))
 
                     case .toolResult(let toolResult):
+                        if let metadata = OpenAIParallelCalls.metadata(toolResult.providerOptions, namespace: providerOptionsName),
+                           let group = parallelGroups[metadata.key], group.metadata.matches(metadata) {
+                            if emittedParallelResults.insert(metadata.key).inserted {
+                                var outputs: [(String, JSONValue?)] = []
+                                for result in group.results {
+                                    let value = try convertOutput(result.output, custom: false, breakpoint: nil, namespace: providerOptionsName, warnings: &warnings)
+                                    let text: String
+                                    if case .string(let scalar) = value { text = scalar } else { text = try openAIJSONStringify(value) }
+                                    outputs.append((text, scalarBreakpoint(result.output, options: result.providerOptions, namespace: providerOptionsName)))
+                                }
+                                let output: JSONValue
+                                if outputs.contains(where: { $0.1 != nil }) {
+                                    output = .array(outputs.enumerated().map { index, entry in
+                                        var text: [String: JSONValue] = ["type": .string("input_text"), "text": .string((index == 0 ? "" : "\n") + entry.0)]
+                                        text["prompt_cache_breakpoint"] = entry.1
+                                        return .object(text)
+                                    })
+                                } else { output = .string(outputs.map(\.0).joined(separator: "\n")) }
+                                items.append(makeToolResultObject(toolCallId: metadata.toolCallId, output: output))
+                            }
+                            continue
+                        }
                         // Skip execution-denied with approvalId - already handled via tool-approval-response
                         if case .executionDenied(_, let providerOptions) = toolResult.output,
-                           extractOpenAIStringOption(from: providerOptions, providerOptionsName: "openai", key: "approvalId") != nil {
+                           let approvalId = extractOpenAIStringOption(from: providerOptions, providerOptionsName: "openai", key: "approvalId"), !approvalId.isEmpty {
                             continue
                         }
 
                         let resolvedToolName = toolNameMapping.toProviderToolName(toolResult.toolName)
 
-                        if resolvedToolName == "tool_search",
+                        if toolResult.toolName == toolSearchToolName,
                            case .json(let value, _) = toolResult.output {
                             let parsedOutput = try await validateTypes(
                                 ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiToolSearchOutputSchema)
@@ -558,8 +575,7 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        switch toolResult.output {
-                        case .json(let value, _):
+                        if case .json(let value, _) = toolResult.output {
                             if hasLocalShellTool, resolvedToolName == "local_shell" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiLocalShellOutputSchema)
@@ -604,7 +620,7 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            if hasApplyPatchTool, resolvedToolName == "apply_patch" {
+                            if hasApplyPatchTool, toolResult.toolName == "apply_patch" {
                                 let parsed = try await validateTypes(
                                     ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiApplyPatchOutputSchema)
                                 )
@@ -622,105 +638,97 @@ struct OpenAIResponsesInputBuilder {
                                 continue
                             }
 
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .string(try encodeJSONStringifiedValue(value))
-                                ]))
-                                continue
-                            }
 
-                            let jsonString = try encodeJSONValue(value)
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
-
-                        case .text(let value, _):
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .string(value)
-                                ]))
-                                continue
-                            }
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
-
-                        case .executionDenied(let reason, _):
-                            let message = reason ?? "Tool execution denied."
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .string(message)
-                                ]))
-                                continue
-                            }
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(message)))
-
-                        case .errorText(let value, _):
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .string(value)
-                                ]))
-                                continue
-                            }
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(value)))
-
-                        case .errorJson(let value, _):
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .string(try encodeJSONStringifiedValue(value))
-                                ]))
-                                continue
-                            }
-                            let jsonString = try encodeJSONValue(value)
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .string(jsonString)))
-
-                        case .content(let contentParts):
-                            if customProviderToolNames.contains(resolvedToolName) {
-                                let converted = try contentParts.compactMap { item in
-                                    try convertToolResultContentPart(
-                                        item,
-                                        providerOptionsName: providerOptionsName,
-                                        warningPrefix: "unsupported custom tool content part",
-                                        warnings: &warnings
-                                    )
-                                }
-
-                                items.append(.object([
-                                    "type": .string("custom_tool_call_output"),
-                                    "call_id": .string(toolResult.toolCallId),
-                                    "output": .array(converted)
-                                ]))
-                                continue
-                            }
-
-                            let converted = try contentParts.compactMap { item in
-                                try convertToolResultContentPart(
-                                    item,
-                                    providerOptionsName: providerOptionsName,
-                                    warningPrefix: "unsupported tool content part",
-                                    warnings: &warnings
-                                )
-                            }
-                            items.append(makeToolResultObject(toolCallId: toolResult.toolCallId, output: .array(converted)))
                         }
+                        let custom = customProviderToolNames.contains(resolvedToolName)
+                        let output = try convertOutput(
+                            toolResult.output, custom: custom,
+                            breakpoint: scalarBreakpoint(toolResult.output, options: toolResult.providerOptions, namespace: providerOptionsName),
+                            namespace: providerOptionsName, warnings: &warnings
+                        )
+                        items.append(.object([
+                            "type": .string(custom ? "custom_tool_call_output" : "function_call_output"),
+                            "call_id": .string(toolResult.toolCallId), "output": output
+                        ]))
                     }
                 }
             }
         }
 
+        if !store {
+            let unsupported: (JSONValue) -> Bool = { value in
+                guard case .object(let item) = value, item["type"] == .string("reasoning") else { return false }
+                return item["encrypted_content"] == nil || item["encrypted_content"] == .null
+            }
+            if items.contains(where: unsupported) {
+                warnings.append(.other(message: "Reasoning parts without encrypted content are not supported when store is false. Skipping reasoning parts."))
+                items.removeAll(where: unsupported)
+            }
+        }
         return (items, warnings)
+    }
+
+    private static func webSearchReplay(_ output: LanguageModelV4ToolResultOutput, id: String) async -> JSONValue? {
+        guard case .json(let value, _) = output,
+              case .success(let validated, _) = await safeValidateTypes(ValidateTypesOptions(value: jsonValueToFoundation(value), schema: openaiWebSearchOutputSchema)),
+              case .object(let result) = validated, case .object(let action)? = result["action"],
+              case .string(let type)? = action["type"] else { return nil }
+        var wire: [String: JSONValue]
+        switch type {
+        case "search":
+            wire = ["type": .string("search")]
+            for key in ["query", "queries"] { if let value = action[key], value != .null { wire[key] = value } }
+            if let sources = result["sources"], sources != .null { wire["sources"] = sources }
+        case "openPage":
+            wire = ["type": .string("open_page")]
+            wire["url"] = action["url"]
+        case "findInPage":
+            wire = ["type": .string("find_in_page")]
+            wire["url"] = action["url"]
+            wire["pattern"] = action["pattern"]
+        default: return nil
+        }
+        return .object(["type": .string("web_search_call"), "id": .string(id), "status": .string("completed"), "action": .object(wire)])
+    }
+
+    private static func message(role: String, content: JSONValue, explicit: Bool) -> [String: JSONValue] {
+        var value: [String: JSONValue] = ["role": .string(role), "content": content]
+        if explicit { value["type"] = .string("message") }
+        return value
+    }
+
+    private static func scalarBreakpoint(_ output: LanguageModelV4ToolResultOutput, options: SharedV4ProviderOptions?, namespace: String) -> JSONValue? {
+        let outputOptions: SharedV4ProviderOptions?
+        switch output {
+        case .content: return nil
+        case .text(_, let value), .json(_, let value), .executionDenied(_, let value), .errorText(_, let value), .errorJson(_, let value): outputOptions = value
+        }
+        return openAIPromptCacheBreakpoint(from: outputOptions, providerOptionsName: namespace)
+            ?? openAIPromptCacheBreakpoint(from: options, providerOptionsName: namespace)
+    }
+
+    private static func convertOutput(_ output: LanguageModelV4ToolResultOutput, custom: Bool, breakpoint: JSONValue?, namespace: String, warnings: inout [SharedV4Warning]) throws -> JSONValue {
+        let text: String
+        switch output {
+        case .text(let value, _): text = value
+        case .json(let value, _): text = try openAIJSONStringify(value)
+        case .errorText(let value, _): text = try openAIJSONStringify(.object(["error": .string(value)]))
+        case .errorJson(let value, _): text = try openAIJSONStringify(.object(["error": value]))
+        case .executionDenied(let reason, _): text = reason ?? "Tool call execution denied."
+        case .content(let parts):
+            return .array(try parts.compactMap {
+                try convertToolResultContentPart($0, providerOptionsName: namespace, warningPrefix: custom ? "unsupported custom tool content part" : "unsupported tool content part", allowReferences: !custom, warnings: &warnings)
+            })
+        }
+        guard let breakpoint else { return .string(text) }
+        return .array([.object(["type": .string("input_text"), "text": .string(text), "prompt_cache_breakpoint": breakpoint])])
     }
 
     private static func convertToolResultContentPart(
         _ part: LanguageModelV4ToolResultContentPart,
         providerOptionsName: String,
         warningPrefix: String,
+        allowReferences: Bool,
         warnings: inout [SharedV4Warning]
     ) throws -> JSONValue? {
         switch part {
@@ -737,92 +745,33 @@ struct OpenAIResponsesInputBuilder {
             return .object(payload)
 
         case let .file(data, mediaType, filename, providerOptions):
-            let topLevel = getTopLevelMediaType(mediaType)
-            let fullMediaType: String
-            let inlineBase64: String?
-            let url: URL?
-
+            let image = getTopLevelMediaType(mediaType) == "image"
+            var payload: [String: JSONValue] = ["type": .string(image ? "input_image" : "input_file")]
             switch data {
-            case .data(let value):
-                fullMediaType = try resolveToolResultMediaType(mediaType, data: value)
-                inlineBase64 = convertDataToBase64(value)
-                url = nil
-            case .base64(let value):
-                fullMediaType = try resolveToolResultMediaType(mediaType, base64: value)
-                inlineBase64 = value
-                url = nil
-            case .url(let value, _):
-                guard isFullMediaType(mediaType) else {
-                    warnings.append(.other(message: "\(warningPrefix) type: file with data type: url"))
-                    return nil
-                }
-                fullMediaType = mediaType
-                inlineBase64 = nil
-                url = value
+            case .reference(let reference) where allowReferences:
+                payload["file_id"] = .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))
+            case .url(let url, _):
+                payload[image ? "image_url" : "file_url"] = .string(url.absoluteString)
+            case .data, .base64:
+                let full = try resolveFullMediaType(part: .init(data: data, mediaType: mediaType))
+                let base64: String
+                if case .data(let bytes) = data { base64 = convertDataToBase64(bytes) }
+                else if case .base64(let value) = data { base64 = value }
+                else { preconditionFailure() }
+                payload[image ? "image_url" : "file_data"] = .string("data:\(full);base64,\(base64)")
+                if !image { payload["filename"] = .string(filename ?? "data") }
             case .reference, .text:
                 warnings.append(.other(message: "\(warningPrefix) type: file with unsupported data type"))
                 return nil
             }
-
-            var payload: [String: JSONValue]
-            if topLevel == "image" {
-                payload = ["type": .string("input_image")]
-                if let url {
-                    payload["image_url"] = .string(url.absoluteString)
-                } else if let inlineBase64 {
-                    payload["image_url"] = .string("data:\(fullMediaType);base64,\(inlineBase64)")
-                }
-                if let detail = extractOpenAIStringOption(
-                    from: providerOptions,
-                    providerOptionsName: providerOptionsName,
-                    key: "imageDetail"
-                ) {
-                    payload["detail"] = .string(detail)
-                }
-            } else {
-                payload = ["type": .string("input_file")]
-                if let url {
-                    payload["file_url"] = .string(url.absoluteString)
-                } else if let inlineBase64 {
-                    payload["filename"] = .string(filename ?? "data")
-                    payload["file_data"] = .string("data:\(fullMediaType);base64,\(inlineBase64)")
-                }
-            }
-            addPromptCacheBreakpoint(
-                to: &payload,
-                providerOptions: providerOptions,
-                providerOptionsName: providerOptionsName
-            )
+            if image { payload["detail"] = providerOptions?[providerOptionsName]?["imageDetail"] }
+            addPromptCacheBreakpoint(to: &payload, providerOptions: providerOptions, providerOptionsName: providerOptionsName)
             return .object(payload)
 
         case .custom:
             warnings.append(.other(message: "\(warningPrefix) type: custom"))
             return nil
         }
-    }
-
-    private static func resolveToolResultMediaType(_ mediaType: String, data: Data) throws -> String {
-        if isFullMediaType(mediaType) {
-            return mediaType
-        }
-        if let detected = detectMediaType(data: data, topLevelType: getTopLevelMediaType(mediaType)) {
-            return detected
-        }
-        throw UnsupportedFunctionalityError(
-            functionality: "file of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected"
-        )
-    }
-
-    private static func resolveToolResultMediaType(_ mediaType: String, base64: String) throws -> String {
-        if isFullMediaType(mediaType) {
-            return mediaType
-        }
-        if let detected = detectMediaType(data: base64, topLevelType: getTopLevelMediaType(mediaType)) {
-            return detected
-        }
-        throw UnsupportedFunctionalityError(
-            functionality: "file of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected"
-        )
     }
 
     private static func addPromptCacheBreakpoint(
@@ -842,7 +791,8 @@ struct OpenAIResponsesInputBuilder {
         role: String,
         content: String,
         providerOptions: SharedV4ProviderOptions?,
-        providerOptionsName: String
+        providerOptionsName: String,
+        explicitMessageItemType: Bool
     ) -> JSONValue {
         let contentValue: JSONValue
         if let breakpoint = openAIPromptCacheBreakpoint(
@@ -857,10 +807,7 @@ struct OpenAIResponsesInputBuilder {
         } else {
             contentValue = .string(content)
         }
-        return .object([
-            "role": .string(role),
-            "content": contentValue
-        ])
+        return .object(Self.message(role: role, content: contentValue, explicit: explicitMessageItemType))
     }
 
     private static func convertUserPart(
@@ -903,210 +850,43 @@ struct OpenAIResponsesInputBuilder {
     }
 
     private static func convertFilePart(
-        part: LanguageModelV4FilePart,
-        index: Int,
-        prefixes: [String]?,
-        providerOptionsName: String,
-        passThroughUnsupportedFiles: Bool
+        part: LanguageModelV4FilePart, index: Int, prefixes: [String]?,
+        providerOptionsName: String, passThroughUnsupportedFiles: Bool
     ) throws -> JSONValue {
-        if part.mediaType.hasPrefix("image/") {
-            let mediaType = part.mediaType == "image/*" ? "image/jpeg" : part.mediaType
-            let detail = extractOpenAIStringOption(
-                from: part.providerOptions,
-                providerOptionsName: providerOptionsName,
-                key: "imageDetail"
-            )
-            switch part.data {
-            case .url(let url, _):
-                var payload: [String: JSONValue] = [
-                    "type": .string("input_image"),
-                    "image_url": .string(url.absoluteString)
-                ]
-                if let detail {
-                    payload["detail"] = .string(detail)
-                }
-                return .object(payload)
-            case .base64(let value):
-                if isFileId(value, prefixes: prefixes) {
-                    var payload: [String: JSONValue] = [
-                        "type": .string("input_image"),
-                        "file_id": .string(value)
-                    ]
-                    if let detail {
-                        payload["detail"] = .string(detail)
-                    }
-                    return .object(payload)
-                }
-                var payload: [String: JSONValue] = [
-                    "type": .string("input_image"),
-                    "image_url": .string("data:\(mediaType);base64,\(value)")
-                ]
-                if let detail {
-                    payload["detail"] = .string(detail)
-                }
-                return .object(payload)
-            case .data(let data):
-                let base64 = convertDataToBase64(data)
-                var payload: [String: JSONValue] = [
-                    "type": .string("input_image"),
-                    "image_url": .string("data:\(mediaType);base64,\(base64)")
-                ]
-                if let detail {
-                    payload["detail"] = .string(detail)
-                }
-                return .object(payload)
-            case .reference(let reference):
-                var payload: [String: JSONValue] = ["type": .string("input_image"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))]
-                if let detail { payload["detail"] = .string(detail) }
-                return .object(payload)
-            case .text:
-                throw UnsupportedFunctionalityError(functionality: "text file parts")
-            }
-        }
-
-        if part.mediaType == "application/pdf" {
-            switch part.data {
-            case .url(let url, _):
-                return .object([
-                    "type": .string("input_file"),
-                    "file_url": .string(url.absoluteString)
-                ])
-            case .base64(let value):
-                if isFileId(value, prefixes: prefixes) {
-                    return .object([
-                        "type": .string("input_file"),
-                        "file_id": .string(value)
-                    ])
-                }
-                return .object([
-                    "type": .string("input_file"),
-                    "filename": .string(part.filename ?? "part-\(index).pdf"),
-                    "file_data": .string("data:application/pdf;base64,\(value)")
-                ])
-            case .data(let data):
-                let base64 = convertDataToBase64(data)
-                return .object([
-                    "type": .string("input_file"),
-                    "filename": .string(part.filename ?? "part-\(index).pdf"),
-                    "file_data": .string("data:application/pdf;base64,\(base64)")
-                ])
-            case .reference(let reference):
-                return .object(["type": .string("input_file"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))])
-            case .text:
-                throw UnsupportedFunctionalityError(functionality: "text file parts")
-            }
-        }
-
+        let image = getTopLevelMediaType(part.mediaType) == "image"
+        var value: [String: JSONValue] = ["type": .string(image ? "input_image" : "input_file")]
         switch part.data {
-        case .url(let url, _):
-            return .object([
-                "type": .string("input_file"),
-                "file_url": .string(url.absoluteString)
-            ])
-        case .base64(let value):
-            guard passThroughUnsupportedFiles else {
-                throw UnsupportedFunctionalityError(functionality: "file media type \(part.mediaType)")
-            }
-            if isFileId(value, prefixes: prefixes) {
-                return .object([
-                    "type": .string("input_file"),
-                    "file_id": .string(value)
-                ])
-            }
-            return .object([
-                "type": .string("input_file"),
-                "filename": .string(part.filename ?? "part-\(index)"),
-                "file_data": .string("data:\(part.mediaType);base64,\(value)")
-            ])
-        case .data(let data):
-            guard passThroughUnsupportedFiles else {
-                throw UnsupportedFunctionalityError(functionality: "file media type \(part.mediaType)")
-            }
-            let base64 = convertDataToBase64(data)
-            return .object([
-                "type": .string("input_file"),
-                "filename": .string(part.filename ?? "part-\(index)"),
-                "file_data": .string("data:\(part.mediaType);base64,\(base64)")
-            ])
         case .reference(let reference):
-            return .object(["type": .string("input_file"), "file_id": .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))])
-        case .text:
-            throw UnsupportedFunctionalityError(functionality: "text file parts")
+            value["file_id"] = .string(try resolveProviderReference(reference: reference, provider: providerOptionsName))
+        case .url(let url, _): value[image ? "image_url" : "file_url"] = .string(url.absoluteString)
+        case .text: throw UnsupportedFunctionalityError(functionality: "text file parts")
+        case .data, .base64:
+            if image, case .base64(let id) = part.data, isFileId(id, prefixes: prefixes) {
+                value["file_id"] = .string(id)
+            } else {
+                let full = try resolveFullMediaType(part: part)
+                guard image || full == "application/pdf" || passThroughUnsupportedFiles else {
+                    throw UnsupportedFunctionalityError(functionality: "file part media type \(full)")
+                }
+                if case .base64(let id) = part.data, isFileId(id, prefixes: prefixes) {
+                    value["file_id"] = .string(id)
+                } else {
+                    let base64: String
+                    if case .data(let bytes) = part.data { base64 = convertDataToBase64(bytes) }
+                    else if case .base64(let text) = part.data { base64 = text }
+                    else { preconditionFailure() }
+                    value[image ? "image_url" : "file_data"] = .string("data:\(full);base64,\(base64)")
+                    if !image { value["filename"] = .string(part.filename ?? "part-\(index)\(full == "application/pdf" ? ".pdf" : "")") }
+                }
+            }
         }
+        if image { value["detail"] = part.providerOptions?[providerOptionsName]?["imageDetail"] }
+        return .object(value)
     }
 
     private static func isFileId(_ value: String, prefixes: [String]?) -> Bool {
         guard let prefixes else { return false }
-        return prefixes.contains { value.hasPrefix($0) }
-    }
-
-    /// Serializes a tool call's arguments or a tool result's JSON output.
-    ///
-    /// Object keys are sorted because Swift dictionary order varies between
-    /// instances with the same contents, and provider prompt caches match
-    /// request prefixes byte for byte.
-    private static func encodeJSONValue(_ value: JSONValue) throws -> String {
-        func toAny(_ value: JSONValue) -> Any {
-            switch value {
-            case .null: return NSNull()
-            case .bool(let bool): return bool
-            case .number(let number): return number
-            case .string(let string): return string
-            case .array(let array): return array.map { toAny($0) }
-            case .object(let object): return object.mapValues { toAny($0) }
-            }
-        }
-
-        // JSONSerialization requires top-level object to be Array or Dictionary
-        // For primitive values, we need to handle them specially
-        let anyValue = toAny(value)
-        let data: Data
-
-        if anyValue is [Any] || anyValue is [String: Any] {
-            data = try JSONSerialization.data(withJSONObject: anyValue, options: [.sortedKeys])
-        } else {
-            // For primitives (number, string, bool, null), encode them directly
-            switch value {
-            case .null:
-                return "null"
-            case .bool(let bool):
-                return bool ? "true" : "false"
-            case .number(let number):
-                // Handle integer vs decimal
-                if number.truncatingRemainder(dividingBy: 1) == 0 {
-                    return String(format: "%.0f", number)
-                } else {
-                    return String(number)
-                }
-            case .string(let string):
-                // Need to properly escape the string as JSON
-                data = try JSONSerialization.data(withJSONObject: [string], options: [])
-                guard let arrayString = String(data: data, encoding: .utf8),
-                      arrayString.hasPrefix("[\""),
-                      arrayString.hasSuffix("\"]") else {
-                    throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON string")
-                }
-                return String(arrayString.dropFirst(2).dropLast(2))
-            case .array, .object:
-                // Should not reach here due to earlier check
-                data = try JSONSerialization.data(withJSONObject: anyValue, options: [.sortedKeys])
-            }
-        }
-
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
-        }
-        return string
-    }
-
-    private static func encodeJSONStringifiedValue(_ value: JSONValue) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(value)
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw UnsupportedFunctionalityError(functionality: "Unable to encode JSON value")
-        }
-        return string
+        return prefixes.contains { value.utf8.starts(with: $0.utf8) }
     }
 
     private static func makeToolResultObject(toolCallId: String, output: JSONValue) -> JSONValue {
@@ -1165,11 +945,17 @@ struct OpenAIResponsesInputBuilder {
     }
 }
 
-private struct ReasoningAccumulator: Sendable {
+private final class ReasoningAccumulator {
     let id: String
     var encryptedContent: String?
     var summaryParts: [JSONValue]
     let itemIndex: Int
+    init(id: String, encryptedContent: String?, summaryParts: [JSONValue], itemIndex: Int) {
+        self.id = id
+        self.encryptedContent = encryptedContent
+        self.summaryParts = summaryParts
+        self.itemIndex = itemIndex
+    }
 
     func asJSONValue() -> JSONValue {
         var payload: [String: JSONValue] = [

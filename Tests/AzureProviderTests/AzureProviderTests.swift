@@ -82,7 +82,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -145,7 +145,7 @@ struct AzureProviderTests {
             apiVersion: "2025-04-01-preview"
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url,
@@ -208,7 +208,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(
+        _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(
             prompt: TEST_PROMPT,
             headers: ["Custom-Request-Header": "request-header-value"]
         ))
@@ -273,7 +273,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
+        _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
 
         guard let request = await capture.value(),
               let url = request.url else {
@@ -1868,7 +1868,7 @@ struct AzureProviderTests {
             ))
 
             do {
-                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
+                _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
                 Issue.record("Expected missing API key error")
             } catch let error as LoadAPIKeyError {
                 #expect(error.message.contains("AZURE_API_KEY environment variable"))
@@ -1916,7 +1916,7 @@ struct AzureProviderTests {
             ))
 
             do {
-                _ = try await provider("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
+                _ = try await provider.chat("test-deployment").doGenerate(options: LanguageModelV4CallOptions(prompt: TEST_PROMPT))
                 Issue.record("Expected missing resourceName error")
             } catch let error as LoadSettingError {
                 #expect(error.message.contains("AZURE_RESOURCE_NAME environment variable"))

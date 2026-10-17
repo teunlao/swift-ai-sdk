@@ -325,11 +325,13 @@ private let webSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
+let openaiWebSearchOutputSchema = FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
+
 public let openaiWebSearchToolFactory = createProviderExecutedToolFactory(
     id: "openai.web_search",
     name: "web_search",
     inputSchema: FlexibleSchema(jsonSchema(webSearchInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
+    outputSchema: openaiWebSearchOutputSchema
 ) { (args: OpenAIWebSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeOpenAIWebSearchArgs(args)
