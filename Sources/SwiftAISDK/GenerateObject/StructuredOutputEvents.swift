@@ -211,7 +211,7 @@ extension GenerateObjectEndEvent {
     var json: GenerateObjectEndEvent<JSONValue> {
         GenerateObjectEndEvent<JSONValue>(
             callId: callId,
-            object: object.flatMap { object in (object as? JSONValue) ?? (try? jsonValue(from: object)) },
+            object: object.flatMap { telemetryJSON($0) },
             error: error,
             reasoning: reasoning,
             finishReason: finishReason,
@@ -222,6 +222,15 @@ extension GenerateObjectEndEvent {
             providerMetadata: providerMetadata
         )
     }
+}
+
+/// A generated object as JSON: typed (`Encodable`) objects are encoded, Foundation values converted.
+private func telemetryJSON(_ object: Any) -> JSONValue? {
+    if let json = object as? JSONValue { return json }
+    if let encodable = object as? any Encodable {
+        return try? JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(encodable))
+    }
+    return try? jsonValue(from: object)
 }
 
 /// Callback for an object generation lifecycle event. Errors it throws are ignored.

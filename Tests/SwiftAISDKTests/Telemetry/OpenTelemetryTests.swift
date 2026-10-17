@@ -105,6 +105,44 @@ struct OpenTelemetryTests {
         #expect(tracer.spanRecords.allSatisfy { $0.ended && $0.status?.code == .error && $0.events.contains { $0.name == "exception" } })
     }
 
+    @Test("API failures record their HTTP status on error spans, directly and after exhausted retries", arguments: [0, 1])
+    func apiFailureStatus(maxRetries: Int) async throws {
+        let tracer = MockTracer()
+        let model = MockLanguageModelV4(doGenerate: .function { _ in
+            throw APICallError(message: "rate limited", url: "https://api.test", requestBodyValues: nil,
+                               statusCode: 429, responseHeaders: ["retry-after-ms": "0"])
+        })
+        await #expect(throws: (any Error).self) {
+            try await generateText(model: model, prompt: "go", telemetry: TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer)]),
+                                   settings: CallSettings(maxRetries: maxRetries))
+        }
+        let spans = tracer.spanRecords
+        #expect(!spans.isEmpty)
+        #expect(spans.allSatisfy { $0.status?.code == .error && $0.attributes["http.response.status_code"] == .int(429) })
+    }
+
+    @Test("a typed generated object reaches telemetry onEnd and the root span output")
+    func typedObjectOutput() async throws {
+        struct Answer: Codable, Sendable, Equatable { let city: String }
+        let tracer = MockTracer()
+        let model = MockLanguageModelV4(doGenerate: .singleValue(result([.text(.init(text: #"{"city":"Paris"}"#))])))
+        let result = try await generateObject(
+            model: model,
+            schema: Answer.self,
+            prompt: "where",
+            telemetry: TelemetryOptions(integrations: [OpenTelemetry(tracer: tracer)])
+        )
+        #expect(result.object == Answer(city: "Paris"))
+        let root = try #require(tracer.spanRecords.first)
+        let output = try jsonAttribute(root, "gen_ai.output.messages")
+        guard case .array(let messages) = output, case .object(let message)? = messages.first,
+              case .array(let parts)? = message["parts"], case .object(let part)? = parts.first,
+              case .string(let content)? = part["content"] else {
+            Issue.record("Expected an output message with the object"); return
+        }
+        #expect(try JSONDecoder().decode(Answer.self, from: Data(content.utf8)) == Answer(city: "Paris"))
+    }
+
     private func jsonAttribute(_ span: MockTracer.SpanRecord, _ key: String) throws -> JSONValue {
         let attribute = try #require(span.attributes[key])
         guard case .string(let json) = attribute else { Issue.record("Expected JSON attribute"); return .null }

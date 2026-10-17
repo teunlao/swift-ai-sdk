@@ -58,7 +58,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":[{"data":{"data":"iVBOR///","type":"data"},"mediaType":"image/png","type":"file"}],"role":"user"}]
+        [{"content":[{"data":"iVBOR///","mediaType":"image/png","type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -89,7 +89,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":[{"data":{"data":"iVBOR///","type":"data"},"filename":"image.png","mediaType":"image/png","providerOptions":{"anthropic":{"key":"value"}},"type":"file"}],"role":"user"}]
+        [{"content":[{"data":"iVBOR///","filename":"image.png","mediaType":"image/png","providerOptions":{"anthropic":{"key":"value"}},"type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -116,9 +116,8 @@ struct StringifyForTelemetryTests {
 
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
-        // URLs with forward slashes are escaped as \/ by JSONEncoder
         let expected = """
-        [{"content":[{"text":"Check this image:","type":"text"},{"data":{"type":"url","url":"https://example.com/image.jpg"},"mediaType":"image/jpeg","type":"file"}],"role":"user"}]
+        [{"content":[{"text":"Check this image:","type":"text"},{"data":"https://example.com/image.jpg","mediaType":"image/jpeg","type":"file"}],"role":"user"}]
         """
 
         #expect(result == expected)
@@ -159,7 +158,7 @@ struct StringifyForTelemetryTests {
         let result = try stringifyForTelemetry(prompt)
         // Note: Swift JSONEncoder with sortedKeys outputs in alphabetical order
         let expected = """
-        [{"content":"You are a helpful assistant.","role":"system"},{"content":[{"data":{"data":"iVBOR///","type":"data"},"mediaType":"image/png","type":"file"},{"data":{"type":"url","url":"https://example.com/image.jpg"},"mediaType":"image/jpeg","type":"file"}],"role":"user"},{"content":[{"text":"I see the images!","type":"text"}],"role":"assistant"}]
+        [{"content":"You are a helpful assistant.","role":"system"},{"content":[{"data":"iVBOR///","mediaType":"image/png","type":"file"},{"data":"https://example.com/image.jpg","mediaType":"image/jpeg","type":"file"}],"role":"user"},{"content":[{"text":"I see the images!","type":"text"}],"role":"assistant"}]
         """
 
         #expect(result == expected)

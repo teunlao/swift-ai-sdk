@@ -557,6 +557,10 @@ private func sanitize(_ attributes: Attributes) -> Attributes {
 }
 
 private func recordError(_ span: any Span, _ error: any Error) {
+    let apiCallError: (any Error)? = error is RetryError ? (error as? RetryError)?.lastError : error
+    if let statusCode = (apiCallError as? APICallError)?.statusCode {
+        span.setAttributes(["http.response.status_code": .int(statusCode)])
+    }
     let message = AISDKProvider.getErrorMessage(error)
     span.recordException(ExceptionEvent(name: String(describing: type(of: error)), message: message))
     span.setStatus(SpanStatus(code: .error, message: message))
