@@ -23,6 +23,7 @@ struct BlackForestLabsImageModelTests {
         pollTimeoutMillis: Int? = nil,
         headers: (@Sendable () -> [String: String?])? = { ["x-key": "test-key"] },
         fetch: FetchFunction? = nil,
+        clock: any Clock<Duration> = ContinuousClock(),
         currentDate: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_704_067_200) } // 2024-01-01
     ) -> BlackForestLabsImageModel {
         BlackForestLabsImageModel(
@@ -34,6 +35,7 @@ struct BlackForestLabsImageModelTests {
                 fetch: fetch,
                 pollIntervalMillis: pollIntervalMillis,
                 pollTimeoutMillis: pollTimeoutMillis,
+                clock: clock,
                 currentDate: currentDate
             )
         )
@@ -576,13 +578,32 @@ struct BlackForestLabsImageModelTests {
             throw CancellationError()
         }
 
-        let model = makeModel(pollIntervalMillis: 1, pollTimeoutMillis: 1000, fetch: fetch)
+        let clock = ManualClock()
+        var sleeps = clock.sleeps.makeAsyncIterator()
+        let model = makeModel(pollIntervalMillis: 1, pollTimeoutMillis: 1000, fetch: fetch, clock: clock)
+        let generation = Task {
+            try await model.doGenerate(options: .init(prompt: "p", n: 1, aspectRatio: "1:1", providerOptions: [:]))
+        }
+        defer { generation.cancel() }
 
-        _ = try await model.doGenerate(options: .init(prompt: "p", n: 1, aspectRatio: "1:1", providerOptions: [:]))
+        for _ in 0..<2 {
+            let deadline = clock.now.advanced(by: .milliseconds(1))
+            while let scheduled = await sleeps.next() {
+                if scheduled == deadline { break }
+            }
+            clock.advance(by: .milliseconds(1))
+        }
+        let result = try await generation.value
 
         let calls = await capture.all()
         let pollCalls = calls.filter { $0.httpMethod == "GET" && ($0.url?.absoluteString.hasPrefix("https://api.example.com/poll") == true) }
         #expect(pollCalls.count == 3)
+        switch result.images {
+        case .binary(let images):
+            #expect(images == [imageBytes])
+        default:
+            Issue.record("Expected binary images")
+        }
     }
 
     @Test("uses configured pollTimeoutMillis and pollIntervalMillis to time out")
@@ -619,13 +640,28 @@ struct BlackForestLabsImageModelTests {
 
         let pollIntervalMillis = 10
         let pollTimeoutMillis = 25
-        let model = makeModel(pollIntervalMillis: pollIntervalMillis, pollTimeoutMillis: pollTimeoutMillis, fetch: fetch)
+        let clock = ManualClock()
+        var sleeps = clock.sleeps.makeAsyncIterator()
+        let model = makeModel(pollIntervalMillis: pollIntervalMillis, pollTimeoutMillis: pollTimeoutMillis, fetch: fetch, clock: clock)
+        let generation = Task {
+            try await model.doGenerate(options: .init(prompt: "p", n: 1, aspectRatio: "1:1", providerOptions: [:]))
+        }
+        defer { generation.cancel() }
 
+        for step in [10, 10, 5] {
+            let deadline = clock.now.advanced(by: .milliseconds(pollIntervalMillis))
+            while let scheduled = await sleeps.next() {
+                if scheduled == deadline { break }
+            }
+            clock.advance(by: .milliseconds(step))
+        }
         await #expect(throws: InvalidResponseDataError.self) {
-            _ = try await model.doGenerate(options: .init(prompt: "p", n: 1, aspectRatio: "1:1", providerOptions: [:]))
+            _ = try await generation.value
         }
 
         let calls = await capture.all()
+        let pollCalls = calls.filter { $0.httpMethod == "GET" && ($0.url?.absoluteString.hasPrefix("https://api.example.com/poll") == true) }
+        #expect(pollCalls.count == 3)
         let imageCalls = calls.filter { $0.url?.absoluteString.hasPrefix("https://api.example.com/image.png") == true }
         #expect(imageCalls.count == 0)
     }
@@ -790,5 +826,67 @@ struct BlackForestLabsImageModelTests {
         #expect(model.provider == "black-forest-labs.image")
         #expect(model.modelId == "flux-pro")
         #expect(model.specificationVersion == "v4")
+    }
+}
+
+private final class ManualClock: Clock, @unchecked Sendable {
+    typealias Instant = ContinuousClock.Instant
+    typealias Duration = Swift.Duration
+
+    private struct Sleep {
+        let deadline: Instant
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private let lock = NSLock()
+    private var instant = ContinuousClock().now
+    private var sleepers: [UUID: Sleep] = [:]
+    let sleeps: AsyncStream<Instant>
+    private let scheduled: AsyncStream<Instant>.Continuation
+
+    init() {
+        let stream = AsyncStream<Instant>.makeStream()
+        sleeps = stream.stream
+        scheduled = stream.continuation
+    }
+
+    deinit { scheduled.finish() }
+
+    var now: Instant { lock.withLock { instant } }
+    var minimumResolution: Duration { .nanoseconds(1) }
+
+    func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let result: Result<Void, Error>? = lock.withLock {
+                    if Task.isCancelled { return .failure(CancellationError()) }
+                    if deadline <= instant { return .success(()) }
+                    sleepers[id] = Sleep(deadline: deadline, continuation: continuation)
+                    return nil
+                }
+                if let result {
+                    continuation.resume(with: result)
+                } else {
+                    scheduled.yield(deadline)
+                }
+            }
+        } onCancel: {
+            let continuation = self.lock.withLock {
+                self.sleepers.removeValue(forKey: id)?.continuation
+            }
+            continuation?.resume(throwing: CancellationError())
+        }
+    }
+
+    func advance(by duration: Duration) {
+        precondition(duration >= .zero)
+        let continuations = lock.withLock {
+            instant = instant.advanced(by: duration)
+            let ready = sleepers.filter { $0.value.deadline <= instant }
+            for id in ready.keys { sleepers.removeValue(forKey: id) }
+            return ready.values.map(\.continuation)
+        }
+        for continuation in continuations { continuation.resume() }
     }
 }

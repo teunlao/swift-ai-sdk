@@ -44,6 +44,7 @@ Upstream parity release against Vercel AI SDK commit `8a5233b15b1e69573d63faee6c
 - `defaultFetchFunction()` is public in `AISDKProviderUtils`; providers share this transport instead of maintaining private copies (`3f5b6f5`).
 
 ### Fixed
+- OpenAI stream calls classify pre-output quota and provider errors deterministically, independent of scheduler timing.
 - Fix Gateway image metadata compatibility, language and transcription stream backpressure, and standard error messages preserving server diagnostics and generation IDs.
 - Strip caller headers other than User-Agent when the default HTTP transport follows a cross-origin redirect, including credentialed API POST redirects.
 - Keep MaaS image downloads and Google video URLs credential-free; resolve Vertex API keys at request time and use the default MaaS/xAI endpoint for empty base URLs.

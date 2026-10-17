@@ -54,16 +54,15 @@ struct OpenAITranscriptionNativeTests {
             apiKey: bearer ? nil : "mai-native-key", tokenProvider: token))
         let result = try await provider.transcription("MAI-Transcribe-2-Streaming").doStream(options: .init(
             audio: source.stream, inputAudioFormat: .init(type: "audio/pcm")))
-        try await transcriptionDeadline {
-            var parts: [TranscriptionModelV4StreamPart] = []
-            for try await part in result.stream { parts.append(part) }
-            #expect(parts == [
-                .streamStart(warnings: []),
-                .transcriptFinal(id: "native", text: "done", startSecond: nil, endSecond: nil, channelIndex: nil, providerMetadata: nil),
-                .finish(text: "done", segments: [], language: nil, durationInSeconds: 1.0 / 48000, providerMetadata: nil)
-            ])
-        }
-        try await transcriptionDeadline { for await _ in server.closed { return } }
+        // Loopback I/O completes on protocol events, not a scheduler-dependent deadline.
+        var parts: [TranscriptionModelV4StreamPart] = []
+        for try await part in result.stream { parts.append(part) }
+        #expect(parts == [
+            .streamStart(warnings: []),
+            .transcriptFinal(id: "native", text: "done", startSecond: nil, endSecond: nil, channelIndex: nil, providerMetadata: nil),
+            .finish(text: "done", segments: [], language: nil, durationInSeconds: 1.0 / 48000, providerMetadata: nil)
+        ])
+        for await _ in server.closed { return }
     }
 
     @Test(arguments: [false, true])

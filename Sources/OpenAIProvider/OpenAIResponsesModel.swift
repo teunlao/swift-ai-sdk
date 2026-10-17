@@ -166,7 +166,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 guard let type = chunk.type else { return false }
                 return !["response.created", "response.in_progress", "response.failed", "error", "unknown_chunk"].contains(type)
             },
-            isAccepted: { $0.type == "response.in_progress" },
             url: url,
             requestBodyValues: prepared.body,
             responseHeaders: response.responseHeaders

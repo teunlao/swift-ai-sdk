@@ -9,6 +9,7 @@ struct BlackForestLabsImageModelConfig: Sendable {
     var fetch: FetchFunction? = nil
     var pollIntervalMillis: Int? = nil
     var pollTimeoutMillis: Int? = nil
+    var clock: any Clock<Duration> = ContinuousClock()
     var currentDate: @Sendable () -> Date = { Date() }
 }
 
@@ -149,7 +150,7 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
             isAborted: options.abortSignal, fetch: config.fetch
         )
         let url = try bflPollingURL(submit.value.polling_url, id: submit.value.id)
-        let result = try await poll(url: url, headers: headers, interval: interval, timeout: timeout, abortSignal: options.abortSignal)
+        let result = try await poll(url: url, headers: headers, interval: interval, timeout: timeout, abortSignal: options.abortSignal, clock: config.clock)
         let image = try await getFromAPI(
             url: result.sample,
             headers: headers.filter { $0.key.lowercased() == "user-agent" },
@@ -162,10 +163,11 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
         return .init(images: .binary([image.value]), warnings: warnings, providerMetadata: ["blackForestLabs": .init(images: [.object(metadata)])], response: .init(timestamp: timestamp, modelId: modelId, headers: image.responseHeaders))
     }
 
-    private func poll(url: String, headers: [String: String], interval: Int, timeout: Int, abortSignal: (@Sendable () -> Bool)?) async throws -> BFLImageResult {
-        try await withThrowingTaskGroup(of: BFLImageResult.self) { group in
+    private func poll(url: String, headers: [String: String], interval: Int, timeout: Int, abortSignal: (@Sendable () -> Bool)?, clock: some Clock<Duration>) async throws -> BFLImageResult {
+        let deadline = clock.now.advanced(by: .milliseconds(timeout))
+        return try await withThrowingTaskGroup(of: BFLImageResult.self) { group in
             group.addTask {
-                try await delay(timeout)
+                try await clock.sleep(until: deadline, tolerance: nil)
                 throw InvalidResponseDataError(data: url, message: "Black Forest Labs generation timed out.")
             }
             group.addTask {
@@ -184,7 +186,15 @@ public final class BlackForestLabsImageModel: ImageModelV4 {
                         let message = ["Error", "Failed"].contains(result.status) ? "Black Forest Labs generation failed." : "Black Forest Labs generation failed: \(result.status)."
                         throw InvalidResponseDataError(data: result, message: message)
                     }
-                    try await delay(interval, abortSignal: abortSignal)
+                    let intervalDeadline = clock.now.advanced(by: .milliseconds(interval))
+                    while true {
+                        try Task.checkCancellation()
+                        if abortSignal?() == true { throw CancellationError() }
+                        let now = clock.now
+                        guard now < intervalDeadline else { break }
+                        let wake = abortSignal == nil ? intervalDeadline : min(intervalDeadline, now.advanced(by: .milliseconds(50)))
+                        try await clock.sleep(until: wake, tolerance: nil)
+                    }
                 }
             }
             defer { group.cancelAll() }
