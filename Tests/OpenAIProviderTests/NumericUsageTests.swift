@@ -24,7 +24,8 @@ struct NumericUsageTests {
         let encoded = try JSONEncoder().encode(body)
         let data = streaming ? Data("data: \(String(decoding: encoded, as: UTF8.self))\n\ndata: [DONE]\n\n".utf8) : encoded
         return { request in
-            let response = try #require(HTTPURLResponse(url: #require(request.url), statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"]))
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"]))
             return FetchResponse(body: .data(data), urlResponse: response)
         }
     }

@@ -26,7 +26,8 @@ struct NumericUsageTests {
             data = try JSONEncoder().encode(body)
         }
         return createXai(settings: .init(baseURL: "https://api.example.test/v1", apiKey: "test-key", fetch: { request in
-            let response = try #require(HTTPURLResponse(url: #require(request.url), statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"]))
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"]))
             return FetchResponse(body: .data(data), urlResponse: response)
         })).responses("grok-4")
     }
