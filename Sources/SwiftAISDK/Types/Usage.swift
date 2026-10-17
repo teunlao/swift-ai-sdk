@@ -90,32 +90,28 @@ public struct LanguageModelUsage: Sendable, Equatable, Codable {
 /**
  Represents the number of tokens used in an embedding.
 
+ Usage a provider omits, or reports as a fractional or out-of-range number, is
+ 0 tokens.
  */
 public struct EmbeddingModelUsage: Sendable, Equatable, Codable {
     /// The number of tokens used in the embedding.
-    public let tokens: Double
-
-    public init(tokens: Double) {
-        self.tokens = tokens
-    }
+    public let tokens: Int
 
     public init(tokens: Int) {
-        self.tokens = Double(tokens)
+        self.tokens = tokens
     }
 
     private enum CodingKeys: String, CodingKey { case tokens }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        tokens = try container.decodeIfPresent(Double.self, forKey: .tokens) ?? .nan
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        if tokens.isFinite {
-            try container.encode(tokens, forKey: .tokens)
+        if let tokens = try? container.decodeIfPresent(Int.self, forKey: .tokens) {
+            self.tokens = tokens
+        } else if let number = try? container.decodeIfPresent(Double.self, forKey: .tokens),
+                  let tokens = Int(exactly: number) {
+            self.tokens = tokens
         } else {
-            try container.encodeNil(forKey: .tokens)
+            self.tokens = 0
         }
     }
 }

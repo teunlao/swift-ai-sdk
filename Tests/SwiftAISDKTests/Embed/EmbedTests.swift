@@ -36,17 +36,25 @@ struct EmbedTests {
             },
             onEnd: { event in
                 #expect(event.embedding == [1, 1])
-                #expect(event.usage.tokens.isNaN)
+                #expect(event.usage.tokens == 0)
                 await events.append("end")
                 throw CancellationError()
             }
         )
         #expect(result.embedding == [1, 1])
-        #expect(result.usage.tokens.isNaN)
-        let usageJSON = try JSONEncoder().encode(result.usage)
-        #expect(try JSONDecoder().decode([String: JSONValue].self, from: usageJSON)["tokens"] == .null)
-        #expect(try JSONDecoder().decode(EmbeddingModelUsage.self, from: usageJSON).tokens.isNaN)
+        #expect(result.usage.tokens == 0)
         #expect(await events.phases == ["start", "model", "end"])
+    }
+
+    @Test("stored embedding usage that is fractional or beyond Int decodes as unreported")
+    func decodesUnrepresentableUsageAsUnreported() throws {
+        func decode(_ json: String) throws -> Int {
+            try JSONDecoder().decode(EmbeddingModelUsage.self, from: Data(json.utf8)).tokens
+        }
+        #expect(try decode(#"{"tokens":12}"#) == 12)
+        #expect(try decode(#"{"tokens":1.5}"#) == 0)
+        #expect(try decode(#"{"tokens":1e30}"#) == 0)
+        #expect(try decode(#"{"tokens":null}"#) == 0)
     }
 
     @Test("retryable gateway failures retry to a generated embedding")

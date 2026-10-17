@@ -363,7 +363,7 @@ public final class OpenTelemetry: Telemetry, @unchecked Sendable {
 
     public func onEmbedEnd(_ event: TelemetryEvent<EmbeddingModelCallEndEvent>) async throws {
         guard let state = state(event.callId), let embed = lock.withLock({ state.embeddings.removeValue(forKey: event.embedCallId) }) else { return }
-        var attrs: Attributes = ["gen_ai.usage.input_tokens": tokenAttribute(event.usage.tokens)]
+        var attrs: Attributes = ["gen_ai.usage.input_tokens": .int(event.usage.tokens)]
         if supplemental.embedding, state.recording.outputs { attrs["ai.embeddings"] = .stringArray(event.embeddings.map(embeddingJSON)) }
         embed.setAttributes(sanitize(attrs))
         embed.end()

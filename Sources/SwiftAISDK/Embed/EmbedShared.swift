@@ -12,7 +12,7 @@ import AISDKProviderUtils
 // MARK: - Usage Helpers
 
 func makeEmbeddingUsage(from usage: EmbeddingModelV4Usage?) -> EmbeddingModelUsage {
-    EmbeddingModelUsage(tokens: usage.map { Double($0.tokens) } ?? .nan)
+    EmbeddingModelUsage(tokens: usage?.tokens ?? 0)
 }
 
 func validateEmbeddingDimensions(_ dimensions: Int?) throws {

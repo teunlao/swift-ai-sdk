@@ -156,7 +156,8 @@ public func embedMany(
         var collectedWarnings: [SharedV4Warning] = []
         var collectedResponses: [EmbeddingModelV4ResponseInfo?] = []
         collectedResponses.reserveCapacity(valueChunks.count)
-        var totalTokens: Double = 0
+        // nil once the sum leaves Int, which then counts as unreported usage.
+        var totalTokens: Int? = 0
         var aggregatedMetadata: ProviderMetadata?
 
         var nextChunkStartIndex = 0
@@ -194,14 +195,17 @@ public func embedMany(
                 collectedEmbeddings.append(contentsOf: result.embeddings)
                 collectedWarnings.append(contentsOf: result.warnings)
                 collectedResponses.append(result.response)
-                totalTokens += result.usage.tokens
+                totalTokens = totalTokens.flatMap { total in
+                    let (sum, overflow) = total.addingReportingOverflow(result.usage.tokens)
+                    return overflow ? nil : sum
+                }
                 mergeProviderMetadata(target: &aggregatedMetadata, source: result.providerMetadata)
             }
         }
 
         return await finish(
             embeddings: collectedEmbeddings,
-            usage: EmbeddingModelUsage(tokens: totalTokens),
+            usage: EmbeddingModelUsage(tokens: totalTokens ?? 0),
             warnings: collectedWarnings,
             providerMetadata: aggregatedMetadata,
             responses: collectedResponses
