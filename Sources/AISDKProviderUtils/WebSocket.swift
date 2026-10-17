@@ -7,11 +7,22 @@ public enum WebSocketMessage: Sendable, Equatable {
 
 public protocol WebSocketLike: Sendable {
     var messages: AsyncThrowingStream<WebSocketMessage, Error> { get }
+    func waitUntilOpen() async throws
+    func waitForBufferDrain() async throws
     func send(_ message: WebSocketMessage) async throws
     func close(code: Int?)
 }
 
+public extension WebSocketLike {
+    func waitUntilOpen() async throws {}
+    func waitForBufferDrain() async throws {}
+}
+
 public typealias WebSocketConstructor = @Sendable (URLRequest) throws -> any WebSocketLike
+
+public func defaultWebSocketConstructor() -> WebSocketConstructor {
+    { URLSessionWebSocket(request: $0) }
+}
 
 public enum WebSocketError: Error, Sendable, Equatable {
     case invalidURL(String)
@@ -39,32 +50,45 @@ public func readWebSocketMessageText(_ message: WebSocketMessage) -> String {
     }
 }
 
-final class URLSessionWebSocket: WebSocketLike, @unchecked Sendable {
+private final class URLSessionWebSocket: WebSocketLike, @unchecked Sendable {
     let messages: AsyncThrowingStream<WebSocketMessage, Error>
     private let task: URLSessionWebSocketTask
+    private let session: URLSession
+    private let opening: SocketOpening
+    private let closeLock = NSLock()
+    private var closed = false
 
     init(request: URLRequest) {
-        let task = URLSession.shared.webSocketTask(with: request)
+        let opening = SocketOpening()
+        let session = URLSession(configuration: .default, delegate: opening, delegateQueue: nil)
+        let task = session.webSocketTask(with: request)
+        self.opening = opening
+        self.session = session
         self.task = task
         messages = AsyncThrowingStream(unfolding: {
             do {
                 switch try await task.receive() {
                 case .string(let text): return .text(text)
                 case .data(let data): return .binary(data)
-                @unknown default: throw WebSocketError.closed(code: nil, reason: "Unknown WebSocket message")
+                @unknown default: throw WebSocketError.closed(code: nil, reason: nil)
                 }
             } catch {
-                if task.closeCode == .normalClosure { return nil }
                 if task.closeCode != .invalid {
-                    throw WebSocketError.closed(
-                        code: task.closeCode.rawValue,
-                        reason: task.closeReason.map { String(decoding: $0, as: UTF8.self) }
-                    )
+                    throw WebSocketError.closed(code: task.closeCode.rawValue,
+                        reason: task.closeReason.map { String(decoding: $0, as: UTF8.self) })
                 }
                 throw error
             }
         })
         task.resume()
+    }
+
+    func waitUntilOpen() async throws {
+        try await withTaskCancellationHandler {
+            try await opening.wait()
+        } onCancel: {
+            self.close(code: nil)
+        }
     }
 
     func send(_ message: WebSocketMessage) async throws {
@@ -75,12 +99,59 @@ final class URLSessionWebSocket: WebSocketLike, @unchecked Sendable {
     }
 
     func close(code: Int?) {
-        guard let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code ?? 1000) else {
-            task.cancel()
-            return
-        }
-        task.cancel(with: closeCode, reason: nil)
+        guard closeLock.withLock({ if closed { return false }; closed = true; return true }) else { return }
+        opening.finish(.failure(CancellationError()))
+        if let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code ?? 1000) {
+            task.cancel(with: closeCode, reason: nil)
+        } else { task.cancel() }
+        session.finishTasksAndInvalidate()
     }
 
-    deinit { task.cancel(with: .goingAway, reason: nil) }
+    deinit {
+        opening.finish(.failure(CancellationError()))
+        task.cancel(with: .goingAway, reason: nil)
+        session.invalidateAndCancel()
+    }
+}
+
+private final class SocketOpening: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<Void, Error>?
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+
+    func wait() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let completed: Result<Void, Error>? = lock.withLock {
+                if let result { return result }
+                waiters.append(continuation)
+                return nil
+            }
+            if let completed { continuation.resume(with: completed) }
+        }
+    }
+
+    func finish(_ completion: Result<Void, Error>) {
+        let pending = lock.withLock {
+            guard result == nil else { return [] as [CheckedContinuation<Void, Error>] }
+            result = completion
+            let pending = waiters
+            waiters = []
+            return pending
+        }
+        for waiter in pending { waiter.resume(with: completion) }
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        finish(.success(()))
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        finish(.failure(WebSocketError.closed(code: closeCode.rawValue, reason: reason.map { String(decoding: $0, as: UTF8.self) })))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        finish(.failure(error ?? WebSocketError.closed(code: nil, reason: nil)))
+        session.finishTasksAndInvalidate()
+    }
 }

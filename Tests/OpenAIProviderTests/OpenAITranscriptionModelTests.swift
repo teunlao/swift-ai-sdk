@@ -31,11 +31,11 @@ final class TranscriptionAudioSource: @unchecked Sendable {
     var isCancelled: Bool { lock.withLock { cancelled } }
 }
 
-private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
-    let messages: AsyncThrowingStream<String, Error>
+private final class Socket: WebSocketLike, @unchecked Sendable {
+    let messages: AsyncThrowingStream<WebSocketMessage, Error>
     let sent: AsyncStream<JSONValue>
     let draining: AsyncStream<Void>
-    private let incoming: AsyncThrowingStream<String, Error>.Continuation
+    private let incoming: AsyncThrowingStream<WebSocketMessage, Error>.Continuation
     private let outgoing: AsyncStream<JSONValue>.Continuation
     private let drainNotice: AsyncStream<Void>.Continuation
     private let opened: AsyncThrowingStream<Void, Error>
@@ -43,7 +43,7 @@ private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
     private let drained: AsyncThrowingStream<Void, Error>
     private let drainGate: AsyncThrowingStream<Void, Error>.Continuation
     private let lock = NSLock()
-    private var requests: [OpenAIWebSocketRequest] = []
+    private var requests: [URLRequest] = []
     private var values: [JSONValue] = []
     private var closes: [Int?] = []
     private let initiallyOpen: Bool
@@ -51,7 +51,7 @@ private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
     private let failSend: Bool
 
     init(open: Bool = true, blockDrain: Bool = false, failSend: Bool = false) {
-        let input = AsyncThrowingStream<String, Error>.makeStream()
+        let input = AsyncThrowingStream<WebSocketMessage, Error>.makeStream()
         messages = input.stream; incoming = input.continuation
         let output = AsyncStream<JSONValue>.makeStream()
         sent = output.stream; outgoing = output.continuation
@@ -64,7 +64,7 @@ private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
         initiallyOpen = open; self.blockDrain = blockDrain; self.failSend = failSend
     }
 
-    func make(_ request: OpenAIWebSocketRequest) -> any OpenAIWebSocketConnection {
+    func make(_ request: URLRequest) -> any WebSocketLike {
         lock.withLock { requests.append(request) }
         return self
     }
@@ -83,7 +83,8 @@ private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
         }
     }
 
-    func send(_ text: String) async throws {
+    func send(_ message: WebSocketMessage) async throws {
+        let text = readWebSocketMessageText(message)
         if failSend && lock.withLock({ values.count >= 2 }) { throw SocketFailure.send }
         let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
         lock.withLock { values.append(value) }
@@ -97,12 +98,12 @@ private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
         drainGate.finish(throwing: CancellationError())
     }
 
-    func message(_ text: String) { incoming.yield(text) }
+    func message(_ text: String) { incoming.yield(.text(text)) }
     func fail() { incoming.finish(throwing: SocketFailure.send) }
     func remoteClose() { incoming.finish() }
     func releaseDrain() { drainGate.yield(()); drainGate.finish() }
     var frames: [JSONValue] { lock.withLock { values } }
-    var request: OpenAIWebSocketRequest? { lock.withLock { requests.first } }
+    var request: URLRequest? { lock.withLock { requests.first } }
     var closeCodes: [Int?] { lock.withLock { closes } }
 }
 
@@ -289,9 +290,10 @@ struct OpenAITranscriptionModelTests {
             headers: ["AUTHORIZATION": "bEaReR caller", "X-Custom": "yes"], includeRawChunks: true
         ))
         try await waitForCommit(socket)
-        #expect(socket.request?.url.absoluteString == "wss://api.openai.com/v1/realtime?intent=transcription")
-        #expect(socket.request?.protocols == ["realtime", "openai-insecure-api-key.caller"])
-        #expect(socket.request?.headers == ["X-Custom": "yes"])
+        #expect(socket.request?.url?.absoluteString == "wss://api.openai.com/v1/realtime?intent=transcription")
+        #expect(socket.request?.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") == "realtime, openai-insecure-api-key.caller")
+        #expect(socket.request?.value(forHTTPHeaderField: "X-Custom") == "yes")
+        #expect(socket.request?.value(forHTTPHeaderField: "Authorization") == nil)
         let frames = socket.frames
         #expect(frames.count == 4)
         #expect(frames.first == result.request?.body as? JSONValue)
@@ -329,10 +331,9 @@ struct OpenAITranscriptionModelTests {
         ))
         let result = try await model.doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcma")))
         try await waitForCommit(socket)
-        #expect(socket.request?.protocols == ["realtime"])
-        var expected = ["X-Custom": "yes"]
-        if let authorization { expected["Authorization"] = authorization }
-        #expect(socket.request?.headers == expected)
+        #expect(socket.request?.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") == "realtime")
+        #expect(socket.request?.value(forHTTPHeaderField: "X-Custom") == "yes")
+        #expect(socket.request?.value(forHTTPHeaderField: "Authorization") == authorization)
         socket.message(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":""}"#)
         let parts = try await collect(result.stream)
         #expect(parts.last == .finish(text: "", segments: [], language: nil, durationInSeconds: nil, providerMetadata: nil))

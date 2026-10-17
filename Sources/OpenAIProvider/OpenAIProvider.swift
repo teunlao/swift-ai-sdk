@@ -10,7 +10,7 @@ public struct OpenAIProviderSettings: Sendable {
     public var headers: [String: String]?
     public var name: String?
     public var fetch: FetchFunction?
-    public var webSocket: OpenAIWebSocketFactory?
+    public var webSocket: WebSocketConstructor?
 
     public init(
         baseURL: String? = nil,
@@ -20,7 +20,7 @@ public struct OpenAIProviderSettings: Sendable {
         headers: [String: String]? = nil,
         name: String? = nil,
         fetch: FetchFunction? = nil,
-        webSocket: OpenAIWebSocketFactory? = nil
+        webSocket: WebSocketConstructor? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey

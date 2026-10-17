@@ -39,7 +39,7 @@ public func connectToWebSocket(
     if !protocols.isEmpty {
         request.setValue(protocols.joined(separator: ", "), forHTTPHeaderField: "Sec-WebSocket-Protocol")
     }
-    let socket = try webSocket?(request) ?? URLSessionWebSocket(request: request)
+    let socket = try (webSocket ?? defaultWebSocketConstructor())(request)
     if Task.isCancelled || abortSignal?() == true {
         socket.close(code: nil)
         throw CancellationError()
@@ -150,6 +150,7 @@ private final class WebSocketConnectionState: @unchecked Sendable {
                         if let previous { await previous.value }
                         do {
                             try Task.checkCancellation()
+                            try await socket.waitUntilOpen()
                             try await socket.send(message)
                             self?.completeSend(id: id)
                         } catch { self?.finish(error: error) }

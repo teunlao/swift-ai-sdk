@@ -90,10 +90,11 @@ public final class OpenAITranscriptionModel: TranscriptionModelV4 {
         }
         let headers = combineHeaders(try config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 }
         let handshake = transcriptionHandshake(headers)
-        let request = OpenAIWebSocketRequest(
-            url: try toWebSocketURL(config.url(.init(modelId: modelId, path: "/realtime?intent=transcription"))),
-            protocols: handshake.protocols, headers: handshake.headers
-        )
+        var request = URLRequest(url: try toWebSocketURL(config.url(.init(modelId: modelId, path: "/realtime?intent=transcription"))))
+        for (key, value) in handshake.headers { request.setValue(value, forHTTPHeaderField: key) }
+        if !handshake.protocols.isEmpty {
+            request.setValue(handshake.protocols.joined(separator: ", "), forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        }
         var format: JSONObject = ["type": .string(options.inputAudioFormat.type)]
         if let rate = options.inputAudioFormat.rate { format["rate"] = .number(Double(rate)) }
         var transcription: JSONObject = ["model": .string(modelId)]
@@ -126,18 +127,18 @@ private actor TranscriptionSession {
 
     private let config: OpenAIConfig
     private let options: TranscriptionModelV4StreamOptions
-    private let request: OpenAIWebSocketRequest
+    private let request: URLRequest
     private let update: JSONValue
     private let language: String?
     private let warnings: [SharedV4Warning]
     private let continuation: AsyncThrowingStream<TranscriptionModelV4StreamPart, Error>.Continuation
-    private var connection: (any OpenAIWebSocketConnection)?
+    private var connection: (any WebSocketLike)?
     private var sender: Task<Void, Never>?
     private var receiver: Task<Void, Never>?
     private var abortObserver: Task<Void, Never>?
     private var finished = false
 
-    init(config: OpenAIConfig, options: TranscriptionModelV4StreamOptions, request: OpenAIWebSocketRequest, update: JSONValue, language: String?, warnings: [SharedV4Warning], continuation: AsyncThrowingStream<TranscriptionModelV4StreamPart, Error>.Continuation) {
+    init(config: OpenAIConfig, options: TranscriptionModelV4StreamOptions, request: URLRequest, update: JSONValue, language: String?, warnings: [SharedV4Warning], continuation: AsyncThrowingStream<TranscriptionModelV4StreamPart, Error>.Continuation) {
         self.config = config; self.options = options; self.request = request; self.update = update
         self.language = language; self.warnings = warnings; self.continuation = continuation
     }
@@ -149,7 +150,7 @@ private actor TranscriptionSession {
             return
         }
         do {
-            let socket = try (config.webSocket ?? makeDefaultOpenAIWebSocketConnection)(request)
+            let socket = try (config.webSocket ?? defaultWebSocketConstructor())(request)
             connection = socket
             sender = Task { await sendAudio(socket) }
             receiver = Task { await receive(socket) }
@@ -165,14 +166,14 @@ private actor TranscriptionSession {
         } catch { await terminate(.failed(error)) }
     }
 
-    private func sendAudio(_ socket: any OpenAIWebSocketConnection) async {
+    private func sendAudio(_ socket: any WebSocketLike) async {
         do {
             do { try await socket.waitUntilOpen() }
             catch is CancellationError { throw CancellationError() }
             catch { throw TranscriptionStreamError(message: "OpenAI realtime transcription error") }
             guard !finished else { return }
             continuation.yield(.streamStart(warnings: warnings))
-            try await socket.send(openAIJSONStringify(update))
+            try await socket.send(.text(openAIJSONStringify(update)))
             for try await audio in options.audio {
                 try Task.checkCancellation()
                 guard !finished else { return }
@@ -181,20 +182,21 @@ private actor TranscriptionSession {
                 case .binary(let value): encoded = convertToBase64(.data(value))
                 case .base64(let value): encoded = convertToBase64(.string(value))
                 }
-                try await socket.send(openAIJSONStringify(["type": "input_audio_buffer.append", "audio": .string(encoded)]))
+                try await socket.send(.text(openAIJSONStringify(["type": "input_audio_buffer.append", "audio": .string(encoded)])))
                 try await socket.waitForBufferDrain()
             }
             if !finished {
                 try Task.checkCancellation()
-                try await socket.send(openAIJSONStringify(["type": "input_audio_buffer.commit"]))
+                try await socket.send(.text(openAIJSONStringify(["type": "input_audio_buffer.commit"])))
             }
         } catch { await terminate(.failed(error)) }
     }
 
-    private func receive(_ socket: any OpenAIWebSocketConnection) async {
+    private func receive(_ socket: any WebSocketLike) async {
         do {
-            for try await text in socket.messages {
+            for try await message in socket.messages {
                 guard !finished else { return }
+                let text = readWebSocketMessageText(message)
                 let parsed = await safeParseJSON(ParseJSONOptions(text: text))
                 guard case .success(let raw, _) = parsed else { continue }
                 guard !finished else { return }
@@ -218,6 +220,8 @@ private actor TranscriptionSession {
                 default: break
                 }
             }
+            await terminate(.closed)
+        } catch WebSocketError.closed {
             await terminate(.closed)
         } catch {
             await terminate(.failed(TranscriptionStreamError(message: "OpenAI realtime transcription error")))
