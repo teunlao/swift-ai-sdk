@@ -15,6 +15,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     private static let providerToolNames: [String: String] = [
         "openai.code_interpreter": "code_interpreter",
         "openai.computer": "computer",
+        "openai.programmatic_tool_calling": "programmatic_tool_calling",
         "openai.file_search": "file_search",
         "openai.image_generation": "image_generation",
         "openai.local_shell": "local_shell",
@@ -690,6 +691,30 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         )
     }
 
+    private func callerMetadata(_ value: JSONValue?) -> JSONValue? {
+        guard let value, value != .null else { return nil }
+        if case .object(let caller) = value, caller["type"] == .string("program") {
+            return .object(["type": .string("program"), "callerId": caller["caller_id"]!])
+        }
+        return value
+    }
+
+    private func programCall(_ item: [String: JSONValue], toolNameMapping: ToolNameMapping) throws -> LanguageModelV4ToolCall {
+        LanguageModelV4ToolCall(
+            toolCallId: item["call_id"]!.stringValue!, toolName: toolNameMapping.toCustomToolName("programmatic_tool_calling"),
+            input: try openAIJSONStringify(.object(["code": item["code"]!, "fingerprint": item["fingerprint"]!])),
+            providerExecuted: true, providerMetadata: openAIProviderMetadata(["itemId": item["id"]!])
+        )
+    }
+
+    private func programResult(_ item: [String: JSONValue], toolNameMapping: ToolNameMapping) -> LanguageModelV4ToolResult {
+        LanguageModelV4ToolResult(
+            toolCallId: item["call_id"]!.stringValue!, toolName: toolNameMapping.toCustomToolName("programmatic_tool_calling"),
+            result: .object(["result": item["result"]!, "status": item["status"]!]),
+            providerMetadata: openAIProviderMetadata(["itemId": item["id"]!])
+        )
+    }
+
     private func makeTextOptions(
         responseFormat: LanguageModelV4ResponseFormat?,
         textVerbosity: String?,
@@ -956,12 +981,19 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
                 var callMetadata: [String: JSONValue] = ["itemId": object["id"]!]
                 for key in ["async", "namespace"] { if let value = object[key], value != .null { callMetadata[key] = value } }
+                callMetadata["caller"] = callerMetadata(object["caller"])
                 let providerMetadata = openAIProviderMetadata(callMetadata)
 
                 let call = LanguageModelV4ToolCall(toolCallId: toolCallId, toolName: toolName, input: input, providerMetadata: providerMetadata)
                 if let expanded = try await OpenAIParallelCalls.expand(call, itemId: object["id"]!.stringValue!, tools: functionTools, namespace: providerOptionsName) {
                     content.append(contentsOf: expanded.map(LanguageModelV4Content.toolCall))
                 } else { content.append(.toolCall(call)) }
+
+            case "program":
+                content.append(.toolCall(try programCall(object, toolNameMapping: toolNameMapping)))
+
+            case "program_output":
+                content.append(.toolResult(programResult(object, toolNameMapping: toolNameMapping)))
 
             case "custom_tool_call":
                 guard let toolCallId = object["call_id"]?.stringValue,
@@ -1898,6 +1930,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             let asyncValue = item["async"].flatMap { $0 == .null ? nil : $0 } ?? state?.asyncValue.flatMap { $0 == .null ? nil : $0 }
             if let asyncValue { metadata["async"] = asyncValue }
             if let namespace = item["namespace"], namespace != .null { metadata["namespace"] = namespace }
+            metadata["caller"] = callerMetadata(item["caller"])
             let call = LanguageModelV4ToolCall(toolCallId: callId, toolName: name, input: arguments, providerMetadata: openAIProviderMetadata(metadata))
             if suppressed, let expanded = try await OpenAIParallelCalls.expand(call, itemId: item["id"]!.stringValue!, tools: functionTools, namespace: providerOptionsName) {
                 for child in expanded {
@@ -1918,6 +1951,10 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 continuation.yield(.toolInputEnd(id: callId, providerMetadata: endMetadata))
                 continuation.yield(.toolCall(call))
             }
+        case "program":
+            continuation.yield(.toolCall(try programCall(item, toolNameMapping: toolNameMapping)))
+        case "program_output":
+            continuation.yield(.toolResult(programResult(item, toolNameMapping: toolNameMapping)))
         case "custom_tool_call":
             guard let callId = item["call_id"]?.stringValue,
                   let providerToolName = item["name"]?.stringValue,

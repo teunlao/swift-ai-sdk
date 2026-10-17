@@ -26,6 +26,7 @@ struct OpenAIResponsesInputBuilder {
         var items: [JSONValue] = []
         var warnings: [SharedV4Warning] = []
         var processedApprovalIds: Set<Data> = []
+        var programmaticToolCallIds: Set<Data> = []
         let parallelGroups = hasConversation || hasPreviousResponseId ? OpenAIParallelCalls.completeGroups(prompt, namespace: providerOptionsName) : [:]
         var emittedParallelCalls: Set<Data> = []
         var emittedParallelResults: Set<Data> = []
@@ -108,6 +109,10 @@ struct OpenAIResponsesInputBuilder {
                         }
                         let itemId =
                             extractOpenAIItemId(from: callPart.providerOptions, providerOptionsName: providerOptionsName)
+                        let caller = callPart.providerOptions?[providerOptionsName]?["caller"]
+                        if case .object(let caller)? = caller, caller["type"] == .string("program") {
+                            programmaticToolCallIds.insert(Data(callPart.toolCallId.utf8))
+                        }
 
                         if hasConversation, itemId != nil {
                             continue
@@ -141,6 +146,19 @@ struct OpenAIResponsesInputBuilder {
                                 payload["arguments"] = arguments
                             }
                             items.append(.object(payload))
+                            continue
+                        }
+
+                        if resolvedToolName == "programmatic_tool_calling" {
+                            if store, let itemId {
+                                items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
+                            } else {
+                                let input = try await validateTypes(ValidateTypesOptions(value: callPart.input, schema: openaiProgrammaticToolCallingInputSchema))
+                                items.append(.object([
+                                    "type": .string("program"), "id": .string(itemId ?? callPart.toolCallId), "call_id": .string(callPart.toolCallId),
+                                    "code": .string(input.code), "fingerprint": .string(input.fingerprint)
+                                ]))
+                            }
                             continue
                         }
 
@@ -300,6 +318,7 @@ struct OpenAIResponsesInputBuilder {
                         for key in ["async", "namespace"] {
                             if let value = callPart.providerOptions?[providerOptionsName]?[key], value != .null { payload[key] = value }
                         }
+                        payload["caller"] = wireCaller(caller)
                         items.append(.object(payload))
 
                     case .toolResult(let resultPart):
@@ -351,6 +370,20 @@ struct OpenAIResponsesInputBuilder {
                                     "call_id": .null,
                                     "status": .string("completed"),
                                     "tools": .array(parsedOutput.tools)
+                                ]))
+                            }
+                            continue
+                        }
+
+                        if resolvedResultToolName == "programmatic_tool_calling" {
+                            let itemId = extractOpenAIItemId(from: resultPart.providerOptions, providerOptionsName: providerOptionsName) ?? resultPart.toolCallId
+                            if store {
+                                items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
+                            } else if case .json(let value, _) = resultPart.output {
+                                let output = try await validateTypes(ValidateTypesOptions(value: value, schema: openaiProgrammaticToolCallingOutputSchema))
+                                items.append(.object([
+                                    "type": .string("program_output"), "id": .string(itemId), "call_id": .string(resultPart.toolCallId),
+                                    "result": .string(output.result), "status": .string(output.status.rawValue)
                                 ]))
                             }
                             continue
@@ -655,15 +688,26 @@ struct OpenAIResponsesInputBuilder {
 
                         }
                         let custom = customProviderToolNames.contains(Data(resolvedToolName.utf8))
+                        let resultCaller = toolResult.providerOptions?[providerOptionsName]?["caller"]
+                        if !custom, case .executionDenied = toolResult.output {
+                            let fromProgram: Bool
+                            if case .object(let caller)? = resultCaller { fromProgram = caller["type"] == .string("program") }
+                            else { fromProgram = false }
+                            if fromProgram || programmaticToolCallIds.contains(Data(toolResult.toolCallId.utf8)) {
+                                throw UnsupportedFunctionalityError(functionality: "execution-denied results for programmatic tool calls")
+                            }
+                        }
                         let output = try convertOutput(
                             toolResult.output, custom: custom, hasOutputSchema: !custom && outputSchemaToolNames.contains(Data(toolResult.toolName.utf8)),
                             breakpoint: scalarBreakpoint(toolResult.output, options: toolResult.providerOptions, namespace: providerOptionsName),
                             namespace: providerOptionsName, warnings: &warnings
                         )
-                        items.append(.object([
+                        var payload: [String: JSONValue] = [
                             "type": .string(custom ? "custom_tool_call_output" : "function_call_output"),
                             "call_id": .string(toolResult.toolCallId), "output": output
-                        ]))
+                        ]
+                        if !custom { payload["caller"] = wireCaller(resultCaller) }
+                        items.append(.object(payload))
                     }
                 }
             }
@@ -680,6 +724,16 @@ struct OpenAIResponsesInputBuilder {
             }
         }
         return (items, warnings)
+    }
+
+    private static func wireCaller(_ value: JSONValue?) -> JSONValue? {
+        guard let value, value != .null else { return nil }
+        if case .object(let caller) = value, caller["type"] == .string("program") {
+            var result: [String: JSONValue] = ["type": .string("program")]
+            result["caller_id"] = caller["callerId"]
+            return .object(result)
+        }
+        return value
     }
 
     private static func webSearchReplay(_ output: LanguageModelV4ToolResultOutput, id: String) async -> JSONValue? {
