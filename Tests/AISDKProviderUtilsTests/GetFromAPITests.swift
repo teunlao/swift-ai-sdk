@@ -3,12 +3,6 @@ import Testing
 @testable import AISDKProvider
 @testable import AISDKProviderUtils
 
-/**
- Port of `@ai-sdk/provider-utils/src/get-from-api.test.ts`
-
- All 7 tests ported with 100% parity.
- */
-
 @Suite("getFromApi")
 struct GetFromAPITests {
     private struct MockResponse: Codable, Equatable, Sendable {
@@ -201,46 +195,25 @@ struct GetFromAPITests {
         }
     }
 
-    @Test("should remove undefined header entries")
-    func shouldRemoveUndefinedHeaderEntries() async throws {
-        let mockSuccessResponse = MockResponse(name: "test", value: 123)
-        let mockData = try JSONEncoder().encode(mockSuccessResponse)
-
-        actor HeaderCapture {
-            var headers: [String: String]?
-            func capture(_ h: [String: String]?) { headers = h }
-            func get() -> [String: String]? { headers }
-        }
-
-        let capture = HeaderCapture()
-
-        let mockFetch: FetchFunction = { request in
-            await capture.capture(request.allHTTPHeaderFields)
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [:]
-            )!
-
-            return FetchResponse(body: .data(mockData), urlResponse: httpResponse)
-        }
-
-        // Note: In Swift, we don't have "undefined" - nil values are simply not added
-        // This test verifies that only non-nil headers are sent
-        _ = try await getFromAPI(
-            url: "https://api.test.com/data",
-            headers: ["Authorization": "Bearer test"],
+    @Test("cross-origin credentialed GET replaces all caller headers with the runtime User-Agent")
+    func crossOriginHeaders() async throws {
+        let data = try JSONEncoder().encode(MockResponse(name: "safe", value: 1))
+        let result = try await getFromAPI(
+            url: "https://cdn.example.com/result",
+            headers: ["uSeR-aGeNt": "ai-sdk-gladia/test", "Authorization": "secret", "X-Gladia-Key": "key", "X-Caller": "private"],
             failedResponseHandler: createStatusCodeErrorResponseHandler(),
             successfulResponseHandler: createJsonResponseHandler(responseSchema: mockResponseSchema()),
-            fetch: mockFetch
+            fetch: { request in
+                let headers = Dictionary(uniqueKeysWithValues: (request.allHTTPHeaderFields ?? [:]).map { ($0.key.lowercased(), $0.value) })
+                #expect(Set(headers.keys) == ["user-agent"])
+                #expect(headers["user-agent"]?.contains("ai-sdk-provider-utils/") == true)
+                #expect(headers["user-agent"]?.contains("ai-sdk-gladia/test") == false)
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+                return FetchResponse(body: .data(data), urlResponse: response)
+            },
+            credentialedOrigin: "https://api.gladia.io"
         )
-
-        let capturedHeaders = await capture.get()
-        // Verify only Authorization and User-Agent are present (no nil/undefined values)
-        #expect(capturedHeaders?["Authorization"] == "Bearer test")
-        #expect(capturedHeaders?["User-Agent"]?.contains("ai-sdk-provider-utils/") == true)
-        // X-Custom-Header should not be present (equivalent to undefined in TS)
+        #expect(result.value == MockResponse(name: "safe", value: 1))
     }
 
     @Test("should handle errors in response handlers")

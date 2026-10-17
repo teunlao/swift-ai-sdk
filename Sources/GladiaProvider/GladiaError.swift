@@ -12,7 +12,7 @@ import AISDKProviderUtils
 public struct GladiaErrorData: Codable, Sendable, Equatable {
     public struct ErrorPayload: Codable, Sendable, Equatable {
         public let message: String
-        public let code: Int
+        public let code: Double
     }
 
     public let error: ErrorPayload

@@ -9,10 +9,10 @@ import AISDKProviderUtils
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-public struct GladiaTranscriptionOptions: Sendable, Equatable, Codable {
+public struct GladiaTranscriptionModelOptions: Sendable, Equatable, Codable {
     public enum CustomVocabulary: Sendable, Equatable, Codable {
         case bool(Bool)
-        case entries([CustomVocabularyEntry])
+        case entries([JSONValue])
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.singleValueContainer()
@@ -20,7 +20,7 @@ public struct GladiaTranscriptionOptions: Sendable, Equatable, Codable {
                 self = .bool(flag)
                 return
             }
-            if let entries = try? container.decode([CustomVocabularyEntry].self) {
+            if let entries = try? container.decode([JSONValue].self) {
                 self = .entries(entries)
                 return
             }
@@ -138,16 +138,16 @@ public struct GladiaTranscriptionOptions: Sendable, Equatable, Codable {
         public let formats: [Format]?
         public let minimumDuration: Double?
         public let maximumDuration: Double?
-        public let maximumCharactersPerRow: Int?
-        public let maximumRowsPerCaption: Int?
+        public let maximumCharactersPerRow: Double?
+        public let maximumRowsPerCaption: Double?
         public let style: Style?
 
         public init(
             formats: [Format]? = nil,
             minimumDuration: Double? = nil,
             maximumDuration: Double? = nil,
-            maximumCharactersPerRow: Int? = nil,
-            maximumRowsPerCaption: Int? = nil,
+            maximumCharactersPerRow: Double? = nil,
+            maximumRowsPerCaption: Double? = nil,
             style: Style? = nil
         ) {
             self.formats = formats
@@ -169,15 +169,15 @@ public struct GladiaTranscriptionOptions: Sendable, Equatable, Codable {
     }
 
     public struct DiarizationConfig: Sendable, Equatable, Codable {
-        public let numberOfSpeakers: Int?
-        public let minSpeakers: Int?
-        public let maxSpeakers: Int?
+        public let numberOfSpeakers: Double?
+        public let minSpeakers: Double?
+        public let maxSpeakers: Double?
         public let enhanced: Bool?
 
         public init(
-            numberOfSpeakers: Int? = nil,
-            minSpeakers: Int? = nil,
-            maxSpeakers: Int? = nil,
+            numberOfSpeakers: Double? = nil,
+            minSpeakers: Double? = nil,
+            maxSpeakers: Double? = nil,
             enhanced: Bool? = nil
         ) {
             self.numberOfSpeakers = numberOfSpeakers
@@ -323,13 +323,13 @@ public struct GladiaTranscriptionOptions: Sendable, Equatable, Codable {
     }
 }
 
-private let gladiaTranscriptionOptionsSchemaJSON: JSONValue = .object([
+private let gladiaTranscriptionModelOptionsSchemaJSON: JSONValue = .object([
     "type": .string("object")
 ])
 
-public let gladiaTranscriptionOptionsSchema = FlexibleSchema(
-    Schema<GladiaTranscriptionOptions>.codable(
-        GladiaTranscriptionOptions.self,
-        jsonSchema: gladiaTranscriptionOptionsSchemaJSON
+let gladiaTranscriptionModelOptionsSchema = FlexibleSchema(
+    Schema<GladiaTranscriptionModelOptions>.codable(
+        GladiaTranscriptionModelOptions.self,
+        jsonSchema: gladiaTranscriptionModelOptionsSchemaJSON
     )
 )
