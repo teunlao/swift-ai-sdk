@@ -2,144 +2,31 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-//===----------------------------------------------------------------------===//
-//=== Upstream Reference ====================================================//
-//===----------------------------------------------------------------------===//
-// Ported from packages/hume/src/hume-provider.ts
-// Upstream commit: 77db222ee
-//===----------------------------------------------------------------------===//
-
 public struct HumeProviderSettings: Sendable {
-    public struct InternalSettings: Sendable {
-        public var currentDate: @Sendable () -> Date
-
-        public init(currentDate: @escaping @Sendable () -> Date = { Date() }) {
-            self.currentDate = currentDate
-        }
-    }
-
     public var apiKey: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
-    public var _internal: InternalSettings?
-
-    public init(
-        apiKey: String? = nil,
-        headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil,
-        _internal: InternalSettings? = nil
-    ) {
-        self.apiKey = apiKey
-        self.headers = headers
-        self.fetch = fetch
-        self._internal = _internal
+    public init(apiKey: String? = nil, headers: [String: String]? = nil, fetch: FetchFunction? = nil) {
+        self.apiKey = apiKey; self.headers = headers; self.fetch = fetch
     }
 }
-
-public final class HumeProvider: ProviderV3 {
-    private let speechFactory: @Sendable (HumeSpeechModelId) -> HumeSpeechModel
-
-    init(speechFactory: @escaping @Sendable (HumeSpeechModelId) -> HumeSpeechModel) {
-        self.speechFactory = speechFactory
-    }
-
-    // MARK: - ProviderV3
-
-    public func languageModel(modelId: String) throws -> any LanguageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .languageModel)
-    }
-
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV3<String> {
-        throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel)
-    }
-
-    public func imageModel(modelId: String) throws -> any ImageModelV3 {
-        throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
-    }
-
-    public func speechModel(modelId: String) throws -> (any SpeechModelV3)? {
-        speechFactory(HumeSpeechModelId(rawValue: modelId))
-    }
-
-    // MARK: - Convenience
-
-    public func callAsFunction(_ modelId: HumeSpeechModelId = .default) -> HumeSpeechModel {
-        speechFactory(modelId)
-    }
-
-    public func speech(_ modelId: HumeSpeechModelId = .default) -> HumeSpeechModel {
-        speechFactory(modelId)
-    }
-}
-
-private func createHumeAuthFetch(apiKey: String?, customFetch: FetchFunction?) -> FetchFunction {
-    let baseFetch = customFetch ?? defaultFetchFunction()
-
-    return { request in
-        var modified = request
-        var headers = modified.allHTTPHeaderFields ?? [:]
-
-        let hasAPIKey = headers.keys.contains { $0.lowercased() == "x-hume-api-key" }
-        if !hasAPIKey {
-            let resolved = try loadAPIKey(
-                apiKey: apiKey,
-                environmentVariableName: "HUME_API_KEY",
-                description: "Hume"
+public final class HumeProvider: ProviderV4 {
+    public struct Models: Sendable { public let speech: HumeSpeechModel }
+    private let config: HumeConfig
+    init(settings: HumeProviderSettings) {
+        config = .init(provider: "hume.speech", headers: {
+            let headers = combineHeaders(
+                ["X-Hume-Api-Key": try loadAPIKey(apiKey: settings.apiKey, environmentVariableName: "HUME_API_KEY", description: "Hume")], settings.headers?.mapValues(Optional.some)
             )
-            headers["X-Hume-Api-Key"] = resolved
-            modified.allHTTPHeaderFields = headers
-        }
-
-        return try await baseFetch(modified)
+            return withUserAgentSuffix(headers, "ai-sdk-hume/\(HUME_VERSION)").mapValues(Optional.some)
+        }, fetch: settings.fetch)
     }
+    public func speech() -> HumeSpeechModel { .init(config: config) }
+    public func speechModel(modelId: String) -> (any SpeechModelV4)? { speech() }
+    public func callAsFunction() -> Models { .init(speech: speech()) }
+    public func languageModel(modelId: String) throws -> any LanguageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .languageModel, message: "Hume does not provide language models") }
+    public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel, message: "Hume does not provide embedding models") }
+    public func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel, message: "Hume does not provide image models") }
 }
-
-public func createHume(settings: HumeProviderSettings = .init()) -> HumeProvider {
-    let fetch = createHumeAuthFetch(
-        apiKey: settings.apiKey,
-        customFetch: settings.fetch
-    )
-
-    let headersClosure: @Sendable () -> [String: String?] = {
-        var headers: [String: String?] = [:]
-
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                headers[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(headers, "ai-sdk/hume/\(HUME_VERSION)")
-        return withUA.mapValues { Optional($0) }
-    }
-
-    let config = HumeConfig(
-        provider: "hume.speech",
-        url: { options in
-            "https://api.hume.ai\(options.path)"
-        },
-        headers: headersClosure,
-        fetch: fetch
-    )
-
-    let providedCurrentDate: @Sendable () -> Date
-    if let custom = settings._internal?.currentDate {
-        providedCurrentDate = custom
-    } else {
-        providedCurrentDate = { Date() }
-    }
-
-    let factory: @Sendable (HumeSpeechModelId) -> HumeSpeechModel = { _ in
-        HumeSpeechModel(
-            modelId: "",
-            config: HumeSpeechModelConfig(
-                config: config,
-                currentDate: providedCurrentDate
-            )
-        )
-    }
-
-    return HumeProvider(speechFactory: factory)
-}
-
+public func createHume(settings: HumeProviderSettings = .init()) -> HumeProvider { .init(settings: settings) }
 public let hume = createHume()

@@ -10,7 +10,7 @@ import AISDKProviderUtils
 
 private struct HumeErrorBody: Codable, Sendable {
     let message: String
-    let code: Int
+    let code: Double
 }
 
 private struct HumeErrorData: Codable, Sendable {
