@@ -33,6 +33,23 @@ struct GatewayMediaModelTests {
         #expect(result.response.modelId == "openai/tts-1")
     }
 
+    @Test("settings and call headers override defaults case-insensitively", arguments: [false, true])
+    func headerPrecedence(_ callOverride: Bool) async throws {
+        let provider = createGateway(settings: .init(
+            apiKey: "default-key", teamIdOrSlug: "team-default",
+            headers: ["authorization": "Bearer settings-key", "X-Vercel-AI-Gateway-Team": "team-settings"],
+            fetch: { request in
+                #expect(request.value(forHTTPHeaderField: "Authorization") == (callOverride ? "Bearer call-key" : "Bearer settings-key"))
+                #expect(request.value(forHTTPHeaderField: "x-vercel-ai-gateway-team") == "team-settings")
+                return try response(request, #"{"audio":"AQ=="}"#)
+            }
+        ))
+        let result = try await provider.speech(modelId: "openai/tts-1").doGenerate(options: .init(
+            text: "Hello", headers: callOverride ? ["AUTHORIZATION": "Bearer call-key"] : nil
+        ))
+        #expect(result.audio == .base64("AQ=="))
+    }
+
     @Test("reranking preserves object documents and ranking indices")
     func reranking() async throws {
         let provider = createGateway(settings: .init(apiKey: "key", fetch: { request in

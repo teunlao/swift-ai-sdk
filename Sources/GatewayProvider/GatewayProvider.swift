@@ -348,17 +348,14 @@ private func makeHeaderClosure(settings: GatewayProviderSettings) -> (@Sendable 
             GATEWAY_AUTH_METHOD_HEADER: authToken.authMethod.rawValue
         ]
 
-        if let teamIdOrSlug = settings.teamIdOrSlug {
+        if let teamIdOrSlug = settings.teamIdOrSlug, !teamIdOrSlug.isEmpty {
             headerMap["x-vercel-ai-gateway-team"] = teamIdOrSlug
         }
 
-        if let customHeaders = settings.headers {
-            for (key, value) in customHeaders {
-                headerMap[key] = value
-            }
-        }
-
-        let withUA = withUserAgentSuffix(headerMap, "ai-sdk-gateway/\(GATEWAY_VERSION)")
+        let withUA = withUserAgentSuffix(
+            combineHeaders(headerMap, settings.headers?.mapValues { Optional($0) }),
+            "ai-sdk-gateway/\(GATEWAY_VERSION)"
+        )
         return withUA.mapValues { Optional($0) }
     }
 

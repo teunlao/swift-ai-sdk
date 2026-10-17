@@ -49,6 +49,20 @@ struct GatewayReportingTests {
         #expect(row.requestCount == 1)
     }
 
+    @Test("a selected empty tag differs from an empty tag selection", arguments: [false, true])
+    func emptyTagFilter(_ selectEmptyTag: Bool) async throws {
+        let provider = createGateway(settings: .init(apiKey: "key", fetch: { request in
+            let url = try #require(request.url)
+            let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            let tags = query.first { $0.name == "tags" }
+            #expect(tags?.value == (selectEmptyTag ? "" : nil))
+            let http = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]))
+            return FetchResponse(body: .data(Data(#"{"results":[]}"#.utf8)), urlResponse: http)
+        }))
+        let result = try await provider.getSpendReport(.init(startDate: "2026-10-01", endDate: "2026-10-16", tags: selectEmptyTag ? [""] : []))
+        #expect(result.results.isEmpty)
+    }
+
     @Test("Generation details unwrap data and retain billing and native token usage")
     func generationInfo() async throws {
         let response = #"{"data":{"id":"gen_1","total_cost":0.01,"upstream_inference_cost":0.008,"usage":0.01,"created_at":"2026-10-16T01:00:00Z","model":"openai/gpt-6.1-sol","is_byok":true,"provider_name":"openai","streamed":true,"finish_reason":"stop","latency":12,"generation_time":42,"native_tokens_prompt":100,"native_tokens_completion":20,"native_tokens_reasoning":3,"native_tokens_cached":5,"native_tokens_cache_creation":2,"billable_web_search_calls":1}}"#

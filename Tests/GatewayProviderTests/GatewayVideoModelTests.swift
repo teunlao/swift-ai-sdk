@@ -236,17 +236,34 @@ struct GatewayVideoModelTests {
         }
     }
 
-    @Test("doGenerate throws on empty SSE stream")
-    func doGenerateEmptySSEStream() async throws {
+    @Test("malformed video streams preserve HTTP response error classification", arguments: ["empty", "invalid-json", "unsupported-content-type"])
+    func malformedVideoResponse(_ kind: String) async throws {
         let fetch: FetchFunction = { request in
-            let httpResponse = try httpResponse(for: request, headers: ["Content-Type": "text/event-stream"])
-            return FetchResponse(body: .data(Data()), urlResponse: httpResponse)
+            let contentType = kind == "unsupported-content-type" ? "text/plain" : "text/event-stream"
+            let response = try httpResponse(for: request, headers: ["Content-Type": contentType])
+            let body = kind == "invalid-json" ? "data: invalid\n\n" : ""
+            return FetchResponse(body: .data(Data(body.utf8)), urlResponse: response)
         }
+        do {
+            _ = try await makeModel(fetch: fetch).doGenerate(options: .init(prompt: "Test", n: 1))
+            Issue.record("Expected malformed response failure")
+        } catch let error as GatewayResponseError {
+            #expect(error.statusCode == 200)
+            #expect(error.isRetryable == false)
+        }
+    }
 
-        let model = makeModel(fetch: fetch)
-        await #expect(throws: GatewayResponseError.self) {
-            _ = try await model.doGenerate(options: .init(prompt: "Test", n: 1, providerOptions: [:]))
-        }
+    @Test("doGenerate parses synchronous JSON video results")
+    func synchronousVideoResponse() async throws {
+        let model = makeModel(fetch: { request in
+            let response = try httpResponse(for: request, headers: ["Content-Type": "application/json; charset=utf-8"])
+            return FetchResponse(body: .data(Data(#"{"videos":[{"type":"url","url":"https://cdn.test/video.mp4","mediaType":"video/mp4"},{"type":"base64","data":"AQID","mediaType":"video/webm"}],"warnings":null,"providerMetadata":{"gateway":{"cost":"0.04"}}}"#.utf8)), urlResponse: response)
+        })
+        let result = try await model.doGenerate(options: .init(prompt: "Animate", n: 2))
+        #expect(result.videos == [.url(url: "https://cdn.test/video.mp4", mediaType: "video/mp4"), .base64(data: "AQID", mediaType: "video/webm")])
+        #expect(result.warnings.isEmpty)
+        #expect(result.providerMetadata?["gateway"]?["cost"] == .string("0.04"))
+        #expect(result.response.modelId == "google/veo-3.1-generate-001")
     }
 
     @Test("doGenerate ignores SSE heartbeat comments and parses the first data event")

@@ -179,7 +179,7 @@ private enum GatewayVideoStatusResponse: Decodable, Sendable {
     }
 }
 
-private struct GatewayVideoSuccessValue: Sendable {
+private struct GatewayVideoSuccessValue: Decodable, Sendable {
     let videos: [GatewayVideoData]
     let warnings: [SharedV4Warning]?
     let providerMetadata: SharedV4ProviderMetadata?
@@ -187,74 +187,39 @@ private struct GatewayVideoSuccessValue: Sendable {
 
 private let gatewayVideoSuccessHandler: ResponseHandler<GatewayVideoSuccessValue> = { input in
     let response = input.response
-
-    guard case .none = response.body else {
-        let headers = extractResponseHeaders(from: response.httpResponse)
-        let eventStream = parseJsonEventStream(
-            stream: response.body.makeStream(),
-            schema: gatewayVideoEventSchema
-        )
-
-        var iterator = eventStream.makeAsyncIterator()
-        guard let parseResult = try await iterator.next() else {
-            throw APICallError(
-                message: "SSE stream ended without a data event",
-                url: input.url,
-                requestBodyValues: input.requestBodyValues,
-                statusCode: response.statusCode
-            )
-        }
-
-        switch parseResult {
-        case .success(let event, _):
-            switch event {
-            case .result(let videos, let warnings, let providerMetadata):
-                return ResponseHandlerResult(
-                    value: GatewayVideoSuccessValue(
-                        videos: videos,
-                        warnings: warnings,
-                        providerMetadata: providerMetadata
-                    ),
-                    responseHeaders: headers
-                )
-
-            case .error(let message, let errorType, let statusCode, let param):
-                let data: JSONValue = .object([
-                    "error": .object([
-                        "message": .string(message),
-                        "type": .string(errorType),
-                        "param": param ?? .null
-                    ])
-                ])
-
-                throw APICallError(
-                    message: message,
-                    url: input.url,
-                    requestBodyValues: input.requestBodyValues,
-                    statusCode: statusCode,
-                    responseHeaders: headers,
-                    responseBody: jsonStringForVideoEventError(message: message, errorType: errorType, statusCode: statusCode, param: param),
-                    data: data
-                )
-            }
-
-        case .failure(let error, _):
-            throw APICallError(
-                message: "Failed to parse video SSE event",
-                url: input.url,
-                requestBodyValues: input.requestBodyValues,
-                statusCode: response.statusCode,
-                cause: error
-            )
-        }
+    let headers = extractResponseHeaders(from: response.httpResponse)
+    let contentType = response.httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+    if contentType.contains("application/json") {
+        return try await createJsonResponseHandler(responseSchema: gatewaySchema(GatewayVideoSuccessValue.self))(input)
     }
+    guard contentType.contains("text/event-stream") else {
+        throw GatewayVideoResponseFailure(message: "Unsupported content type: \(contentType)")
+    }
+    let eventStream = parseJsonEventStream(stream: response.body.makeStream(), schema: gatewayVideoEventSchema)
+    var iterator = eventStream.makeAsyncIterator()
+    guard let parseResult = try await iterator.next() else {
+        throw GatewayVideoResponseFailure(message: "Stream ended without receiving a result event")
+    }
+    switch parseResult {
+    case .success(let event, _):
+        switch event {
+        case .result(let videos, let warnings, let providerMetadata):
+            return ResponseHandlerResult(value: .init(videos: videos, warnings: warnings, providerMetadata: providerMetadata), responseHeaders: headers)
+        case .error(let message, let errorType, let statusCode, let param):
+            let data: JSONValue = .object(["error": .object(["message": .string(message), "type": .string(errorType), "param": param ?? .null])])
+            throw APICallError(
+                message: message, url: input.url, requestBodyValues: input.requestBodyValues,
+                statusCode: statusCode, responseHeaders: headers,
+                responseBody: jsonStringForVideoEventError(message: message, errorType: errorType, statusCode: statusCode, param: param), data: data
+            )
+        }
+    case .failure(let error, _): throw error
+    }
+}
 
-    throw APICallError(
-        message: "SSE response body is empty",
-        url: input.url,
-        requestBodyValues: input.requestBodyValues,
-        statusCode: response.statusCode
-    )
+private struct GatewayVideoResponseFailure: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 private enum GatewayVideoEvent: Decodable, Sendable {

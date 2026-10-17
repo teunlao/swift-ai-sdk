@@ -275,6 +275,7 @@ struct GatewayImageModelTests {
                     ],
                 ],
                 "gateway": [
+                    "images": [],
                     "routing": ["provider": "vertex"],
                     "cost": "0.08",
                 ],
@@ -313,6 +314,23 @@ struct GatewayImageModelTests {
             #expect(additional["routing"] != nil)
         } else {
             Issue.record("Expected gateway.additionalData object")
+        }
+    }
+
+    @Test("invalid image metadata is rejected at the response boundary", arguments: ["missing-images", "invalid-image"])
+    func malformedImageMetadata(_ kind: String) async throws {
+        let entry: JSONValue = kind == "missing-images" ? ["cost": "0.1"] : ["images": [.null]]
+        let body: JSONValue = ["images": ["AQ=="], "providerMetadata": ["vertex": entry]]
+        let data = try JSONEncoder().encode(body)
+        let model = makeModel(fetch: { request in
+            FetchResponse(body: .data(data), urlResponse: try httpResponse(for: request, headers: ["Content-Type": "application/json"]))
+        })
+        do {
+            _ = try await model.doGenerate(options: .init(prompt: "Test", n: 1))
+            Issue.record("Expected invalid metadata failure")
+        } catch let error as GatewayResponseError {
+            #expect(error.statusCode == 200)
+            #expect(error.isRetryable == false)
         }
     }
 

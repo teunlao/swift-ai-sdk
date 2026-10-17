@@ -77,7 +77,7 @@ public final class GatewayImageModel: ImageModelV4 {
                 images: .base64(response.value.images),
                 isRetryable: response.value.isRetryable,
                 warnings: response.value.warnings ?? [],
-                providerMetadata: convertProviderMetadata(response.value.providerMetadata),
+                providerMetadata: response.value.providerMetadata?.mapValues(\.value),
                 response: ImageModelV4ResponseInfo(
                     timestamp: Date(),
                     modelId: modelIdentifier.rawValue,
@@ -106,7 +106,7 @@ private struct GatewayImageResponse: Decodable, Sendable {
     let images: [String]
     let isRetryable: Bool?
     let warnings: [SharedV4Warning]?
-    let providerMetadata: [String: [String: JSONValue]]?
+    let providerMetadata: [String: GatewayImageMetadata]?
     let usage: ImageModelV4Usage?
 
     private enum CodingKeys: String, CodingKey {
@@ -116,6 +116,7 @@ private struct GatewayImageResponse: Decodable, Sendable {
         case providerMetadata
         case usage
     }
+
 }
 
 private let gatewayImageResponseSchema = gatewaySchema(GatewayImageResponse.self)
@@ -158,30 +159,16 @@ private func encodedFileData(_ data: ImageModelV4FileData) -> String {
     }
 }
 
-private func convertProviderMetadata(_ providerMetadata: [String: [String: JSONValue]]?) -> ImageModelV4ProviderMetadata? {
-    guard let providerMetadata else { return nil }
+private struct GatewayImageMetadata: Decodable, Sendable {
+    let value: ImageModelV4ProviderMetadataValue
 
-    var result: ImageModelV4ProviderMetadata = [:]
-    result.reserveCapacity(providerMetadata.count)
-
-    for (provider, entry) in providerMetadata {
-        let images: [JSONValue]
-        if case .array(let rawImages)? = entry["images"] {
-            images = rawImages
-        } else {
-            images = []
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        var entry = try container.decode(JSONObject.self)
+        guard case .array(let images)? = entry.removeValue(forKey: "images"), images.allSatisfy({ if case .object = $0 { return true }; return false }) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Image metadata must contain an array of image objects")
         }
-
-        var additional = entry
-        additional.removeValue(forKey: "images")
-        let additionalData: JSONValue? = additional.isEmpty ? nil : .object(additional)
-
-        result[provider] = ImageModelV4ProviderMetadataValue(
-            images: images,
-            additionalData: additionalData
-        )
+        value = .init(images: images, additionalData: entry.isEmpty ? nil : .object(entry))
     }
-
-    return result
 }
 

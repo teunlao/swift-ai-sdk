@@ -78,10 +78,12 @@ struct GatewaySpendReport: Sendable {
                 ("group_by", params.groupBy?.rawValue), ("date_part", params.datePart?.rawValue),
                 ("user_id", params.userId), ("model", params.model), ("provider", params.provider),
                 ("credential_type", params.credentialType?.rawValue),
-                ("tags", params.tags.flatMap { $0.isEmpty ? nil : $0.joined(separator: ",") }),
             ]
             query += filters.compactMap { name, value in
                 value.flatMap { $0.isEmpty ? nil : URLQueryItem(name: name, value: $0) }
+            }
+            if let tags = params.tags, !tags.isEmpty {
+                query.append(URLQueryItem(name: "tags", value: tags.joined(separator: ",")))
             }
             let result = try await getFromAPI(
                 url: gatewayAPIURL(baseURL: config.baseURL, path: "/v1/report", queryItems: query),
