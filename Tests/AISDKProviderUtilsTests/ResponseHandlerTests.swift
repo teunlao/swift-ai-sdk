@@ -197,7 +197,12 @@ struct ResponseHandlerTests {
         let response = makeResponse(
             status: 404,
             statusText: "Not Found",
-            body: .data(Data("Error".utf8))
+            headers: ["X-Request-ID": "request-1"],
+            body: .stream(AsyncThrowingStream { continuation in
+                continuation.yield(Data([0xef]))
+                continuation.yield(Data([0xbb, 0xbf, 0xef, 0xbb, 0xbf, 0xff]))
+                continuation.finish()
+            })
         )
 
         let result = try await handler(
@@ -210,8 +215,10 @@ struct ResponseHandlerTests {
 
         #expect(result.value.statusCode == 404)
         #expect(result.value.message == "Not Found")
-        #expect(result.value.responseBody == "Error")
+        #expect(result.value.responseBody == "\u{FEFF}�")
         #expect(result.value.url == response.url.absoluteString)
+        #expect(result.value.responseHeaders?["x-request-id"] == "request-1")
+        #expect((result.value.requestBodyValues as? [String: String]) == ["some": "data"])
     }
 
     // MARK: - Event Source Response Handler Tests

@@ -40,6 +40,18 @@ public enum ProviderHTTPResponseBody: Sendable {
             return buffer
         }
     }
+
+    public func collectText() async throws -> String {
+        try await collectData().utf8String()
+    }
+}
+
+extension Data {
+    // Response text strips one initial BOM and replaces malformed UTF-8 bytes.
+    func utf8String() -> String {
+        let bytes = starts(with: [0xef, 0xbb, 0xbf]) ? dropFirst(3) : self
+        return String(decoding: bytes, as: UTF8.self)
+    }
 }
 
 /// Lightweight representation of an HTTP response for provider utilities.
