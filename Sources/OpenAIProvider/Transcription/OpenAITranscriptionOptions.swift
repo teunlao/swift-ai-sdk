@@ -1,14 +1,30 @@
-import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
-public struct OpenAITranscriptionProviderOptions: Sendable, Equatable {
+public struct OpenAITranscriptionModelOptions: Sendable, Equatable {
     public var include: [String]?
     public var language: String?
     public var prompt: String?
     public var temperature: Double?
     public var timestampGranularities: [String]?
-    public var streaming: OpenAITranscriptionStreamingOptions?
+    public var responseFormat: String?
+    public var chunkingStrategy: ChunkingStrategy?
+    public var streaming: Streaming?
+
+    public enum ChunkingStrategy: Sendable, Equatable {
+        case auto
+        case serverVAD(threshold: Double? = nil, prefixPaddingMs: Int? = nil, silenceDurationMs: Int? = nil)
+    }
+
+    public struct Streaming: Sendable, Equatable {
+        public var delay: String?
+        public var include: [String]?
+
+        public init(delay: String? = nil, include: [String]? = nil) {
+            self.delay = delay
+            self.include = include
+        }
+    }
 
     public init(
         include: [String]? = nil,
@@ -16,181 +32,115 @@ public struct OpenAITranscriptionProviderOptions: Sendable, Equatable {
         prompt: String? = nil,
         temperature: Double? = nil,
         timestampGranularities: [String]? = nil,
-        streaming: OpenAITranscriptionStreamingOptions? = nil
+        responseFormat: String? = nil,
+        chunkingStrategy: ChunkingStrategy? = nil,
+        streaming: Streaming? = nil
     ) {
         self.include = include
         self.language = language
         self.prompt = prompt
         self.temperature = temperature
         self.timestampGranularities = timestampGranularities
+        self.responseFormat = responseFormat
+        self.chunkingStrategy = chunkingStrategy
         self.streaming = streaming
     }
 }
 
-public struct OpenAITranscriptionStreamingOptions: Sendable, Equatable {
-    public var delay: String?
-    public var include: [String]?
-
-    public init(delay: String? = nil, include: [String]? = nil) {
-        self.delay = delay
-        self.include = include
+public let openAITranscriptionModelOptionsSchema = FlexibleSchema<OpenAITranscriptionModelOptions>(Schema(
+    jsonSchemaResolver: { TranscriptionOptionsParser.jsonSchema },
+    validator: { value in
+        do { return .success(value: try TranscriptionOptionsParser.parse(jsonValue(from: value))) }
+        catch { return .failure(error: TypeValidationError.wrap(value: value, cause: error)) }
     }
-}
+))
 
-public typealias OpenAITranscriptionModelOptions = OpenAITranscriptionProviderOptions
+private enum TranscriptionOptionsParser {
+    static let jsonSchema: JSONValue = {
+        let string: JSONValue = ["type": "string"]
+        let strings: JSONValue = ["type": "array", "items": string]
+        let ratio: JSONValue = ["type": "number", "minimum": 0, "maximum": 1]
+        let milliseconds: JSONValue = ["type": "integer", "minimum": 0, "maximum": .number(maxMilliseconds)]
+        return [
+            "type": "object", "additionalProperties": false,
+            "properties": [
+                "include": strings, "language": string, "prompt": string,
+                "temperature": ["type": "number", "minimum": 0, "maximum": 1, "default": 0],
+                "timestampGranularities": ["type": "array", "items": ["enum": ["word", "segment"]], "default": ["segment"]],
+                "responseFormat": ["enum": ["json", "verbose_json", "diarized_json"]],
+                "chunkingStrategy": ["anyOf": [
+                    ["const": "auto"],
+                    ["type": "object", "required": ["type"], "additionalProperties": false, "properties": [
+                        "type": ["const": "server_vad"], "threshold": ratio,
+                        "prefixPaddingMs": milliseconds, "silenceDurationMs": milliseconds
+                    ]]
+                ]],
+                "streaming": ["type": "object", "additionalProperties": false, "properties": [
+                    "delay": ["enum": ["minimal", "low", "medium", "high", "xhigh"]], "include": strings
+                ]]
+            ]
+        ]
+    }()
 
-private let openAITranscriptionProviderOptionsJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(true)
-])
-
-let openAITranscriptionProviderOptionsSchema = FlexibleSchema<OpenAITranscriptionProviderOptions>(
-    Schema(
-        jsonSchemaResolver: { openAITranscriptionProviderOptionsJSONSchema },
-        validator: { value in
-            do {
-                let json = try jsonValue(from: value)
-                guard case .object(let dict) = json else {
-                    let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
-                    return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-                }
-
-                var options = OpenAITranscriptionProviderOptions(
-                    include: nil,
-                    language: nil,
-                    prompt: nil,
-                    temperature: 0,
-                    timestampGranularities: ["segment"],
-                    streaming: nil
-                )
-
-                if let includeValue = dict["include"], includeValue != .null {
-                    guard case .array(let array) = includeValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "include must be an array of strings")
-                        return .failure(error: TypeValidationError.wrap(value: includeValue, cause: error))
-                    }
-                    var include: [String] = []
-                    include.reserveCapacity(array.count)
-                    for item in array {
-                        guard case .string(let string) = item else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "include entries must be strings")
-                            return .failure(error: TypeValidationError.wrap(value: item, cause: error))
-                        }
-                        include.append(string)
-                    }
-                    options.include = include
-                }
-
-                if let languageValue = dict["language"], languageValue != .null {
-                    guard case .string(let language) = languageValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "language must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: languageValue, cause: error))
-                    }
-                    options.language = language
-                }
-
-                if let promptValue = dict["prompt"], promptValue != .null {
-                    guard case .string(let prompt) = promptValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "prompt must be a string")
-                        return .failure(error: TypeValidationError.wrap(value: promptValue, cause: error))
-                    }
-                    options.prompt = prompt
-                }
-
-                if let temperatureValue = dict["temperature"], temperatureValue != .null {
-                    guard case .number(let number) = temperatureValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "temperature must be a number")
-                        return .failure(error: TypeValidationError.wrap(value: temperatureValue, cause: error))
-                    }
-                    if number < 0 || number > 1 {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "temperature must be between 0 and 1")
-                        return .failure(error: TypeValidationError.wrap(value: temperatureValue, cause: error))
-                    }
-                    options.temperature = number
-                }
-
-                if let granularitiesValue = dict["timestampGranularities"], granularitiesValue != .null {
-                    guard case .array(let array) = granularitiesValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "timestampGranularities must be an array")
-                        return .failure(error: TypeValidationError.wrap(value: granularitiesValue, cause: error))
-                    }
-                    var granularities: [String] = []
-                    granularities.reserveCapacity(array.count)
-                    for item in array {
-                        guard case .string(let granularity) = item else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "timestampGranularities entries must be strings")
-                            return .failure(error: TypeValidationError.wrap(value: item, cause: error))
-                        }
-                        guard granularity == "word" || granularity == "segment" else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "timestampGranularities must be 'word' or 'segment'")
-                            return .failure(error: TypeValidationError.wrap(value: item, cause: error))
-                        }
-                        granularities.append(granularity)
-                    }
-                    options.timestampGranularities = granularities
-                }
-
-                if let streamingValue = dict["streaming"], streamingValue != .null {
-                    guard case .object(let streamingObject) = streamingValue else {
-                        let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming must be an object")
-                        return .failure(error: TypeValidationError.wrap(value: streamingValue, cause: error))
-                    }
-
-                    var streaming = OpenAITranscriptionStreamingOptions(delay: nil, include: nil)
-
-                    if let delayValue = streamingObject["delay"], delayValue != .null {
-                        guard case .string(let delay) = delayValue else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.delay must be a string")
-                            return .failure(error: TypeValidationError.wrap(value: delayValue, cause: error))
-                        }
-                        guard ["minimal", "low", "medium", "high", "xhigh"].contains(delay) else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.delay must be minimal, low, medium, high, or xhigh")
-                            return .failure(error: TypeValidationError.wrap(value: delayValue, cause: error))
-                        }
-                        streaming.delay = delay
-                    }
-
-                    if let includeValue = streamingObject["include"], includeValue != .null {
-                        guard case .array(let array) = includeValue else {
-                            let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.include must be an array of strings")
-                            return .failure(error: TypeValidationError.wrap(value: includeValue, cause: error))
-                        }
-                        var include: [String] = []
-                        include.reserveCapacity(array.count)
-                        for item in array {
-                            guard case .string(let string) = item else {
-                                let error = SchemaValidationIssuesError(vendor: "openai", issues: "streaming.include entries must be strings")
-                                return .failure(error: TypeValidationError.wrap(value: item, cause: error))
-                            }
-                            include.append(string)
-                        }
-                        streaming.include = include
-                    }
-
-                    options.streaming = streaming
-                }
-
-                return .success(value: options)
-            } catch let error as TypeValidationError {
-                return .failure(error: error)
-            } catch {
-                return .failure(error: TypeValidationError.wrap(value: value, cause: error))
-            }
-        }
-    )
-)
-
-
-
-extension OpenAITranscriptionProviderOptions {
-    static var `default`: OpenAITranscriptionProviderOptions {
-        OpenAITranscriptionProviderOptions(
-            include: nil,
-            language: nil,
-            prompt: nil,
-            temperature: 0,
-            timestampGranularities: ["segment"],
-            streaming: nil
+    static func parse(_ value: JSONValue) throws -> OpenAITranscriptionModelOptions {
+        guard case .object(let object) = value else { throw invalid("expected object") }
+        var result = OpenAITranscriptionModelOptions(
+            include: try strings(object["include"]),
+            language: try string(object["language"]),
+            prompt: try string(object["prompt"]),
+            temperature: try ratio(object["temperature"]) ?? 0,
+            timestampGranularities: try strings(object["timestampGranularities"], allowed: ["word", "segment"]) ?? ["segment"],
+            responseFormat: try string(object["responseFormat"], allowed: ["json", "verbose_json", "diarized_json"])
         )
+        if let chunking = object["chunkingStrategy"] {
+            if chunking == "auto" {
+                result.chunkingStrategy = .auto
+            } else if case .object(let vad) = chunking, vad["type"] == "server_vad" {
+                result.chunkingStrategy = .serverVAD(
+                    threshold: try ratio(vad["threshold"]),
+                    prefixPaddingMs: try milliseconds(vad["prefixPaddingMs"]),
+                    silenceDurationMs: try milliseconds(vad["silenceDurationMs"])
+                )
+            } else { throw invalid("invalid chunkingStrategy") }
+        }
+        if let streaming = object["streaming"] {
+            guard case .object(let object) = streaming else { throw invalid("streaming must be an object") }
+            result.streaming = .init(
+                delay: try string(object["delay"], allowed: ["minimal", "low", "medium", "high", "xhigh"]),
+                include: try strings(object["include"])
+            )
+        }
+        return result
+    }
+
+    private static func string(_ value: JSONValue?, allowed: [String]? = nil) throws -> String? {
+        guard let value else { return nil }
+        guard case .string(let text) = value, allowed?.contains(text) ?? true else { throw invalid("invalid string option") }
+        return text
+    }
+
+    private static func strings(_ value: JSONValue?, allowed: [String]? = nil) throws -> [String]? {
+        guard let value else { return nil }
+        guard case .array(let array) = value else { throw invalid("expected array") }
+        return try array.map { try string($0, allowed: allowed)! }
+    }
+
+    private static func ratio(_ value: JSONValue?) throws -> Double? {
+        guard let value else { return nil }
+        guard case .number(let number) = value, number.isFinite, (0...1).contains(number) else { throw invalid("expected a number between 0 and 1") }
+        return number
+    }
+
+    // Zod v4 int validates safe integers, independently of Swift's Int width.
+    private static let maxMilliseconds: Double = 9_007_199_254_740_991
+
+    private static func milliseconds(_ value: JSONValue?) throws -> Int? {
+        guard let value else { return nil }
+        guard case .number(let number) = value, (0...maxMilliseconds).contains(number), let integer = Int(exactly: number) else { throw invalid("expected non-negative safe integer milliseconds") }
+        return integer
+    }
+
+    private static func invalid(_ message: String) -> SchemaValidationIssuesError {
+        SchemaValidationIssuesError(vendor: "openai", issues: message)
     }
 }

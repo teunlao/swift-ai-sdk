@@ -1,1566 +1,443 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import OpenAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
-private let sampleAudioData = Data("ABC".utf8)
+enum SocketFailure: Error, Equatable { case creation, send, audio, deadline }
 
-private final class MockOpenAIWebSocketFactory: @unchecked Sendable {
+final class TranscriptionAudioSource: @unchecked Sendable {
+    let stream: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>
+    let continuation: AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>.Continuation
     private let lock = NSLock()
-    private var connections: [MockOpenAIWebSocketConnection] = []
-    private let factoryError: Error?
-    private let sendError: Error?
-    private let successfulSendsBeforeError: Int
+    private var cancelled = false
+    let termination: AsyncStream<Void>
 
-    init(
-        factoryError: Error? = nil,
-        sendError: Error? = nil,
-        successfulSendsBeforeError: Int = 0
-    ) {
-        self.factoryError = factoryError
-        self.sendError = sendError
-        self.successfulSendsBeforeError = successfulSendsBeforeError
+    init(chunks: [TranscriptionModelV4StreamAudio] = [], finished: Bool = false) {
+        let pair = AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+        let notice = AsyncStream<Void>.makeStream()
+        termination = notice.stream
+        continuation.onTermination = { [weak self] termination in
+            if case .cancelled = termination { self?.lock.withLock { self?.cancelled = true } }
+            notice.continuation.yield(())
+            notice.continuation.finish()
+        }
+        for chunk in chunks { continuation.yield(chunk) }
+        if finished { continuation.finish() }
     }
 
-    func make(_ request: OpenAIWebSocketRequest) throws -> any OpenAIWebSocketConnection {
-        if let factoryError {
-            throw factoryError
-        }
-        let connection = MockOpenAIWebSocketConnection(
-            request: request,
-            sendError: sendError,
-            successfulSendsBeforeError: successfulSendsBeforeError
-        )
-        lock.withLock {
-            connections.append(connection)
-        }
-        return connection
-    }
-
-    func firstConnection() -> MockOpenAIWebSocketConnection? {
-        lock.withLock {
-            connections.first
-        }
-    }
+    var isCancelled: Bool { lock.withLock { cancelled } }
 }
 
-private final class MockOpenAIWebSocketConnection: OpenAIWebSocketConnection, @unchecked Sendable {
-    let request: OpenAIWebSocketRequest
+private final class Socket: OpenAIWebSocketConnection, @unchecked Sendable {
     let messages: AsyncThrowingStream<String, Error>
-
+    let sent: AsyncStream<JSONValue>
+    let draining: AsyncStream<Void>
+    private let incoming: AsyncThrowingStream<String, Error>.Continuation
+    private let outgoing: AsyncStream<JSONValue>.Continuation
+    private let drainNotice: AsyncStream<Void>.Continuation
+    private let opened: AsyncThrowingStream<Void, Error>
+    private let openGate: AsyncThrowingStream<Void, Error>.Continuation
+    private let drained: AsyncThrowingStream<Void, Error>
+    private let drainGate: AsyncThrowingStream<Void, Error>.Continuation
     private let lock = NSLock()
-    private let messageContinuation: AsyncThrowingStream<String, Error>.Continuation
-    private var openContinuations: [CheckedContinuation<Void, Error>] = []
-    private var opened = false
-    private var sentTexts: [String] = []
-    private var closeCodeValues: [Int?] = []
-    private let sendError: Error?
-    private let successfulSendsBeforeError: Int
+    private var requests: [OpenAIWebSocketRequest] = []
+    private var values: [JSONValue] = []
+    private var closes: [Int?] = []
+    private let initiallyOpen: Bool
+    private let blockDrain: Bool
+    private let failSend: Bool
 
-    init(
-        request: OpenAIWebSocketRequest,
-        sendError: Error? = nil,
-        successfulSendsBeforeError: Int = 0
-    ) {
-        self.request = request
-        self.sendError = sendError
-        self.successfulSendsBeforeError = successfulSendsBeforeError
+    init(open: Bool = true, blockDrain: Bool = false, failSend: Bool = false) {
+        let input = AsyncThrowingStream<String, Error>.makeStream()
+        messages = input.stream; incoming = input.continuation
+        let output = AsyncStream<JSONValue>.makeStream()
+        sent = output.stream; outgoing = output.continuation
+        let notice = AsyncStream<Void>.makeStream()
+        draining = notice.stream; drainNotice = notice.continuation
+        let opening = AsyncThrowingStream<Void, Error>.makeStream()
+        opened = opening.stream; openGate = opening.continuation
+        let drain = AsyncThrowingStream<Void, Error>.makeStream()
+        drained = drain.stream; drainGate = drain.continuation
+        initiallyOpen = open; self.blockDrain = blockDrain; self.failSend = failSend
+    }
 
-        var continuation: AsyncThrowingStream<String, Error>.Continuation?
-        self.messages = AsyncThrowingStream { streamContinuation in
-            continuation = streamContinuation
-        }
-        self.messageContinuation = continuation!
+    func make(_ request: OpenAIWebSocketRequest) -> any OpenAIWebSocketConnection {
+        lock.withLock { requests.append(request) }
+        return self
     }
 
     func waitUntilOpen() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let shouldResume = lock.withLock {
-                if opened {
-                    return true
-                }
-                openContinuations.append(continuation)
-                return false
-            }
-            if shouldResume {
-                continuation.resume()
-            }
+        if initiallyOpen { return }
+        var iterator = opened.makeAsyncIterator()
+        _ = try await iterator.next()
+    }
+
+    func waitForBufferDrain() async throws {
+        drainNotice.yield(())
+        if blockDrain {
+            var iterator = drained.makeAsyncIterator()
+            _ = try await iterator.next()
         }
     }
 
     func send(_ text: String) async throws {
-        let error = lock.withLock { () -> Error? in
-            if let sendError, sentTexts.count >= successfulSendsBeforeError {
-                return sendError
-            }
-            sentTexts.append(text)
-            return nil
-        }
-        if let error {
-            throw error
-        }
+        if failSend && lock.withLock({ values.count >= 2 }) { throw SocketFailure.send }
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+        lock.withLock { values.append(value) }
+        outgoing.yield(value)
     }
 
     func close(code: Int?) {
-        lock.withLock {
-            closeCodeValues.append(code)
-        }
-        messageContinuation.finish()
+        lock.withLock { closes.append(code) }
+        incoming.finish(); outgoing.finish(); drainNotice.finish()
+        openGate.finish(throwing: CancellationError())
+        drainGate.finish(throwing: CancellationError())
     }
 
-    func open() {
-        let continuations = lock.withLock {
-            opened = true
-            let values = openContinuations
-            openContinuations.removeAll()
-            return values
-        }
-        continuations.forEach { $0.resume() }
-    }
+    func message(_ text: String) { incoming.yield(text) }
+    func fail() { incoming.finish(throwing: SocketFailure.send) }
+    func remoteClose() { incoming.finish() }
+    func releaseDrain() { drainGate.yield(()); drainGate.finish() }
+    var frames: [JSONValue] { lock.withLock { values } }
+    var request: OpenAIWebSocketRequest? { lock.withLock { requests.first } }
+    var closeCodes: [Int?] { lock.withLock { closes } }
+}
 
-    func message(_ value: JSONValue) throws {
-        messageContinuation.yield(try jsonText(from: value))
-    }
+private final class AbortFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func abort() { lock.withLock { value = true } }
+    func read() -> Bool { lock.withLock { value } }
+}
 
-    func sentJSONValues() throws -> [JSONValue] {
-        try lock.withLock { sentTexts }.map { text in
-            let data = Data(text.utf8)
-            return try JSONDecoder().decode(JSONValue.self, from: data)
-        }
-    }
-
-    func closeCodes() -> [Int?] {
-        lock.withLock { closeCodeValues }
-    }
-
-    func waitForSentCount(_ count: Int) async throws {
-        for _ in 0..<200 {
-            let currentCount = lock.withLock { sentTexts.count }
-            if currentCount >= count {
-                return
-            }
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
+func transcriptionDeadline<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask { try await Task.sleep(for: .seconds(1)); throw SocketFailure.deadline }
+        defer { group.cancelAll() }
+        return try await group.next()!
     }
 }
 
-private enum MockOpenAIWebSocketError: Error {
-    case factory
-    case send
-}
-
-private actor AudioTerminationCapture {
-    private var terminated = false
-
-    func markTerminated() {
-        terminated = true
-    }
-
-    func waitUntilTerminated() async -> Bool {
-        for _ in 0..<200 {
-            if terminated {
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 5_000_000)
-        }
-        return terminated
+private func collect(_ stream: AsyncThrowingStream<TranscriptionModelV4StreamPart, Error>) async throws -> [TranscriptionModelV4StreamPart] {
+    try await transcriptionDeadline {
+        var parts: [TranscriptionModelV4StreamPart] = []
+        for try await part in stream { parts.append(part) }
+        return parts
     }
 }
 
-private func transcriptionAudioStream(
-    _ chunks: [TranscriptionModelV4StreamAudio]
-) -> AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error> {
-    AsyncThrowingStream { continuation in
-        for chunk in chunks {
-            continuation.yield(chunk)
+private func waitForCommit(_ socket: Socket) async throws {
+    try await transcriptionDeadline {
+        for await frame in socket.sent {
+            if frame == .object(["type": .string("input_audio_buffer.commit")]) { return }
         }
-        continuation.finish()
+        throw SocketFailure.deadline
     }
 }
 
-private func cancellableTranscriptionAudioStream(
-    capture: AudioTerminationCapture,
-    chunks: [TranscriptionModelV4StreamAudio] = []
-) -> AsyncThrowingStream<TranscriptionModelV4StreamAudio, Error> {
-    AsyncThrowingStream { continuation in
-        for chunk in chunks {
-            continuation.yield(chunk)
-        }
-        continuation.onTermination = { @Sendable _ in
-            Task {
-                await capture.markTerminated()
-            }
-        }
+private func field(_ body: String, _ name: String) -> [String] {
+    body.components(separatedBy: "\r\n--").compactMap { part in
+        guard part.contains("name=\"\(name)\""), let separator = part.range(of: "\r\n\r\n") else { return nil }
+        return String(part[separator.upperBound...].components(separatedBy: "\r\n").first ?? "")
     }
 }
 
-private func collectTranscriptionParts(
-    _ stream: AsyncThrowingStream<TranscriptionModelV4StreamPart, Error>
-) async throws -> [TranscriptionModelV4StreamPart] {
-    var parts: [TranscriptionModelV4StreamPart] = []
-    for try await part in stream {
-        parts.append(part)
-    }
-    return parts
+private func response(_ request: URLRequest, _ body: String, status: Int = 200) -> FetchResponse {
+    FetchResponse(body: .data(Data(body.utf8)), urlResponse: HTTPURLResponse(
+        url: request.url!, statusCode: status, httpVersion: nil,
+        headerFields: ["Content-Type": "application/json", "X-Request-ID": "request-1"]
+    )!)
 }
 
-private func jsonText(from value: JSONValue) throws -> String {
-    let data = try JSONEncoder().encode(value)
-    return String(decoding: data, as: UTF8.self)
-}
-
-private func multipartFieldValues(in body: String, named name: String) -> [String] {
-    let normalized = body.replacingOccurrences(of: "\r\n", with: "\n")
-    return normalized
-        .components(separatedBy: "\n--")
-        .compactMap { part in
-            guard part.contains("name=\"\(name)\""),
-                  let separator = part.range(of: "\n\n")
-            else {
-                return nil
-            }
-
-            let value = part[separator.upperBound...]
-            return value.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-                .first
-                .map(String.init) ?? ""
-        }
+private func streamModel(_ socket: Socket) -> OpenAITranscriptionModel {
+    OpenAITranscriptionModel(modelId: "gpt-realtime-whisper-2026-01-01", config: .init(
+        provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" },
+        headers: { ["aUtHoRiZaTiOn": "Bearer configured"] }, webSocket: socket.make,
+        _internal: .init(currentDate: { Date(timeIntervalSince1970: 12) })
+    ))
 }
 
 @Suite("OpenAITranscriptionModel")
 struct OpenAITranscriptionModelTests {
-    @Test("doGenerate rejects realtime transcription models")
-    func testDoGenerateRejectsRealtimeTranscriptionModel() async throws {
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] }
-        )
-        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: config)
-
-        await #expect(throws: UnsupportedFunctionalityError.self) {
-            _ = try await model.doGenerate(
-                options: TranscriptionModelV3CallOptions(
-                    audio: .binary(sampleAudioData),
-                    mediaType: "audio/wav"
-                )
-            )
-        }
-    }
-
-    @Test("doStream rejects non-realtime transcription models")
-    func testDoStreamRejectsNonRealtimeTranscriptionModel() async throws {
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] }
-        )
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        await #expect(throws: UnsupportedFunctionalityError.self) {
-            _ = try await model.doStream(
-                options: TranscriptionModelV4StreamOptions(
-                    audio: transcriptionAudioStream([.binary(sampleAudioData)]),
-                    inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
-                )
-            )
-        }
-    }
-
-    @Test("doStream sends OpenAI realtime transcription session and maps stream parts")
-    func testDoStreamRealtimeTranscription() async throws {
-        let webSocketFactory = MockOpenAIWebSocketFactory()
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { options in "https://api.openai.com/v1\(options.path)" },
-            headers: { ["aUtHoRiZaTiOn": "Bearer configured-api-key"] },
-            webSocket: webSocketFactory.make,
-            _internal: .init(currentDate: { testDate })
-        )
-        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: config)
-
-        let result = try await model.doStream(
-            options: TranscriptionModelV4StreamOptions(
-                audio: transcriptionAudioStream([.binary(Data([1, 2, 3]))]),
-                inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
-                providerOptions: [
-                    "openai": [
-                        "language": .string("en"),
-                        "streaming": .object([
-                            "delay": .string("low"),
-                            "include": .array([.string("item.input_audio_transcription.logprobs")])
-                        ])
-                    ]
-                ],
-                headers: [
-                    "AUTHORIZATION": "bEaReR per-call-api-key",
-                    "X-Realtime-Test": "present"
-                ]
-            )
-        )
-
-        guard let connection = webSocketFactory.firstConnection() else {
-            Issue.record("No WebSocket connection was created")
-            return
-        }
-
-        #expect(connection.request.url.absoluteString == "wss://api.openai.com/v1/realtime?intent=transcription")
-        #expect(connection.request.protocols == ["realtime", "openai-insecure-api-key.per-call-api-key"])
-        #expect(connection.request.headers["X-Realtime-Test"] == "present")
-        #expect(connection.request.headers.keys.allSatisfy { $0.lowercased() != "authorization" })
-
-        let partsTask = Task {
-            try await collectTranscriptionParts(result.stream)
-        }
-
-        connection.open()
-        try await connection.waitForSentCount(3)
-
-        let sent = try connection.sentJSONValues()
-        #expect(sent[0] == .object([
-            "session": .object([
-                "audio": .object([
-                    "input": .object([
-                        "format": .object([
-                            "rate": .number(24_000),
-                            "type": .string("audio/pcm")
-                        ]),
-                        "transcription": .object([
-                            "delay": .string("low"),
-                            "language": .string("en"),
-                            "model": .string("gpt-realtime-whisper")
-                        ]),
-                        "turn_detection": .null
-                    ])
-                ]),
-                "include": .array([.string("item.input_audio_transcription.logprobs")]),
-                "type": .string("transcription")
-            ]),
-            "type": .string("session.update")
-        ]))
-        #expect(sent[1] == .object([
-            "audio": .string("AQID"),
-            "type": .string("input_audio_buffer.append")
-        ]))
-        #expect(sent[2] == .object([
-            "type": .string("input_audio_buffer.commit")
-        ]))
-
-        try connection.message(.object([
-            "type": .string("conversation.item.input_audio_transcription.delta"),
-            "item_id": .string("item-1"),
-            "delta": .string("Hel")
-        ]))
-        try connection.message(.object([
-            "type": .string("conversation.item.input_audio_transcription.completed"),
-            "item_id": .string("item-1"),
-            "transcript": .string("Hello")
-        ]))
-
-        let parts = try await partsTask.value
-        #expect(parts == [
-            .streamStart(warnings: []),
-            .transcriptDelta(id: "item-1", delta: "Hel", providerMetadata: nil),
-            .transcriptFinal(
-                id: "item-1",
-                text: "Hello",
-                startSecond: nil,
-                endSecond: nil,
-                channelIndex: nil,
-                providerMetadata: nil
-            ),
-            .finish(
-                text: "Hello",
-                segments: [],
-                language: "en",
-                durationInSeconds: nil,
-                providerMetadata: nil
-            )
-        ])
-        #expect(result.response?.timestamp == testDate)
-        #expect(result.response?.modelId == "gpt-realtime-whisper")
-    }
-
-    @Test("doStream keeps non-auth headers when Authorization is absent")
-    func testDoStreamWithoutAuthorizationKeepsHandshakeHeaders() async throws {
-        let webSocketFactory = MockOpenAIWebSocketFactory()
-        let model = OpenAITranscriptionModel(
-            modelId: "gpt-realtime-whisper",
-            config: OpenAIConfig(
-                provider: "openai.transcription",
-                url: { options in "https://api.openai.com/v1\(options.path)" },
-                headers: { ["X-Realtime-Test": "present"] },
-                webSocket: webSocketFactory.make
-            )
-        )
-
-        let result = try await model.doStream(options: .init(
-            audio: transcriptionAudioStream([]),
-            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+    @Test func whisperMultipartWordsAndMetadata() async throws {
+        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: .init(
+            provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" },
+            headers: { ["Authorization": "Bearer configured"] }, fetch: { request in
+                #expect(request.httpMethod == "POST")
+                #expect(request.url?.path == "/v1/audio/transcriptions")
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer caller")
+                #expect(request.value(forHTTPHeaderField: "X-Custom") == "yes")
+                let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+                #expect(body.contains("filename=\"audio.wav\""))
+                #expect(request.httpBody?.range(of: Data([13, 10, 251, 255, 13, 10])) != nil)
+                #expect(field(body, "model") == ["whisper-1"])
+                #expect(field(body, "response_format") == ["verbose_json"])
+                #expect(field(body, "temperature") == ["0.25"])
+                #expect(field(body, "timestamp_granularities[]") == ["word"])
+                #expect(field(body, "include[]") == ["logprobs"])
+                #expect(field(body, "prompt") == ["context"])
+                #expect(field(body, "language") == ["en"])
+                return response(request, #"{"text":"Hello","language":"english","duration":0.75,"words":[{"word":"Hello","start":0.125,"end":0.75}],"usage":{"type":"duration","seconds":0.75}}"#)
+            }, _internal: .init(currentDate: { Date(timeIntervalSince1970: 12) })
         ))
-        let connection = try #require(webSocketFactory.firstConnection())
-
-        #expect(connection.request.protocols == ["realtime"])
-        #expect(connection.request.headers == ["X-Realtime-Test": "present"])
-
-        let partsTask = Task {
-            try await collectTranscriptionParts(result.stream)
-        }
-        connection.open()
-        try await connection.waitForSentCount(2)
-        try connection.message(.object([
-            "type": .string("conversation.item.input_audio_transcription.completed"),
-            "item_id": .string("item-no-auth"),
-            "transcript": .string("")
-        ]))
-        _ = try await partsTask.value
-    }
-
-    @Test("doStream cancels audio when WebSocket creation fails")
-    func testDoStreamCancelsAudioWhenWebSocketCreationFails() async throws {
-        let audioTermination = AudioTerminationCapture()
-        let webSocketFactory = MockOpenAIWebSocketFactory(factoryError: MockOpenAIWebSocketError.factory)
-        let model = OpenAITranscriptionModel(
-            modelId: "gpt-realtime-whisper",
-            config: OpenAIConfig(
-                provider: "openai.transcription",
-                url: { options in "https://api.openai.com/v1\(options.path)" },
-                headers: { ["Authorization": "Bearer test-api-key"] },
-                webSocket: webSocketFactory.make
-            )
-        )
-
-        let result = try await model.doStream(options: .init(
-            audio: cancellableTranscriptionAudioStream(capture: audioTermination),
-            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
-        ))
-
-        do {
-            _ = try await collectTranscriptionParts(result.stream)
-            Issue.record("Expected WebSocket factory error")
-        } catch MockOpenAIWebSocketError.factory {
-        } catch {
-            Issue.record("Expected factory error, got \(error)")
-        }
-        #expect(await audioTermination.waitUntilTerminated())
-    }
-
-    @Test("doStream cancels audio when a WebSocket audio send fails mid-stream")
-    func testDoStreamCancelsAudioWhenAudioSendFailsMidStream() async throws {
-        let audioTermination = AudioTerminationCapture()
-        let webSocketFactory = MockOpenAIWebSocketFactory(
-            sendError: MockOpenAIWebSocketError.send,
-            successfulSendsBeforeError: 2
-        )
-        let model = OpenAITranscriptionModel(
-            modelId: "gpt-realtime-whisper",
-            config: OpenAIConfig(
-                provider: "openai.transcription",
-                url: { options in "https://api.openai.com/v1\(options.path)" },
-                headers: { ["Authorization": "Bearer test-api-key"] },
-                webSocket: webSocketFactory.make
-            )
-        )
-
-        let result = try await model.doStream(options: .init(
-            audio: cancellableTranscriptionAudioStream(
-                capture: audioTermination,
-                chunks: [.binary(Data([1])), .binary(Data([2]))]
-            ),
-            inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
-        ))
-        let partsTask = Task {
-            try await collectTranscriptionParts(result.stream)
-        }
-        let connection = try #require(webSocketFactory.firstConnection())
-        connection.open()
-
-        do {
-            _ = try await partsTask.value
-            Issue.record("Expected WebSocket send error")
-        } catch MockOpenAIWebSocketError.send {
-        } catch {
-            Issue.record("Expected send error, got \(error)")
-        }
-        #expect(await audioTermination.waitUntilTerminated())
-    }
-
-    @Test("doStream warns about REST-only OpenAI transcription options")
-    func testDoStreamWarnsForRestOnlyOptions() async throws {
-        let webSocketFactory = MockOpenAIWebSocketFactory()
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { options in "https://api.openai.com/v1\(options.path)" },
-            headers: { ["Authorization": "Bearer test-api-key"] },
-            webSocket: webSocketFactory.make
-        )
-        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: config)
-
-        let result = try await model.doStream(
-            options: TranscriptionModelV4StreamOptions(
-                audio: transcriptionAudioStream([.binary(Data([1, 2, 3]))]),
-                inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
-                providerOptions: [
-                    "openai": [
-                        "prompt": .string("context prompt"),
-                        "temperature": .number(0.5)
-                    ]
-                ]
-            )
-        )
-
-        guard let connection = webSocketFactory.firstConnection() else {
-            Issue.record("No WebSocket connection was created")
-            return
-        }
-
-        let partsTask = Task {
-            try await collectTranscriptionParts(result.stream)
-        }
-        connection.open()
-        try await connection.waitForSentCount(3)
-        try connection.message(.object([
-            "type": .string("conversation.item.input_audio_transcription.completed"),
-            "item_id": .string("item-1"),
-            "transcript": .string("Hello")
-        ]))
-
-        let parts = try await partsTask.value
-        guard case .streamStart(let warnings) = parts.first else {
-            Issue.record("Expected stream-start warning part")
-            return
-        }
-        #expect(warnings == [
-            .unsupported(
-                feature: "providerOptions.openai.prompt",
-                details: "OpenAI streaming transcription does not support prompt."
-            ),
-            .unsupported(
-                feature: "providerOptions.openai.temperature",
-                details: "OpenAI streaming transcription does not support temperature."
-            )
-        ])
-    }
-
-    @Test("doStream fails with OpenAI realtime error messages")
-    func testDoStreamRealtimeError() async throws {
-        let webSocketFactory = MockOpenAIWebSocketFactory()
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { options in "https://api.openai.com/v1\(options.path)" },
-            headers: { ["Authorization": "Bearer test-api-key"] },
-            webSocket: webSocketFactory.make
-        )
-        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: config)
-
-        let result = try await model.doStream(
-            options: TranscriptionModelV4StreamOptions(
-                audio: transcriptionAudioStream([.binary(Data([1, 2, 3]))]),
-                inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
-            )
-        )
-
-        guard let connection = webSocketFactory.firstConnection() else {
-            Issue.record("No WebSocket connection was created")
-            return
-        }
-
-        let partsTask = Task {
-            try await collectTranscriptionParts(result.stream)
-        }
-        connection.open()
-        try await connection.waitForSentCount(3)
-        try connection.message(.object([
-            "type": .string("error"),
-            "error": .object([
-                "message": .string("invalid session configuration")
-            ])
-        ]))
-
-        do {
-            _ = try await partsTask.value
-            Issue.record("Expected stream collection to throw")
-        } catch {
-            #expect(String(describing: error).contains("invalid session configuration"))
-        }
-        #expect(connection.closeCodes().isEmpty == false)
-    }
-
-    @Test("doGenerate sends multipart request and parses response")
-    func testDoGenerateMultipart() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responsePayload: [String: Any] = [
-            "text": "Hello world!",
-            "language": "english",
-            "duration": 1.5,
-            "words": [
-                ["word": "Hello", "start": 0.0, "end": 0.5],
-                ["word": "world", "start": 0.5, "end": 1.0]
-            ]
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { ["Authorization": "Bearer test-key"] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { Date(timeIntervalSince1970: 0) })
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                providerOptions: [
-                    "openai": [
-                        "include": .array([.string("word_timestamps")]),
-                        "language": .string("english"),
-                        "prompt": .string("Say hello"),
-                        "timestampGranularities": .array([.string("word")])
-                    ]
-                ],
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        // Validate result mapping
-        #expect(result.text == "Hello world!")
+        let result = try await model.doGenerate(options: .init(audio: .base64("\t- _ 8\r\n"), mediaType: "audio/x-wav", providerOptions: ["openai": [
+            "language": "en", "prompt": "context", "temperature": 0.25,
+            "timestampGranularities": ["word"], "include": ["logprobs"], "responseFormat": "json"
+        ]], headers: ["authorization": "Bearer caller", "X-Custom": "yes"]))
+        #expect(result.text == "Hello")
+        #expect(result.segments == [.init(text: "Hello", startSecond: 0.125, endSecond: 0.75)])
         #expect(result.language == "en")
-        #expect(result.segments.count == 2)
-        if result.segments.count == 2 {
-            #expect(result.segments[0].text == "Hello")
-            #expect(result.segments[0].startSecond == 0.0)
-            #expect(result.segments[0].endSecond == 0.5)
-        }
-        #expect(result.durationInSeconds == 1.5)
-        #expect(result.response.timestamp == Date(timeIntervalSince1970: 0))
+        #expect(result.durationInSeconds == 0.75)
+        #expect(result.usage == ["type": "duration", "seconds": 0.75])
+        #expect(result.response.timestamp == Date(timeIntervalSince1970: 12))
         #expect(result.response.modelId == "whisper-1")
-
-        // Validate request
-        guard let request = await capture.value() else {
-            Issue.record("No request captured")
-            return
-        }
-
-        #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.openai.com/v1/audio/transcriptions")
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["authorization"] == "Bearer test-key")
-        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
-
-        guard let contentType = normalizedHeaders["content-type"],
-              contentType.starts(with: "multipart/form-data;") else {
-            Issue.record("Missing multipart content type")
-            return
-        }
-
-        guard let body = request.httpBody else {
-            Issue.record("Unable to decode multipart body")
-            return
-        }
-
-        let bodyString = String(decoding: body, as: UTF8.self)
-
-        #expect(bodyString.contains("Content-Disposition: form-data; name=\"model\""))
-        #expect(bodyString.contains("whisper-1"))
-        #expect(bodyString.contains("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\""))
-        #expect(bodyString.contains("ABC"))
-        #expect(bodyString.contains("include[]"))
-        #expect(bodyString.contains("language"))
-        #expect(bodyString.contains("prompt"))
-        #expect(bodyString.contains("response_format"))
-        #expect(bodyString.contains("timestamp_granularities[]"))
+        #expect(result.response.headers?["x-request-id"] == "request-1")
+        let raw = try jsonValue(from: #require(result.response.body))
+        if case .object(let body) = raw { #expect(body["text"] == "Hello") }
+        else { Issue.record("Missing raw response object") }
     }
 
-    @Test("V4 doGenerate defaults whisper-1 REST transcription to verbose_json")
-    func testV4DoGenerateDefaultsWhisperToVerboseJSON() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responsePayload: [String: Any] = [
-            "text": "Hello world!",
-            "language": "english",
-            "duration": 1.5,
-            "words": [
-                ["word": "Hello", "start": 0.0, "end": 0.5],
-                ["word": "world", "start": 0.5, "end": 1.0]
-            ]
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { ["Authorization": "Bearer test-key"] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { Date(timeIntervalSince1970: 0) })
-        )
-
-        let model = OpenAITranscriptionModelV4(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV4CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.text == "Hello world!")
-        #expect(result.language == "en")
-        #expect(result.segments.count == 2)
-        #expect(result.durationInSeconds == 1.5)
-        #expect(result.response.timestamp == Date(timeIntervalSince1970: 0))
-        #expect(result.response.modelId == "whisper-1")
-
-        guard let request = await capture.value(),
-              let body = request.httpBody
-        else {
-            Issue.record("No V4 transcription request captured")
-            return
-        }
-
-        #expect(request.httpMethod == "POST")
-        #expect(request.url?.absoluteString == "https://api.openai.com/v1/audio/transcriptions")
-
-        let bodyString = String(decoding: body, as: UTF8.self)
-        #expect(multipartFieldValues(in: bodyString, named: "model") == ["whisper-1"])
-        #expect(multipartFieldValues(in: bodyString, named: "response_format") == ["verbose_json"])
-        #expect(bodyString.contains("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\""))
-    }
-
-    @Test("V4 doGenerate sends OpenAI REST transcription provider options")
-    func testV4DoGenerateSendsProviderOptions() async throws {
-        actor BodyCapture {
-            var bodyString: String?
-            func store(_ data: Data) {
-                bodyString = String(decoding: data, as: UTF8.self)
+    @Test func diarizationDefaultsAndSpeakerMetadata() async throws {
+        let model = OpenAITranscriptionModel(modelId: "gpt-4o-transcribe-diarize", config: .init(
+            provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" }, fetch: { request in
+                let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+                #expect(field(body, "response_format") == ["diarized_json"])
+                #expect(field(body, "chunking_strategy") == ["auto"])
+                #expect(body.contains("filename=\"audio.\""))
+                return response(request, #"{"text":"lead Hello","segments":[{"id":0,"seek":0,"start":0,"end":0.125,"text":"lead ","tokens":[1],"temperature":0,"avg_logprob":-0.5,"compression_ratio":1.2,"no_speech_prob":0.1},{"type":"transcript.text.segment","id":"s1","start":0.125,"end":1.5,"text":"Hello","speaker":"A"}],"words":[{"word":"ignored","start":2,"end":3}],"usage":{"input_tokens":2,"details":{"audio":1.25}},"language":"unknown"}"#)
             }
-        }
-
-        let capture = BodyCapture()
-
-        let responsePayload: [String: Any] = ["text": "Test"]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            if let body = request.httpBody {
-                await capture.store(body)
-            }
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModelV4(modelId: "gpt-4o-transcribe", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV4CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/mpeg",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("word")])
-                    ]
-                ]
-            )
-        )
-
-        guard let bodyString = await capture.bodyString else {
-            Issue.record("Multipart body not captured")
-            return
-        }
-
-        #expect(multipartFieldValues(in: bodyString, named: "model") == ["gpt-4o-transcribe"])
-        #expect(multipartFieldValues(in: bodyString, named: "response_format") == ["json"])
-        #expect(multipartFieldValues(in: bodyString, named: "temperature") == ["0"])
-        #expect(multipartFieldValues(in: bodyString, named: "timestamp_granularities[]") == ["word"])
-        #expect(bodyString.contains("Content-Disposition: form-data; name=\"file\"; filename=\"audio.mp3\""))
-    }
-
-    @Test("response_format is json for 4o transcription models")
-    func testResponseFormatForReasoningModels() async throws {
-        actor BodyCapture {
-            var bodyString: String?
-            func store(_ data: Data) {
-                bodyString = String(decoding: data, as: UTF8.self)
-            }
-        }
-
-
-        let capture = BodyCapture()
-
-        let responsePayload: [String: Any] = ["text": "Test"]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            if let body = request.httpBody {
-                await capture.store(body)
-            }
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "gpt-4o-transcribe", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/mpeg",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("word")])
-                    ]
-                ]
-            )
-        )
-
-        let bodyString = await capture.bodyString
-        if let captured = bodyString {
-            let normalized = captured.replacingOccurrences(of: "\r", with: "")
-            if let range = normalized.range(of: "response_format") {
-                let tail = normalized[range.upperBound...]
-                #expect(tail.contains("json"))
-            } else {
-                Issue.record("response_format field missing")
-            }
-        } else {
-            Issue.record("Multipart body not captured")
-        }
-    }
-
-    // Port of openai-transcription-model.test.ts: "should pass the model"
-    @Test("should pass the model")
-    func testPassTheModel() async throws {
-        actor BodyCapture {
-            var bodyString: String?
-            func store(_ data: Data) {
-                bodyString = String(decoding: data, as: UTF8.self)
-            }
-        }
-
-        let capture = BodyCapture()
-
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            if let body = request.httpBody {
-                await capture.store(body)
-            }
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        let bodyString = await capture.bodyString
-        #expect(bodyString != nil)
-        #expect(bodyString?.contains("whisper-1") == true)
-    }
-
-    // Port of openai-transcription-model.test.ts: "should pass headers"
-    @Test("should pass headers")
-    func testPassHeaders() async throws {
-        actor RequestCapture {
-            var request: URLRequest?
-            func store(_ request: URLRequest) { self.request = request }
-            func value() -> URLRequest? { request }
-        }
-
-        let capture = RequestCapture()
-
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            await capture.store(request)
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: {
-                [
-                    "Authorization": "Bearer test-api-key",
-                    "OpenAI-Organization": "test-organization",
-                    "OpenAI-Project": "test-project",
-                    "Custom-Provider-Header": "provider-header-value"
-                ]
-            },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                headers: ["Custom-Request-Header": "request-header-value"]
-            )
-        )
-
-        guard let request = await capture.value() else {
-            Issue.record("No request captured")
-            return
-        }
-
-        let headers = request.allHTTPHeaderFields ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-
-        #expect(normalizedHeaders["authorization"] == "Bearer test-api-key")
-        #expect(normalizedHeaders["openai-organization"] == "test-organization")
-        #expect(normalizedHeaders["openai-project"] == "test-project")
-        #expect(normalizedHeaders["custom-provider-header"] == "provider-header-value")
-        #expect(normalizedHeaders["custom-request-header"] == "request-header-value")
-        #expect(normalizedHeaders["content-type"]?.starts(with: "multipart/form-data") == true)
-    }
-
-    // Port of openai-transcription-model.test.ts: "should extract the transcription text"
-    @Test("should extract the transcription text")
-    func testExtractTranscriptionText() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.text == "Hello from the Vercel AI SDK!")
-    }
-
-    // Port of openai-transcription-model.test.ts: "should include response data with timestamp, modelId and headers"
-    @Test("should include response data with timestamp, modelId and headers")
-    func testIncludeResponseData() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [
-                    "Content-Type": "application/json",
-                    "X-Request-ID": "test-request-id",
-                    "X-RateLimit-Remaining": "123"
-                ]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "test-provider",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "whisper-1")
-
-        let headers = result.response.headers ?? [:]
-        let normalizedHeaders = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-        #expect(normalizedHeaders["content-type"] == "application/json")
-        #expect(normalizedHeaders["x-request-id"] == "test-request-id")
-        #expect(normalizedHeaders["x-ratelimit-remaining"] == "123")
-    }
-
-    // Port of openai-transcription-model.test.ts: "should use real date when no custom date provider is specified"
-    @Test("should use real date when no custom date provider is specified")
-    func testUseRealDate() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "test-provider",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.response.timestamp.timeIntervalSince1970 == testDate.timeIntervalSince1970)
-        #expect(result.response.modelId == "whisper-1")
-    }
-
-    // Port of openai-transcription-model.test.ts: "should pass response_format when `providerOptions.openai.timestampGranularities` is set"
-    @Test("should pass response_format when timestampGranularities is set")
-    func testPassResponseFormatWithTimestampGranularities() async throws {
-        actor BodyCapture {
-            var bodyString: String?
-            func store(_ data: Data) {
-                bodyString = String(decoding: data, as: UTF8.self)
-            }
-        }
-
-        let capture = BodyCapture()
-
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            if let body = request.httpBody {
-                await capture.store(body)
-            }
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("word")])
-                    ]
-                ]
-            )
-        )
-
-        let bodyString = await capture.bodyString
-        #expect(bodyString != nil)
-        #expect(bodyString?.contains("response_format") == true)
-        #expect(bodyString?.contains("verbose_json") == true)
-        #expect(bodyString?.contains("timestamp_granularities[]") == true)
-    }
-
-    // Port of openai-transcription-model.test.ts: "should pass timestamp_granularities when specified"
-    @Test("should pass timestamp_granularities when specified")
-    func testPassTimestampGranularities() async throws {
-        actor BodyCapture {
-            var bodyString: String?
-            func store(_ data: Data) {
-                bodyString = String(decoding: data, as: UTF8.self)
-            }
-        }
-
-        let capture = BodyCapture()
-
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            if let body = request.httpBody {
-                await capture.store(body)
-            }
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        _ = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("segment")])
-                    ]
-                ]
-            )
-        )
-
-        let bodyString = await capture.bodyString
-        #expect(bodyString != nil)
-        #expect(bodyString?.contains("timestamp_granularities[]") == true)
-        #expect(bodyString?.contains("segment") == true)
-        #expect(bodyString?.contains("response_format") == true)
-        #expect(bodyString?.contains("verbose_json") == true)
-    }
-
-    // Port of openai-transcription-model.test.ts: "should work when no words, language, or duration are returned"
-    @Test("should work when no words, language, or duration are returned")
-    func testHandleMissingOptionalFields() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello from the Vercel AI SDK!",
-            "_request_id": "req_1234"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let testDate = Date(timeIntervalSince1970: 0)
-        let config = OpenAIConfig(
-            provider: "test-provider",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch,
-            _internal: .init(currentDate: { testDate })
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.text == "Hello from the Vercel AI SDK!")
-        #expect(result.durationInSeconds == nil)
+        ))
+        let result = try await model.doGenerate(options: .init(audio: .binary(Data([0, 255])), mediaType: "unknown"))
+        #expect(result.segments == [.init(text: "lead ", startSecond: 0, endSecond: 0.125), .init(text: "Hello", startSecond: 0.125, endSecond: 1.5)])
         #expect(result.language == nil)
-        #expect(result.segments.isEmpty)
-        #expect(result.response.timestamp == testDate)
-        #expect(result.response.modelId == "whisper-1")
+        #expect(result.usage == ["input_tokens": 2, "details": ["audio": 1.25]])
+        #expect(result.providerMetadata?["openai"]?["segments"] == [[
+            "text": "Hello", "startSecond": 0.125, "endSecond": 1.5, "speaker": "A"
+        ]])
     }
 
-    // Port of openai-transcription-model.test.ts: "should parse segments when provided in response"
-    @Test("should parse segments when provided in response")
-    func testParseSegments() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello world. How are you?",
-            "segments": [
-                [
-                    "id": 0,
-                    "seek": 0,
-                    "start": 0.0,
-                    "end": 2.5,
-                    "text": "Hello world.",
-                    "tokens": [1234, 5678],
-                    "temperature": 0.0,
-                    "avg_logprob": -0.5,
-                    "compression_ratio": 1.2,
-                    "no_speech_prob": 0.1
-                ],
-                [
-                    "id": 1,
-                    "seek": 250,
-                    "start": 2.5,
-                    "end": 5.0,
-                    "text": " How are you?",
-                    "tokens": [9012, 3456],
-                    "temperature": 0.0,
-                    "avg_logprob": -0.6,
-                    "compression_ratio": 1.1,
-                    "no_speech_prob": 0.05
-                ]
-            ],
-            "language": "en",
-            "duration": 5.0,
-            "_request_id": "req_1234"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
+    @Test(arguments: [false, true]) func optionsPresenceControlsDefaults(present: Bool) async throws {
+        let model = OpenAITranscriptionModel(modelId: "gpt-4o-mini-transcribe", config: .init(
+            provider: "openai.transcription", url: { _ in "https://api.openai.com/v1/audio/transcriptions" }, fetch: { request in
+                let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+                #expect(field(body, "response_format") == (present ? ["json"] : []))
+                #expect(field(body, "temperature") == (present ? ["0"] : []))
+                #expect(field(body, "timestamp_granularities[]") == (present ? ["segment"] : []))
+                return response(request, #"{"text":"ok","segments":[],"words":[{"word":"ignored","start":0,"end":1}]}"#)
+            }
+        ))
+        let result = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/pcm", providerOptions: present ? ["openai": [:]] : nil))
+        #expect(result.segments == [])
+    }
 
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
+    @Test func serverVadAndResponseOverride() async throws {
+        let model = OpenAITranscriptionModel(modelId: "gpt-4o-transcribe-diarize", config: .init(
+            provider: "openai.transcription", url: { _ in "https://api.openai.com/v1/audio/transcriptions" }, fetch: { request in
+                let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+                #expect(field(body, "response_format") == ["json"])
+                let chunking = try JSONDecoder().decode(JSONValue.self, from: Data(try #require(field(body, "chunking_strategy").first).utf8))
+                #expect(chunking == ["type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 0, "silence_duration_ms": 250])
+                return response(request, #"{"text":"ok"}"#)
+            }
+        ))
+        _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav", providerOptions: ["openai": [
+            "responseFormat": "json", "chunkingStrategy": ["type": "server_vad", "threshold": 0.5, "prefixPaddingMs": 0, "silenceDurationMs": 250]
+        ]]))
+    }
 
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("segment")])
-                    ]
-                ]
-            )
-        )
-
-        #expect(result.text == "Hello world. How are you?")
-        #expect(result.durationInSeconds == 5.0)
-        #expect(result.segments.count == 2)
-
-        if result.segments.count >= 2 {
-            #expect(result.segments[0].text == "Hello world.")
-            #expect(result.segments[0].startSecond == 0.0)
-            #expect(result.segments[0].endSecond == 2.5)
-
-            #expect(result.segments[1].text == " How are you?")
-            #expect(result.segments[1].startSecond == 2.5)
-            #expect(result.segments[1].endSecond == 5.0)
+    @Test(arguments: [["responseFormat": .string("text")], ["temperature": .number(.nan)], ["language": .null], ["chunkingStrategy": ["type": "server_vad", "prefixPaddingMs": 0.5]], ["chunkingStrategy": ["type": "server_vad", "silenceDurationMs": 9_007_199_254_740_992]]] as [JSONObject])
+    func invalidOptionsFailBeforeHTTP(options: JSONObject) async throws {
+        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: .init(
+            provider: "openai.transcription", url: { _ in "https://api.openai.com/v1/audio/transcriptions" }, fetch: { request in
+                Issue.record("Invalid options reached HTTP")
+                return response(request, #"{"text":"invalid"}"#)
+            }
+        ))
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav", providerOptions: ["openai": options]))
         }
     }
 
-    // Port of openai-transcription-model.test.ts: "should fallback to words when segments are not available"
-    @Test("should fallback to words when segments are not available")
-    func testFallbackToWords() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello world",
-            "words": [
-                [
-                    "word": "Hello",
-                    "start": 0.0,
-                    "end": 1.0
-                ],
-                [
-                    "word": "world",
-                    "start": 1.0,
-                    "end": 2.0
-                ]
-            ],
-            "language": "en",
-            "duration": 2.0,
-            "_request_id": "req_1234"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav",
-                providerOptions: [
-                    "openai": [
-                        "timestampGranularities": .array([.string("word")])
-                    ]
-                ]
-            )
-        )
-
-        #expect(result.segments.count == 2)
-
-        if result.segments.count >= 2 {
-            #expect(result.segments[0].text == "Hello")
-            #expect(result.segments[0].startSecond == 0.0)
-            #expect(result.segments[0].endSecond == 1.0)
-
-            #expect(result.segments[1].text == "world")
-            #expect(result.segments[1].startSecond == 1.0)
-            #expect(result.segments[1].endSecond == 2.0)
+    @Test func httpFailurePreservesWireDiagnostics() async throws {
+        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: .init(
+            provider: "openai.transcription", url: { _ in "https://api.openai.com/v1/audio/transcriptions" }, fetch: { request in
+                response(request, #"{"error":{"message":"bad audio","type":"invalid_request_error","code":"bad_audio"}}"#, status: 400)
+            }
+        ))
+        do {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))
+            Issue.record("Expected API failure")
+        } catch let error as APICallError {
+            #expect(error.statusCode == 400)
+            #expect(error.message == "bad audio")
+            #expect(error.responseBody?.contains("bad_audio") == true)
+            #expect(error.responseHeaders?["x-request-id"] == "request-1")
+            #expect((error.requestBodyValues as? [String: FormDataValue])?["model"] == .string("whisper-1"))
         }
     }
 
-    // Port of openai-transcription-model.test.ts: "should handle empty segments array"
-    @Test("should handle empty segments array")
-    func testHandleEmptySegments() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Hello world",
-            "segments": [],
-            "language": "en",
-            "duration": 2.0,
-            "_request_id": "req_1234"
-        ] as [String: Any]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
-
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
-        }
-
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.segments.isEmpty)
-        #expect(result.text == "Hello world")
+    @Test func websocketProtocolOrderingAndRawEvents() async throws {
+        let socket = Socket()
+        let audio = TranscriptionAudioSource(chunks: [.binary(Data([1, 2, 3])), .base64("BA==")], finished: true)
+        let result = try await streamModel(socket).doStream(options: .init(
+            audio: audio.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
+            providerOptions: ["openai": ["language": "en", "prompt": "context", "temperature": 0.5, "streaming": ["delay": "low", "include": ["logprobs"]]]],
+            headers: ["AUTHORIZATION": "bEaReR caller", "X-Custom": "yes"], includeRawChunks: true
+        ))
+        try await waitForCommit(socket)
+        #expect(socket.request?.url.absoluteString == "wss://api.openai.com/v1/realtime?intent=transcription")
+        #expect(socket.request?.protocols == ["realtime", "openai-insecure-api-key.caller"])
+        #expect(socket.request?.headers == ["X-Custom": "yes"])
+        let frames = socket.frames
+        #expect(frames.count == 4)
+        #expect(frames.first == result.request?.body as? JSONValue)
+        if case .object(let update) = frames.first, case .object(let session) = update["session"], case .object(let audio) = session["audio"], case .object(let input) = audio["input"] {
+            #expect(input["format"] == ["type": "audio/pcm", "rate": 24_000])
+            #expect(input["transcription"] == ["model": "gpt-realtime-whisper-2026-01-01", "language": "en", "delay": "low"])
+            #expect(input["turn_detection"] == .null)
+            #expect(session["include"] == ["logprobs"])
+        } else { Issue.record("Invalid session update") }
+        #expect(frames.dropFirst().prefix(2) == [["type": "input_audio_buffer.append", "audio": "AQID"], ["type": "input_audio_buffer.append", "audio": "BA=="]])
+        socket.message("invalid json")
+        socket.message(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"i1","delta":"Hel"}"#)
+        socket.message(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"i1","transcript":"Hello"}"#)
+        let parts = try await collect(result.stream)
+        #expect(parts.count == 6)
+        if case .streamStart(let warnings) = parts.first {
+            #expect(warnings.map { if case .unsupported(let feature, _) = $0 { return feature }; return "" } == ["providerOptions.openai.prompt", "providerOptions.openai.temperature"])
+        } else { Issue.record("Missing stream start") }
+        #expect(parts.dropFirst(2).first == .transcriptDelta(id: "i1", delta: "Hel", providerMetadata: nil))
+        #expect(parts.suffix(2) == [
+            .transcriptFinal(id: "i1", text: "Hello", startSecond: nil, endSecond: nil, channelIndex: nil, providerMetadata: nil),
+            .finish(text: "Hello", segments: [], language: "en", durationInSeconds: nil, providerMetadata: nil)
+        ])
+        #expect(result.response?.timestamp == Date(timeIntervalSince1970: 12))
+        #expect(socket.closeCodes == [1000])
     }
 
-    // Port of openai-transcription-model.test.ts: "should handle segments with missing optional fields"
-    @Test("should handle segments with missing optional fields")
-    func testHandleSegmentsWithMissingFields() async throws {
-        let responsePayload: [String: Any] = [
-            "task": "transcribe",
-            "text": "Test",
-            "segments": [
-                [
-                    "id": 0,
-                    "seek": 0,
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "Test",
-                    "tokens": [1234],
-                    "temperature": 0.0,
-                    "avg_logprob": -0.5,
-                    "compression_ratio": 1.0,
-                    "no_speech_prob": 0.1
-                ]
-            ],
-            "_request_id": "req_1234"
-        ]
-        let responseData = try JSONSerialization.data(withJSONObject: responsePayload)
+    @Test(arguments: [nil, "Basic token", " Bearer token"] as [String?])
+    func nonBearerHandshakePreservesHeaders(authorization: String?) async throws {
+        let socket = Socket()
+        let source = TranscriptionAudioSource(finished: true)
+        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
+            provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" },
+            headers: { ["Authorization": authorization, "X-Custom": "yes"] }, webSocket: socket.make
+        ))
+        let result = try await model.doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcma")))
+        try await waitForCommit(socket)
+        #expect(socket.request?.protocols == ["realtime"])
+        var expected = ["X-Custom": "yes"]
+        if let authorization { expected["Authorization"] = authorization }
+        #expect(socket.request?.headers == expected)
+        socket.message(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":""}"#)
+        let parts = try await collect(result.stream)
+        #expect(parts.last == .finish(text: "", segments: [], language: nil, durationInSeconds: nil, providerMetadata: nil))
+    }
 
-        let mockFetch: FetchFunction = { request in
-            let httpResponse = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            return FetchResponse(body: .data(responseData), urlResponse: httpResponse)
+    @Test func bufferDrainPrecedesNextAudioAndCommit() async throws {
+        let socket = Socket(blockDrain: true)
+        let source = TranscriptionAudioSource(chunks: [.binary(Data([1])), .binary(Data([2]))], finished: true)
+        let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcmu")))
+        try await transcriptionDeadline {
+            for await _ in socket.draining { return }
+            throw SocketFailure.deadline
         }
+        #expect(socket.frames.count == 2)
+        socket.releaseDrain()
+        try await waitForCommit(socket)
+        socket.message(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":""}"#)
+        let parts = try await collect(result.stream)
+        #expect(parts.last == .finish(text: "", segments: [], language: nil, durationInSeconds: nil, providerMetadata: nil))
+    }
 
-        let config = OpenAIConfig(
-            provider: "openai.transcription",
-            url: { _ in "https://api.openai.com/v1/audio/transcriptions" },
-            headers: { [:] },
-            fetch: mockFetch
-        )
-
-        let model = OpenAITranscriptionModel(modelId: "whisper-1", config: config)
-
-        let result = try await model.doGenerate(
-            options: TranscriptionModelV3CallOptions(
-                audio: .binary(sampleAudioData),
-                mediaType: "audio/wav"
-            )
-        )
-
-        #expect(result.segments.count == 1)
-
-        if !result.segments.isEmpty {
-            #expect(result.segments[0].text == "Test")
-            #expect(result.segments[0].startSecond == 0.0)
-            #expect(result.segments[0].endSecond == 1.0)
+    @Test(arguments: ["creation", "send", "socket", "server", "audio", "close", "null"])
+    func terminalPathsCancelRetainedAudio(mode: String) async throws {
+        let socket = Socket(failSend: mode == "send")
+        let source = TranscriptionAudioSource(chunks: mode == "send" ? [.binary(Data([1])), .binary(Data([2]))] : [])
+        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
+            provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" }, webSocket: { request in
+                if mode == "creation" { throw SocketFailure.creation }
+                return socket.make(request)
+            }
+        ))
+        let result = try await model.doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
+        if mode == "socket" { socket.fail() }
+        if mode == "server" { socket.message(#"{"type":"error","error":{"message":"invalid session"}}"#) }
+        if mode == "audio" { source.continuation.finish(throwing: SocketFailure.audio) }
+        if mode == "close" { socket.remoteClose() }
+        if mode == "null" { socket.message("null") }
+        do {
+            let parts = try await collect(result.stream)
+            #expect(mode == "close")
+            #expect(parts.allSatisfy { if case .streamStart = $0 { return true }; return false })
+        } catch {
+            #expect(mode != "close")
+            if mode == "creation" { #expect(error as? SocketFailure == .creation) }
+            if mode == "send" { #expect(error as? SocketFailure == .send) }
+            if mode == "audio" { #expect(error as? SocketFailure == .audio) }
+            if mode == "socket" { #expect(error.localizedDescription == "OpenAI realtime transcription error") }
+            if mode == "server" { #expect(error.localizedDescription == "invalid session") }
+            if mode == "null" { #expect(error is TypeValidationError) }
         }
+        if mode != "audio" { #expect(source.isCancelled) }
+        if mode != "creation" { #expect(!socket.closeCodes.isEmpty) }
+    }
 
-        #expect(result.language == nil)
-        #expect(result.durationInSeconds == nil)
+    @Test(arguments: [false, true]) func abortCancelsIdleAudioAndSocket(beforeOpen: Bool) async throws {
+        let socket = Socket(open: !beforeOpen)
+        let source = TranscriptionAudioSource()
+        let flag = AbortFlag()
+        let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcma"), abortSignal: flag.read))
+        flag.abort()
+        await #expect(throws: CancellationError.self) { _ = try await collect(result.stream) }
+        #expect(source.isCancelled)
+        #expect(!socket.closeCodes.isEmpty)
+    }
+
+    @Test(arguments: [false, true]) func consumerCancelReleasesAudio(beforeOpen: Bool) async throws {
+        let socket = Socket(open: !beforeOpen)
+        let source = TranscriptionAudioSource()
+        let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
+        let task = Task { try await collect(result.stream) }
+        task.cancel()
+        _ = try? await task.value
+        try await transcriptionDeadline {
+            for await _ in source.termination { return }
+            throw SocketFailure.deadline
+        }
+        #expect(source.isCancelled)
+        #expect(!socket.closeCodes.isEmpty)
+    }
+
+    @Test func completedWhileDrainingCancelsAudio() async throws {
+        let socket = Socket(blockDrain: true)
+        let source = TranscriptionAudioSource(chunks: [.binary(Data([1]))])
+        let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
+        try await transcriptionDeadline {
+            for await _ in socket.draining { return }
+            throw SocketFailure.deadline
+        }
+        socket.message(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"i","transcript":"done"}"#)
+        let parts = try await collect(result.stream)
+        #expect(parts.last == .finish(text: "done", segments: [], language: nil, durationInSeconds: nil, providerMetadata: nil))
+        #expect(source.isCancelled)
+        #expect(socket.frames.count == 2)
+    }
+
+    @Test func unsupportedModesFailBeforeTransport() async throws {
+        let socket = Socket()
+        let model = streamModel(socket)
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))
+        }
+        let rest = OpenAITranscriptionModel(modelId: "whisper-1", config: .init(provider: "openai.transcription", url: { _ in "unused" }))
+        let source = TranscriptionAudioSource(finished: true)
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            _ = try await rest.doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
+        }
     }
 }

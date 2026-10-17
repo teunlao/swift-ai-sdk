@@ -46,7 +46,7 @@ public final class AzureProvider: ProviderV4 {
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
-    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
+    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     public let tools: AzureProviderTools
 
@@ -57,7 +57,7 @@ public final class AzureProvider: ProviderV4 {
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
-        transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
+        transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
         speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         tools: AzureProviderTools
     ) {
@@ -144,7 +144,7 @@ public final class AzureProvider: ProviderV4 {
         imageFactory(modelId)
     }
 
-    public func transcription(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
+    public func transcription(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
         transcriptionFactory(modelId)
     }
 
@@ -342,8 +342,8 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
-    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 = { modelId in
-        OpenAITranscriptionModelV4(
+    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel = { modelId in
+        OpenAITranscriptionModel(
             modelId: modelId,
             config: transcriptionConfig
         )

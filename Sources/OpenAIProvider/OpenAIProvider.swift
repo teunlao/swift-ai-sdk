@@ -39,7 +39,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
-    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4
+    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     private let filesFactory: @Sendable () -> any FilesV4
     private let skillsFactory: @Sendable () -> any SkillsV4
@@ -53,7 +53,7 @@ public final class OpenAIProvider: ProviderV4 {
         embeddings: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         images: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
         completions: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
-        transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4,
+        transcriptions: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
         speeches: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         files: @escaping @Sendable () -> any FilesV4,
         skills: @escaping @Sendable () -> any SkillsV4,
@@ -187,11 +187,11 @@ public final class OpenAIProvider: ProviderV4 {
         image(modelId: modelId)
     }
 
-    public func transcription(modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
+    public func transcription(modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
         transcriptionFactory(modelId)
     }
 
-    public func transcription(_ modelId: String) -> OpenAITranscriptionModelV4 {
+    public func transcription(_ modelId: String) -> OpenAITranscriptionModel {
         transcription(modelId: OpenAITranscriptionModelId(rawValue: modelId))
     }
 
@@ -199,7 +199,7 @@ public final class OpenAIProvider: ProviderV4 {
         transcription(modelId)
     }
 
-    public func transcriptionModel(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModelV4 {
+    public func transcriptionModel(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
         transcription(modelId: modelId)
     }
 
@@ -260,7 +260,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         embeddings: { OpenAIEmbeddingModel(modelId: $0, config: embeddingConfig) },
         images: { OpenAIImageModel(modelId: $0, config: imageConfig) },
         completions: { OpenAICompletionLanguageModel(modelId: $0, config: completionConfig) },
-        transcriptions: { OpenAITranscriptionModelV4(modelId: $0, config: transcriptionConfig) },
+        transcriptions: { OpenAITranscriptionModel(modelId: $0, config: transcriptionConfig) },
         speeches: { OpenAISpeechModel(modelId: $0, config: speechConfig) },
         files: { OpenAIFiles(config: .init(provider: "\(providerName).files", baseURL: baseURL, headers: headers, fetch: settings.fetch)) },
         skills: { OpenAISkills(config: .init(provider: "\(providerName).skills", url: { "\(baseURL)\($0)" }, headers: headers, fetch: settings.fetch)) },
