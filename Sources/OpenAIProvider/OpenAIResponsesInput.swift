@@ -6,8 +6,9 @@ struct OpenAIResponsesInputBuilder {
     static func makeInput(
         prompt: LanguageModelV4Prompt,
         providerOptionsName: String = "openai",
-        toolNameMapping: OpenAIToolNameMapping = .init(),
-        customProviderToolNames: Set<String> = [],
+        toolNameMapping: ToolNameMapping = .init(),
+        customProviderToolNames: Set<Data> = [],
+        outputSchemaToolNames: Set<Data> = [],
         systemMessageMode: OpenAIResponsesSystemMessageMode = .system,
         fileIdPrefixes: [String]? = ["file-"],
         store: Bool = true,
@@ -148,7 +149,7 @@ struct OpenAIResponsesInputBuilder {
                         }
                         let isProviderDefined = (hasLocalShellTool && resolvedToolName == "local_shell")
                             || (hasShellTool && resolvedToolName == "shell") || (hasApplyPatchTool && resolvedToolName == "apply_patch")
-                            || customProviderToolNames.contains(resolvedToolName)
+                            || customProviderToolNames.contains(Data(resolvedToolName.utf8))
                         if hasPreviousResponseId && store && itemId != nil && isProviderDefined { continue }
                         if store, let itemId, isProviderDefined {
                             items.append(.object(["type": .string("item_reference"), "id": .string(itemId)]))
@@ -261,7 +262,7 @@ struct OpenAIResponsesInputBuilder {
                             continue
                         }
 
-                        if customProviderToolNames.contains(resolvedToolName) {
+                        if customProviderToolNames.contains(Data(resolvedToolName.utf8)) {
                             let input: String
                             if case .string(let value) = callPart.input {
                                 input = value
@@ -535,7 +536,7 @@ struct OpenAIResponsesInputBuilder {
                             if emittedParallelResults.insert(metadata.key).inserted {
                                 var outputs: [(String, JSONValue?)] = []
                                 for result in group.results {
-                                    let value = try convertOutput(result.output, custom: false, breakpoint: nil, namespace: providerOptionsName, warnings: &warnings)
+                                    let value = try convertOutput(result.output, custom: false, hasOutputSchema: outputSchemaToolNames.contains(Data(result.toolName.utf8)), breakpoint: nil, namespace: providerOptionsName, warnings: &warnings)
                                     let text: String
                                     if case .string(let scalar) = value { text = scalar } else { text = try openAIJSONStringify(value) }
                                     outputs.append((text, scalarBreakpoint(result.output, options: result.providerOptions, namespace: providerOptionsName)))
@@ -640,9 +641,9 @@ struct OpenAIResponsesInputBuilder {
 
 
                         }
-                        let custom = customProviderToolNames.contains(resolvedToolName)
+                        let custom = customProviderToolNames.contains(Data(resolvedToolName.utf8))
                         let output = try convertOutput(
-                            toolResult.output, custom: custom,
+                            toolResult.output, custom: custom, hasOutputSchema: !custom && outputSchemaToolNames.contains(Data(toolResult.toolName.utf8)),
                             breakpoint: scalarBreakpoint(toolResult.output, options: toolResult.providerOptions, namespace: providerOptionsName),
                             namespace: providerOptionsName, warnings: &warnings
                         )
@@ -707,14 +708,16 @@ struct OpenAIResponsesInputBuilder {
             ?? openAIPromptCacheBreakpoint(from: options, providerOptionsName: namespace)
     }
 
-    private static func convertOutput(_ output: LanguageModelV4ToolResultOutput, custom: Bool, breakpoint: JSONValue?, namespace: String, warnings: inout [SharedV4Warning]) throws -> JSONValue {
+    private static func convertOutput(_ output: LanguageModelV4ToolResultOutput, custom: Bool, hasOutputSchema: Bool, breakpoint: JSONValue?, namespace: String, warnings: inout [SharedV4Warning]) throws -> JSONValue {
         let text: String
         switch output {
-        case .text(let value, _): text = value
+        case .text(let value, _): text = hasOutputSchema ? try openAIJSONStringify(.string(value)) : value
         case .json(let value, _): text = try openAIJSONStringify(value)
         case .errorText(let value, _): text = try openAIJSONStringify(.object(["error": .string(value)]))
         case .errorJson(let value, _): text = try openAIJSONStringify(.object(["error": value]))
-        case .executionDenied(let reason, _): text = reason ?? "Tool call execution denied."
+        case .executionDenied(let reason, _):
+            let reason = reason ?? "Tool call execution denied."
+            text = hasOutputSchema ? try openAIJSONStringify(.string(reason)) : reason
         case .content(let parts):
             return .array(try parts.compactMap {
                 try convertToolResultContentPart($0, providerOptionsName: namespace, warningPrefix: custom ? "unsupported custom tool content part" : "unsupported tool content part", allowReferences: !custom, warnings: &warnings)

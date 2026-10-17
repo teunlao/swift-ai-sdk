@@ -1,5 +1,87 @@
 import Foundation
 import AISDKProvider
+import AISDKProviderUtils
+
+func openAIToolSchema(_ schema: JSONValue, strict: Bool = false) -> FlexibleSchema<JSONValue> {
+    FlexibleSchema(Schema(jsonSchemaResolver: { schema }, validator: { value in
+        do {
+            let json = try jsonValue(from: value)
+            if strict, case .object(let fields) = json, case .object(let shape) = schema,
+               case .object(let properties)? = shape["properties"], fields.keys.contains(where: { properties[$0] == nil }) {
+                throw SchemaValidationIssuesError(vendor: "openai", issues: "Unrecognized tool argument")
+            }
+            let projected = try projectToolValue(json, schema: schema, root: schema)
+            return await jsonSchema(schema).validate(projected)
+        } catch {
+            return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+        }
+    }))
+}
+
+func openAIToolSchema<T: Decodable & Sendable>(_ type: T.Type, _ schema: JSONValue) -> FlexibleSchema<T> {
+    FlexibleSchema(Schema(jsonSchemaResolver: { schema }, validator: { value in
+        do {
+            let projected = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(schema)))
+            return await Schema.codable(type, jsonSchema: schema).validate(jsonValueToFoundation(projected))
+        } catch {
+            return .failure(error: TypeValidationError.wrap(value: value, cause: error))
+        }
+    }))
+}
+
+private func projectToolValue(_ value: JSONValue, schema: JSONValue, root: JSONValue) throws -> JSONValue {
+    guard case .object(let shape) = schema else { return value }
+    if case .string(let reference)? = shape["$ref"], reference.hasPrefix("#/") {
+        var target = root
+        for component in reference.dropFirst(2).components(separatedBy: "/") {
+            let key = component.replacingOccurrences(of: "~1", with: "/", options: .literal).replacingOccurrences(of: "~0", with: "~", options: .literal)
+            guard case .object(let object) = target, let next = object[key] else { return value }
+            target = next
+        }
+        return try projectToolValue(value, schema: target, root: root)
+    }
+    if case .array(let branches)? = shape["anyOf"] ?? shape["oneOf"] {
+        for branch in branches where toolBranchMatches(value, schema: branch) {
+            return try projectToolValue(value, schema: branch, root: root)
+        }
+        return value
+    }
+    switch value {
+    case .object(let values):
+        guard case .object(let properties)? = shape["properties"] else {
+            return shape["additionalProperties"] == .bool(false) ? .object([:]) : value
+        }
+        var result = shape["additionalProperties"] == .bool(false) ? [:] : values
+        for (key, field) in properties {
+            if let value = values[key] { result[key] = try projectToolValue(value, schema: field, root: root) }
+        }
+        return .object(result)
+    case .array(let values):
+        guard let items = shape["items"] else { return value }
+        var result: [JSONValue] = []
+        result.reserveCapacity(values.count)
+        for value in values { result.append(try projectToolValue(value, schema: items, root: root)) }
+        return .array(result)
+    default: return value
+    }
+}
+
+private func toolBranchMatches(_ value: JSONValue, schema: JSONValue) -> Bool {
+    guard case .object(let shape) = schema else { return true }
+    if case .array(let allowed)? = shape["enum"], !allowed.contains(value) { return false }
+    if case .string(let type)? = shape["type"] {
+        switch (type, value) {
+        case ("string", .string), ("number", .number), ("integer", .number), ("boolean", .bool),
+             ("object", .object), ("array", .array), ("null", .null): break
+        default: return false
+        }
+    }
+    if case .object(let fields) = value, case .object(let properties)? = shape["properties"], let discriminator = properties["type"] {
+        if let type = fields["type"] { return toolBranchMatches(type, schema: discriminator) }
+        if case .array(let required)? = shape["required"], required.contains(.string("type")) { return false }
+    }
+    return true
+}
 
 func normalizeOpenAIJsonSchema(_ schema: JSONValue) throws -> (schema: JSONValue, warnings: [SharedV4Warning]) {
     var removedNames = false

@@ -70,33 +70,29 @@ public struct OpenAIMCPArgs: Sendable, Equatable {
     }
 }
 
+private let mcpStrings: JSONValue = .object(["type": .string("array"), "items": .object(["type": .string("string")])])
+private let mcpApprovalFilter: JSONValue = .object([
+    "type": .string("object"), "additionalProperties": .bool(false), "properties": .object(["toolNames": mcpStrings])
+])
 private let mcpArgsJSONSchema: JSONValue = .object([
-    "type": .string("object"),
-    "additionalProperties": .bool(false),
-    "required": .array([.string("serverLabel")]),
+    "type": .string("object"), "additionalProperties": .bool(false), "required": .array([.string("serverLabel")]),
     "properties": .object([
         "serverLabel": .object(["type": .string("string")]),
-        "allowedTools": .object([
-            "type": .array([.string("array"), .string("object"), .string("null")])
-        ]),
-        "authorization": .object([
-            "type": .array([.string("string"), .string("null")])
-        ]),
-        "connectorId": .object([
-            "type": .array([.string("string"), .string("null")])
-        ]),
-        "headers": .object([
-            "type": .array([.string("object"), .string("null")])
-        ]),
-        "requireApproval": .object([
-            "type": .array([.string("string"), .string("object"), .string("null")])
-        ]),
-        "serverDescription": .object([
-            "type": .array([.string("string"), .string("null")])
-        ]),
-        "serverUrl": .object([
-            "type": .array([.string("string"), .string("null")])
-        ])
+        "allowedTools": .object(["anyOf": .array([
+            mcpStrings, .object([
+                "type": .string("object"), "additionalProperties": .bool(false), "properties": .object([
+                    "readOnly": .object(["type": .string("boolean")]), "toolNames": mcpStrings
+                ])
+            ])
+        ])]),
+        "authorization": .object(["type": .string("string")]),
+        "connectorId": .object(["type": .string("string")]),
+        "headers": .object(["type": .string("object"), "additionalProperties": .object(["type": .string("string")])]),
+        "requireApproval": .object(["anyOf": .array([
+            .object(["type": .string("string"), "enum": .array([.string("always"), .string("never")])]),
+            .object(["type": .string("object"), "additionalProperties": .bool(false), "properties": .object(["never": mcpApprovalFilter])])
+        ])]),
+        "serverDescription": .object(["type": .string("string")]), "serverUrl": .object(["type": .string("string")])
     ])
 ])
 
@@ -105,7 +101,7 @@ public let openaiMcpArgsSchema = FlexibleSchema<OpenAIMCPArgs>(
         jsonSchemaResolver: { mcpArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(mcpArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -267,7 +263,7 @@ public let openaiMcpArgsSchema = FlexibleSchema<OpenAIMCPArgs>(
 
 private let mcpInputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "additionalProperties": .bool(true)
+    "additionalProperties": .bool(false)
 ])
 
 private let mcpOutputJSONSchema: JSONValue = .object([
@@ -298,11 +294,13 @@ private let mcpOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
+public let openaiMcpOutputSchema = openAIToolSchema(mcpOutputJSONSchema)
+
 public let openaiMcpToolFactory = createProviderExecutedToolFactory(
     id: "openai.mcp",
     name: "mcp",
-    inputSchema: FlexibleSchema(jsonSchema(mcpInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(mcpOutputJSONSchema))
+    inputSchema: openAIToolSchema(mcpInputJSONSchema),
+    outputSchema: openaiMcpOutputSchema
 ) { (args: OpenAIMCPArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeOpenAIMCPArgs(args)

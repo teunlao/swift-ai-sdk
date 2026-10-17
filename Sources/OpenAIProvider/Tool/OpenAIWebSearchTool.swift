@@ -5,9 +5,11 @@ import AISDKProviderUtils
 public struct OpenAIWebSearchArgs: Sendable, Equatable {
     public struct Filters: Sendable, Equatable {
         public let allowedDomains: [String]?
+        public let blockedDomains: [String]?
 
-        public init(allowedDomains: [String]? = nil) {
+        public init(allowedDomains: [String]? = nil, blockedDomains: [String]? = nil) {
             self.allowedDomains = allowedDomains
+            self.blockedDomains = blockedDomains
         }
     }
 
@@ -69,7 +71,8 @@ private let webSearchArgsJSONSchema: JSONValue = .object([
                 "allowedDomains": .object([
                     "type": .string("array"),
                     "items": .object(["type": .string("string")])
-                ])
+                ]),
+                "blockedDomains": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
             ])
         ]),
         "searchContextSize": .object([
@@ -107,7 +110,7 @@ public let openaiWebSearchArgsSchema = FlexibleSchema<OpenAIWebSearchArgs>(
         jsonSchemaResolver: { webSearchArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(webSearchArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -143,6 +146,11 @@ public let openaiWebSearchArgsSchema = FlexibleSchema<OpenAIWebSearchArgs>(
                     } else {
                         filters = OpenAIWebSearchArgs.Filters()
                     }
+                    let blocked: [String]?
+                    if case .array(let values)? = filtersObject["blockedDomains"] {
+                        blocked = values.compactMap { if case .string(let value) = $0 { return value }; return nil }
+                    } else { blocked = nil }
+                    filters = OpenAIWebSearchArgs.Filters(allowedDomains: filters?.allowedDomains, blockedDomains: blocked)
                 }
 
                 var externalWebAccess: Bool? = nil
@@ -227,7 +235,7 @@ public let openaiWebSearchArgsSchema = FlexibleSchema<OpenAIWebSearchArgs>(
 
 private let webSearchInputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "additionalProperties": .bool(true)
+    "additionalProperties": .bool(false)
 ])
 
 private let webSearchOutputJSONSchema: JSONValue = .object([
@@ -325,12 +333,12 @@ private let webSearchOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-let openaiWebSearchOutputSchema = FlexibleSchema(jsonSchema(webSearchOutputJSONSchema))
+public let openaiWebSearchOutputSchema = openAIToolSchema(webSearchOutputJSONSchema)
 
 public let openaiWebSearchToolFactory = createProviderExecutedToolFactory(
     id: "openai.web_search",
     name: "web_search",
-    inputSchema: FlexibleSchema(jsonSchema(webSearchInputJSONSchema)),
+    inputSchema: openAIToolSchema(webSearchInputJSONSchema),
     outputSchema: openaiWebSearchOutputSchema
 ) { (args: OpenAIWebSearchArgs) in
     var options = ProviderExecutedToolFactoryOptions()
@@ -346,9 +354,10 @@ private func encodeOpenAIWebSearchArgs(_ args: OpenAIWebSearchArgs) -> [String: 
         if let allowed = filters.allowedDomains {
             filtersPayload["allowedDomains"] = .array(allowed.map(JSONValue.string))
         }
-        if !filtersPayload.isEmpty {
-            payload["filters"] = .object(filtersPayload)
+        if let blocked = filters.blockedDomains {
+            filtersPayload["blockedDomains"] = .array(blocked.map(JSONValue.string))
         }
+        payload["filters"] = .object(filtersPayload)
     }
 
     if let externalWebAccess = args.externalWebAccess {

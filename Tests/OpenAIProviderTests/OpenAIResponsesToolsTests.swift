@@ -1,11 +1,43 @@
 import Foundation
 import Testing
-@testable import AISDKProvider
-@testable import AISDKProviderUtils
-@testable import OpenAIProvider
+import AISDKProvider
+import AISDKProviderUtils
+import OpenAIProvider
 
-@Suite("OpenAIResponsesPrepareTools")
-struct OpenAIResponsesPrepareToolsTests {
+@Suite("Responses tools HTTP contracts")
+struct OpenAIResponsesToolsTests {
+    private struct Prepared {
+        let tools: [JSONValue]?
+        let toolChoice: JSONValue?
+        let warnings: [SharedV4Warning]
+    }
+    private actor Capture {
+        var body: JSONValue?
+        func store(_ request: URLRequest) throws {
+            body = try JSONDecoder().decode(JSONValue.self, from: #require(request.httpBody))
+        }
+        func value() -> JSONValue? { body }
+    }
+    private func prepareTools(tools: [LanguageModelV4Tool]?, toolChoice: LanguageModelV4ToolChoice?, allowedTools: OpenAIResponsesAllowedTools? = nil) async throws -> Prepared {
+        let capture = Capture()
+        let provider = try createOpenAI(settings: .init(apiKey: "test", fetch: { request in
+            try await capture.store(request)
+            return FetchResponse(body: .data(Data(#"{"output":[]}"#.utf8)), urlResponse: HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]
+            )!)
+        }))
+        var options: SharedV4ProviderOptions = [:]
+        if let allowedTools {
+            var allowed: [String: JSONValue] = ["toolNames": .array(allowedTools.toolNames.map(JSONValue.string))]
+            if let mode = allowedTools.mode { allowed["mode"] = .string(mode) }
+            options["openai"] = ["allowedTools": .object(allowed)]
+        }
+        let result = try await provider.responses("gpt-6").doGenerate(options: .init(prompt: [], tools: tools, toolChoice: toolChoice, providerOptions: options))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing HTTP body"); return Prepared(tools: nil, toolChoice: nil, warnings: result.warnings) }
+        let wireTools: [JSONValue]?
+        if case .array(let values)? = body["tools"] { wireTools = values } else { wireTools = nil }
+        return Prepared(tools: wireTools, toolChoice: body["tool_choice"], warnings: result.warnings)
+    }
     private func providerTool(id: String, name: String? = nil, args: [String: JSONValue] = [:]) -> LanguageModelV4Tool {
         .provider(
             LanguageModelV4ProviderTool(
@@ -18,7 +50,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("code interpreter defaults to auto container")
     func codeInterpreterDefaultsToAutoContainer() async throws {
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [providerTool(id: "openai.code_interpreter", name: "code_interpreter")],
             toolChoice: nil
         )
@@ -50,7 +82,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: ["container": .string("container-123")]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -78,7 +110,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -96,7 +128,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("code interpreter tool choice maps to provider type")
     func codeInterpreterToolChoiceMapping() async throws {
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [providerTool(id: "openai.code_interpreter", name: "code_interpreter")],
             toolChoice: .tool(toolName: "code_interpreter")
         )
@@ -125,7 +157,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: ["container": .string("my-container")]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [functionTool, codeInterpreter],
             toolChoice: nil
         )
@@ -181,7 +213,7 @@ struct OpenAIResponsesPrepareToolsTests {
             )
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [searchTool, summarizeTool],
             toolChoice: nil
         )
@@ -214,7 +246,7 @@ struct OpenAIResponsesPrepareToolsTests {
             )
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [functionTool],
             toolChoice: LanguageModelV4ToolChoice.none,
             allowedTools: OpenAIResponsesAllowedTools(toolNames: ["weather"], mode: "required")
@@ -250,7 +282,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -270,7 +302,7 @@ struct OpenAIResponsesPrepareToolsTests {
     @Test("image generation tool choice mapping")
     func imageGenerationToolChoiceMapping() async throws {
         let tool = providerTool(id: "openai.image_generation", name: "image_generation")
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: .tool(toolName: "image_generation")
         )
@@ -289,7 +321,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: .tool(toolName: "mcp")
         )
@@ -320,7 +352,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -354,7 +386,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -398,7 +430,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: args
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -428,7 +460,7 @@ struct OpenAIResponsesPrepareToolsTests {
         )
 
         do {
-            _ = try await prepareOpenAIResponsesTools(
+            _ = try await prepareTools(
                 tools: [tool],
                 toolChoice: nil
             )
@@ -452,7 +484,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: args
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: .tool(toolName: "web_search")
         )
@@ -478,7 +510,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: args
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -514,7 +546,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: args
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -551,7 +583,7 @@ struct OpenAIResponsesPrepareToolsTests {
             args: args
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -570,7 +602,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("local shell tool mapped without args")
     func localShellToolMapped() async throws {
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [providerTool(id: "openai.local_shell", name: "local_shell")],
             toolChoice: nil
         )
@@ -586,7 +618,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("shell tool mapped without args")
     func shellToolMapped() async throws {
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [providerTool(id: "openai.shell", name: "shell")],
             toolChoice: nil
         )
@@ -632,7 +664,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -689,7 +721,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -727,7 +759,7 @@ struct OpenAIResponsesPrepareToolsTests {
         )
 
         do {
-            _ = try await prepareOpenAIResponsesTools(
+            _ = try await prepareTools(
                 tools: [tool],
                 toolChoice: nil
             )
@@ -743,7 +775,7 @@ struct OpenAIResponsesPrepareToolsTests {
     @Test("apply patch tool choice mapping")
     func applyPatchToolChoiceMapping() async throws {
         let tool = providerTool(id: "openai.apply_patch", name: "apply_patch")
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: .tool(toolName: "apply_patch")
         )
@@ -753,7 +785,7 @@ struct OpenAIResponsesPrepareToolsTests {
 
     @Test("apply patch tool mapped without args")
     func applyPatchToolMapped() async throws {
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [providerTool(id: "openai.apply_patch", name: "apply_patch")],
             toolChoice: nil
         )
@@ -770,7 +802,7 @@ struct OpenAIResponsesPrepareToolsTests {
     @Test("unsupported provider tool is ignored without warning")
     func unsupportedProviderToolIsIgnoredWithoutWarning() async throws {
         let tool = providerTool(id: "openai.unsupported", name: "unsupported", args: [:])
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: nil
         )
@@ -788,7 +820,7 @@ struct OpenAIResponsesPrepareToolsTests {
             )
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [functionTool],
             toolChoice: .tool(toolName: "custom_tool")
         )
@@ -814,7 +846,7 @@ struct OpenAIResponsesPrepareToolsTests {
             ]
         )
 
-        let result = try await prepareOpenAIResponsesTools(
+        let result = try await prepareTools(
             tools: [tool],
             toolChoice: .tool(toolName: "grep_ast")
         )
@@ -851,7 +883,7 @@ struct OpenAIResponsesPrepareToolsTests {
         )
 
         await #expect(throws: Error.self) {
-            _ = try await prepareOpenAIResponsesTools(
+            _ = try await prepareTools(
                 tools: [nullDescriptionTool],
                 toolChoice: nil
             )
@@ -866,7 +898,7 @@ struct OpenAIResponsesPrepareToolsTests {
         )
 
         await #expect(throws: Error.self) {
-            _ = try await prepareOpenAIResponsesTools(
+            _ = try await prepareTools(
                 tools: [nullFormatTool],
                 toolChoice: nil
             )

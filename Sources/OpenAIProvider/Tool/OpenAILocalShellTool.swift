@@ -38,16 +38,16 @@ private let localShellInputJSONSchema: JSONValue = .object([
                     "items": .object(["type": .string("string")])
                 ]),
                 "timeoutMs": .object([
-                    "type": .array([.string("number"), .string("null")])
+                    "type": .string("number")
                 ]),
                 "user": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "workingDirectory": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "env": .object([
-                    "type": .array([.string("object"), .string("null")]),
+                    "type": .string("object"),
                     "additionalProperties": .object(["type": .string("string")])
                 ])
             ])
@@ -66,17 +66,12 @@ private let localShellOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
-public let openaiLocalShellInputSchema = FlexibleSchema(
-    Schema.codable(OpenAILocalShellInput.self, jsonSchema: localShellInputJSONSchema)
-)
-
-public let openaiLocalShellOutputSchema = FlexibleSchema(
-    Schema.codable(OpenAILocalShellOutput.self, jsonSchema: localShellOutputJSONSchema)
-)
+public let openaiLocalShellInputSchema = openAIToolSchema(OpenAILocalShellInput.self, localShellInputJSONSchema)
+public let openaiLocalShellOutputSchema = openAIToolSchema(OpenAILocalShellOutput.self, localShellOutputJSONSchema)
 
 public let openaiLocalShellTool = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.local_shell",
     name: "local_shell",
-    inputSchema: FlexibleSchema(jsonSchema(localShellInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(localShellOutputJSONSchema))
+    inputSchema: openAIToolSchema(localShellInputJSONSchema),
+    outputSchema: openAIToolSchema(localShellOutputJSONSchema)
 )

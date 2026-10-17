@@ -433,32 +433,18 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         let body: OpenAIResponsesRequestBody
         let warnings: [SharedV4Warning]
         let webSearchToolName: String?
-        let toolNameMapping: OpenAIToolNameMapping
+        let toolNameMapping: ToolNameMapping
         let store: Bool
         let openAIOptions: OpenAIResponsesProviderOptions?
         let isShellProviderExecuted: Bool
         let functionTools: [LanguageModelV4FunctionTool]
     }
 
-    private static func resolveProviderToolName(_ tool: LanguageModelV4ProviderTool) -> String? {
-        guard tool.id == "openai.custom" else {
-            return nil
-        }
-        return tool.name
-    }
-
-    private static func collectCustomProviderToolNames(from tools: [LanguageModelV4Tool]?) -> Set<String> {
-        var names: Set<String> = []
-
-        for tool in tools ?? [] {
-            guard case .provider(let providerTool) = tool,
-                  let providerToolName = resolveProviderToolName(providerTool) else {
-                continue
-            }
-            names.insert(providerToolName)
-        }
-
-        return names
+    private static func collectCustomProviderToolNames(from tools: [LanguageModelV4Tool]?) -> Set<Data> {
+        Set((tools ?? []).compactMap { tool in
+            guard case .provider(let tool) = tool, tool.id == "openai.custom" else { return nil }
+            return Data(tool.name.utf8)
+        })
     }
 
     private func prepareRequest(options: LanguageModelV4CallOptions) async throws -> PreparedRequest {
@@ -516,10 +502,15 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         let toolSearchToolName = (options.tools ?? []).compactMap { tool -> String? in
             if case .provider(let provider) = tool, provider.id == "openai.tool_search" { return provider.name }; return nil
         }.first
-        let toolNameMapping = OpenAIToolNameMapping.create(
+        let toolNameMapping = createToolNameMapping(tools: options.tools, providerToolNames: Self.providerToolNames)
+
+        let preparedTools = try await prepareOpenAIResponsesTools(
             tools: options.tools,
-            providerToolNames: Self.providerToolNames,
-            resolveProviderToolName: Self.resolveProviderToolName
+            toolChoice: options.toolChoice,
+            allowedTools: openAIOptions?.allowedTools,
+            toolNameMapping: toolNameMapping,
+            customProviderToolNames: customProviderToolNames,
+            supportsAsyncToolCalling: modelCapabilities.supportsAsyncToolCalling
         )
 
         let (input, inputWarnings) = try await OpenAIResponsesInputBuilder.makeInput(
@@ -527,6 +518,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
             providerOptionsName: providerOptionsName,
             toolNameMapping: toolNameMapping,
             customProviderToolNames: customProviderToolNames,
+            outputSchemaToolNames: preparedTools.outputSchemaToolNames,
             systemMessageMode: systemMessageMode,
             fileIdPrefixes: config.fileIdPrefixes,
             store: storeForInput,
@@ -579,15 +571,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         if storeOption == false && isReasoningModel {
             addInclude(.reasoningEncryptedContent)
         }
-
-        let preparedTools = try await prepareOpenAIResponsesTools(
-            tools: options.tools,
-            toolChoice: options.toolChoice,
-            allowedTools: openAIOptions?.allowedTools,
-            toolNameMapping: toolNameMapping,
-            customProviderToolNames: customProviderToolNames
-        )
-        warnings.append(contentsOf: preparedTools.warnings)
 
         let textOptions = makeTextOptions(
             responseFormat: options.responseFormat,
@@ -695,7 +678,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
         return PreparedRequest(
             body: body,
-            warnings: warnings,
+            warnings: warnings + preparedTools.warnings,
             webSearchToolName: webSearchToolName,
             toolNameMapping: toolNameMapping,
             store: storeForInput,
@@ -816,7 +799,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         _ output: [JSONValue],
         approvalRequestIdToToolCallIdFromPrompt: [String: String],
         webSearchToolName: String?,
-        toolNameMapping: OpenAIToolNameMapping,
+        toolNameMapping: ToolNameMapping,
         logprobsRequested: Bool,
         isShellProviderExecuted: Bool,
         functionTools: [LanguageModelV4FunctionTool]
@@ -986,9 +969,9 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 }
                 hasFunctionCall = true
 
-                let providerMetadata = openAIProviderMetadata([
-                    "itemId": object["id"]?.stringValue.map(JSONValue.string) ?? .null
-                ])
+                var metadata: [String: JSONValue] = ["itemId": object["id"] ?? .null]
+                if let value = object["async"], value != .null { metadata["async"] = value }
+                let providerMetadata = openAIProviderMetadata(metadata)
                 let toolName = toolNameMapping.toCustomToolName(providerToolName)
                 let input = try openAIJSONStringify(.string(rawInput))
 
@@ -1641,7 +1624,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     private func handleOutputItemAdded(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
-        toolNameMapping: OpenAIToolNameMapping,
+        toolNameMapping: ToolNameMapping,
         functionTools: [LanguageModelV4FunctionTool],
         ongoingAnnotations: inout [JSONValue],
         activeMessagePhase: inout String?,
@@ -1674,7 +1657,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 toolCallId: callId,
                 providerExecuted: false,
                 codeInterpreter: nil,
-                applyPatch: nil
+                applyPatch: nil,
+                asyncValue: item["async"]
             )
             continuation.yield(.toolInputStart(
                 id: callId,
@@ -1682,7 +1666,8 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 providerMetadata: nil,
                 providerExecuted: nil,
                 dynamic: nil,
-                title: nil
+                title: nil,
+                inputEncoding: .text
             ))
         case "web_search_call":
             guard let callId = item["id"]?.stringValue else { return }
@@ -1869,7 +1854,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
     private func handleOutputItemDone(
         _ chunk: [String: JSONValue],
         webSearchToolName: String,
-        toolNameMapping: OpenAIToolNameMapping,
+        toolNameMapping: ToolNameMapping,
         functionTools: [LanguageModelV4FunctionTool],
         ongoingAnnotations: inout [JSONValue],
         activeMessagePhase: inout String?,
@@ -1926,11 +1911,13 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                   let providerToolName = item["name"]?.stringValue,
                   let rawInput = item["input"]?.stringValue else { return }
             hasFunctionCall = true
+            let ongoing = ongoingToolCalls[outputIndex]
             ongoingToolCalls[outputIndex] = nil
             continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
-            let metadata = openAIProviderMetadata([
-                "itemId": item["id"]?.stringValue.map(JSONValue.string) ?? .null
-            ])
+            var values: [String: JSONValue] = ["itemId": item["id"] ?? .null]
+            let asyncValue = item["async"].flatMap { $0 == .null ? nil : $0 } ?? ongoing?.asyncValue.flatMap { $0 == .null ? nil : $0 }
+            if let asyncValue { values["async"] = asyncValue }
+            let metadata = openAIProviderMetadata(values)
             let toolName = toolNameMapping.toCustomToolName(providerToolName)
             let input = try openAIJSONStringify(.string(rawInput))
             continuation.yield(.toolCall(LanguageModelV4ToolCall(
@@ -2407,7 +2394,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
     private func handleImageGenerationPartial(
         _ chunk: [String: JSONValue],
-        toolNameMapping: OpenAIToolNameMapping,
+        toolNameMapping: ToolNameMapping,
         continuation: AsyncThrowingStream<LanguageModelV4StreamPart, Error>.Continuation
     ) {
         guard let toolCallId = chunk["item_id"]?.stringValue,

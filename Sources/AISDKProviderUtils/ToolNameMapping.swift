@@ -1,25 +1,29 @@
 import Foundation
 import AISDKProvider
 
-/// Maps between client-facing custom tool names and provider tool names.
 public struct ToolNameMapping: Sendable {
-    private let customToolNameToProviderToolName: [String: String]
-    private let providerToolNameToCustomToolName: [String: String]
+    private var customToProvider: [Data: String]
+    private var providerToCustom: [Data: String]
 
     public init(
         customToolNameToProviderToolName: [String: String] = [:],
         providerToolNameToCustomToolName: [String: String] = [:]
     ) {
-        self.customToolNameToProviderToolName = customToolNameToProviderToolName
-        self.providerToolNameToCustomToolName = providerToolNameToCustomToolName
+        self.customToProvider = Dictionary(uniqueKeysWithValues: customToolNameToProviderToolName.map { (Data($0.key.utf8), $0.value) })
+        self.providerToCustom = Dictionary(uniqueKeysWithValues: providerToolNameToCustomToolName.map { (Data($0.key.utf8), $0.value) })
     }
 
     public func toProviderToolName(_ customToolName: String) -> String {
-        customToolNameToProviderToolName[customToolName] ?? customToolName
+        customToProvider[Data(customToolName.utf8)] ?? customToolName
     }
 
     public func toCustomToolName(_ providerToolName: String) -> String {
-        providerToolNameToCustomToolName[providerToolName] ?? providerToolName
+        providerToCustom[Data(providerToolName.utf8)] ?? providerToolName
+    }
+
+    fileprivate mutating func record(custom: String, provider: String) {
+        customToProvider[Data(custom.utf8)] = provider
+        providerToCustom[Data(provider.utf8)] = custom
     }
 }
 
@@ -27,21 +31,10 @@ public func createToolNameMapping(
     tools: [LanguageModelV4Tool]? = nil,
     providerToolNames: [String: String]
 ) -> ToolNameMapping {
-    var customToProvider: [String: String] = [:]
-    var providerToCustom: [String: String] = [:]
-
+    var mapping = ToolNameMapping()
     for tool in tools ?? [] {
-        guard case .provider(let providerTool) = tool,
-              let providerToolName = providerToolNames[providerTool.id] else {
-            continue
-        }
-
-        customToProvider[providerTool.name] = providerToolName
-        providerToCustom[providerToolName] = providerTool.name
+        guard case .provider(let tool) = tool, let name = providerToolNames[tool.id] else { continue }
+        mapping.record(custom: tool.name, provider: name)
     }
-
-    return ToolNameMapping(
-        customToolNameToProviderToolName: customToProvider,
-        providerToolNameToCustomToolName: providerToCustom
-    )
+    return mapping
 }

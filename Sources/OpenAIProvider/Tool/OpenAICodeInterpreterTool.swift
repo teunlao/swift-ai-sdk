@@ -43,23 +43,9 @@ public struct OpenAICodeInterpreterOutput: Codable, Sendable, Equatable {
 
             switch type {
             case "logs":
-                if container.contains(.url) {
-                    throw DecodingError.dataCorruptedError(
-                        forKey: .url,
-                        in: container,
-                        debugDescription: "logs output must not contain url"
-                    )
-                }
                 self = .logs(logs: try container.decode(String.self, forKey: .logs))
 
             case "image":
-                if container.contains(.logs) {
-                    throw DecodingError.dataCorruptedError(
-                        forKey: .logs,
-                        in: container,
-                        debugDescription: "image output must not contain logs"
-                    )
-                }
                 self = .image(url: try container.decode(String.self, forKey: .url))
 
             default:
@@ -162,32 +148,25 @@ private let codeInterpreterArgsJSONSchema: JSONValue = .object([
     "additionalProperties": .bool(false),
     "properties": .object([
         "container": .object([
-            "type": .array([.string("string"), .string("object"), .string("null")]),
-            "properties": .object([
-                "fileIds": .object([
-                    "type": .array([.string("array"), .string("null")]),
-                    "items": .object(["type": .string("string")])
-                ])
-            ]),
-            "additionalProperties": .bool(false)
+            "anyOf": .array([
+                .object(["type": .string("string")]),
+                .object(["type": .string("object"), "additionalProperties": .bool(false), "properties": .object([
+                    "fileIds": .object(["type": .string("array"), "items": .object(["type": .string("string")])])
+                ])])
+            ])
         ])
     ])
 ])
 
-public let openaiCodeInterpreterInputSchema = FlexibleSchema(
-    Schema.codable(OpenAICodeInterpreterInput.self, jsonSchema: codeInterpreterInputJSONSchema)
-)
-
-public let openaiCodeInterpreterOutputSchema = FlexibleSchema(
-    Schema.codable(OpenAICodeInterpreterOutput.self, jsonSchema: codeInterpreterOutputJSONSchema)
-)
+public let openaiCodeInterpreterInputSchema = openAIToolSchema(OpenAICodeInterpreterInput.self, codeInterpreterInputJSONSchema)
+public let openaiCodeInterpreterOutputSchema = openAIToolSchema(OpenAICodeInterpreterOutput.self, codeInterpreterOutputJSONSchema)
 
 public let openaiCodeInterpreterArgsSchema = FlexibleSchema<OpenAICodeInterpreterArgs>(
     Schema(
         jsonSchemaResolver: { codeInterpreterArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(codeInterpreterArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "openai", issues: "expected object"))
                     return .failure(error: error)
@@ -195,8 +174,6 @@ public let openaiCodeInterpreterArgsSchema = FlexibleSchema<OpenAICodeInterprete
 
                 if let containerValue = dict["container"] {
                     switch containerValue {
-                    case .null:
-                        break
                     case .string:
                         break
                     case .object(let containerObject):
@@ -265,9 +242,9 @@ private func encodeCodeInterpreterArgs(_ args: OpenAICodeInterpreterArgs) -> [St
     case .string(let value):
         return ["container": .string(value)]
     case .auto(let fileIds):
-        var payload: [String: JSONValue] = ["type": .string("auto")]
+        var payload: [String: JSONValue] = [:]
         if let fileIds {
-            payload["file_ids"] = .array(fileIds.map(JSONValue.string))
+            payload["fileIds"] = .array(fileIds.map(JSONValue.string))
         }
         return ["container": .object(payload)]
     }
@@ -276,8 +253,8 @@ private func encodeCodeInterpreterArgs(_ args: OpenAICodeInterpreterArgs) -> [St
 public let openaiCodeInterpreterToolFactory = createProviderExecutedToolFactory(
     id: "openai.code_interpreter",
     name: "code_interpreter",
-    inputSchema: FlexibleSchema(jsonSchema(codeInterpreterInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(codeInterpreterOutputJSONSchema))
+    inputSchema: openAIToolSchema(codeInterpreterInputJSONSchema),
+    outputSchema: openAIToolSchema(codeInterpreterOutputJSONSchema)
 ) { (args: OpenAICodeInterpreterArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeCodeInterpreterArgs(args)

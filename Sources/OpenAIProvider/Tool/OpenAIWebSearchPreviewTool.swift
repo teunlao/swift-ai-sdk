@@ -54,7 +54,7 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
         jsonSchemaResolver: { webSearchPreviewArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(webSearchPreviewArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -127,7 +127,7 @@ public let openaiWebSearchPreviewArgsSchema = FlexibleSchema<OpenAIWebSearchPrev
 
 private let webSearchPreviewInputJSONSchema: JSONValue = .object([
     "type": .string("object"),
-    "additionalProperties": .bool(true)
+    "additionalProperties": .bool(false)
 ])
 
 private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
@@ -186,11 +186,13 @@ private let webSearchPreviewOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
+public let openaiWebSearchPreviewInputSchema = openAIToolSchema(webSearchPreviewInputJSONSchema)
+
 public let openaiWebSearchPreviewToolFactory = createProviderExecutedToolFactory(
     id: "openai.web_search_preview",
     name: "web_search_preview",
-    inputSchema: FlexibleSchema(jsonSchema(webSearchPreviewInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(webSearchPreviewOutputJSONSchema))
+    inputSchema: openaiWebSearchPreviewInputSchema,
+    outputSchema: openAIToolSchema(webSearchPreviewOutputJSONSchema)
 ) { (args: OpenAIWebSearchPreviewArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeOpenAIWebSearchPreviewArgs(args)

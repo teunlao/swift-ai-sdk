@@ -6,70 +6,93 @@ struct OpenAIResponsesPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
     let warnings: [SharedV4Warning]
+    var outputSchemaToolNames: Set<Data> = []
 }
 
 func prepareOpenAIResponsesTools(
     tools: [LanguageModelV4Tool]?,
     toolChoice: LanguageModelV4ToolChoice?,
     allowedTools: OpenAIResponsesAllowedTools? = nil,
-    toolNameMapping: OpenAIToolNameMapping = .init(),
-    customProviderToolNames: Set<String> = []
+    toolNameMapping: ToolNameMapping = .init(),
+    customProviderToolNames: Set<Data> = [],
+    supportsAsyncToolCalling: Bool = true
 ) async throws -> OpenAIResponsesPreparedTools {
     guard let tools, !tools.isEmpty else {
         return OpenAIResponsesPreparedTools(tools: nil, toolChoice: nil, warnings: [])
     }
 
-    let warnings: [SharedV4Warning] = []
+    var warnings: [SharedV4Warning] = []
     var openAITools: [JSONValue] = []
-    var namespaceTools: [String: (description: String, index: Int)] = [:]
+    var namespaceTools: [Data: (description: String, index: Int, tools: [JSONValue])] = [:]
     var resolvedCustomProviderToolNames = customProviderToolNames
+    var outputSchemaToolNames: Set<Data> = []
+    var resolutions: [Data: AllowedToolResolution] = [:]
+    var aliases: [Data: AllowedToolResolution] = [:]
+
+    func record(_ name: String, _ resolution: AllowedToolResolution, canonical: String? = nil) {
+        resolutions[Data(name.utf8)] = resolution
+        guard let canonical, !canonical.utf8.elementsEqual(name.utf8) else { return }
+        let key = Data(canonical.utf8)
+        if let existing = aliases[key], existing != resolution { aliases[key] = .ambiguous }
+        else { aliases[key] = resolution }
+    }
 
     for tool in tools {
         switch tool {
         case .function(let functionTool):
-            let openAIOptions = parseOpenAIFunctionToolOptions(functionTool.providerOptions)
+            let openAIOptions = parseOpenAIToolOptions(functionTool.providerOptions)
+            let asyncValue = resolveAsyncToolOption(openAIOptions.async, supported: supportsAsyncToolCalling, name: functionTool.name, warnings: &warnings)
+            let normalized = try normalizeOpenAIJsonSchema(functionTool.inputSchema)
+            warnings.append(contentsOf: normalized.warnings)
             var payload: [String: JSONValue] = [
                 "type": .string("function"),
                 "name": .string(functionTool.name),
-                "parameters": functionTool.inputSchema
+                "parameters": normalized.schema,
+                "strict": .bool(functionTool.strict ?? false)
             ]
+            if let outputSchema = openAIOptions.outputSchema {
+                outputSchemaToolNames.insert(Data(functionTool.name.utf8))
+                let normalized = try normalizeOpenAIJsonSchema(outputSchema)
+                payload["output_schema"] = normalized.schema
+                warnings.append(contentsOf: normalized.warnings)
+            }
+            if let allowedCallers = openAIOptions.allowedCallers { payload["allowed_callers"] = allowedCallers }
+            if let asyncValue { payload["async"] = .bool(asyncValue) }
             if let description = functionTool.description {
                 payload["description"] = .string(description)
-            }
-            if let strict = functionTool.strict {
-                payload["strict"] = .bool(strict)
             }
             if let deferLoading = openAIOptions.deferLoading {
                 payload["defer_loading"] = .bool(deferLoading)
             }
 
             if let namespace = openAIOptions.namespace {
-                if let existing = namespaceTools[namespace.name] {
-                    guard existing.description == namespace.description else {
+                if let description = namespaceTools[Data(namespace.name.utf8)]?.description {
+                    guard description.utf8.elementsEqual(namespace.description.utf8) else {
                         throw UnsupportedFunctionalityError(functionality: "conflicting descriptions for OpenAI tool namespace \"\(namespace.name)\"")
                     }
-                    guard case .object(var namespaceObject) = openAITools[existing.index],
-                          case .array(var namespaceFunctionTools)? = namespaceObject["tools"] else {
-                        throw UnsupportedFunctionalityError(functionality: "invalid OpenAI tool namespace state")
-                    }
-                    namespaceFunctionTools.append(.object(payload))
-                    namespaceObject["tools"] = .array(namespaceFunctionTools)
-                    openAITools[existing.index] = .object(namespaceObject)
+                    namespaceTools[Data(namespace.name.utf8)]?.tools.append(.object(payload))
                 } else {
                     let index = openAITools.count
-                    namespaceTools[namespace.name] = (namespace.description, index)
+                    namespaceTools[Data(namespace.name.utf8)] = (namespace.description, index, [.object(payload)])
                     openAITools.append(.object([
                         "type": .string("namespace"),
                         "name": .string(namespace.name),
                         "description": .string(namespace.description),
-                        "tools": .array([.object(payload)])
+                        "tools": .array([])
                     ]))
                 }
             } else {
                 openAITools.append(.object(payload))
             }
 
+            record(functionTool.name, openAIOptions.namespace != nil
+                ? .unsupported("tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools")
+                : openAIOptions.deferLoading == true
+                    ? .unsupported("deferred tools are not visible to tool_choice.allowed_tools")
+                    : .supported(type: "function", identity: functionTool.name))
+
         case .provider(let providerTool):
+            let previousCount = openAITools.count
             switch providerTool.id {
             case "openai.file_search":
                 let parsed = try await validateTypes(
@@ -84,7 +107,7 @@ func prepareOpenAIResponsesTools(
                     if let threshold = ranking.scoreThreshold {
                         rankingPayload["score_threshold"] = .number(threshold)
                     }
-                    rankingOptions = rankingPayload.isEmpty ? nil : .object(rankingPayload)
+                    rankingOptions = .object(rankingPayload)
                 } else {
                     rankingOptions = nil
                 }
@@ -153,9 +176,10 @@ func prepareOpenAIResponsesTools(
                     if let allowed = filters.allowedDomains {
                         filtersPayload["allowed_domains"] = .array(allowed.map(JSONValue.string))
                     }
-                    if !filtersPayload.isEmpty {
-                        payload["filters"] = .object(filtersPayload)
+                    if let blocked = filters.blockedDomains {
+                        filtersPayload["blocked_domains"] = .array(blocked.map(JSONValue.string))
                     }
+                    payload["filters"] = .object(filtersPayload)
                 }
                 if let externalWebAccess = parsed.externalWebAccess {
                     payload["external_web_access"] = .bool(externalWebAccess)
@@ -204,6 +228,7 @@ func prepareOpenAIResponsesTools(
                 var payload: [String: JSONValue] = [
                     "type": .string("image_generation")
                 ]
+                if let action = parsed.action { payload["action"] = .string(action) }
                 if let background = parsed.background {
                     payload["background"] = .string(background)
                 }
@@ -328,6 +353,9 @@ func prepareOpenAIResponsesTools(
                 if let description = parsed.description {
                     payload["description"] = .string(description)
                 }
+                if let value = resolveAsyncToolOption(parsed.async, supported: supportsAsyncToolCalling, name: providerTool.name, warnings: &warnings) {
+                    payload["async"] = .bool(value)
+                }
                 if let format = parsed.format {
                     switch format {
                     case .grammar(let syntax, let definition):
@@ -343,7 +371,7 @@ func prepareOpenAIResponsesTools(
                     }
                 }
                 openAITools.append(.object(payload))
-                resolvedCustomProviderToolNames.insert(providerTool.name)
+                resolvedCustomProviderToolNames.insert(Data(providerTool.name.utf8))
 
             case "openai.tool_search":
                 let parsed = try await validateTypes(
@@ -366,21 +394,53 @@ func prepareOpenAIResponsesTools(
             default:
                 break
             }
+            if openAITools.count > previousCount {
+                record(providerTool.name, allowedToolResolution(openAITools[previousCount]), canonical: toolNameMapping.toProviderToolName(providerTool.name))
+            }
         }
     }
 
+    for namespace in namespaceTools.values {
+        guard case .object(var object) = openAITools[namespace.index] else { preconditionFailure() }
+        object["tools"] = .array(namespace.tools)
+        openAITools[namespace.index] = .object(object)
+    }
     let finalTools = openAITools
     let finalToolChoice: JSONValue?
     if let allowedTools {
+        var entries: [JSONValue] = []
+        var dropped: [String] = []
+        for name in allowedTools.toolNames {
+            let key = Data(name.utf8)
+            let direct = resolutions[key]
+            let resolution = direct ?? aliases[key]
+            func warn(_ details: String) {
+                warnings.append(.unsupported(feature: "allowedTools entry \"\(name)\"", details: details))
+            }
+            if direct != nil, aliases[key] != nil {
+                warn("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed")
+            }
+            switch resolution {
+            case .ambiguous:
+                warn("several tools in this request share this provider tool name; use the tool name from the tools for this request instead")
+                dropped.append(name)
+            case .unsupported(let reason):
+                warn("\(reason); the tool is removed from the allowed tools")
+                dropped.append(name)
+            case .supported(let type, let identity):
+                var entry: [String: JSONValue] = ["type": .string(type)]
+                if let identity { entry[type == "mcp" ? "server_label" : "name"] = .string(identity) }
+                entries.append(.object(entry))
+            case nil:
+                warn("the tool is not part of the tools for this request and is sent as a function tool")
+                entries.append(.object(["type": .string("function"), "name": .string(toolNameMapping.toProviderToolName(name))]))
+            }
+        }
+        guard !entries.isEmpty else {
+            throw UnsupportedFunctionalityError(functionality: "allowedTools with only tools that cannot be allow-listed (\(dropped.joined(separator: ", ")))")
+        }
         finalToolChoice = .object([
-            "type": .string("allowed_tools"),
-            "mode": .string(allowedTools.mode ?? "auto"),
-            "tools": .array(allowedTools.toolNames.map { name in
-                .object([
-                    "type": .string("function"),
-                    "name": .string(toolNameMapping.toProviderToolName(name))
-                ])
-            })
+            "type": .string("allowed_tools"), "mode": .string(allowedTools.mode ?? "auto"), "tools": .array(entries)
         ])
     } else {
         finalToolChoice = try mapToolChoice(
@@ -390,22 +450,67 @@ func prepareOpenAIResponsesTools(
         )
     }
 
-    return OpenAIResponsesPreparedTools(tools: finalTools, toolChoice: finalToolChoice, warnings: warnings)
+    return OpenAIResponsesPreparedTools(tools: finalTools, toolChoice: finalToolChoice, warnings: warnings, outputSchemaToolNames: outputSchemaToolNames)
 }
 
-private struct OpenAIFunctionToolOptions {
-    struct Namespace {
-        let name: String
-        let description: String
+private enum AllowedToolResolution: Equatable {
+    case supported(type: String, identity: String? = nil)
+    case unsupported(String)
+    case ambiguous
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case let (.supported(a, x), .supported(b, y)):
+            return a == b && x.map { Data($0.utf8) } == y.map { Data($0.utf8) }
+        case let (.unsupported(a), .unsupported(b)): return a == b
+        case (.ambiguous, .ambiguous): return true
+        default: return false
+        }
+    }
+}
+
+private func allowedToolResolution(_ tool: JSONValue) -> AllowedToolResolution {
+    guard case .object(let object) = tool, case .string(let type)? = object["type"] else { preconditionFailure() }
+    switch type {
+    case "custom": return .supported(type: type, identity: object["name"]?.stringValue)
+    case "mcp": return .supported(type: type, identity: object["server_label"]?.stringValue)
+    case "file_search", "web_search", "web_search_preview", "image_generation", "code_interpreter", "apply_patch", "shell", "local_shell":
+        return .supported(type: type)
+    default: return .unsupported("OpenAI does not support \(type) tools in tool_choice.allowed_tools")
+    }
+}
+
+private func resolveAsyncToolOption(_ value: Bool?, supported: Bool, name: String, warnings: inout [SharedV4Warning]) -> Bool? {
+    guard value == true, !supported else { return value }
+    warnings.append(.unsupported(feature: "async tool calling for \"\(name)\"", details: "Async tool calling is only supported by GPT-6 and later models."))
+    return nil
+}
+
+public struct OpenAIToolOptions: Sendable, Equatable {
+    public struct Namespace: Sendable, Equatable {
+        public let name: String
+        public let description: String
+        public init(name: String, description: String) { self.name = name; self.description = description }
     }
 
-    var deferLoading: Bool?
-    var namespace: Namespace?
+    public var deferLoading: Bool?
+    public var namespace: Namespace?
+    public var async: Bool?
+    public var allowedCallers: JSONValue?
+    public var outputSchema: JSONValue?
+
+    public init(deferLoading: Bool? = nil, namespace: Namespace? = nil, async: Bool? = nil, allowedCallers: JSONValue? = nil, outputSchema: JSONValue? = nil) {
+        self.deferLoading = deferLoading
+        self.namespace = namespace
+        self.async = async
+        self.allowedCallers = allowedCallers
+        self.outputSchema = outputSchema
+    }
 }
 
-private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV4ProviderOptions?) -> OpenAIFunctionToolOptions {
+private func parseOpenAIToolOptions(_ providerOptions: SharedV4ProviderOptions?) -> OpenAIToolOptions {
     guard let raw = providerOptions?["openai"] else {
-        return OpenAIFunctionToolOptions()
+        return OpenAIToolOptions()
     }
 
     let deferLoading: Bool?
@@ -415,7 +520,7 @@ private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV4ProviderO
         deferLoading = nil
     }
 
-    let namespace: OpenAIFunctionToolOptions.Namespace?
+    let namespace: OpenAIToolOptions.Namespace?
     if case .object(let object)? = raw["namespace"],
        case .string(let name)? = object["name"],
        case .string(let description)? = object["description"] {
@@ -424,7 +529,12 @@ private func parseOpenAIFunctionToolOptions(_ providerOptions: SharedV4ProviderO
         namespace = nil
     }
 
-    return OpenAIFunctionToolOptions(deferLoading: deferLoading, namespace: namespace)
+    return OpenAIToolOptions(
+        deferLoading: deferLoading, namespace: namespace,
+        async: { if case .bool(let value)? = raw["async"] { return value }; return nil }(),
+        allowedCallers: raw["allowedCallers"].flatMap { $0 == .null ? nil : $0 },
+        outputSchema: raw["outputSchema"].flatMap { $0 == .null ? nil : $0 }
+    )
 }
 
 private func makeUserLocationJSON(_ location: OpenAIWebSearchArgs.UserLocation) -> JSONValue {
@@ -588,8 +698,8 @@ private extension JSONValue {
 
 private func mapToolChoice(
     _ choice: LanguageModelV4ToolChoice?,
-    toolNameMapping: OpenAIToolNameMapping,
-    customProviderToolNames: Set<String>
+    toolNameMapping: ToolNameMapping,
+    customProviderToolNames: Set<Data>
 ) throws -> JSONValue? {
     guard let choice else { return nil }
 
@@ -605,7 +715,7 @@ private func mapToolChoice(
         if ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"].contains(resolvedToolName) {
             return .object(["type": .string(resolvedToolName)])
         }
-        if customProviderToolNames.contains(resolvedToolName) {
+        if customProviderToolNames.contains(Data(resolvedToolName.utf8)) {
             return .object([
                 "type": .string("custom"),
                 "name": .string(resolvedToolName)

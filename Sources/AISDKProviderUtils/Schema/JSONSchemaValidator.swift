@@ -284,7 +284,7 @@ struct JSONSchemaValidator: Sendable {
 
             return validateStringKeywords(string: string, schema: schema, path: path)
         case "number":
-            guard case .number(let number) = value else {
+            guard case .number(let number) = value, number.isFinite else {
                 return [JSONSchemaValidationIssue(
                     path: path,
                     message: "Invalid input: expected number, received \(value.typeDescription)"

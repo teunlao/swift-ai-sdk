@@ -13,6 +13,7 @@ public struct OpenAIImageGenerationArgs: Sendable, Equatable {
         }
     }
 
+    public let action: String?
     public let background: String?
     public let inputFidelity: String?
     public let inputImageMask: InputImageMask?
@@ -25,6 +26,7 @@ public struct OpenAIImageGenerationArgs: Sendable, Equatable {
     public let size: String?
 
     public init(
+        action: String? = nil,
         background: String? = nil,
         inputFidelity: String? = nil,
         inputImageMask: InputImageMask? = nil,
@@ -36,6 +38,7 @@ public struct OpenAIImageGenerationArgs: Sendable, Equatable {
         quality: String? = nil,
         size: String? = nil
     ) {
+        self.action = action
         self.background = background
         self.inputFidelity = inputFidelity
         self.inputImageMask = inputImageMask
@@ -53,50 +56,54 @@ private let imageGenerationArgsJSONSchema: JSONValue = .object([
     "type": .string("object"),
     "additionalProperties": .bool(false),
     "properties": .object([
+        "action": .object(["type": .string("string"), "enum": .array([.string("generate"), .string("edit"), .string("auto")])]),
         "background": .object([
-            "type": .array([.string("string"), .string("null")]),
+            "type": .string("string"),
             "enum": .array([.string("auto"), .string("opaque"), .string("transparent")])
         ]),
         "inputFidelity": .object([
-            "type": .array([.string("string"), .string("null")]),
+            "type": .string("string"),
             "enum": .array([.string("low"), .string("high")])
         ]),
         "inputImageMask": .object([
-            "type": .array([.string("object"), .string("null")]),
+            "type": .string("object"),
             "additionalProperties": .bool(false),
             "properties": .object([
                 "fileId": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ]),
                 "imageUrl": .object([
-                    "type": .array([.string("string"), .string("null")])
+                    "type": .string("string")
                 ])
             ])
         ]),
         "model": .object([
-            "type": .array([.string("string"), .string("null")])
+            "type": .string("string")
         ]),
         "moderation": .object([
-            "type": .array([.string("string"), .string("null")]),
-            "enum": .array([.string("auto")])
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("low")])
         ]),
         "outputCompression": .object([
-            "type": .array([.string("number"), .string("null")])
+            "type": .string("integer"), "minimum": .number(0), "maximum": .number(100)
         ]),
         "outputFormat": .object([
-            "type": .array([.string("string"), .string("null")]),
+            "type": .string("string"),
             "enum": .array([.string("png"), .string("jpeg"), .string("webp")])
         ]),
         "partialImages": .object([
-            "type": .array([.string("number"), .string("null")])
+            "type": .string("integer"), "minimum": .number(0), "maximum": .number(3)
         ]),
         "quality": .object([
-            "type": .array([.string("string"), .string("null")]),
-            "enum": .array([.string("auto"), .string("low"), .string("medium"), .string("high")])
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("low"), .string("medium"), .string("high"), .string("xhigh"), .string("max")])
         ]),
         "size": .object([
-            "type": .array([.string("string"), .string("null")]),
-            "enum": .array([.string("auto"), .string("1024x1024"), .string("1024x1536"), .string("1536x1024")])
+            "type": .string("string"),
+            "anyOf": .array([
+                .object(["enum": .array([.string("auto"), .string("1024x1024"), .string("1024x1536"), .string("1536x1024")])]),
+                .object(["type": .string("string"), "pattern": .string("^[0-9]+x[0-9]+$")])
+            ])
         ])
     ])
 ])
@@ -106,7 +113,7 @@ public let openaiImageGenerationArgsSchema = FlexibleSchema<OpenAIImageGeneratio
         jsonSchemaResolver: { imageGenerationArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(imageGenerationArgsJSONSchema, strict: true)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -131,8 +138,7 @@ public let openaiImageGenerationArgsSchema = FlexibleSchema<OpenAIImageGeneratio
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be a number")
                         throw TypeValidationError.wrap(value: raw, cause: error)
                     }
-                    let intValue = Int(number)
-                    if Double(intValue) != number || intValue < min || intValue > max {
+                    guard let intValue = Int(exactly: number), intValue >= min, intValue <= max else {
                         let error = SchemaValidationIssuesError(vendor: "openai", issues: "\(key) must be between \(min) and \(max)")
                         throw TypeValidationError.wrap(value: raw, cause: error)
                     }
@@ -164,17 +170,22 @@ public let openaiImageGenerationArgsSchema = FlexibleSchema<OpenAIImageGeneratio
                     mask = OpenAIImageGenerationArgs.InputImageMask(fileId: fileId, imageUrl: imageUrl)
                 }
 
+                let size = try optionalString("size")
+                if let size, size != "auto", size.range(of: #"^[0-9]+x[0-9]+\z"#, options: .regularExpression) == nil {
+                    throw TypeValidationError.wrap(value: size, cause: SchemaValidationIssuesError(vendor: "openai", issues: "size must be auto or WIDTHxHEIGHT"))
+                }
                 let args = OpenAIImageGenerationArgs(
+                    action: try optionalString("action", allowed: ["generate", "edit", "auto"]),
                     background: try optionalString("background", allowed: ["auto", "opaque", "transparent"]),
                     inputFidelity: try optionalString("inputFidelity", allowed: ["low", "high"]),
                     inputImageMask: mask,
                     model: try optionalString("model"),
-                    moderation: try optionalString("moderation", allowed: ["auto"]),
+                    moderation: try optionalString("moderation", allowed: ["auto", "low"]),
                     outputCompression: try optionalInt("outputCompression", min: 0, max: 100),
                     outputFormat: try optionalString("outputFormat", allowed: ["png", "jpeg", "webp"]),
                     partialImages: try optionalInt("partialImages", min: 0, max: 3),
-                    quality: try optionalString("quality", allowed: ["auto", "low", "medium", "high"]),
-                    size: try optionalString("size", allowed: ["auto", "1024x1024", "1024x1536", "1536x1024"])
+                    quality: try optionalString("quality", allowed: ["auto", "low", "medium", "high", "xhigh", "max"]),
+                    size: size
                 )
 
                 return .success(value: args)
@@ -202,11 +213,13 @@ private let imageGenerationOutputJSONSchema: JSONValue = .object([
     ])
 ])
 
+public let openaiImageGenerationOutputSchema = openAIToolSchema(imageGenerationOutputJSONSchema)
+
 public let openaiImageGenerationToolFactory = createProviderExecutedToolFactory(
     id: "openai.image_generation",
     name: "image_generation",
-    inputSchema: FlexibleSchema(jsonSchema(imageGenerationInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(imageGenerationOutputJSONSchema))
+    inputSchema: openAIToolSchema(imageGenerationInputJSONSchema),
+    outputSchema: openaiImageGenerationOutputSchema
 ) { (args: OpenAIImageGenerationArgs) in
     var options = ProviderExecutedToolFactoryOptions()
     options.args = encodeOpenAIImageGenerationArgs(args)
@@ -216,6 +229,7 @@ public let openaiImageGenerationToolFactory = createProviderExecutedToolFactory(
 private func encodeOpenAIImageGenerationArgs(_ args: OpenAIImageGenerationArgs) -> [String: JSONValue] {
     var payload: [String: JSONValue] = [:]
 
+    if let action = args.action { payload["action"] = .string(action) }
     if let background = args.background {
         payload["background"] = .string(background)
     }

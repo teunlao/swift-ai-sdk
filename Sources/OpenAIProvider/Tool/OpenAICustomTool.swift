@@ -14,13 +14,16 @@ public enum OpenAICustomToolFormat: Sendable, Equatable {
 
 public struct OpenAICustomToolArgs: Sendable, Equatable {
     public let description: String?
+    public let async: Bool?
     public let format: OpenAICustomToolFormat?
 
     public init(
         description: String? = nil,
+        async: Bool? = nil,
         format: OpenAICustomToolFormat? = nil
     ) {
         self.description = description
+        self.async = async
         self.format = format
     }
 }
@@ -33,6 +36,7 @@ private let customArgsJSONSchema: JSONValue = .object([
         "description": .object([
             "type": .string("string")
         ]),
+        "async": .object(["type": .string("boolean")]),
         "format": .object([
             "anyOf": .array([
                 .object([
@@ -78,7 +82,7 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
         jsonSchemaResolver: { customArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(customArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -126,6 +130,7 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
 
                 return .success(value: OpenAICustomToolArgs(
                     description: description,
+                    async: { if case .bool(let value)? = dict["async"] { return value }; return nil }(),
                     format: format
                 ))
             } catch let error as TypeValidationError {
@@ -141,7 +146,7 @@ public let openaiCustomArgsSchema = FlexibleSchema<OpenAICustomToolArgs>(
 public let openaiCustomToolFactory = createProviderDefinedToolFactory(
     id: "openai.custom",
     name: "custom",
-    inputSchema: FlexibleSchema(jsonSchema(customInputJSONSchema))
+    inputSchema: openAIToolSchema(customInputJSONSchema)
 ) { (args: OpenAICustomToolArgs) in
     var options = ProviderDefinedToolFactoryOptions()
     options.args = encodeOpenAICustomToolArgs(args)
@@ -155,6 +160,7 @@ private func encodeOpenAICustomToolArgs(_ args: OpenAICustomToolArgs) -> [String
         payload["description"] = .string(description)
     }
 
+    if let value = args.async { payload["async"] = .bool(value) }
     if let format = args.format {
         switch format {
         case .grammar(let syntax, let definition):

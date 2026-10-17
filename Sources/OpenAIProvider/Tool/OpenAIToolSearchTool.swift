@@ -23,13 +23,13 @@ public struct OpenAIToolSearchArgs: Sendable, Equatable {
     }
 }
 
-struct OpenAIToolSearchInput: Sendable, Equatable {
-    let arguments: JSONValue?
-    let callId: String?
+public struct OpenAIToolSearchInput: Sendable, Equatable {
+    public let arguments: JSONValue?
+    public let callId: String?
 }
 
-struct OpenAIToolSearchOutput: Sendable, Equatable {
-    let tools: [JSONValue]
+public struct OpenAIToolSearchOutput: Sendable, Equatable {
+    public let tools: [JSONValue]
 }
 
 private let toolSearchArgsJSONSchema: JSONValue = .object([
@@ -80,7 +80,7 @@ public let openaiToolSearchArgsSchema = FlexibleSchema<OpenAIToolSearchArgs>(
         jsonSchemaResolver: { toolSearchArgsJSONSchema },
         validator: { value in
             do {
-                let json = try jsonValue(from: value)
+                let json = try await validateTypes(ValidateTypesOptions(value: value, schema: openAIToolSchema(toolSearchArgsJSONSchema)))
                 guard case .object(let dict) = json else {
                     let error = SchemaValidationIssuesError(vendor: "openai", issues: "expected object")
                     return .failure(error: TypeValidationError.wrap(value: value, cause: error))
@@ -134,7 +134,7 @@ public let openaiToolSearchArgsSchema = FlexibleSchema<OpenAIToolSearchArgs>(
     )
 )
 
-let openaiToolSearchInputSchema = FlexibleSchema<OpenAIToolSearchInput>(
+public let openaiToolSearchInputSchema = FlexibleSchema<OpenAIToolSearchInput>(
     Schema(
         jsonSchemaResolver: { toolSearchInputJSONSchema },
         validator: { value in
@@ -169,7 +169,7 @@ let openaiToolSearchInputSchema = FlexibleSchema<OpenAIToolSearchInput>(
     )
 )
 
-let openaiToolSearchOutputSchema = FlexibleSchema<OpenAIToolSearchOutput>(
+public let openaiToolSearchOutputSchema = FlexibleSchema<OpenAIToolSearchOutput>(
     Schema(
         jsonSchemaResolver: { toolSearchOutputJSONSchema },
         validator: { value in
@@ -201,8 +201,8 @@ let openaiToolSearchOutputSchema = FlexibleSchema<OpenAIToolSearchOutput>(
 public let openaiToolSearchToolFactory = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.tool_search",
     name: "tool_search",
-    inputSchema: FlexibleSchema(jsonSchema(toolSearchInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(toolSearchOutputJSONSchema))
+    inputSchema: openAIToolSchema(toolSearchInputJSONSchema),
+    outputSchema: openAIToolSchema(toolSearchOutputJSONSchema)
 ) { (args: OpenAIToolSearchArgs) in
     var options = ProviderDefinedToolFactoryWithOutputSchemaOptions()
     options.args = encodeOpenAIToolSearchArgs(args)

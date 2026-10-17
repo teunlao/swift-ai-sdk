@@ -24,6 +24,208 @@ struct OpenAIResponsesToolContractTests {
         }))
     }
 
+    @Test("Function schemas normalize together with JSON-encoded scalar history")
+    func functionSchemasAndHistory() async throws {
+        let capture = Capture()
+        let schema: JSONValue = .object([
+            "type": .string("string"), "pattern": .string("(?=x)x")
+        ])
+        let result = try await provider(capture).responses("gpt-6").doGenerate(options: .init(
+            prompt: [.tool(content: [
+                .toolResult(.init(toolCallId: "text", toolName: "e\u{0301}", output: .text(value: "x"))),
+                .toolResult(.init(toolCallId: "denied", toolName: "e\u{0301}", output: .executionDenied(reason: "no"))),
+                .toolResult(.init(toolCallId: "ordinary", toolName: "é", output: .text(value: "x")))
+            ], providerOptions: nil)],
+            tools: [.function(.init(name: "e\u{0301}", inputSchema: schema, providerOptions: ["openai": [
+                "outputSchema": schema, "allowedCallers": .array([.string("direct")]), "async": .bool(true)
+            ]]))]
+        ))
+        guard case .object(let body)? = await capture.value(), case .array(let tools)? = body["tools"],
+              case .object(let tool)? = tools.first, case .array(let input)? = body["input"] else {
+            Issue.record("Missing function request"); return
+        }
+        #expect(tool["parameters"] == .object(["type": .string("string")]))
+        #expect(tool["output_schema"] == .object(["type": .string("string")]))
+        #expect(tool["strict"] == .bool(false))
+        #expect(tool["async"] == .bool(true))
+        #expect(tool["allowed_callers"] == .array([.string("direct")]))
+        #expect(input == [
+            .object(["type": .string("function_call_output"), "call_id": .string("text"), "output": .string("\"x\"")]),
+            .object(["type": .string("function_call_output"), "call_id": .string("denied"), "output": .string("\"no\"")]),
+            .object(["type": .string("function_call_output"), "call_id": .string("ordinary"), "output": .string("x")])
+        ])
+        #expect(result.warnings.count == 2)
+    }
+
+    @Test("Async declarations follow model capabilities and preserve false", arguments: ["gpt-5", "gpt-6"])
+    func asyncDeclarations(modelId: String) async throws {
+        let capture = Capture()
+        let result = try await provider(capture).responses(modelId).doGenerate(options: .init(prompt: [], tools: [
+            .function(.init(name: "function", inputSchema: .object([:]), providerOptions: ["openai": ["async": .bool(true)]])),
+            .provider(.init(id: "openai.custom", name: "custom", args: ["async": .bool(true)])),
+            .provider(.init(id: "openai.custom", name: "sync", args: ["async": .bool(false)]))
+        ]))
+        guard case .object(let body)? = await capture.value(), case .array(let tools)? = body["tools"] else {
+            Issue.record("Missing request tools"); return
+        }
+        for (index, entry) in tools.enumerated() {
+            guard case .object(let tool) = entry else { Issue.record("Invalid tool"); return }
+            #expect(tool["async"] == (index == 2 ? .bool(false) : modelId == "gpt-6" ? .bool(true) : nil))
+        }
+        #expect(result.warnings.count == (modelId == "gpt-6" ? 0 : 2))
+    }
+
+    @Test("Custom async metadata survives generated and streamed calls", arguments: [false, true])
+    func customAsyncMetadata(streaming: Bool) async throws {
+        let item: JSONValue = .object(["type": .string("custom_tool_call"), "id": .string("ct"), "call_id": .string("call"), "name": .string("custom"), "input": .string("x"), "async": .bool(false)])
+        let payload: Data
+        if streaming {
+            let frames: [JSONValue] = [
+                .object(["type": .string("response.output_item.added"), "output_index": .number(0), "item": item]),
+                .object(["type": .string("response.output_item.done"), "output_index": .number(0), "item": .object([
+                    "type": .string("custom_tool_call"), "id": .string("ct"), "call_id": .string("call"), "name": .string("custom"), "input": .string("x"), "status": .string("completed")
+                ])]),
+                .object(["type": .string("response.completed"), "response": .object([:])])
+            ]
+            payload = Data(try frames.map { "data: \(String(decoding: try JSONEncoder().encode($0), as: UTF8.self))\n\n" }.joined().utf8)
+        } else {
+            payload = try JSONEncoder().encode(JSONValue.object(["output": .array([item])]))
+        }
+        let provider = try createOpenAI(settings: .init(apiKey: "test", fetch: { request in
+            FetchResponse(body: .data(payload), urlResponse: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": streaming ? "text/event-stream" : "application/json"])!)
+        }))
+        let model = provider.responses("gpt-6")
+        let options = LanguageModelV4CallOptions(prompt: [], tools: [.provider(.init(id: "openai.custom", name: "custom", args: [:]))])
+        var calls: [LanguageModelV4ToolCall] = []
+        if streaming {
+            let result = try await model.doStream(options: options)
+            var textStart = false
+            for try await part in result.stream {
+                if case .toolCall(let call) = part { calls.append(call) }
+                if case .toolInputStart(_, _, _, _, _, _, let encoding) = part { textStart = encoding == .text }
+            }
+            #expect(textStart)
+        } else {
+            let result = try await model.doGenerate(options: options)
+            calls = result.content.compactMap { if case .toolCall(let call) = $0 { return call }; return nil }
+        }
+        #expect(calls.count == 1)
+        #expect(calls.first?.input == "\"x\"")
+        #expect(calls.first?.providerMetadata?["openai"]?["async"] == .bool(false))
+    }
+
+    @Test("Allowed tools resolves provider identities and drops invisible entries")
+    func allowedTools() async throws {
+        let capture = Capture()
+        let tools: [LanguageModelV4Tool] = [
+            .provider(.init(id: "openai.web_search", name: "browse", args: [:])),
+            .provider(.init(id: "openai.mcp", name: "remote", args: ["serverLabel": .string("docs"), "serverUrl": .string("")])),
+            .provider(.init(id: "openai.custom", name: "grammar", args: [:])),
+            .function(.init(name: "deferred", inputSchema: .object([:]), providerOptions: ["openai": ["deferLoading": .bool(true)]])),
+            .function(.init(name: "nested", inputSchema: .object([:]), providerOptions: ["openai": ["namespace": .object(["name": .string("ns"), "description": .string("")])]]))
+        ]
+        let result = try await provider(capture).responses("gpt-6").doGenerate(options: .init(
+            prompt: [], tools: tools, providerOptions: ["openai": ["allowedTools": .object([
+                "toolNames": .array(["web_search", "remote", "grammar", "deferred", "nested"].map(JSONValue.string)), "mode": .string("required")
+            ])]]
+        ))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        #expect(body["tool_choice"] == .object(["type": .string("allowed_tools"), "mode": .string("required"), "tools": .array([
+            .object(["type": .string("web_search")]), .object(["type": .string("mcp"), "server_label": .string("docs")]),
+            .object(["type": .string("custom"), "name": .string("grammar")])
+        ])]))
+        #expect(result.warnings.count == 2)
+        await #expect(throws: UnsupportedFunctionalityError.self) {
+            try await provider(capture).responses("gpt-6").doGenerate(options: .init(
+                prompt: [], tools: tools, providerOptions: ["openai": ["allowedTools": .object(["toolNames": .array([.string("deferred")])])]]
+            ))
+        }
+    }
+
+    @Test("Allowed tool aliases preserve direct names and report ambiguous or unknown entries")
+    func allowedToolAliases() async throws {
+        let capture = Capture()
+        let result = try await provider(capture).responses("gpt-6").doGenerate(options: .init(prompt: [], tools: [
+            .provider(.init(id: "openai.mcp", name: "first", args: ["serverLabel": .string("a"), "serverUrl": .string("")])),
+            .provider(.init(id: "openai.mcp", name: "second", args: ["serverLabel": .string("b"), "serverUrl": .string("")])),
+            .provider(.init(id: "openai.web_search", name: "browse", args: [:])),
+            .function(.init(name: "web_search", inputSchema: .object([:]))),
+            .provider(.init(id: "openai.tool_search", name: "finder", args: [:]))
+        ], providerOptions: ["openai": ["allowedTools": .object(["toolNames": .array(["mcp", "web_search", "finder", "first", "unknown"].map(JSONValue.string))])]]))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        #expect(body["tool_choice"] == .object(["type": .string("allowed_tools"), "mode": .string("auto"), "tools": .array([
+            .object(["type": .string("function"), "name": .string("web_search")]),
+            .object(["type": .string("mcp"), "server_label": .string("a")]),
+            .object(["type": .string("function"), "name": .string("unknown")])
+        ])]))
+        #expect(result.warnings.count == 4)
+    }
+
+    @Test("Tool-name mapping keeps literal Unicode identities", arguments: [false, true])
+    func literalToolNames(decomposed: Bool) async throws {
+        let capture = Capture()
+        let name = decomposed ? "e\u{0301}" : "é"
+        _ = try await provider(capture).responses("gpt-6").doGenerate(options: .init(prompt: [], tools: [
+            .provider(.init(id: "openai.web_search", name: "e\u{0301}", args: [:])),
+            .provider(.init(id: "openai.code_interpreter", name: "é", args: [:]))
+        ], toolChoice: .tool(toolName: name)))
+        guard case .object(let body)? = await capture.value() else { Issue.record("Missing request"); return }
+        #expect(body["tool_choice"] == .object(["type": .string(decomposed ? "web_search" : "code_interpreter")]))
+    }
+
+    @Test("Existing tool arguments project nested objects and retain supported image options")
+    func toolArguments() async throws {
+        let capture = Capture()
+        let interpreter = openaiTools.codeInterpreter(.init(container: .auto(fileIds: ["file_data"])))
+        let secret: [String: JSONValue] = ["domain": .string("a"), "name": .string("b"), "value": .string("c")]
+        let policy: JSONValue = .object([
+            "type": .string("allowlist"), "allowedDomains": .array([]),
+            "domainSecrets": .array([.object(secret.merging(["extra": .bool(true)]) { _, new in new })])
+        ])
+        _ = try await provider(capture).responses("gpt-6").doGenerate(options: .init(prompt: [], tools: [
+            .provider(.init(id: "openai.file_search", name: "docs", args: [
+                "vectorStoreIds": .array([]), "ranking": .object([:]), "filters": .object([
+                    "type": .string("eq"), "key": .string("tag"), "value": .string("x"), "extra": .bool(true)
+                ])
+            ])),
+            .provider(.init(id: "openai.shell", name: "shell", args: ["environment": .object([
+                "type": .string("containerAuto"), "networkPolicy": policy
+            ])])),
+            .provider(.init(id: "openai.web_search", name: "web", args: ["filters": .object(["blockedDomains": .array([.string("blocked.test")])])])),
+            .provider(.init(id: "openai.image_generation", name: "image", args: ["action": .string("edit"), "quality": .string("max"), "moderation": .string("low"), "size": .string("1536x864")])),
+            .provider(.init(id: try #require(interpreter.id), name: "python", args: interpreter.args ?? [:]))
+        ]))
+        guard case .object(let body)? = await capture.value(), case .array(let tools)? = body["tools"] else { Issue.record("Missing request"); return }
+        #expect(tools.count == 5)
+        #expect(tools.first == .object(["type": .string("file_search"), "vector_store_ids": .array([]), "ranking_options": .object([:]),
+            "filters": .object(["type": .string("eq"), "key": .string("tag"), "value": .string("x")])]))
+        #expect(tools[1] == .object(["type": .string("shell"), "environment": .object([
+            "type": .string("container_auto"), "network_policy": .object([
+                "type": .string("allowlist"), "allowed_domains": .array([]), "domain_secrets": .array([.object(secret)])
+            ])
+        ])]))
+        #expect(tools[2] == .object(["type": .string("web_search"), "filters": .object(["blocked_domains": .array([.string("blocked.test")])])]))
+        #expect(tools[3] == .object(["type": .string("image_generation"), "action": .string("edit"), "quality": .string("max"), "moderation": .string("low"), "size": .string("1536x864")]))
+        #expect(tools[4] == .object(["type": .string("code_interpreter"), "container": .object(["type": .string("auto"), "file_ids": .array([.string("file_data")])])]))
+    }
+
+    @Test("Optional tool configuration rejects null and image generation rejects unknown keys", arguments: [
+        ("openai.code_interpreter", "container", JSONValue.null), ("openai.tool_search", "execution", .null),
+        ("openai.file_search", "maxNumResults", .null), ("openai.mcp", "authorization", .null),
+        ("openai.shell", "environment", .null), ("openai.image_generation", "extra", .bool(true)),
+        ("openai.image_generation", "size", .string("1x2\n"))
+    ])
+    func invalidToolArguments(id: String, key: String, value: JSONValue) async throws {
+        let capture = Capture()
+        var args: [String: JSONValue] = [key: value]
+        if id == "openai.file_search" { args["vectorStoreIds"] = .array([]) }
+        if id == "openai.mcp" { args["serverLabel"] = .string("docs"); args["serverUrl"] = .string("") }
+        await #expect(throws: TypeValidationError.self) {
+            try await provider(capture).responses("gpt-6").doGenerate(options: .init(prompt: [], tools: [.provider(.init(id: id, name: "tool", args: args))]))
+        }
+    }
+
     @Test("File search preserves numeric limits on the HTTP boundary", arguments: [2.5, 1e20])
     func fileSearchNumericLimit(limit: Double) async throws {
         let capture = Capture()

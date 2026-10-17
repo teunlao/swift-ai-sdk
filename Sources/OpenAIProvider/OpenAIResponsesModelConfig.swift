@@ -12,6 +12,7 @@ struct OpenAIResponsesModelConfig: Sendable {
     let supportsFlexProcessing: Bool
     let supportsPriorityProcessing: Bool
     let supportsNonReasoningParameters: Bool
+    let supportsAsyncToolCalling: Bool
 }
 
 func getOpenAIResponsesModelConfig(for modelId: OpenAIResponsesModelId) -> OpenAIResponsesModelConfig {
@@ -22,7 +23,8 @@ func getOpenAIResponsesModelConfig(for modelId: OpenAIResponsesModelId) -> OpenA
         systemMessageMode: capabilities.systemMessageMode,
         supportsFlexProcessing: capabilities.supportsFlexProcessing,
         supportsPriorityProcessing: capabilities.supportsPriorityProcessing,
-        supportsNonReasoningParameters: capabilities.supportsNonReasoningParameters
+        supportsNonReasoningParameters: capabilities.supportsNonReasoningParameters,
+        supportsAsyncToolCalling: capabilities.supportsAsyncToolCalling
     )
 
     return defaults

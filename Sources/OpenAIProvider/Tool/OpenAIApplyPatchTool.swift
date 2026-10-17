@@ -138,22 +138,18 @@ private let applyPatchOutputJSONSchema: JSONValue = .object([
             "enum": .array([.string("completed"), .string("failed")])
         ]),
         "output": .object([
-            "type": .array([.string("string"), .string("null")])
+            "type": .string("string")
         ])
     ])
 ])
 
-public let openaiApplyPatchInputSchema = FlexibleSchema(
-    Schema.codable(OpenAIApplyPatchInput.self, jsonSchema: applyPatchInputJSONSchema)
-)
-
-public let openaiApplyPatchOutputSchema = FlexibleSchema(
-    Schema.codable(OpenAIApplyPatchOutput.self, jsonSchema: applyPatchOutputJSONSchema)
-)
+public let openaiApplyPatchInputSchema = openAIToolSchema(OpenAIApplyPatchInput.self, applyPatchInputJSONSchema)
+public let openaiApplyPatchOutputSchema = openAIToolSchema(OpenAIApplyPatchOutput.self, applyPatchOutputJSONSchema)
+public let openaiApplyPatchArgsSchema = openAIToolSchema(.object(["type": .string("object"), "additionalProperties": .bool(false)]))
 
 public let openaiApplyPatchTool = createProviderDefinedToolFactoryWithOutputSchema(
     id: "openai.apply_patch",
     name: "apply_patch",
-    inputSchema: FlexibleSchema(jsonSchema(applyPatchInputJSONSchema)),
-    outputSchema: FlexibleSchema(jsonSchema(applyPatchOutputJSONSchema))
+    inputSchema: openAIToolSchema(applyPatchInputJSONSchema),
+    outputSchema: openAIToolSchema(applyPatchOutputJSONSchema)
 )
