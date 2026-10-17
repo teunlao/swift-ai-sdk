@@ -8,9 +8,7 @@ struct StreamTextOpenAIResponsesReasoningSummaryExample: Example {
 
   static func run() async throws {
     do {
-      let providerOptions = openai.options.responses(
-        reasoningSummary: "auto"
-      )
+      let providerOptions = openai.options.responses(.init(reasoningSummary: "auto"))
 
       let result = try streamText(
         model: openai.responses("o3-mini"),

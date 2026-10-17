@@ -14,7 +14,7 @@ struct MiddlewareDefaultSettingsExample: Example {
           defaultSettingsMiddleware(
             settings: DefaultSettings(
               temperature: 0.5,
-              providerOptions: openai.options.responses(store: false)
+              providerOptions: openai.options.responses(.init(store: false))
             )
           )
         )

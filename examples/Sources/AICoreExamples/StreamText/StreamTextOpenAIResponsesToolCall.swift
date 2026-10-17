@@ -40,7 +40,7 @@ struct StreamTextOpenAIResponsesToolCallExample: Example {
           "currentLocation": currentLocationTool.tool,
           "weather": weatherTool.tool
         ],
-        providerOptions: openai.options.responses(parallelToolCalls: false),
+        providerOptions: openai.options.responses(.init(parallelToolCalls: false)),
         stopWhen: [isStepCount(5)]
       )
 

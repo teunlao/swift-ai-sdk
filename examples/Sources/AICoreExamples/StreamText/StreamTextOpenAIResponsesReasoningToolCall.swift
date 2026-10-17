@@ -52,11 +52,9 @@ struct StreamTextOpenAIResponsesReasoningToolCallExample: Example {
         return input.text.reduce(0) { $1 == target ? $0 + 1 : $0 }
       }
 
-      let providerOptions = openai.options.responses(
-        store: false,
-        reasoningEffort: "medium",
-        reasoningSummary: "auto"
-      )
+      let providerOptions = openai.options.responses(.init(
+        reasoningEffort: "medium", reasoningSummary: "auto", store: false
+      ))
 
       let result = try streamText(
         model: openai.responses("o3-mini"),

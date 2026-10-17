@@ -65,12 +65,12 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     }
 
     public struct IncompleteDetails: Codable, Sendable {
-        public let reason: String?
+        public let reason: String
     }
 
     public struct ErrorPayload: Codable, Sendable {
         public let message: String
-        public let type: String?
+        public let type: String
         public let param: JSONValue?
         public let code: String
 
@@ -94,9 +94,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
     public let output: [JSONValue]?
     public let serviceTier: String?
     public let usage: Usage?
-    public let warnings: [OpenAIResponsesWarning]?
     public let incompleteDetails: IncompleteDetails?
-    public let finishReason: String?
     public let error: ErrorPayload?
     public let reasoning: Reasoning?
     private let projectedValue: JSONValue
@@ -114,9 +112,7 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
         }
         serviceTier = try container.decodeIfPresent(String.self, forKey: .serviceTier)
         usage = try container.decodeIfPresent(Usage.self, forKey: .usage)
-        warnings = nil
         incompleteDetails = try container.decodeIfPresent(IncompleteDetails.self, forKey: .incompleteDetails)
-        finishReason = nil
         error = try container.decodeIfPresent(ErrorPayload.self, forKey: .error)
         reasoning = try container.decodeIfPresent(Reasoning.self, forKey: .reasoning)
     }
@@ -130,34 +126,9 @@ public struct OpenAIResponsesResponse: Codable, Sendable {
         case output
         case serviceTier = "service_tier"
         case usage
-        case warnings
         case incompleteDetails = "incomplete_details"
-        case finishReason = "finish_reason"
         case error
         case reasoning
-    }
-}
-
-public struct OpenAIResponsesWarning: Codable, Sendable {
-    public let type: String
-    public let message: String?
-    public let setting: String?
-
-    public init(type: String, message: String? = nil, setting: String? = nil) {
-        self.type = type
-        self.message = message
-        self.setting = setting
-    }
-
-    public func toWarning() -> SharedV4Warning {
-        switch type {
-        case "unsupported-setting":
-            return .unsupported(feature: setting ?? "unknown", details: message)
-        case "compatibility":
-            return .compatibility(feature: setting ?? "unknown", details: message)
-        default:
-            return .other(message: message ?? "OpenAI warning")
-        }
     }
 }
 

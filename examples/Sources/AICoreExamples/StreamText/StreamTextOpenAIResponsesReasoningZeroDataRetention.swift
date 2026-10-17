@@ -11,11 +11,9 @@ struct StreamTextOpenAIResponsesReasoningZeroDataRetentionExample: Example {
     let prompt = "Analyze the following encrypted data: U2VjcmV0UGFzc3dvcmQxMjM=. What type of encryption is this and what secret does it contain?"
     let followUpQuestion = "Based on your previous analysis, what security recommendations would you make?"
 
-    let providerOptions = openai.options.responses(
-      store: false,
-      reasoningEffort: "medium",
-      reasoningSummary: "auto"
-    )
+    let providerOptions = openai.options.responses(.init(
+      reasoningEffort: "medium", reasoningSummary: "auto", store: false
+    ))
 
     do {
       // First request

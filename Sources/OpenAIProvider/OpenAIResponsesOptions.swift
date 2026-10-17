@@ -2,6 +2,12 @@ import Foundation
 import AISDKProvider
 import AISDKProviderUtils
 
+public enum OpenAIResponsesSystemMessageMode: Sendable {
+    case system
+    case developer
+    case remove
+}
+
 public let TOP_LOGPROBS_MAX = 20
 
 public let openAIResponsesReasoningModelIds: [OpenAIResponsesModelId] = [
@@ -147,7 +153,7 @@ public struct OpenAIResponsesAllowedTools: Sendable, Equatable {
     }
 }
 
-public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
+public struct OpenAILanguageModelResponsesOptions: Sendable, Equatable {
     public var conversation: String?
     public var include: [OpenAIResponsesProviderOptionsIncludeValue]?
     public var includeWebSearchSources: Bool?
@@ -241,8 +247,6 @@ public struct OpenAIResponsesProviderOptions: Sendable, Equatable {
         self.allowedTools = allowedTools
     }
 }
-
-public typealias OpenAILanguageModelResponsesOptions = OpenAIResponsesProviderOptions
 
 private let openAIResponsesProviderOptionsJSONSchema: JSONValue = .object([
     "type": .string("object"),
@@ -374,7 +378,7 @@ private let openAIResponsesProviderOptionIncludeValues: [OpenAIResponsesProvider
     .messageOutputTextLogprobs
 ]
 
-public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponsesProviderOptions>(
+public let openAILanguageModelResponsesOptionsSchema = FlexibleSchema<OpenAILanguageModelResponsesOptions>(
     jsonSchema(openAIResponsesProviderOptionsJSONSchema, validate: { value in
         do {
             let json = try jsonValue(from: value)
@@ -386,7 +390,7 @@ public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponses
                 return .failure(error: error)
             }
 
-            let options = try parseOpenAIResponsesProviderOptions(dict: dict)
+            let options = try parseResponsesOptions(dict: dict)
             return .success(value: options)
         } catch let error as TypeValidationError {
             return .failure(error: error)
@@ -397,8 +401,8 @@ public let openAIResponsesProviderOptionsSchema = FlexibleSchema<OpenAIResponses
     })
 )
 
-private func parseOpenAIResponsesProviderOptions(dict: [String: JSONValue]) throws -> OpenAIResponsesProviderOptions {
-    var options = OpenAIResponsesProviderOptions()
+private func parseResponsesOptions(dict: [String: JSONValue]) throws -> OpenAILanguageModelResponsesOptions {
+    var options = OpenAILanguageModelResponsesOptions()
     options.nullFields = Set(dict.compactMap { $0.value == .null ? $0.key : nil })
     options.includeWebSearchSources = try parseOptionalBool(dict, key: "includeWebSearchSources", allowNull: false)
     options.compactionTrigger = try parseOptionalBool(dict, key: "compactionTrigger", allowNull: false)

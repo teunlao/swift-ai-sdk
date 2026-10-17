@@ -113,7 +113,6 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
 
         let usage = convertOpenAIResponsesUsage(value.usage)
 
-        let outputWarnings = value.warnings?.map { $0.toWarning() } ?? []
         let rawFinishReason = value.incompleteDetails?.reason
         let finishReason = LanguageModelV4FinishReason(
             unified: mapOpenAIResponsesFinishReason(
@@ -136,7 +135,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
                 headers: response.responseHeaders,
                 body: response.rawValue
             ),
-            warnings: prepared.warnings + outputWarnings
+            warnings: prepared.warnings
         )
     }
 
@@ -476,14 +475,14 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         var openAIOptions = try await parseProviderOptions(
             provider: providerOptionsName,
             providerOptions: options.providerOptions,
-            schema: openAIResponsesProviderOptionsSchema
+            schema: openAILanguageModelResponsesOptionsSchema
         )
 
         if openAIOptions == nil, providerOptionsName != "openai" {
             openAIOptions = try await parseProviderOptions(
                 provider: "openai",
                 providerOptions: options.providerOptions,
-                schema: openAIResponsesProviderOptionsSchema
+                schema: openAILanguageModelResponsesOptionsSchema
             )
         }
 
@@ -1408,7 +1407,7 @@ public final class OpenAIResponsesLanguageModel: LanguageModelV4, @unchecked Sen
         logprobs: [JSONValue],
         serviceTier: String?,
         reasoningContext: String?
-    ) -> SharedV4ProviderMetadata? {
+    ) -> SharedV4ProviderMetadata {
         var inner: [String: JSONValue] = [:]
         if let responseId {
             inner["responseId"] = responseId

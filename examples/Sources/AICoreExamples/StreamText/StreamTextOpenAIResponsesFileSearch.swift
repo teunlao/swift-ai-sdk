@@ -25,7 +25,7 @@ struct StreamTextOpenAIResponsesFileSearchExample: Example {
       let fileSearch = openai.tools.fileSearch(args)
 
       // Request file_search results in the response (if the provider returns them).
-      let providerOptions = openai.options.responses(include: [.fileSearchCallResults])
+      let providerOptions = openai.options.responses(.init(include: [.fileSearchCallResults]))
 
       let result = try streamText(
         model: openai.responses("gpt-4o-mini"),

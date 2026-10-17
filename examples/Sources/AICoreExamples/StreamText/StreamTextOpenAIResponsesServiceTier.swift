@@ -11,7 +11,7 @@ struct StreamTextOpenAIResponsesServiceTierExample: Example {
       let result = try streamText(
         model: openai.responses("gpt-4.1-mini"),
         prompt: "Briefly describe what service tiers do.",
-        providerOptions: openai.options.responses(serviceTier: "auto")
+        providerOptions: openai.options.responses(.init(serviceTier: "auto"))
       )
 
       for try await _ in result.textStream { }

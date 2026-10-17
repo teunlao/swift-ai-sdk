@@ -330,12 +330,10 @@ struct OpenAIResponsesToolContractTests {
         let capture = Capture()
         let result = try await provider(capture).responses("gpt-6-astra").doGenerate(options: .init(
             prompt: [.user(content: [.text(.init(text: "Compact this history"))], providerOptions: nil)],
-            providerOptions: ["openai": [
-                "compactionTrigger": .bool(true), "contextManagement": .array([.object([
-                    "type": .string("compaction"), "compactThreshold": .number(2.5), "extra": .bool(true)
-                ])]), "promptCacheRetention": .string("24h"), "promptCacheOptions": .object(["ttl": .string("30m")]),
-                "maxToolCalls": .number(3.5)
-            ]]
+            providerOptions: OpenAIProvider.responsesOptions(.init(
+                maxToolCalls: 3.5, promptCacheOptions: .init(ttl: .thirtyMinutes), promptCacheRetention: "24h",
+                contextManagement: [.init(compactThreshold: 2.5)], compactionTrigger: true
+            ))
         ))
         guard case .object(let body)? = await capture.value(), case .array(let input)? = body["input"] else {
             Issue.record("Missing input"); return
@@ -384,12 +382,12 @@ struct OpenAIResponsesToolContractTests {
         }
     }
 
-    @Test("Optional request configuration rejects explicit null", arguments: ["reasoningMode", "reasoningContext", "includeWebSearchSources", "compactionTrigger", "promptCacheOptions"])
-    func reasoningOptionsRejectNull(key: String) async throws {
+    @Test("Invalid request configuration is refused before HTTP", arguments: ["reasoningMode", "reasoningContext", "includeWebSearchSources", "compactionTrigger", "promptCacheOptions", "systemMessageMode", "logprobs", "include"])
+    func requestOptionsRejectInvalid(key: String) async throws {
         let provider = try createOpenAI(settings: .init(apiKey: "test", fetch: { _ in throw URLError(.badServerResponse) }))
         await #expect(throws: InvalidArgumentError.self) {
             try await provider.responses("gpt-5.6-sol").doGenerate(options: .init(
-                prompt: [], providerOptions: ["openai": [key: .null]]
+                prompt: [], providerOptions: ["openai": [key: key == "include" ? .array([.string("web_search_call.action.sources")]) : .null]]
             ))
         }
     }

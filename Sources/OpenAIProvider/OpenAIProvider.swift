@@ -45,7 +45,7 @@ public final class OpenAIProvider: ProviderV4 {
     private let skillsFactory: @Sendable () -> any SkillsV4
     public let experimental_realtime: any RealtimeFactoryV4
     public let tools: OpenAITools
-    public let options: OpenAIOptionsFacade
+    public let options: OpenAIOptions
 
     init(
         responses: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
@@ -59,7 +59,7 @@ public final class OpenAIProvider: ProviderV4 {
         skills: @escaping @Sendable () -> any SkillsV4,
         experimentalRealtime: any RealtimeFactoryV4,
         tools: OpenAITools,
-        options: OpenAIOptionsFacade
+        options: OpenAIOptions
     ) {
         responsesFactory = responses
         chatFactory = chat
@@ -266,7 +266,7 @@ public func createOpenAIProvider(settings: OpenAIProviderSettings = .init()) thr
         skills: { OpenAISkills(config: .init(provider: "\(providerName).skills", url: { "\(baseURL)\($0)" }, headers: headers, fetch: settings.fetch)) },
         experimentalRealtime: OpenAIRealtimeFactory(config: .init(provider: "\(providerName).realtime", baseURL: baseURL, headers: headers, fetch: settings.fetch)),
         tools: openaiTools,
-        options: OpenAIOptionsFacade()
+        options: OpenAIOptions()
     )
 }
 
