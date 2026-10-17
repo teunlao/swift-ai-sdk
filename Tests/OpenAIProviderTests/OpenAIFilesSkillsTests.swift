@@ -551,7 +551,8 @@ struct OpenAIFilesSkillsTests {
                     "description": "A test skill for fixture capture",
                     "default_version": "1",
                     "latest_version": "1",
-                    "created_at": 1_772_078_479
+                    "created_at": 1_772_078_479.25,
+                    "updated_at": 1_772_078_480.75
                 ]
             }
         ))
@@ -592,7 +593,8 @@ struct OpenAIFilesSkillsTests {
         #expect(result.description == "A test skill for fixture capture")
         #expect(result.latestVersion == "1")
         #expect(result.providerMetadata?["openai"]?["defaultVersion"] == .string("1"))
-        #expect(result.providerMetadata?["openai"]?["createdAt"] == .number(1_772_078_479))
+        #expect(result.providerMetadata?["openai"]?["createdAt"] == .number(1_772_078_479.25))
+        #expect(result.providerMetadata?["openai"]?["updatedAt"] == .number(1_772_078_480.75))
         #expect(result.warnings == [.unsupported(feature: "displayTitle", details: nil)])
     }
 

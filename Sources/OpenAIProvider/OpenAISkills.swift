@@ -15,8 +15,8 @@ private struct OpenAIUploadSkillResponse: Codable, Sendable, Equatable {
     let description: String?
     let defaultVersion: String?
     let latestVersion: String?
-    let createdAt: Int
-    let updatedAt: Int?
+    let createdAt: Double
+    let updatedAt: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -93,13 +93,13 @@ public final class OpenAISkills: SkillsV4 {
         ).value
 
         var metadata: [String: JSONValue] = [
-            "createdAt": .number(Double(response.createdAt))
+            "createdAt": .number(response.createdAt)
         ]
         if let defaultVersion = response.defaultVersion {
             metadata["defaultVersion"] = .string(defaultVersion)
         }
         if let updatedAt = response.updatedAt {
-            metadata["updatedAt"] = .number(Double(updatedAt))
+            metadata["updatedAt"] = .number(updatedAt)
         }
 
         return SkillsV4UploadSkillResult(
