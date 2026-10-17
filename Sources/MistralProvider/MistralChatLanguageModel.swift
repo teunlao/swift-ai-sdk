@@ -9,18 +9,18 @@ import AISDKProviderUtils
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-public final class MistralChatLanguageModel: LanguageModelV3 {
+public final class MistralChatLanguageModel: LanguageModelV4 {
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
         let generateId: @Sendable () -> String
     }
 
     private struct PreparedRequest {
         let body: [String: JSONValue]
-        let warnings: [SharedV3Warning]
+        let warnings: [SharedV4Warning]
     }
 
     private let modelIdentifier: MistralChatModelId
@@ -45,12 +45,12 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
         }
     }
 
-    public func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult {
+    public func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult {
         let prepared = try await prepareRequest(options: options, stream: false)
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: try combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: { try await mistralFailedResponseHandler($0) },
             successfulResponseHandler: createJsonResponseHandler(responseSchema: mistralChatResponseSchema),
@@ -66,19 +66,19 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
             )
         }
 
-        var content: [LanguageModelV3Content] = []
+        var content: [LanguageModelV4Content] = []
 
         if let parts = choice.message.content?.parts {
             for part in parts {
                 switch part {
                 case .text(let text):
                     if !text.text.isEmpty {
-                        content.append(.text(LanguageModelV3Text(text: text.text)))
+                        content.append(.text(LanguageModelV4Text(text: text.text)))
                     }
                 case .thinking(let segments):
                     let reasoningText = extractReasoningText(segments)
                     if !reasoningText.isEmpty {
-                        content.append(.reasoning(LanguageModelV3Reasoning(text: reasoningText)))
+                        content.append(.reasoning(LanguageModelV4Reasoning(text: reasoningText)))
                     }
                 case .imageURL, .reference:
                     // Ignored per upstream implementation
@@ -86,12 +86,12 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                 }
             }
         } else if let text = choice.message.content?.text, !text.isEmpty {
-            content.append(.text(LanguageModelV3Text(text: text)))
+            content.append(.text(LanguageModelV4Text(text: text)))
         }
 
         if let toolCalls = choice.message.toolCalls {
             for call in toolCalls {
-                content.append(.toolCall(LanguageModelV3ToolCall(
+                content.append(.toolCall(LanguageModelV4ToolCall(
                     toolCallId: call.id,
                     toolName: call.function.name,
                     input: call.function.arguments
@@ -99,24 +99,19 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
             }
         }
 
-        let usageMeta = response.value.usage
-        let usage = LanguageModelV3Usage(
-            inputTokens: .init(total: usageMeta.promptTokens, noCache: usageMeta.promptTokens),
-            outputTokens: .init(total: usageMeta.completionTokens, text: usageMeta.completionTokens, reasoning: nil),
-            raw: try? JSONEncoder().encodeToJSONValue(usageMeta)
-        )
+        let usage = convertMistralUsage(response.value.usage)
 
         let metadata = mistralResponseMetadata(id: response.value.id, model: response.value.model, created: response.value.created)
 
-        return LanguageModelV3GenerateResult(
+        return LanguageModelV4GenerateResult(
             content: content,
-            finishReason: LanguageModelV3FinishReason(
+            finishReason: LanguageModelV4FinishReason(
                 unified: mapMistralFinishReason(choice.finishReason),
                 raw: choice.finishReason
             ),
             usage: usage,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3ResponseInfo(
+            request: LanguageModelV4RequestInfo(body: prepared.body),
+            response: LanguageModelV4ResponseInfo(
                 id: metadata.id,
                 timestamp: metadata.timestamp,
                 modelId: metadata.modelId,
@@ -127,12 +122,12 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
         )
     }
 
-    public func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+    public func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
         let prepared = try await prepareRequest(options: options, stream: true)
 
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/chat/completions",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            headers: try combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
             body: JSONValue.object(prepared.body),
             failedResponseHandler: { try await mistralFailedResponseHandler($0) },
             successfulResponseHandler: createEventSourceResponseHandler(chunkSchema: mistralChatChunkSchema),
@@ -140,12 +135,13 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
             fetch: config.fetch
         )
 
-        let stream = AsyncThrowingStream<LanguageModelV3StreamPart, Error> { continuation in
+        let stream = AsyncThrowingStream<LanguageModelV4StreamPart, Error> { continuation in
             continuation.yield(.streamStart(warnings: prepared.warnings))
 
-            Task {
-                var finishReason = LanguageModelV3FinishReason(unified: .other, raw: nil)
-                var usage = LanguageModelV3Usage()
+            let task = Task {
+                let toolCallTracker = StreamingToolCallTracker(enqueue: { continuation.yield($0) }, options: .init(generateId: config.generateId))
+                var finishReason = LanguageModelV4FinishReason(unified: .other, raw: nil)
+                var usage = LanguageModelV4Usage()
                 var isFirstChunk = true
                 var activeText = false
                 var activeReasoningId: String?
@@ -158,8 +154,8 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                         }
 
                         switch parseResult {
-                        case .failure:
-                            continuation.yield(.error(error: parseResult.streamErrorPayload))
+                        case .failure(let error, _):
+                            continuation.yield(.error(error: .error(error)))
                             continue
 
                         case .success(let chunk, _):
@@ -170,23 +166,20 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                             }
 
                             if let usageMeta = chunk.usage {
-                                usage = LanguageModelV3Usage(
-                                    inputTokens: .init(total: usageMeta.promptTokens, noCache: usageMeta.promptTokens),
-                                    outputTokens: .init(total: usageMeta.completionTokens, text: usageMeta.completionTokens, reasoning: nil),
-                                    raw: try? JSONEncoder().encodeToJSONValue(usageMeta)
-                                )
+                                usage = convertMistralUsage(usageMeta)
                             }
 
                             guard let choice = chunk.choices.first else { continue }
 
                             if let finish = choice.finishReason {
-                                finishReason = LanguageModelV3FinishReason(
+                                finishReason = LanguageModelV4FinishReason(
                                     unified: mapMistralFinishReason(finish),
                                     raw: finish
                                 )
                             }
 
-                            if let delta = choice.delta {
+                            do {
+                                let delta = choice.delta
                                 if let parts = delta.content?.parts {
                                     for part in parts {
                                         if case .thinking(let segments) = part {
@@ -224,20 +217,7 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
 
                                 if let toolCalls = delta.toolCalls {
                                     for call in toolCalls {
-                                        let callId = call.id
-                                        let arguments = call.function.arguments
-
-                                        continuation.yield(.toolInputStart(
-                                            id: callId,
-                                            toolName: call.function.name,
-                                            providerMetadata: nil,
-                                            providerExecuted: nil,
-                                            dynamic: nil,
-                                            title: nil
-                                        ))
-                                        continuation.yield(.toolInputDelta(id: callId, delta: arguments, providerMetadata: nil))
-                                        continuation.yield(.toolInputEnd(id: callId, providerMetadata: nil))
-                                        continuation.yield(.toolCall(LanguageModelV3ToolCall(toolCallId: callId, toolName: call.function.name, input: arguments)))
+                                        try toolCallTracker.processDelta(.init(index: call.index, id: call.id, function: .init(name: call.function.name, arguments: call.function.arguments)))
                                     }
                                 }
                             }
@@ -251,49 +231,61 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
                         continuation.yield(.textEnd(id: "0", providerMetadata: nil))
                     }
 
+                    toolCallTracker.flush()
                     continuation.yield(.finish(finishReason: finishReason, usage: usage, providerMetadata: nil))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
 
-        return LanguageModelV3StreamResult(
+        return LanguageModelV4StreamResult(
             stream: stream,
-            request: LanguageModelV3RequestInfo(body: prepared.body),
-            response: LanguageModelV3StreamResponseInfo(headers: response.responseHeaders)
+            request: LanguageModelV4RequestInfo(body: prepared.body),
+            response: LanguageModelV4StreamResponseInfo(headers: response.responseHeaders)
         )
     }
 
     // MARK: - Request Preparation
 
-    private func prepareRequest(options: LanguageModelV3CallOptions, stream: Bool) async throws -> PreparedRequest {
-        var warnings: [SharedV3Warning] = []
+    private func prepareRequest(options: LanguageModelV4CallOptions, stream: Bool) async throws -> PreparedRequest {
+        var warnings: [SharedV4Warning] = []
 
         let mistralOptions = try await parseProviderOptions(
             provider: "mistral",
             providerOptions: options.providerOptions,
-            schema: mistralProviderOptionsSchema
+            schema: mistralLanguageModelChatOptions
         )
 
         var prompt = options.prompt
 
-        if case .json(let schema, _, _) = options.responseFormat, schema == nil {
+        if case .json(let schema, _, _) = options.responseFormat, mistralOptions?.structuredOutputs == false || schema == nil {
             prompt = injectJSONInstructionIntoMessages(messages: prompt, schema: schema)
         }
 
         if options.topK != nil {
             warnings.append(.unsupported(feature: "topK", details: nil))
         }
-        if options.frequencyPenalty != nil {
-            warnings.append(.unsupported(feature: "frequencyPenalty", details: nil))
-        }
-        if options.presencePenalty != nil {
-            warnings.append(.unsupported(feature: "presencePenalty", details: nil))
-        }
-        if options.stopSequences != nil {
-            warnings.append(.unsupported(feature: "stopSequences", details: nil))
+        let nonReasoningModels: Set<String> = [
+            "codestral-2508", "codestral-latest", "ministral-14b-2512", "ministral-14b-latest",
+            "ministral-3b-2512", "ministral-3b-latest", "ministral-8b-2512", "ministral-8b-latest",
+            "mistral-code-fim-latest", "mistral-code-latest", "mistral-large-latest", "mistral-large-2512",
+            "voxtral-small-2507", "voxtral-small-latest"
+        ]
+        var reasoningEffort: String?
+        if !nonReasoningModels.contains(modelId) {
+            reasoningEffort = mistralOptions?.reasoningEffort?.rawValue
+            if reasoningEffort == nil, let reasoning = options.reasoning, isCustomReasoning(reasoning) {
+                reasoningEffort = reasoning == .none ? "none" : mapReasoningToProviderEffort(
+                    reasoning: reasoning,
+                    effortMap: [.minimal: "high", .low: "high", .medium: "high", .high: "high", .xhigh: "high", .max: "high"],
+                    warnings: &warnings
+                )
+            }
+        } else if isCustomReasoning(options.reasoning) {
+            warnings.append(.unsupported(feature: "reasoning", details: "This model does not support reasoning configuration."))
         }
 
         let preparedTools = prepareMistralTools(
@@ -312,15 +304,20 @@ public final class MistralChatLanguageModel: LanguageModelV3 {
         if let value = options.temperature { body["temperature"] = .number(value) }
         if let value = options.topP { body["top_p"] = .number(value) }
         if let value = options.seed { body["random_seed"] = .number(Double(value)) }
+        if let value = options.frequencyPenalty { body["frequency_penalty"] = .number(value) }
+        if let value = options.presencePenalty { body["presence_penalty"] = .number(value) }
+        if let value = options.stopSequences { body["stop"] = .array(value.map(JSONValue.string)) }
+        if let value = reasoningEffort { body["reasoning_effort"] = .string(value) }
+        if let value = mistralOptions?.promptCacheKey { body["prompt_cache_key"] = .string(value) }
 
         if let safePrompt = mistralOptions?.safePrompt {
             body["safe_prompt"] = .bool(safePrompt)
         }
         if let imageLimit = mistralOptions?.documentImageLimit {
-            body["document_image_limit"] = .number(Double(imageLimit))
+            body["document_image_limit"] = .number(imageLimit)
         }
         if let pageLimit = mistralOptions?.documentPageLimit {
-            body["document_page_limit"] = .number(Double(pageLimit))
+            body["document_page_limit"] = .number(pageLimit)
         }
 
         let structuredOutputs = mistralOptions?.structuredOutputs ?? true
@@ -401,19 +398,13 @@ private extension ParseJSONResult where Output == MistralChatChunk {
         }
     }
 
-    var streamErrorPayload: JSONValue {
-        switch self {
-        case .failure(let error, let raw):
-            return serializeStreamParseError(error: error, raw: raw)
-        case .success:
-            return .string("Unknown stream parsing error")
-        }
-    }
 }
 
 // MARK: - Models
 
 private struct MistralChatResponse: Codable {
+    enum ObjectType: String, Codable { case completion = "chat.completion" }
+    let object: ObjectType
     struct Choice: Codable {
         enum Role: String, Codable {
             case assistant
@@ -452,23 +443,11 @@ private struct MistralChatResponse: Codable {
         }
     }
 
-    struct Usage: Codable {
-        let promptTokens: Int
-        let completionTokens: Int
-        let totalTokens: Int
-
-        enum CodingKeys: String, CodingKey {
-            case promptTokens = "prompt_tokens"
-            case completionTokens = "completion_tokens"
-            case totalTokens = "total_tokens"
-        }
-    }
-
     let id: String?
     let created: Double?
     let model: String?
     let choices: [Choice]
-    let usage: Usage
+    let usage: MistralUsage
 }
 
 private struct MistralChatChunk: Codable {
@@ -491,16 +470,17 @@ private struct MistralChatChunk: Codable {
 
         struct ToolCall: Codable {
             struct Function: Codable {
-                let name: String
-                let arguments: String
+                let name: String?
+                let arguments: String?
             }
 
-            let id: String
+            let index: Int?
+            let id: String?
             let function: Function
         }
 
         let index: Int
-        let delta: Delta?
+        let delta: Delta
         let finishReason: String?
 
         enum CodingKeys: String, CodingKey {
@@ -510,23 +490,11 @@ private struct MistralChatChunk: Codable {
         }
     }
 
-    struct Usage: Codable {
-        let promptTokens: Int
-        let completionTokens: Int
-        let totalTokens: Int
-
-        enum CodingKeys: String, CodingKey {
-            case promptTokens = "prompt_tokens"
-            case completionTokens = "completion_tokens"
-            case totalTokens = "total_tokens"
-        }
-    }
-
     let id: String?
     let created: Double?
     let model: String?
     let choices: [Choice]
-    let usage: Usage?
+    let usage: MistralUsage?
 }
 
 private enum MistralMessageContent: Codable {
@@ -617,9 +585,28 @@ private enum MistralContentPart: Codable {
         }
     }
 
+    enum ReferenceId: Codable {
+        case string(String)
+        case number(Double)
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let value = try? container.decode(String.self) { self = .string(value) }
+            else { self = .number(try container.decode(Double.self)) }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .string(let value): try container.encode(value)
+            case .number(let value): try container.encode(value)
+            }
+        }
+    }
+
     struct ReferencePart: Codable {
         let type: String
-        let referenceIds: [JSONValue]
+        let referenceIds: [ReferenceId]
 
         enum CodingKeys: String, CodingKey {
             case type
@@ -628,7 +615,8 @@ private enum MistralContentPart: Codable {
     }
 
     struct ThinkingSegment: Codable {
-        let type: String
+        enum Kind: String, Codable { case text }
+        let type: Kind
         let text: String
     }
 
@@ -638,7 +626,7 @@ private enum MistralContentPart: Codable {
     }
 
     struct MistralImageURL: Codable {
-        let url: String?
+        let url: String
         let detail: String?
 
         init(from decoder: Decoder) throws {
@@ -648,13 +636,16 @@ private enum MistralContentPart: Codable {
                 self.detail = nil
             } else {
                 let keyed = try decoder.container(keyedBy: CodingKeys.self)
-                url = try keyed.decodeIfPresent(String.self, forKey: .url)
+                url = try keyed.decode(String.self, forKey: .url)
+                guard keyed.contains(.detail) else {
+                    throw DecodingError.keyNotFound(CodingKeys.detail, .init(codingPath: decoder.codingPath, debugDescription: "Missing detail"))
+                }
                 detail = try keyed.decodeIfPresent(String.self, forKey: .detail)
             }
         }
 
         func encode(to encoder: Encoder) throws {
-            if let url, detail == nil {
+            if detail == nil {
                 var container = encoder.singleValueContainer()
                 try container.encode(url)
             } else {
@@ -718,49 +709,5 @@ private enum MistralContentPart: Codable {
 // MARK: - Helpers
 
 private func extractReasoningText(_ segments: [MistralContentPart.ThinkingSegment]) -> String {
-    segments.filter { $0.type == "text" }.map { $0.text }.joined()
-}
-
-private func serializeStreamParseError(error: Error, raw: Any?) -> JSONValue {
-    if let typeValidationError = error as? TypeValidationError {
-        var payload: [String: JSONValue] = [
-            "name": .string(typeValidationError.name),
-            "message": .string(typeValidationError.message)
-        ]
-
-        if let value = typeValidationError.value {
-            payload["value"] = (try? jsonValue(from: value)) ?? .string(String(describing: value))
-        } else if let raw {
-            payload["value"] = (try? jsonValue(from: raw)) ?? .null
-        }
-
-        return .object(payload)
-    }
-
-    if let jsonParseError = error as? JSONParseError {
-        return .object([
-            "name": .string(jsonParseError.name),
-            "message": .string(jsonParseError.message),
-            "text": .string(jsonParseError.text)
-        ])
-    }
-
-    var payload: [String: JSONValue] = [
-        "name": .string("Error"),
-        "message": .string(AISDKProvider.getErrorMessage(error))
-    ]
-
-    if let raw {
-        payload["value"] = (try? jsonValue(from: raw)) ?? .null
-    }
-
-    return .object(payload)
-}
-
-private extension JSONEncoder {
-    func encodeToJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
-        let data = try encode(value)
-        let raw = try JSONSerialization.jsonObject(with: data, options: [])
-        return try jsonValue(from: raw)
-    }
+    segments.map { $0.text }.joined()
 }

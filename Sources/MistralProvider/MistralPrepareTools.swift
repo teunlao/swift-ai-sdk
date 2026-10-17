@@ -12,18 +12,18 @@ import AISDKProviderUtils
 struct MistralPreparedTools: Sendable {
     let tools: [JSONValue]?
     let toolChoice: JSONValue?
-    let toolWarnings: [SharedV3Warning]
+    let toolWarnings: [SharedV4Warning]
 }
 
 func prepareMistralTools(
-    tools: [LanguageModelV3Tool]?,
-    toolChoice: LanguageModelV3ToolChoice?
+    tools: [LanguageModelV4Tool]?,
+    toolChoice: LanguageModelV4ToolChoice?
 ) -> MistralPreparedTools {
     guard let tools, !tools.isEmpty else {
         return MistralPreparedTools(tools: nil, toolChoice: nil, toolWarnings: [])
     }
 
-    var warnings: [SharedV3Warning] = []
+    var warnings: [SharedV4Warning] = []
     var functionTools: [(name: String, payload: JSONValue)] = []
 
     for tool in tools {
@@ -69,7 +69,7 @@ func prepareMistralTools(
     }
 
     return MistralPreparedTools(
-        tools: toolPayloads.isEmpty ? nil : toolPayloads,
+        tools: toolPayloads,
         toolChoice: toolChoiceJSON,
         toolWarnings: warnings
     )

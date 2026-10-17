@@ -9,14 +9,14 @@ import AISDKProvider
 //===----------------------------------------------------------------------===//
 
 public func injectJSONInstructionIntoMessages(
-    messages: LanguageModelV3Prompt,
+    messages: LanguageModelV4Prompt,
     schema: JSONValue?,
     schemaPrefix: String? = nil,
     schemaSuffix: String? = nil
-) -> LanguageModelV3Prompt {
+) -> LanguageModelV4Prompt {
     var remainingMessages = messages
 
-    let systemMessage: LanguageModelV3Message
+    let systemMessage: LanguageModelV4Message
     if let first = messages.first, case let .system(content, providerOptions) = first {
         remainingMessages = Array(messages.dropFirst())
         let updatedContent = injectJSONInstruction(

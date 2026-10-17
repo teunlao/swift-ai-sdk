@@ -9,13 +9,12 @@ import AISDKProviderUtils
 // Upstream commit: 77db222ee
 //===----------------------------------------------------------------------===//
 
-public final class MistralEmbeddingModel: EmbeddingModelV3 {
-    public typealias VALUE = String
+public final class MistralEmbeddingModel: EmbeddingModelV4 {
 
     struct Config: Sendable {
         let provider: String
         let baseURL: String
-        let headers: @Sendable () -> [String: String?]
+        let headers: @Sendable () throws -> [String: String?]
         let fetch: FetchFunction?
     }
 
@@ -39,7 +38,7 @@ public final class MistralEmbeddingModel: EmbeddingModelV3 {
         get async throws { false }
     }
 
-    public func doEmbed(options: EmbeddingModelV3DoEmbedOptions<String>) async throws -> EmbeddingModelV3DoEmbedResult {
+    public func doEmbed(options: EmbeddingModelV4CallOptions) async throws -> EmbeddingModelV4Result {
         if options.values.count > maxValuesPerCall {
             throw TooManyEmbeddingValuesForCallError(
                 provider: provider,
@@ -49,14 +48,20 @@ public final class MistralEmbeddingModel: EmbeddingModelV3 {
             )
         }
 
+        let settings = try await parseProviderOptions(provider: "mistral", providerOptions: options.providerOptions, schema: mistralEmbeddingModelOptions)
+        var body: [String: JSONValue] = [
+            "model": .string(modelIdentifier.rawValue),
+            "input": .array(options.values.map(JSONValue.string)),
+            "encoding_format": "float"
+        ]
+        if let metadata = settings?.metadata { body["metadata"] = .object(metadata) }
+        if let dimensions = settings?.outputDimension ?? options.dimensions { body["output_dimension"] = .number(Double(dimensions)) }
+        if let dtype = settings?.outputDtype { body["output_dtype"] = .string(dtype.rawValue) }
+
         let response = try await postJsonToAPI(
             url: "\(config.baseURL)/embeddings",
-            headers: combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
-            body: JSONValue.object([
-                "model": .string(modelIdentifier.rawValue),
-                "input": .array(options.values.map(JSONValue.string)),
-                "encoding_format": .string("float")
-            ]),
+            headers: try combineHeaders(config.headers(), options.headers?.mapValues { Optional($0) }).compactMapValues { $0 },
+            body: JSONValue.object(body),
             failedResponseHandler: { try await mistralFailedResponseHandler($0) },
             successfulResponseHandler: createJsonResponseHandler(responseSchema: mistralEmbeddingResponseSchema),
             isAborted: options.abortSignal,
@@ -64,12 +69,12 @@ public final class MistralEmbeddingModel: EmbeddingModelV3 {
         )
 
         let embeddings = response.value.data.map { $0.embedding }
-        let usage = response.value.usage.map { EmbeddingModelV3Usage(tokens: $0.promptTokens) }
+        let usage = response.value.usage.map { EmbeddingModelV4Usage(tokens: $0.promptTokens) }
 
-        return EmbeddingModelV3DoEmbedResult(
+        return EmbeddingModelV4Result(
             embeddings: embeddings,
             usage: usage,
-            response: EmbeddingModelV3ResponseInfo(
+            response: EmbeddingModelV4ResponseInfo(
                 headers: response.responseHeaders,
                 body: response.rawValue
             )

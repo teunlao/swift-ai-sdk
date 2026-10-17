@@ -33,7 +33,12 @@ actor ResponseBox {
     }
 
     func setJSON(url: URL, statusCode: Int = 200, body: Any, headers: [String: String]? = nil) {
-        let data = try! JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        var payload = body
+        if url == HTTPTestHelpers.chatURL, var object = body as? [String: Any], object["object"] == nil {
+            object["object"] = "chat.completion"
+            payload = object
+        }
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         var headerFields: [String: String] = [
             "Content-Type": "application/json",
             "Content-Length": String(data.count)
@@ -107,8 +112,8 @@ func decodeJSONBody(_ request: URLRequest) throws -> [String: Any] {
     return try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
 }
 
-func collectStream(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
-    var parts: [LanguageModelV3StreamPart] = []
+func collectStream(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
+    var parts: [LanguageModelV4StreamPart] = []
     for try await part in stream {
         parts.append(part)
     }

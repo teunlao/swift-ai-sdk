@@ -22,7 +22,7 @@ private func makeChatModel(generateId: @escaping @Sendable () -> String = { UUID
         return await responseBox.value()
     }
 
-    let provider = createMistralProvider(
+    let provider = createMistral(
         settings: .init(
             apiKey: "test-api-key",
             fetch: fetch,
@@ -33,7 +33,7 @@ private func makeChatModel(generateId: @escaping @Sendable () -> String = { UUID
     return (provider.chat(modelId: .mistralSmallLatest), recorder, responseBox)
 }
 
-private func defaultPrompt() -> LanguageModelV3Prompt {
+private func defaultPrompt() -> LanguageModelV4Prompt {
     [
         .user(content: [.text(.init(text: "Hello"))], providerOptions: nil)
     ]
@@ -81,7 +81,7 @@ struct MistralChatLanguageModelGenerateTests {
         )
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
-        #expect(result.content == [.text(LanguageModelV3Text(text: "Hello, World!"))])
+        #expect(result.content == [.text(LanguageModelV4Text(text: "Hello, World!"))])
         #expect(result.finishReason.unified == .stop)
     }
 
@@ -107,13 +107,13 @@ struct MistralChatLanguageModelGenerateTests {
             ]
         )
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
             .assistant(content: [.text(.init(text: "prefix "))], providerOptions: nil)
         ]
 
         let result = try await model.doGenerate(options: .init(prompt: prompt))
-        #expect(result.content == [.text(LanguageModelV3Text(text: "prefix and more content"))])
+        #expect(result.content == [.text(LanguageModelV4Text(text: "prefix and more content"))])
     }
 
     @Test("extracts tool call content")
@@ -146,7 +146,7 @@ struct MistralChatLanguageModelGenerateTests {
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
         #expect(result.content == [
-            .toolCall(LanguageModelV3ToolCall(toolCallId: "gSIMJiOkT", toolName: "weatherTool", input: "{\"location\": \"paris\"}"))
+            .toolCall(LanguageModelV4ToolCall(toolCallId: "gSIMJiOkT", toolName: "weatherTool", input: "{\"location\": \"paris\"}"))
         ])
         #expect(result.finishReason.unified == .toolCalls)
     }
@@ -184,8 +184,8 @@ struct MistralChatLanguageModelGenerateTests {
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
         #expect(result.content == [
-            .reasoning(LanguageModelV3Reasoning(text: "Let me think about this problem step by step.")),
-            .text(LanguageModelV3Text(text: "Here is my answer."))
+            .reasoning(LanguageModelV4Reasoning(text: "Let me think about this problem step by step.")),
+            .text(LanguageModelV4Text(text: "Here is my answer."))
         ])
     }
 
@@ -218,10 +218,10 @@ struct MistralChatLanguageModelGenerateTests {
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
         #expect(result.content == [
-            .reasoning(LanguageModelV3Reasoning(text: "First thought.")),
-            .text(LanguageModelV3Text(text: "Partial answer.")),
-            .reasoning(LanguageModelV3Reasoning(text: "Second thought.")),
-            .text(LanguageModelV3Text(text: "Final answer."))
+            .reasoning(LanguageModelV4Reasoning(text: "First thought.")),
+            .text(LanguageModelV4Text(text: "Partial answer.")),
+            .reasoning(LanguageModelV4Reasoning(text: "Second thought.")),
+            .text(LanguageModelV4Text(text: "Final answer."))
         ])
     }
 
@@ -251,7 +251,7 @@ struct MistralChatLanguageModelGenerateTests {
         )
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
-        #expect(result.content == [.text(LanguageModelV3Text(text: "Just the answer."))])
+        #expect(result.content == [.text(LanguageModelV4Text(text: "Just the answer."))])
     }
 
     @Test("captures usage metrics")
@@ -427,11 +427,7 @@ struct MistralChatLanguageModelGenerateTests {
         }
 
         #expect(systemMessage["role"] == .string("system"))
-        if case .string(let content) = systemMessage["content"] {
-            #expect(content.contains("You MUST answer with JSON."))
-        } else {
-            Issue.record("Missing instruction content")
-        }
+        #expect(body["response_format"] == .object(["type": .string("json_object")]))
     }
 
     @Test("injects JSON instruction with schema")
@@ -493,7 +489,7 @@ struct MistralChatLanguageModelGenerateTests {
         )
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
-        #expect(result.content == [.text(LanguageModelV3Text(text: "Hello"))])
+        #expect(result.content == [.text(LanguageModelV4Text(text: "Hello"))])
     }
 
     @Test("returns raw text with think tags for reasoning models")
@@ -520,7 +516,7 @@ struct MistralChatLanguageModelGenerateTests {
         )
 
         let result = try await model.doGenerate(options: .init(prompt: defaultPrompt()))
-        #expect(result.content == [.text(LanguageModelV3Text(text: "<think>Reasoning</think> Response"))])
+        #expect(result.content == [.text(LanguageModelV4Text(text: "<think>Reasoning</think> Response"))])
     }
 
     @Test("passes parallel tool calls option")
@@ -584,7 +580,7 @@ struct MistralChatLanguageModelGenerateTests {
             ]
         )
 
-        let tool = LanguageModelV3Tool.function(LanguageModelV3FunctionTool(
+        let tool = LanguageModelV4Tool.function(LanguageModelV4FunctionTool(
             name: "test-tool",
             inputSchema: .object([
                 "type": .string("object"),
@@ -637,7 +633,7 @@ struct MistralChatLanguageModelGenerateTests {
             return await responseBox.value()
         }
 
-        let provider = createMistralProvider(
+        let provider = createMistral(
             settings: .init(
                 apiKey: "test-api-key",
                 headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -678,7 +674,7 @@ struct MistralChatLanguageModelGenerateTests {
         #expect(headers["authorization"] == "Bearer test-api-key")
         #expect(headers["custom-provider-header"] == "provider-header-value")
         #expect(headers["custom-request-header"] == "request-header-value")
-        #expect(headers["user-agent"]?.contains("ai-sdk/mistral") == true)
+        #expect(headers["user-agent"]?.contains("ai-sdk-mistral") == true)
     }
 
     @Test("sends request body")
@@ -725,7 +721,7 @@ struct MistralChatLanguageModelStreamTests {
         makeChatModel(generateId: generateId)
     }
 
-    private func collectParts(_ stream: AsyncThrowingStream<LanguageModelV3StreamPart, Error>) async throws -> [LanguageModelV3StreamPart] {
+    private func collectParts(_ stream: AsyncThrowingStream<LanguageModelV4StreamPart, Error>) async throws -> [LanguageModelV4StreamPart] {
         try await collectStream(stream)
     }
 
@@ -808,18 +804,11 @@ struct MistralChatLanguageModelStreamTests {
             return
         }
 
-        guard case .error(let error) = errorPart, case .object(let object) = error else {
-            Issue.record("Expected structured error object payload")
+        guard case .error(.error(let error)) = errorPart, let validation = error as? TypeValidationError else {
+            Issue.record("Expected TypeValidationError payload")
             return
         }
-
-        #expect(object["name"] == .string("AI_TypeValidationError"))
-        if case .string(let message) = object["message"] {
-            #expect(message.contains("Type validation failed"))
-        } else {
-            Issue.record("Expected error.message")
-        }
-        #expect(object["value"] != nil)
+        #expect(validation.value != nil)
     }
 
     @Test("avoids duplication when trailing assistant message present")
@@ -858,7 +847,7 @@ struct MistralChatLanguageModelStreamTests {
 
         await responseBox.setStream(url: HTTPTestHelpers.chatURL, chunks: makeSSEChunks(payloads))
 
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
             .assistant(content: [.text(.init(text: "prefix "))], providerOptions: nil)
         ]
@@ -911,7 +900,7 @@ struct MistralChatLanguageModelStreamTests {
         let result = try await model.doStream(options: .init(
             prompt: defaultPrompt(),
             tools: [
-                .function(LanguageModelV3FunctionTool(
+                .function(LanguageModelV4FunctionTool(
                     name: "test-tool",
                     inputSchema: .object(["type": .string("object")])
                 ))
@@ -987,7 +976,7 @@ struct MistralChatLanguageModelStreamTests {
             return await responseBox.value()
         }
 
-        let provider = createMistralProvider(
+        let provider = createMistral(
             settings: .init(
                 apiKey: "test-api-key",
                 headers: ["Custom-Provider-Header": "provider-header-value"],
@@ -1155,64 +1144,5 @@ struct MistralChatLanguageModelStreamTests {
 
         let parts = try await collectParts(model.doStream(options: .init(prompt: defaultPrompt(), includeRawChunks: true)).stream)
         #expect(parts.contains { if case .raw = $0 { return true } else { return false } })
-    }
-}
-
-@Suite("Tool result format support")
-struct MistralToolResultFormatTests {
-    @Test("handles new LanguageModelV3ToolResultOutput format")
-    func handlesNewToolResultOutputFormat() async throws {
-        let (model, _, responseBox) = makeChatModel()
-        await responseBox.setJSON(
-            url: HTTPTestHelpers.chatURL,
-            body: [
-                "id": "test-id",
-                "object": "chat.completion",
-                "created": 1234567890,
-                "model": "mistral-small",
-                "choices": [[
-                    "index": 0,
-                    "message": [
-                        "role": "assistant",
-                        "content": "Here is the result",
-                        "tool_calls": nil
-                    ],
-                    "finish_reason": "stop"
-                ]],
-                "usage": [
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "total_tokens": 15
-                ]
-            ]
-        )
-
-        let prompt: LanguageModelV3Prompt = [
-            .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
-            .assistant(
-                content: [
-                    .toolCall(.init(
-                        toolCallId: "call-1",
-                        toolName: "test-tool",
-                        input: .object(["query": .string("test")])
-                    ))
-                ],
-                providerOptions: nil
-            ),
-            .tool(
-                content: [
-                    .toolResult(.init(
-                        toolCallId: "call-1",
-                        toolName: "test-tool",
-                        output: .json(value: .object(["result": .string("success")]))
-                    ))
-                ],
-                providerOptions: nil
-            )
-        ]
-
-        let result = try await model.doGenerate(options: .init(prompt: prompt))
-        #expect(result.content == [.text(.init(text: "Here is the result"))])
-        #expect(result.finishReason.unified == .stop)
     }
 }

@@ -24,14 +24,14 @@ struct MistralEmbeddingModelTests {
             return await responseBox.value()
         }
 
-        let provider = createMistralProvider(
+        let provider = createMistral(
             settings: .init(
                 apiKey: "test-api-key",
                 fetch: fetch
             )
         )
 
-        return (provider.textEmbedding(.mistralEmbed), recorder, responseBox)
+        return (provider.embedding(.mistralEmbed), recorder, responseBox)
     }
 
     @Test("doEmbed returns embeddings")
@@ -133,7 +133,7 @@ struct MistralEmbeddingModelTests {
             return await responseBox.value()
         }
 
-        let provider = createMistralProvider(
+        let provider = createMistral(
             settings: .init(
                 apiKey: "test-api-key",
                 headers: ["Custom-Provider-Header": "provider-value"],
@@ -162,6 +162,6 @@ struct MistralEmbeddingModelTests {
         #expect(headers["authorization"] == "Bearer test-api-key")
         #expect(headers["custom-provider-header"] == "provider-value")
         #expect(headers["custom-request-header"] == "request-value")
-        #expect(headers["user-agent"]?.contains("ai-sdk/mistral") == true)
+        #expect(headers["user-agent"]?.contains("ai-sdk-mistral") == true)
     }
 }

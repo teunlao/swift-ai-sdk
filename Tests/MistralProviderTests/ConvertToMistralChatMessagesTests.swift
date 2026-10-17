@@ -7,7 +7,7 @@ import Testing
 struct ConvertToMistralChatMessagesTests {
     @Test("user image parts produce image_url entries")
     func imageParts() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
                     .text(.init(text: "Hello")),
@@ -39,7 +39,7 @@ struct ConvertToMistralChatMessagesTests {
     @Test("user image parts from Data produce base64 content")
     func imagePartsFromData() throws {
         let data = Data([0, 1, 2, 3])
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
                     .text(.init(text: "Hi")),
@@ -67,13 +67,14 @@ struct ConvertToMistralChatMessagesTests {
         ])
     }
 
-    @Test("PDF files require URLs")
+    @Test("PDF files support URLs and inline data")
     func pdfFiles() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(
                 content: [
                     .text(.init(text: "Please analyze this document")),
-                    .file(.init(data: .url(URL(string: "https://example.com/document.pdf")!), mediaType: "application/pdf"))
+                    .file(.init(data: .url(URL(string: "https://example.com/document.pdf")!), mediaType: "application/pdf")),
+                    .file(.init(data: .base64("JVBERi0="), mediaType: "application/pdf"))
                 ],
                 providerOptions: nil
             )
@@ -91,15 +92,16 @@ struct ConvertToMistralChatMessagesTests {
                     .object([
                         "type": .string("document_url"),
                         "document_url": .string("https://example.com/document.pdf")
-                    ])
+                    ]),
+                    ["type": "document_url", "document_url": "data:application/pdf;base64,JVBERi0="]
                 ])
             ])
         ])
     }
 
-    @Test("assistant messages concatenate reasoning and text")
+    @Test("assistant messages preserve reasoning and text parts")
     func reasoningContent() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .reasoning(.init(text: "Let me think about this...")),
@@ -113,7 +115,10 @@ struct ConvertToMistralChatMessagesTests {
         #expect(result == [
             .object([
                 "role": .string("assistant"),
-                "content": .string("Let me think about this...The answer is 42."),
+                "content": .array([
+                    ["type": "thinking", "thinking": [["type": "text", "text": "Let me think about this..."]], "closed": true],
+                    ["type": "text", "text": "The answer is 42."]
+                ]),
                 "prefix": .bool(true)
             ])
         ])
@@ -121,7 +126,7 @@ struct ConvertToMistralChatMessagesTests {
 
     @Test("tool calls are stringified")
     func toolCallArguments() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolCall(.init(toolCallId: "tool-call-id-1", toolName: "tool-1", input: .object(["key": .string("arg-value")])))
@@ -167,7 +172,7 @@ struct ConvertToMistralChatMessagesTests {
 
     @Test("content tool results are JSON-stringified")
     func toolContentOutput() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolCall(.init(toolCallId: "tool-call-id-3", toolName: "image-tool", input: .object(["query": .string("generate image")])))
@@ -181,8 +186,8 @@ struct ConvertToMistralChatMessagesTests {
                         toolName: "image-tool",
                         output: .content(
                             value: [
-                                .text(text: "Here is the result:"),
-                                .media(data: "base64data", mediaType: "image/png")
+                                .text(text: "Here is the result:", providerOptions: nil),
+                                .file(data: .base64("base64data"), mediaType: "image/png", filename: nil, providerOptions: nil)
                             ]
                         )
                     ))
@@ -211,7 +216,7 @@ struct ConvertToMistralChatMessagesTests {
                 "role": .string("tool"),
                 "tool_call_id": .string("tool-call-id-3"),
                 "name": .string("image-tool"),
-                "content": .string("[{\"type\":\"text\",\"text\":\"Here is the result:\"},{\"type\":\"image-data\",\"data\":\"base64data\",\"mediaType\":\"image/png\"}]")
+                "content": .string("[{\"text\":\"Here is the result:\",\"type\":\"text\"},{\"data\":{\"data\":\"base64data\",\"type\":\"data\"},\"mediaType\":\"image/png\",\"type\":\"file\"}]")
             ])
         ])
     }
@@ -219,7 +224,7 @@ struct ConvertToMistralChatMessagesTests {
 
     @Test("error tool output uses error message")
     func toolErrorOutput() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolCall(.init(toolCallId: "tool-call-id-4", toolName: "error-tool", input: .object(["query": .string("test")])) )
@@ -265,7 +270,7 @@ struct ConvertToMistralChatMessagesTests {
 
     @Test("trailing assistant message adds prefix flag")
     func trailingAssistantPrefix() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
             .assistant(content: [.text(.init(text: "Hello!"))], providerOptions: nil)
         ]
@@ -291,7 +296,7 @@ struct ConvertToMistralChatMessagesTests {
 
     @Test("text output format")
     func textOutputFormat() throws {
-        let prompt: LanguageModelV3Prompt = [
+        let prompt: LanguageModelV4Prompt = [
             .assistant(
                 content: [
                     .toolCall(.init(toolCallId: "tool-call-id-2", toolName: "text-tool", input: .object(["query": .string("test")])))
