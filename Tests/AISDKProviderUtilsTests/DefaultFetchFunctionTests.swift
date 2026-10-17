@@ -12,7 +12,7 @@ struct DefaultFetchFunctionTests {
             guard let request = try? await connection.readRequest() else { return }
             let body = (try? await connection.readBody(of: request)) ?? Data()
             received.continuation.yield(request)
-            try? await connection.sendResponse(status: 200, body: body)
+            try? await connection.sendResponse(status: 200, headers: ["Connection": "close"], body: body)
             await connection.close()
         }
         defer { destination.stop() }
@@ -21,6 +21,7 @@ struct DefaultFetchFunctionTests {
             _ = try? await connection.readBody(of: request)
             if request.path == "/same" { received.continuation.yield(request) }
             try? await connection.sendResponse(status: status, headers: [
+                "Connection": "close",
                 "Location": request.path == "/start" ? "/same" : "\(destination.origin)/final"
             ])
             await connection.close()
