@@ -6,15 +6,18 @@ public struct ElevenLabsProviderSettings: Sendable {
     public var apiKey: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
+    public var webSocket: WebSocketConstructor?
 
     public init(
         apiKey: String? = nil,
         headers: [String: String]? = nil,
-        fetch: FetchFunction? = nil
+        fetch: FetchFunction? = nil,
+        webSocket: WebSocketConstructor? = nil
     ) {
         self.apiKey = apiKey
         self.headers = headers
         self.fetch = fetch
+        self.webSocket = webSocket
     }
 }
 
@@ -77,7 +80,8 @@ public final class ElevenLabsProvider: ProviderV4 {
                     "ai-sdk-elevenlabs/\(ELEVENLABS_VERSION)"
                 ).mapValues(Optional.some)
             },
-            fetch: settings.fetch
+            fetch: settings.fetch,
+            webSocket: settings.webSocket
         )
     }
 }
