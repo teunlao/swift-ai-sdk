@@ -35,10 +35,5 @@ func getVercelRequestId() async -> String? {
         }
     }
 
-    // Fallback for non-context environments (useful for CLI/tests).
-    if let value = ProcessInfo.processInfo.environment["VERCEL_REQUEST_ID"], !value.isEmpty {
-        return value
-    }
-
     return nil
 }

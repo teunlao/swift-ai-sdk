@@ -12,15 +12,11 @@ enum ProviderFactory {
     ) throws -> LanguageModel {
         switch provider.lowercased() {
         case "gateway":
-            guard let apiKey = configuration.keys.gateway, !apiKey.isEmpty else {
-                throw ContextError.missingAPIKey(provider: "gateway")
-            }
-            let baseURL = configuration.baseURLOverrides["gateway"]
-            return .v3(GatewayLanguageModel(
-                modelId: modelId,
-                apiKey: apiKey,
-                baseURL: baseURL
+            let provider = createGateway(settings: .init(
+                baseURL: configuration.baseURLOverrides["gateway"]?.absoluteString,
+                apiKey: configuration.keys.gateway
             ))
+            return .v4(try provider.languageModel(modelId: modelId))
 
         case "openai":
             return .v4(try OpenAIPlaygroundFactory.makeLanguageModel(

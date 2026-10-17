@@ -1,3 +1,8 @@
+/// Experimental video factory capability shared by providers and model resolution.
+public protocol VideoProviderV4: Sendable {
+    func videoModel(modelId: String) throws -> any VideoModelV4
+}
+
 /**
  Provider for language, embedding, image generation, transcription, speech,
  reranking, files, and skills surfaces.

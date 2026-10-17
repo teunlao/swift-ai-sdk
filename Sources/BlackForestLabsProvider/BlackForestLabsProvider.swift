@@ -20,7 +20,7 @@ public struct BlackForestLabsProviderSettings: Sendable {
     }
 }
 
-public final class BlackForestLabsProvider: ProviderV4 {
+public final class BlackForestLabsProvider: ProviderV4, VideoProviderV4 {
     private let settings: BlackForestLabsProviderSettings
     private let baseURL: String
 

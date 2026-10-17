@@ -82,6 +82,7 @@ struct GatewayEmbeddingModelTests {
 
         _ = try await model.doEmbed(options: .init(
             values: ["sunny", "rainy"],
+            dimensions: 64,
             headers: ["Custom-Header": "test-value"]
         ))
 
@@ -109,6 +110,7 @@ struct GatewayEmbeddingModelTests {
             return
         }
         #expect(values == ["sunny", "rainy"])
+        #expect(json["dimensions"] as? Int == 64)
         #expect(json["providerOptions"] == nil)
     }
 

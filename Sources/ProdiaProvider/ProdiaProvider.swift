@@ -15,7 +15,7 @@ public struct ProdiaProviderSettings: Sendable {
     }
 }
 
-public final class ProdiaProvider: ProviderV4 {
+public final class ProdiaProvider: ProviderV4, VideoProviderV4 {
     private let settings: ProdiaProviderSettings
     private let baseURL: String
     init(settings: ProdiaProviderSettings) {
@@ -42,7 +42,7 @@ public final class ProdiaProvider: ProviderV4 {
     public func video(_ modelId: ProdiaVideoModelId) -> ProdiaVideoModel {
         ProdiaVideoModel(modelId: modelId, config: config(provider: "prodia.video"))
     }
-    public func videoModel(modelId: String) -> ProdiaVideoModel { video(.init(rawValue: modelId)) }
+    public func videoModel(modelId: String) -> any VideoModelV4 { video(.init(rawValue: modelId)) }
 
     private func config(provider: String) -> ProdiaModelConfig {
         ProdiaModelConfig(provider: provider, baseURL: baseURL, headers: { try self.headers() }, fetch: settings.fetch)

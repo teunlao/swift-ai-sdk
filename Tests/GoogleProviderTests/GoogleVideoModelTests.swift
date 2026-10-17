@@ -8,7 +8,7 @@ struct GoogleVideoModelTests {
     @Test("start maps frame inputs and status preserves provider-only download authentication")
     func videoOperations() async throws {
         let transport = GoogleTransport([.init(try googleFixture("video-start.json")), .init(try googleFixture("video-start.json")), .init(try googleFixture("video-done.json"))])
-        let model = try await transport.provider().videoModel(modelId: "veo-3.1-generate")
+        let model = await transport.provider().video(modelId: "veo-3.1-generate")
         let start = try await model.doStart(options: .init(prompt: "ocean", n: 2, resolution: "3840x2160", duration: 8, frameImages: [.init(image: .file(mediaType: "image/jpeg", data: .binary(Data([1, 2])), providerOptions: nil), frameType: .firstFrame), .init(image: .url(url: "gs://bucket/last.png", providerOptions: nil), frameType: .lastFrame)], providerOptions: ["google": ["generateAudio": .bool(true)]]))
         #expect(start.operation == .object(["operationName": .string("operations/video-op")]))
         let pending = try await model.doStatus(options: .init(operation: start.operation))
@@ -31,7 +31,7 @@ struct GoogleVideoModelTests {
     func videoFailure() async throws {
         let failure: JSONValue = .object(["done": .bool(true), "error": .object(["code": .number(400), "message": .string("invalid duration")])])
         let transport = GoogleTransport([.init(try googleData(failure))])
-        let model = try await transport.provider().videoModel(modelId: "veo-3.1-generate")
+        let model = await transport.provider().video(modelId: "veo-3.1-generate")
         let result = try await model.doStatus(options: .init(operation: .object(["operationName": .string("operations/failure")])))
         guard case .error(let error, _, _) = result else { Issue.record("expected failed operation"); return }
         #expect(error == "Video generation failed: invalid duration")

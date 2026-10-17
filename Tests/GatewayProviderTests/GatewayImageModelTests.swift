@@ -83,6 +83,7 @@ struct GatewayImageModelTests {
 
         let responseBody: [String: Any] = [
             "images": ["base64-image-1"],
+            "isRetryable": false,
             "usage": [
                 "inputTokens": 27,
                 "outputTokens": 6240,
@@ -151,6 +152,7 @@ struct GatewayImageModelTests {
             return
         }
         #expect(images == ["base64-image-1"])
+        #expect(result.isRetryable == false)
         #expect(result.warnings == [])
 
         #expect(result.response.modelId == "google/imagen-4.0-generate-001")

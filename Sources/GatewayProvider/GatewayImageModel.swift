@@ -38,11 +38,11 @@ public final class GatewayImageModel: ImageModelV4 {
             body["prompt"] = .string(prompt)
         }
 
-        if let size = options.size {
+        if let size = options.size, !size.isEmpty {
             body["size"] = .string(size)
         }
 
-        if let aspectRatio = options.aspectRatio {
+        if let aspectRatio = options.aspectRatio, !aspectRatio.isEmpty {
             body["aspectRatio"] = .string(aspectRatio)
         }
 

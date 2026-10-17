@@ -43,7 +43,7 @@ public struct KlingAIProviderSettings: Sendable {
     }
 }
 
-public final class KlingAIProvider: ProviderV4 {
+public final class KlingAIProvider: ProviderV4, VideoProviderV4 {
     private let videoFactory: @Sendable (KlingAIVideoModelId) -> KlingAIVideoModel
 
     init(videoFactory: @escaping @Sendable (KlingAIVideoModelId) -> KlingAIVideoModel) {
@@ -62,7 +62,7 @@ public final class KlingAIProvider: ProviderV4 {
         throw NoSuchModelError(modelId: modelId, modelType: .imageModel)
     }
 
-    public func videoModel(modelId: String) -> KlingAIVideoModel {
+    public func videoModel(modelId: String) -> any VideoModelV4 {
         videoFactory(KlingAIVideoModelId(rawValue: modelId))
     }
 

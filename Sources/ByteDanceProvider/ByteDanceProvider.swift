@@ -16,7 +16,7 @@ public struct ByteDanceProviderSettings: Sendable {
     }
 }
 
-public final class ByteDanceProvider: ProviderV4 {
+public final class ByteDanceProvider: ProviderV4, VideoProviderV4 {
     private let videoFactory: @Sendable (ByteDanceVideoModelId) -> ByteDanceVideoModel
     private let imageFactory: @Sendable (ByteDanceImageModelId) -> ByteDanceImageModel
 
@@ -48,7 +48,7 @@ public final class ByteDanceProvider: ProviderV4 {
         imageFactory(modelId)
     }
 
-    public func videoModel(modelId: String) -> ByteDanceVideoModel {
+    public func videoModel(modelId: String) -> any VideoModelV4 {
         videoFactory(ByteDanceVideoModelId(rawValue: modelId))
     }
 

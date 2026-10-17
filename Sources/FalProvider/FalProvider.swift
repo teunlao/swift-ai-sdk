@@ -23,7 +23,7 @@ public struct FalProviderSettings: Sendable {
     }
 }
 
-public final class FalProvider: ProviderV4 {
+public final class FalProvider: ProviderV4, VideoProviderV4 {
     private let imageFactory: @Sendable (FalImageModelId) -> FalImageModel
     private let transcriptionFactory: @Sendable (FalTranscriptionModelId) -> FalTranscriptionModel
     private let speechFactory: @Sendable (FalSpeechModelId) -> FalSpeechModel
@@ -53,7 +53,7 @@ public final class FalProvider: ProviderV4 {
         image(modelId: FalImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) -> FalVideoModel {
+    public func videoModel(modelId: String) -> any VideoModelV4 {
         video(modelId: FalVideoModelId(rawValue: modelId))
     }
 

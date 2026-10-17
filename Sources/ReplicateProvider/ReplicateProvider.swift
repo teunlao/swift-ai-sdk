@@ -30,7 +30,7 @@ public struct ReplicateProviderSettings: Sendable {
     }
 }
 
-public final class ReplicateProvider: ProviderV4 {
+public final class ReplicateProvider: ProviderV4, VideoProviderV4 {
     private let imageFactory: @Sendable (ReplicateImageModelId) -> ReplicateImageModel
     private let videoFactory: @Sendable (ReplicateVideoModelId) -> ReplicateVideoModel
 
@@ -55,7 +55,7 @@ public final class ReplicateProvider: ProviderV4 {
         imageFactory(ReplicateImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
+    public func videoModel(modelId: String) throws -> any VideoModelV4 {
         videoFactory(ReplicateVideoModelId(rawValue: modelId))
     }
 

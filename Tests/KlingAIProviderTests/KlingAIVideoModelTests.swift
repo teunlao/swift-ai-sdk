@@ -49,7 +49,7 @@ struct KlingAIVideoModelTests {
             #expect(json == .object(body))
             return klingResponse(request, #"{"code":0,"message":"success","data":{"task_id":"task"}}"#)
         }
-        let model = createKlingAI(settings: .init(apiKey: " key ", fetch: fetch)).videoModel(modelId: id)
+        let model = createKlingAI(settings: .init(apiKey: " key ", fetch: fetch)).video(modelId: .init(rawValue: id))
         let providerOptions: [String: JSONValue] = [
             "mode": .string("pro"), "sound": .string("off"), "negativePrompt": .string("Blur"), "cfgScale": .number(0.5),
             "cameraControl": .object(["type": .string("simple"), "config": .object(["zoom": .number(1), "unknown": .bool(true)])]),

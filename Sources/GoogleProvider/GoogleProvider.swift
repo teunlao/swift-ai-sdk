@@ -16,7 +16,7 @@ public struct GoogleProviderSettings: Sendable {
     }
 }
 
-public final class GoogleProvider: ProviderV4 {
+public final class GoogleProvider: ProviderV4, VideoProviderV4 {
     private let settings: GoogleProviderSettings
     private let baseURL: String
     private let name: String
@@ -51,7 +51,7 @@ public final class GoogleProvider: ProviderV4 {
     public func imageModel(modelId: GoogleImageModelId, settings: GoogleImageSettings = .init()) -> any ImageModelV4 { image(modelId: modelId, settings: settings) }
     public func video(modelId: GoogleVideoModelId) -> GoogleVideoModel { .init(modelId: modelId, config: .init(provider: name, baseURL: baseURL, headers: headers, fetch: settings.fetch, generateId: settings.generateId)) }
     public func videoModel(modelId: GoogleVideoModelId) -> GoogleVideoModel { video(modelId: modelId) }
-    public func videoModel(modelId: String) throws -> GoogleVideoModel { video(modelId: .init(rawValue: modelId)) }
+    public func videoModel(modelId: String) throws -> any VideoModelV4 { video(modelId: .init(rawValue: modelId)) }
 
     public func speech(modelId: String) -> GoogleSpeechModel { .init(modelId: modelId, config: .init(provider: "\(name).speech", baseURL: baseURL, headers: headers, fetch: settings.fetch)) }
     public func speechModel(modelId: String) throws -> (any SpeechModelV4)? { speech(modelId: modelId) }

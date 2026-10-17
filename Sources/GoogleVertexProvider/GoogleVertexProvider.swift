@@ -439,7 +439,7 @@ public struct GoogleVertexProviderSettings: Sendable {
     }
 }
 
-public final class GoogleVertexProvider: ProviderV4 {
+public final class GoogleVertexProvider: ProviderV4, VideoProviderV4 {
     private let languageFactory: @Sendable (GoogleVertexModelId) -> GoogleLanguageModel
     private let embeddingFactory: @Sendable (GoogleVertexEmbeddingModelId) -> GoogleVertexEmbeddingModel
     private let imageFactory: @Sendable (GoogleVertexImageModelId) -> GoogleVertexImageModel
@@ -490,7 +490,7 @@ public final class GoogleVertexProvider: ProviderV4 {
         return imageFactory(GoogleVertexImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
+    public func videoModel(modelId: String) throws -> any VideoModelV4 {
         return videoFactory(GoogleVertexVideoModelId(rawValue: modelId))
     }
 

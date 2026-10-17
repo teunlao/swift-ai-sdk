@@ -112,7 +112,8 @@ struct GatewayLanguageModelTests {
         let result = try await model.doGenerate(options: .init(
             prompt: prompt,
             abortSignal: { controller.isCancelled },
-            headers: ["Custom-Header": "test-value"]
+            headers: ["Custom-Header": "test-value"],
+            reasoning: .high
         ))
 
         guard let request = await capture.current(),
@@ -136,6 +137,7 @@ struct GatewayLanguageModelTests {
         }
 
         #expect(json["abortSignal"] == nil)
+        #expect(json["reasoning"] as? String == "high")
 
         #expect(result.content.count == 1)
         if case .text(let text) = result.content.first {
@@ -182,7 +184,11 @@ struct GatewayLanguageModelTests {
                     .file(LanguageModelV4FilePart(data: .data(bytes), mediaType: "image/jpeg")),
                 ],
                 providerOptions: nil
-            )
+            ),
+            .assistant(content: [.reasoningFile(.init(data: .data(bytes), mediaType: "application/octet-stream"))], providerOptions: nil),
+            .tool(content: [.toolResult(.init(toolCallId: "call-1", toolName: "read", output: .content(value: [
+                .file(data: .data(bytes), mediaType: "image/png", filename: "result.png", providerOptions: nil)
+            ])))], providerOptions: nil)
         ]
 
         _ = try await model.doGenerate(options: .init(prompt: prompt))
@@ -204,6 +210,13 @@ struct GatewayLanguageModelTests {
         #expect(file["mediaType"] as? String == "image/jpeg")
         let data = try #require(file["data"] as? [String: String])
         #expect(data == ["type": "data", "data": expectedBase64])
+        let reasoning = try #require((promptArray[1]["content"] as? [[String: Any]])?.first)
+        #expect(reasoning["data"] as? [String: String] == data)
+        let toolResult = try #require((promptArray[2]["content"] as? [[String: Any]])?.first)
+        let output = try #require(toolResult["output"] as? [String: Any])
+        let nested = try #require((output["value"] as? [[String: Any]])?.first)
+        #expect(nested["data"] as? [String: String] == data)
+        #expect(nested["filename"] as? String == "result.png")
     }
 
     @Test("doStream filters gateway raw chunks based on includeRawChunks")

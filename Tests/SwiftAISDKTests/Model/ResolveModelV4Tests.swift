@@ -56,6 +56,12 @@ struct ResolveModelV4Tests {
         let language = try resolveLanguageModelV4(.string("anthropic/claude-sonnet-4.6"))
         #expect(language is GatewayLanguageModel)
         #expect(language.modelId == "anthropic/claude-sonnet-4.6")
+        let video = try resolveVideoModelV4(.string("google/veo-3.1-generate-001"))
+        #expect(video is GatewayVideoModel)
+        #expect(video is any VideoModelV4Operations)
+        #expect(try resolveSpeechModelV4(.string("openai/tts-1")) is GatewaySpeechModel)
+        #expect(try resolveTranscriptionModelV4(.string("openai/whisper-1")) is GatewayTranscriptionModel)
+        #expect(try resolveRerankingModelV4(.string("cohere/rerank-v3.5")) is GatewayRerankingModel)
     }
 
     @Test("adapts a ProviderV3 through the ProviderV4 surface")

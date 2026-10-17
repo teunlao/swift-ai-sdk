@@ -18,6 +18,7 @@ public struct GatewayProviderSettings: Sendable {
     public var teamIdOrSlug: String?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
+    public var webSocket: WebSocketConstructor?
     public var metadataCacheRefreshMillis: Int?
     public var _internal: InternalSettings?
 
@@ -27,6 +28,7 @@ public struct GatewayProviderSettings: Sendable {
         teamIdOrSlug: String? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
+        webSocket: WebSocketConstructor? = nil,
         metadataCacheRefreshMillis: Int? = nil,
         _internal: InternalSettings? = nil
     ) {
@@ -35,6 +37,7 @@ public struct GatewayProviderSettings: Sendable {
         self.teamIdOrSlug = teamIdOrSlug
         self.headers = headers
         self.fetch = fetch
+        self.webSocket = webSocket
         self.metadataCacheRefreshMillis = metadataCacheRefreshMillis
         self._internal = _internal
     }
@@ -78,7 +81,7 @@ actor GatewayMetadataCache {
     }
 }
 
-public final class GatewayProvider: ProviderV4 {
+public final class GatewayProvider: ProviderV4, VideoProviderV4 {
     private let languageFactory: @Sendable (GatewayModelId) -> GatewayLanguageModel
     private let embeddingFactory: @Sendable (GatewayEmbeddingModelId) -> GatewayEmbeddingModel
     private let imageFactory: @Sendable (GatewayImageModelId) -> GatewayImageModel
@@ -87,8 +90,12 @@ public final class GatewayProvider: ProviderV4 {
     private let metadataCache: GatewayMetadataCache
     private let metadataRefreshInterval: TimeInterval
     private let currentDate: @Sendable () -> Date
-    private let modelConfig: GatewayModelConfig
+    private let modelConfig: @Sendable () -> GatewayModelConfig
     private let metadataConfig: GatewayConfig
+    private let teamIdOrSlug: String?
+    private let webSocket: WebSocketConstructor?
+    public var experimental_transcription: GatewayTranscriptionFactory { .init(config: modelConfig, metadataConfig: metadataConfig, webSocket: webSocket) }
+    public var experimental_realtime: GatewayRealtimeFactory { .init(config: metadataConfig, teamIdOrSlug: teamIdOrSlug) }
     public let tools: GatewayTools
 
     init(
@@ -101,8 +108,10 @@ public final class GatewayProvider: ProviderV4 {
         metadataCache: GatewayMetadataCache,
         metadataRefreshInterval: TimeInterval,
         currentDate: @escaping @Sendable () -> Date,
-        modelConfig: GatewayModelConfig,
-        metadataConfig: GatewayConfig
+        modelConfig: @escaping @Sendable () -> GatewayModelConfig,
+        metadataConfig: GatewayConfig,
+        teamIdOrSlug: String?,
+        webSocket: WebSocketConstructor?
     ) {
         self.languageFactory = languageFactory
         self.embeddingFactory = embeddingFactory
@@ -115,6 +124,8 @@ public final class GatewayProvider: ProviderV4 {
         self.currentDate = currentDate
         self.modelConfig = modelConfig
         self.metadataConfig = metadataConfig
+        self.teamIdOrSlug = teamIdOrSlug
+        self.webSocket = webSocket
     }
 
     public func languageModel(modelId: String) throws -> any LanguageModelV4 {
@@ -129,7 +140,7 @@ public final class GatewayProvider: ProviderV4 {
         imageFactory(GatewayImageModelId(rawValue: modelId))
     }
 
-    public func videoModel(modelId: String) throws -> (any VideoModelV4)? {
+    public func videoModel(modelId: String) throws -> any VideoModelV4 {
         videoFactory(GatewayVideoModelId(rawValue: modelId))
     }
 
@@ -171,6 +182,18 @@ public final class GatewayProvider: ProviderV4 {
         videoFactory(.init(rawValue: modelId))
     }
 
+    public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
+        transcription(modelId: modelId)
+    }
+
+    public func transcriptionModel(modelId: GatewayTranscriptionModelId) -> GatewayTranscriptionModel {
+        transcription(modelId: modelId.rawValue)
+    }
+
+    public func transcription(modelId: String) -> GatewayTranscriptionModel {
+        experimental_transcription(modelId)
+    }
+
     public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
         speech(modelId: modelId)
     }
@@ -180,7 +203,7 @@ public final class GatewayProvider: ProviderV4 {
     }
 
     public func speech(modelId: String) -> GatewaySpeechModel {
-        GatewaySpeechModel(modelId: modelId, config: modelConfig)
+        GatewaySpeechModel(modelId: modelId, config: modelConfig())
     }
 
     public func rerankingModel(modelId: String) throws -> (any RerankingModelV4)? {
@@ -192,7 +215,7 @@ public final class GatewayProvider: ProviderV4 {
     }
 
     public func reranking(modelId: String) -> GatewayRerankingModel {
-        GatewayRerankingModel(modelId: modelId, config: modelConfig)
+        GatewayRerankingModel(modelId: modelId, config: modelConfig())
     }
 
     // MARK: - Metadata
@@ -231,57 +254,22 @@ public func createGateway(settings: GatewayProviderSettings = .init()) -> Gatewa
 
     let getHeadersClosure = makeHeaderClosure(settings: settings)
 
-    let o11yHeaders: @Sendable () async throws -> [String: String?] = {
-        var headers: [String: String?] = [:]
-        if let deploymentId = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_DEPLOYMENT_ID") {
-            headers["ai-o11y-deployment-id"] = deploymentId
+    @Sendable func o11yHeaders() -> (@Sendable () async throws -> [String: String?]) {
+        let values = [
+            ("ai-o11y-deployment-id", "VERCEL_DEPLOYMENT_ID"), ("ai-o11y-environment", "VERCEL_ENV"),
+            ("ai-o11y-region", "VERCEL_REGION"), ("ai-o11y-project-id", "VERCEL_PROJECT_ID")
+        ]
+        let captured = values.reduce(into: [String: String?]()) { headers, entry in
+            if let value = loadOptionalSetting(settingValue: nil, environmentVariableName: entry.1), !value.isEmpty {
+                headers[entry.0] = value
+            }
         }
-        if let environment = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_ENV") {
-            headers["ai-o11y-environment"] = environment
+        return {
+            var headers = captured
+            if let requestId = await getVercelRequestId(), !requestId.isEmpty { headers["ai-o11y-request-id"] = requestId }
+            return headers
         }
-        if let region = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_REGION") {
-            headers["ai-o11y-region"] = region
-        }
-        if let projectId = loadOptionalSetting(settingValue: nil, environmentVariableName: "VERCEL_PROJECT_ID") {
-            headers["ai-o11y-project-id"] = projectId
-        }
-        if let requestId = await getVercelRequestId() {
-            headers["ai-o11y-request-id"] = requestId
-        }
-        return headers
     }
-
-    let languageConfig = GatewayLanguageModelConfig(
-        provider: "gateway",
-        baseURL: baseURL,
-        headers: getHeadersClosure,
-        fetch: fetch,
-        o11yHeaders: o11yHeaders
-    )
-
-    let embeddingConfig = GatewayEmbeddingModelConfig(
-        provider: "gateway",
-        baseURL: baseURL,
-        headers: getHeadersClosure,
-        fetch: fetch,
-        o11yHeaders: o11yHeaders
-    )
-
-    let imageConfig = GatewayImageModelConfig(
-        provider: "gateway",
-        baseURL: baseURL,
-        headers: getHeadersClosure,
-        fetch: fetch,
-        o11yHeaders: o11yHeaders
-    )
-
-    let videoConfig = GatewayVideoModelConfig(
-        provider: "gateway",
-        baseURL: baseURL,
-        headers: getHeadersClosure,
-        fetch: fetch,
-        o11yHeaders: o11yHeaders
-    )
 
     let metadataConfig = GatewayConfig(
         baseURL: baseURL,
@@ -293,19 +281,19 @@ public func createGateway(settings: GatewayProviderSettings = .init()) -> Gatewa
     let metadataCache = GatewayMetadataCache()
 
     let languageFactory: @Sendable (GatewayModelId) -> GatewayLanguageModel = { modelId in
-        GatewayLanguageModel(modelId: modelId, config: languageConfig)
+        GatewayLanguageModel(modelId: modelId, config: .init(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders()))
     }
 
     let embeddingFactory: @Sendable (GatewayEmbeddingModelId) -> GatewayEmbeddingModel = { modelId in
-        GatewayEmbeddingModel(modelId: modelId, config: embeddingConfig)
+        GatewayEmbeddingModel(modelId: modelId, config: .init(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders()))
     }
 
     let imageFactory: @Sendable (GatewayImageModelId) -> GatewayImageModel = { modelId in
-        GatewayImageModel(modelId: modelId, config: imageConfig)
+        GatewayImageModel(modelId: modelId, config: .init(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders()))
     }
 
     let videoFactory: @Sendable (GatewayVideoModelId) -> GatewayVideoModel = { modelId in
-        GatewayVideoModel(modelId: modelId, config: videoConfig)
+        GatewayVideoModel(modelId: modelId, config: .init(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders()))
     }
 
     return GatewayProvider(
@@ -318,8 +306,10 @@ public func createGateway(settings: GatewayProviderSettings = .init()) -> Gatewa
         metadataCache: metadataCache,
         metadataRefreshInterval: refreshInterval,
         currentDate: currentDateClosure,
-        modelConfig: GatewayModelConfig(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders, currentDate: currentDateClosure),
-        metadataConfig: metadataConfig
+        modelConfig: { GatewayModelConfig(provider: "gateway", baseURL: baseURL, headers: getHeadersClosure, fetch: fetch, o11yHeaders: o11yHeaders(), currentDate: currentDateClosure) },
+        metadataConfig: metadataConfig,
+        teamIdOrSlug: settings.teamIdOrSlug,
+        webSocket: settings.webSocket
     )
 }
 

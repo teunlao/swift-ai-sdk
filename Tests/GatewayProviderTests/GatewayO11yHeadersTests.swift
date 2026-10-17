@@ -16,11 +16,13 @@ struct GatewayO11yHeadersTests {
         let deploymentId: String?
         let environment: String?
         let region: String?
+        let projectId: String?
 
         init() {
             deploymentId = getenv("VERCEL_DEPLOYMENT_ID").flatMap { String(validatingCString: $0) }
             environment = getenv("VERCEL_ENV").flatMap { String(validatingCString: $0) }
             region = getenv("VERCEL_REGION").flatMap { String(validatingCString: $0) }
+            projectId = getenv("VERCEL_PROJECT_ID").flatMap { String(validatingCString: $0) }
         }
 
         func restore() {
@@ -41,6 +43,8 @@ struct GatewayO11yHeadersTests {
             } else {
                 unsetenv("VERCEL_REGION")
             }
+            if let projectId { setenv("VERCEL_PROJECT_ID", projectId, 1) }
+            else { unsetenv("VERCEL_PROJECT_ID") }
         }
     }
 
@@ -56,6 +60,7 @@ struct GatewayO11yHeadersTests {
         setenv("VERCEL_DEPLOYMENT_ID", "test-deployment", 1)
         setenv("VERCEL_ENV", "test", 1)
         setenv("VERCEL_REGION", "iad1", 1)
+        setenv("VERCEL_PROJECT_ID", "project-1", 1)
 
         let capture = RequestCapture()
 
@@ -80,6 +85,7 @@ struct GatewayO11yHeadersTests {
 
         let provider = createGateway(settings: .init(apiKey: "test-api-key", fetch: fetch))
         let model = provider.languageModel(modelId: GatewayModelId(rawValue: "test-model"))
+        setenv("VERCEL_DEPLOYMENT_ID", "changed-after-model-creation", 1)
 
         let prompt: LanguageModelV4Prompt = [
             .user(content: [.text(.init(text: "Hello"))], providerOptions: nil),
@@ -102,5 +108,6 @@ struct GatewayO11yHeadersTests {
         #expect(headers["ai-o11y-environment"] == "test")
         #expect(headers["ai-o11y-region"] == "iad1")
         #expect(headers["ai-o11y-request-id"] == "req_123")
+        #expect(headers["ai-o11y-project-id"] == "project-1")
     }
 }

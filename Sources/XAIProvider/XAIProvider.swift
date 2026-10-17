@@ -18,7 +18,7 @@ public struct XAIProviderSettings: Sendable {
     }
 }
 
-public final class XAIProvider: ProviderV4 {
+public final class XAIProvider: ProviderV4, VideoProviderV4 {
     private let settings: XAIProviderSettings
     private let baseURL: String
     private let headers: @Sendable () throws -> [String: String?]
@@ -84,7 +84,7 @@ public final class XAIProvider: ProviderV4 {
 
     public func speechModel(modelId: String) -> (any SpeechModelV4)? { speech() }
 
-    public func videoModel(modelId: String) -> XAIVideoModel {
+    public func videoModel(modelId: String) -> any VideoModelV4 {
         video(modelId: XAIVideoModelId(rawValue: modelId))
     }
 
