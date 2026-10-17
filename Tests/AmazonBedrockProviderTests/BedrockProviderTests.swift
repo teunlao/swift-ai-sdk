@@ -77,6 +77,40 @@ struct BedrockProviderTests {
     }
 }
 
+@Suite("Bedrock deferred bearer authentication", .serialized)
+struct BedrockDeferredAuthTests {
+    @Test("Converse, Invoke and Mantle load and rotate bearer tokens after model creation")
+    func bearerRotation() async throws {
+        let variable = "AWS_BEARER_TOKEN_BEDROCK"
+        let original = ProcessInfo.processInfo.environment[variable]
+        defer {
+            if let original { setenv(variable, original, 1) } else { unsetenv(variable) }
+        }
+        unsetenv(variable)
+        let converse = try BedrockTestServer()
+        let invoke = BedrockTestServer(data: Data(#"{"type":"message","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}"#.utf8))
+        let mantle = BedrockTestServer(data: Data(#"{"id":"chat","model":"model","created":1,"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#.utf8))
+        let credentials: AmazonBedrockProviderSettings.CredentialProvider = { throw URLError(.userAuthenticationRequired) }
+        let models: [(any LanguageModelV4, BedrockTestServer)] = [
+            (createAmazonBedrock(settings: .init(region: "us-east-1", baseURL: "https://bedrock.test", fetch: converse.fetch, credentialProvider: credentials)).chat(modelId: "model"), converse),
+            (createAmazonBedrockAnthropic(settings: .init(region: "us-east-1", baseURL: "https://bedrock.test", fetch: invoke.fetch, credentialProvider: credentials)).messages(modelId: "anthropic.claude-3-haiku"), invoke),
+            (createBedrockMantle(settings: .init(region: "us-east-1", baseURL: "https://bedrock.test/v1", fetch: mantle.fetch, credentialProvider: credentials)).chat(modelId: .gptOss20b), mantle)
+        ]
+        for token in ["first", "rotated"] {
+            setenv(variable, "  \(token)  ", 1)
+            for (model, server) in models {
+                let result = try await model.doGenerate(options: .init(prompt: []))
+                #expect(result.content == [.text(.init(text: "ok"))])
+                #expect(try await server.request().value(forHTTPHeaderField: "authorization") == "Bearer \(token)")
+            }
+        }
+        let signedServer = try BedrockTestServer()
+        let signed = createAmazonBedrock(settings: .init(region: "us-east-1", apiKey: "  ", accessKeyId: "access", secretAccessKey: "secret", baseURL: "https://bedrock.test", fetch: signedServer.fetch))
+        _ = try await signed.chat(modelId: "model").doGenerate(options: .init(prompt: []))
+        #expect(try await signedServer.request().value(forHTTPHeaderField: "authorization")?.hasPrefix("AWS4-HMAC-SHA256 Credential=access/") == true)
+    }
+}
+
 @Suite("Bedrock native API subpaths")
 struct BedrockSubpathTests {
     @Test("Anthropic Invoke transforms versioned tools and request betas")

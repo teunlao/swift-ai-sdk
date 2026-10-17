@@ -48,7 +48,7 @@ func parseAnthropicToolResult(_ value: JSONValue, block: String) throws -> JSONV
         let stdoutKey = type == "encrypted_code_execution_result" ? "encrypted_stdout" : "stdout"
         try wireString(object, stdoutKey)
         try wireString(object, "stderr")
-        try wireNumber(object, "return_code")
+        try wireInteger(object, "return_code")
         if let content = object["content"] {
             guard case .array(let files) = content else { throw wireError("Invalid code output files") }
             object["content"] = .array(try files.map { file in
@@ -69,13 +69,13 @@ func parseAnthropicToolResult(_ value: JSONValue, block: String) throws -> JSONV
     case ("text_editor_code_execution_tool_result", "text_editor_code_execution_view_result"):
         try wireString(object, "content")
         try wireString(object, "file_type")
-        for key in ["num_lines", "start_line", "total_lines"] { try wireNumber(object, key, nullable: true) }
+        for key in ["num_lines", "start_line", "total_lines"] { try wireInteger(object, key, nullable: true) }
         keys += ["content", "file_type", "num_lines", "start_line", "total_lines"]
     case ("text_editor_code_execution_tool_result", "text_editor_code_execution_str_replace_result"):
         if object["lines"] != .null {
             guard case .array(let lines) = object["lines"], lines.allSatisfy({ if case .string = $0 { return true }; return false }) else { throw wireError("Invalid text editor lines") }
         }
-        for key in ["new_lines", "new_start", "old_lines", "old_start"] { try wireNumber(object, key, nullable: true) }
+        for key in ["new_lines", "new_start", "old_lines", "old_start"] { try wireInteger(object, key, nullable: true) }
         keys += ["lines", "new_lines", "new_start", "old_lines", "old_start"]
     case ("tool_search_tool_result", "tool_search_tool_search_result"):
         guard case .array(let references) = object["tool_references"] else { throw wireError("Missing tool references") }
@@ -106,9 +106,9 @@ private func wireString(_ object: [String: JSONValue], _ key: String, nullable: 
     guard case .string = object[key] else { throw wireError("Expected string at \(key)") }
 }
 
-private func wireNumber(_ object: [String: JSONValue], _ key: String, nullable: Bool = false) throws {
+private func wireInteger(_ object: [String: JSONValue], _ key: String, nullable: Bool = false) throws {
     if nullable && object[key] == .null { return }
-    guard case .number = object[key] else { throw wireError("Expected number at \(key)") }
+    guard case .number(let number) = object[key], Int(exactly: number) != nil else { throw wireError("Expected representable integer at \(key)") }
 }
 
 private func wireBoolean(_ object: [String: JSONValue], _ key: String) throws {

@@ -74,11 +74,11 @@ public struct AnthropicThinkingOptions: Sendable, Equatable {
     }
 
     public var type: Mode?
-    public var budgetTokens: Double?
+    public var budgetTokens: Int?
     public var display: Display?
     public var blockBinding: BlockBinding?
 
-    public init(type: Mode? = nil, budgetTokens: Double? = nil, display: Display? = nil, blockBinding: BlockBinding? = nil) {
+    public init(type: Mode? = nil, budgetTokens: Int? = nil, display: Display? = nil, blockBinding: BlockBinding? = nil) {
         self.type = type
         self.budgetTokens = budgetTokens
         self.display = display
@@ -303,9 +303,9 @@ public struct AnthropicContextManagement: Sendable, Equatable {
             }
 
             public var type: TriggerType
-            public var value: Double
+            public var value: Int
 
-            public init(type: TriggerType, value: Double) {
+            public init(type: TriggerType, value: Int) {
                 self.type = type
                 self.value = value
             }
@@ -313,18 +313,18 @@ public struct AnthropicContextManagement: Sendable, Equatable {
 
         public struct Keep: Sendable, Equatable {
             public let type: String = "tool_uses"
-            public var value: Double
+            public var value: Int
 
-            public init(value: Double) {
+            public init(value: Int) {
                 self.value = value
             }
         }
 
         public struct ClearAtLeast: Sendable, Equatable {
             public let type: String = "input_tokens"
-            public var value: Double
+            public var value: Int
 
-            public init(value: Double) {
+            public init(value: Int) {
                 self.value = value
             }
         }
@@ -353,7 +353,7 @@ public struct AnthropicContextManagement: Sendable, Equatable {
     public struct ClearThinking20251015: Sendable, Equatable {
         public enum Keep: Sendable, Equatable {
             case all
-            case thinkingTurns(Double)
+            case thinkingTurns(Int)
         }
 
         public var keep: Keep?
@@ -366,9 +366,9 @@ public struct AnthropicContextManagement: Sendable, Equatable {
     public struct Compact20260112: Sendable, Equatable {
         public struct Trigger: Sendable, Equatable {
             public var type: String = "input_tokens"
-            public var value: Double
+            public var value: Int
 
-            public init(value: Double) {
+            public init(value: Int) {
                 self.value = value
             }
         }
@@ -676,10 +676,10 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                     }
                     var thinking = AnthropicThinkingOptions(type: mode)
                     if mode == .enabled, let value = thinkingDict["budgetTokens"] {
-                        guard case .number(let number) = value else {
-                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.budgetTokens must be a number")
+                        guard case .number(let number) = value, let budget = Int(exactly: number) else {
+                            throw SchemaValidationIssuesError(vendor: "anthropic", issues: "thinking.budgetTokens must be a representable integer")
                         }
-                        thinking.budgetTokens = number
+                        thinking.budgetTokens = budget
                     }
                     if mode == .adaptive {
                         try rejectNullOptions(thinkingDict, keys: ["display"])
@@ -1027,7 +1027,8 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                       case .string(let triggerTypeRaw) = triggerTypeValue,
                                       let triggerType = AnthropicContextManagement.ClearToolUses20250919.Trigger.TriggerType(rawValue: triggerTypeRaw),
                                       let triggerNumber = triggerDict["value"],
-                                      case .number(let triggerValueNumber) = triggerNumber else {
+                                      case .number(let triggerNumberValue) = triggerNumber,
+                                      let triggerValueNumber = Int(exactly: triggerNumberValue) else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].trigger must be a valid trigger object")
                                     return .failure(error: TypeValidationError.wrap(value: triggerValue, cause: error))
                                 }
@@ -1041,7 +1042,8 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                       case .string(let keepTypeRaw) = keepTypeValue,
                                       keepTypeRaw == "tool_uses",
                                       let keepNumber = keepDict["value"],
-                                      case .number(let keepValueNumber) = keepNumber else {
+                                      case .number(let keepNumberValue) = keepNumber,
+                                      let keepValueNumber = Int(exactly: keepNumberValue) else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].keep must be a valid keep object")
                                     return .failure(error: TypeValidationError.wrap(value: keepValue, cause: error))
                                 }
@@ -1055,7 +1057,8 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                       case .string(let clearTypeRaw) = clearTypeValue,
                                       clearTypeRaw == "input_tokens",
                                       let clearNumber = clearDict["value"],
-                                      case .number(let clearValueNumber) = clearNumber else {
+                                      case .number(let clearNumberValue) = clearNumber,
+                                      let clearValueNumber = Int(exactly: clearNumberValue) else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].clearAtLeast must be a valid clearAtLeast object")
                                     return .failure(error: TypeValidationError.wrap(value: clearAtLeastValue, cause: error))
                                 }
@@ -1091,8 +1094,9 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                           case .string(let keepTypeRaw) = keepTypeValue,
                                           keepTypeRaw == "thinking_turns",
                                           let keepNumber = keepDict["value"],
-                                          case .number(let keepNumberValue) = keepNumber {
-                                    keep = .thinkingTurns(keepNumberValue)
+                                          case .number(let keepNumberValue) = keepNumber,
+                                          let keepCount = Int(exactly: keepNumberValue) {
+                                    keep = .thinkingTurns(keepCount)
                                 } else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].keep must be 'all' or a keep object")
                                     return .failure(error: TypeValidationError.wrap(value: keepValue, cause: error))
@@ -1107,7 +1111,8 @@ public let anthropicProviderOptionsSchema = FlexibleSchema(
                                 guard case .object(let triggerDict) = triggerValue,
                                       triggerDict["type"] == .string("input_tokens"),
                                       let triggerNumber = triggerDict["value"],
-                                      case .number(let triggerValueNumber) = triggerNumber else {
+                                      case .number(let triggerNumberValue) = triggerNumber,
+                                      let triggerValueNumber = Int(exactly: triggerNumberValue) else {
                                     let error = SchemaValidationIssuesError(vendor: "anthropic", issues: "contextManagement.edits[].trigger must be a valid trigger object")
                                     return .failure(error: TypeValidationError.wrap(value: triggerValue, cause: error))
                                 }

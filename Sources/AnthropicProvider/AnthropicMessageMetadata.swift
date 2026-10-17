@@ -3,8 +3,8 @@ import AISDKProvider
 public struct AnthropicUsageIteration: Codable, Sendable {
     public let type: String
     public let model: String?
-    public let inputTokens: Int
-    public let outputTokens: Int
+    public let inputTokens: Int?
+    public let outputTokens: Int?
     public let cacheCreationInputTokens: Int?
     public let cacheReadInputTokens: Int?
 }

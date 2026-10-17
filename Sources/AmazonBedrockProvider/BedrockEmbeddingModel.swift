@@ -72,28 +72,29 @@ public final class BedrockEmbeddingModel: EmbeddingModelV4 {
         )
         let value = response.value
         let embeddings: [[Double]]
-        let tokens: Int?
         if let embedding = value.embedding {
             embeddings = [embedding]
-            tokens = value.inputTextTokenCount
         } else if let nova = value.novaEmbeddings {
             embeddings = nova.first.map { [$0.embedding] } ?? []
-            tokens = value.inputTokenCount ?? 0
         } else {
             embeddings = value.embeddings ?? value.floatEmbeddings ?? []
-            tokens = response.responseHeaders["x-amzn-bedrock-input-token-count"].flatMap(Int.init)
         }
-        // Swift's token count is an Int; an absent upstream NaN count remains unknown.
-        return EmbeddingModelV4Result(embeddings: embeddings, usage: tokens.map(EmbeddingModelV4Usage.init(tokens:)), warnings: [])
+        let tokens: Int?
+        switch value.tokenCount {
+        case .value(let count): tokens = count
+        case .missing:
+            tokens = response.responseHeaders["x-amzn-bedrock-input-token-count"].flatMap(Double.init).flatMap(Int.init(exactly:))
+        }
+        return EmbeddingModelV4Result(embeddings: embeddings, usage: tokens.map(EmbeddingModelV4Usage.init(tokens:)), response: .init(headers: response.responseHeaders, body: response.rawValue), warnings: [])
     }
 }
 
 private struct BedrockEmbeddingResponse: Decodable, Sendable {
     struct NovaEmbedding: Codable, Sendable { let embeddingType: String; let embedding: [Double] }
     struct FloatEmbeddings: Decodable { let float: [[Double]] }
+    enum TokenCount: Sendable { case missing, value(Int?) }
     let embedding: [Double]?
-    let inputTextTokenCount: Int?
-    let inputTokenCount: Int?
+    let tokenCount: TokenCount
     let novaEmbeddings: [NovaEmbedding]?
     let embeddings: [[Double]]?
     let floatEmbeddings: [[Double]]?
@@ -102,8 +103,9 @@ private struct BedrockEmbeddingResponse: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         embedding = try container.decodeIfPresent([Double].self, forKey: .embedding)
-        inputTextTokenCount = try container.decodeIfPresent(Int.self, forKey: .inputTextTokenCount)
-        inputTokenCount = try container.decodeIfPresent(Int.self, forKey: .inputTokenCount)
+        let inputTextTokenCount = try container.decodeIfPresent(Double.self, forKey: .inputTextTokenCount)
+        let inputTokenCount = try container.decodeIfPresent(Double.self, forKey: .inputTokenCount)
+        tokenCount = (inputTextTokenCount ?? inputTokenCount).map { .value(Int(exactly: $0)) } ?? .missing
         novaEmbeddings = try? container.decode([NovaEmbedding].self, forKey: .embeddings)
         embeddings = try? container.decode([[Double]].self, forKey: .embeddings)
         floatEmbeddings = (try? container.decode(FloatEmbeddings.self, forKey: .embeddings))?.float

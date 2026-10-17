@@ -55,7 +55,6 @@ public final class AmazonBedrockAnthropicProvider: ProviderV4 {
         ))
     }
     public func embeddingModel(modelId: String) throws -> any EmbeddingModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .embeddingModel) }
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 { try embeddingModel(modelId: modelId) }
     public func imageModel(modelId: String) throws -> any ImageModelV4 { throw NoSuchModelError(modelId: modelId, modelType: .imageModel) }
 }
 

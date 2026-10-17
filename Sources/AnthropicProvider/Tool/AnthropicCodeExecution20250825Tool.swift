@@ -27,7 +27,7 @@ public struct AnthropicCodeExecution20250825CodeExecutionResult: Codable, Equata
     public let type: String
     public let stdout: String
     public let stderr: String
-    public let returnCode: Double
+    public let returnCode: Int
     public let content: [AnthropicCodeExecution20250825OutputFile]
 
     enum CodingKeys: String, CodingKey {
@@ -43,7 +43,7 @@ public struct AnthropicCodeExecution20250825CodeExecutionResult: Codable, Equata
         type = try container.decode(String.self, forKey: .type)
         stdout = try container.decode(String.self, forKey: .stdout)
         stderr = try container.decode(String.self, forKey: .stderr)
-        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        returnCode = try container.decode(Int.self, forKey: .returnCode)
         content = container.contains(.content) ? try container.decode([AnthropicCodeExecution20250825OutputFile].self, forKey: .content) : []
         guard type == "code_execution_result", content.allSatisfy({ $0.type == "code_execution_output" }) else {
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected code execution result and files")
@@ -56,7 +56,7 @@ public struct AnthropicCodeExecution20250825BashResult: Codable, Equatable, Send
     public let content: [AnthropicCodeExecution20250825OutputFile]
     public let stdout: String
     public let stderr: String
-    public let returnCode: Double
+    public let returnCode: Int
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -72,7 +72,7 @@ public struct AnthropicCodeExecution20250825BashResult: Codable, Equatable, Send
         content = try container.decode([AnthropicCodeExecution20250825OutputFile].self, forKey: .content)
         stdout = try container.decode(String.self, forKey: .stdout)
         stderr = try container.decode(String.self, forKey: .stderr)
-        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        returnCode = try container.decode(Int.self, forKey: .returnCode)
         guard type == "bash_code_execution_result", content.allSatisfy({ $0.type == "bash_code_execution_output" }) else {
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected bash code execution result and files")
         }
@@ -102,9 +102,9 @@ public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equat
     public let type: String
     public let content: String
     public let fileType: String
-    public let numLines: Double?
-    public let startLine: Double?
-    public let totalLines: Double?
+    public let numLines: Int?
+    public let startLine: Int?
+    public let totalLines: Int?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -143,9 +143,9 @@ public struct AnthropicCodeExecution20250825TextEditorViewResult: Codable, Equat
             )
         }
 
-        numLines = try container.decodeIfPresent(Double.self, forKey: .numLines)
-        startLine = try container.decodeIfPresent(Double.self, forKey: .startLine)
-        totalLines = try container.decodeIfPresent(Double.self, forKey: .totalLines)
+        numLines = try container.decodeIfPresent(Int.self, forKey: .numLines)
+        startLine = try container.decodeIfPresent(Int.self, forKey: .startLine)
+        totalLines = try container.decodeIfPresent(Int.self, forKey: .totalLines)
     }
 }
 
@@ -171,10 +171,10 @@ public struct AnthropicCodeExecution20250825TextEditorCreateResult: Codable, Equ
 public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable, Equatable, Sendable {
     public let type: String
     public let lines: [String]?
-    public let newLines: Double?
-    public let newStart: Double?
-    public let oldLines: Double?
-    public let oldStart: Double?
+    public let newLines: Int?
+    public let newStart: Int?
+    public let oldLines: Int?
+    public let oldStart: Int?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -224,10 +224,10 @@ public struct AnthropicCodeExecution20250825TextEditorStrReplaceResult: Codable,
         }
 
         lines = try container.decodeIfPresent([String].self, forKey: .lines)
-        newLines = try container.decodeIfPresent(Double.self, forKey: .newLines)
-        newStart = try container.decodeIfPresent(Double.self, forKey: .newStart)
-        oldLines = try container.decodeIfPresent(Double.self, forKey: .oldLines)
-        oldStart = try container.decodeIfPresent(Double.self, forKey: .oldStart)
+        newLines = try container.decodeIfPresent(Int.self, forKey: .newLines)
+        newStart = try container.decodeIfPresent(Int.self, forKey: .newStart)
+        oldLines = try container.decodeIfPresent(Int.self, forKey: .oldLines)
+        oldStart = try container.decodeIfPresent(Int.self, forKey: .oldStart)
     }
 }
 
@@ -304,7 +304,7 @@ private let anthropicCodeExecution20250825OutputBranches: [JSONValue] = [
                 "type": .object(["const": .string("code_execution_result")]),
                 "stdout": .object(["type": .string("string")]),
                 "stderr": .object(["type": .string("string")]),
-                "return_code": .object(["type": .string("number")]),
+                "return_code": .object(["type": .string("integer")]),
                 "content": .object([
                     "type": .string("array"),
                     "items": .object([
@@ -340,7 +340,7 @@ private let anthropicCodeExecution20250825OutputBranches: [JSONValue] = [
                 ]),
                 "stdout": .object(["type": .string("string")]),
                 "stderr": .object(["type": .string("string")]),
-                "return_code": .object(["type": .string("number")]),
+                "return_code": .object(["type": .string("integer")]),
             ]),
             "required": .array([
                 .string("type"),
@@ -378,9 +378,9 @@ private let anthropicCodeExecution20250825OutputBranches: [JSONValue] = [
                 "type": .object(["const": .string("text_editor_code_execution_view_result")]),
                 "content": .object(["type": .string("string")]),
                 "file_type": .object(["type": .string("string")]),
-                "num_lines": .object(["type": .array([.string("number"), .string("null")])]),
-                "start_line": .object(["type": .array([.string("number"), .string("null")])]),
-                "total_lines": .object(["type": .array([.string("number"), .string("null")])]),
+                "num_lines": .object(["type": .array([.string("integer"), .string("null")])]),
+                "start_line": .object(["type": .array([.string("integer"), .string("null")])]),
+                "total_lines": .object(["type": .array([.string("integer"), .string("null")])]),
             ]),
             "required": .array([
                 .string("type"),
@@ -411,10 +411,10 @@ private let anthropicCodeExecution20250825OutputBranches: [JSONValue] = [
                     "type": .array([.string("array"), .string("null")]),
                     "items": .object(["type": .string("string")]),
                 ]),
-                "new_lines": .object(["type": .array([.string("number"), .string("null")])]),
-                "new_start": .object(["type": .array([.string("number"), .string("null")])]),
-                "old_lines": .object(["type": .array([.string("number"), .string("null")])]),
-                "old_start": .object(["type": .array([.string("number"), .string("null")])]),
+                "new_lines": .object(["type": .array([.string("integer"), .string("null")])]),
+                "new_start": .object(["type": .array([.string("integer"), .string("null")])]),
+                "old_lines": .object(["type": .array([.string("integer"), .string("null")])]),
+                "old_start": .object(["type": .array([.string("integer"), .string("null")])]),
             ]),
             "required": .array([
                 .string("type"),
@@ -526,7 +526,7 @@ private let anthropicCodeExecution20260120OutputJSONSchema: JSONValue = .object(
                 "type": .object(["const": .string("encrypted_code_execution_result")]),
                 "encrypted_stdout": .object(["type": .string("string")]),
                 "stderr": .object(["type": .string("string")]),
-                "return_code": .object(["type": .string("number")]),
+                "return_code": .object(["type": .string("integer")]),
                 "content": .object([
                     "type": .string("array"),
                     "items": .object([

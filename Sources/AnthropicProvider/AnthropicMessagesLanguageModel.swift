@@ -877,14 +877,14 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                 args.removeValue(forKey: "top_p")
             }
 
-            args["max_tokens"] = .number(Double(maxTokens) + (thinkingBudget ?? 0))
+            args["max_tokens"] = .number(Double(maxTokens) + Double(thinkingBudget ?? 0))
         }
 
         let binding = anthropicOptions?.thinking?.blockBinding
         if isThinking || thinkingMode == .disabled || binding != nil {
             var thinking: [String: JSONValue] = [:]
             if let thinkingMode { thinking["type"] = .string(thinkingMode.rawValue) }
-            if let thinkingBudget { thinking["budget_tokens"] = .number(thinkingBudget) }
+            if let thinkingBudget { thinking["budget_tokens"] = .number(Double(thinkingBudget)) }
             if thinkingMode == .adaptive, let display = anthropicOptions?.thinking?.display {
                 thinking["display"] = .string(display.rawValue)
                 if display == .updates { betas.insert("thinking-display-updates-2026-08-18") }
@@ -906,7 +906,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                     .unsupported(
                         feature: "maxOutputTokens",
                         details:
-                            "\(Int(rawMaxTokensValue)) (maxOutputTokens + thinkingBudget) is greater than \(modelIdentifier.rawValue) \(capabilities.maxOutputTokens) max output tokens. The max output tokens have been limited to \(capabilities.maxOutputTokens)."
+                            "\(Int(exactly: rawMaxTokensValue).map(String.init) ?? String(rawMaxTokensValue)) (maxOutputTokens + thinkingBudget) is greater than \(modelIdentifier.rawValue) \(capabilities.maxOutputTokens) max output tokens. The max output tokens have been limited to \(capabilities.maxOutputTokens)."
                     )
                 )
             }
@@ -1092,19 +1092,19 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                     if let trigger = settings.trigger {
                         payload["trigger"] = .object([
                             "type": .string(trigger.type.rawValue),
-                            "value": .number(trigger.value),
+                            "value": .number(Double(trigger.value)),
                         ])
                     }
                     if let keep = settings.keep {
                         payload["keep"] = .object([
                             "type": .string(keep.type),
-                            "value": .number(keep.value),
+                            "value": .number(Double(keep.value)),
                         ])
                     }
                     if let clearAtLeast = settings.clearAtLeast {
                         payload["clear_at_least"] = .object([
                             "type": .string(clearAtLeast.type),
-                            "value": .number(clearAtLeast.value),
+                            "value": .number(Double(clearAtLeast.value)),
                         ])
                     }
                     if let clearToolInputs = settings.clearToolInputs {
@@ -1126,7 +1126,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                         case .thinkingTurns(let value):
                             payload["keep"] = .object([
                                 "type": .string("thinking_turns"),
-                                "value": .number(value),
+                                "value": .number(Double(value)),
                             ])
                         }
                     }
@@ -1139,7 +1139,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                     if let trigger = settings.trigger {
                         payload["trigger"] = .object([
                             "type": .string(trigger.type),
-                            "value": .number(trigger.value),
+                            "value": .number(Double(trigger.value)),
                         ])
                     }
                     if let pause = settings.pauseAfterCompaction {
@@ -1315,7 +1315,7 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
         }
 
         return AnthropicReasoningConfig(
-            thinking: AnthropicThinkingOptions(type: .enabled, budgetTokens: Double(budgetTokens)),
+            thinking: AnthropicThinkingOptions(type: .enabled, budgetTokens: budgetTokens),
             effort: nil
         )
     }
@@ -1727,11 +1727,23 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
         _ usage: AnthropicUsage,
         rawUsage: [String: JSONValue]? = nil
     ) -> LanguageModelV4Usage {
-        let cacheCreationTokens = usage.cacheCreationInputTokens ?? 0
-        let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+        let raw = rawUsage ?? anthropicUsageMetadata(usage)
+        func count(_ key: String, _ value: Int?) -> Int? {
+            if case .number(let number)? = raw[key], Int(exactly: number) == nil { return nil }
+            return value ?? 0
+        }
+        func sum(_ values: [Int?]) -> Int? {
+            values.reduce(Optional(0)) { total, value in
+                guard let total, let value else { return nil }
+                let result = total.addingReportingOverflow(value)
+                return result.overflow ? nil : result.partialValue
+            }
+        }
+        let cacheCreationTokens = count("cache_creation_input_tokens", usage.cacheCreationInputTokens)
+        let cacheReadTokens = count("cache_read_input_tokens", usage.cacheReadInputTokens)
 
-        var inputTokens = usage.inputTokens ?? 0
-        var outputTokens = usage.outputTokens ?? 0
+        var inputTokens = count("input_tokens", usage.inputTokens)
+        var outputTokens = count("output_tokens", usage.outputTokens)
 
         let servedByFallback = usage.iterations?.contains {
             $0.type == "fallback_message"
@@ -1744,21 +1756,26 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
                 $0.type == "compaction" || $0.type == "message"
             }
             if executorIterations.isEmpty == false {
-                inputTokens = executorIterations.reduce(0) { $0 + $1.inputTokens }
-                outputTokens = executorIterations.reduce(0) { $0 + $1.outputTokens }
+                inputTokens = sum(executorIterations.map(\.inputTokens))
+                outputTokens = sum(executorIterations.map(\.outputTokens))
             }
         }
 
         return LanguageModelV4Usage(
             inputTokens: .init(
-                total: inputTokens + cacheCreationTokens + cacheReadTokens,
+                total: sum([inputTokens, cacheCreationTokens, cacheReadTokens]),
                 noCache: inputTokens,
                 cacheRead: cacheReadTokens,
                 cacheWrite: cacheCreationTokens
             ),
             outputTokens: .init(
                 total: outputTokens,
-                text: usage.outputTokensDetails?.thinkingTokens.map { outputTokens - $0 },
+                text: outputTokens.flatMap { total in
+                    usage.outputTokensDetails?.thinkingTokens.flatMap { thinking in
+                        let result = total.subtractingReportingOverflow(thinking)
+                        return result.overflow ? nil : result.partialValue
+                    }
+                },
                 reasoning: usage.outputTokensDetails?.thinkingTokens
             ),
             raw: .object(rawUsage ?? anthropicUsageMetadata(usage))
@@ -2406,8 +2423,8 @@ public final class AnthropicMessagesLanguageModel: LanguageModelV4 {
         return .array(iterations.map { iteration in
             var metadata: [String: JSONValue] = [
                 "type": .string(iteration.type),
-                "inputTokens": .number(Double(iteration.inputTokens)),
-                "outputTokens": .number(Double(iteration.outputTokens)),
+                "inputTokens": iteration.inputTokens.map { .number(Double($0)) } ?? .null,
+                "outputTokens": iteration.outputTokens.map { .number(Double($0)) } ?? .null,
             ]
             if let model = iteration.model {
                 metadata["model"] = .string(model)

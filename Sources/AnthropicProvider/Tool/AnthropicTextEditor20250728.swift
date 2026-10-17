@@ -10,15 +10,15 @@ import AISDKProviderUtils
 public struct AnthropicTextEditor20250728Args: Codable, Sendable, Equatable {
     /// Optional parameter to control truncation when viewing large files.
     /// Only compatible with text_editor_20250728 and later versions.
-    public var maxCharacters: Double?
+    public var maxCharacters: Int?
 
-    public init(maxCharacters: Double? = nil) {
+    public init(maxCharacters: Int? = nil) {
         self.maxCharacters = maxCharacters
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        maxCharacters = container.contains(.maxCharacters) ? try container.decode(Double.self, forKey: .maxCharacters) : nil
+        maxCharacters = container.contains(.maxCharacters) ? try container.decode(Int.self, forKey: .maxCharacters) : nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -33,7 +33,7 @@ public let anthropicTextEditor20250728ArgsSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "maxCharacters": .object([
-                    "type": .string("number")
+                    "type": .string("integer")
                 ])
             ]),
             "additionalProperties": .bool(false)
@@ -116,7 +116,7 @@ public func anthropicTextEditor20250728(
 ) -> Tool {
     var options = options
     if let maxCharacters = args.maxCharacters {
-        options.args["maxCharacters"] = .number(maxCharacters)
+        options.args["maxCharacters"] = .number(Double(maxCharacters))
     }
     return anthropicTextEditor20250728Factory(options)
 }

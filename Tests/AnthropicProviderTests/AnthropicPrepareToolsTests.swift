@@ -36,7 +36,7 @@ struct AnthropicPrepareToolsBasicTests {
     func latestToolDefinitions() async throws {
         let tools = [
             anthropicTools.computerToolset20260801(.init(configs: ["zoom": .init(enabled: false, deferLoading: true)])),
-            anthropicTools.webFetch20260318(.init(maxUses: 2.5, citations: .init(enabled: false), useCache: false, responseInclusion: .excluded)),
+            anthropicTools.webFetch20260318(.init(maxUses: 2, citations: .init(enabled: false), useCache: false, responseInclusion: .excluded)),
             anthropicTools.webSearch20260318(.init(userLocation: .init(city: "Paris"), responseInclusion: .full)),
             anthropicTools.advisor20260301(.init(model: "advisor", maxTokens: 2048)),
         ]
@@ -46,7 +46,7 @@ struct AnthropicPrepareToolsBasicTests {
         let result = try await prepareAnthropicTools(tools: definitions, toolChoice: nil, disableParallelToolUse: nil)
         #expect(result.tools == [
             .object(["type": .string("computer_toolset_20260801"), "configs": .object(["zoom": .object(["enabled": .bool(false), "defer_loading": .bool(true)])])]),
-            .object(["type": .string("web_fetch_20260318"), "name": .string("web_fetch"), "max_uses": .number(2.5), "citations": .object(["enabled": .bool(false)]), "use_cache": .bool(false), "response_inclusion": .string("excluded")]),
+            .object(["type": .string("web_fetch_20260318"), "name": .string("web_fetch"), "max_uses": .number(2), "citations": .object(["enabled": .bool(false)]), "use_cache": .bool(false), "response_inclusion": .string("excluded")]),
             .object(["type": .string("web_search_20260318"), "name": .string("web_search"), "user_location": .object(["type": .string("approximate"), "city": .string("Paris")]), "response_inclusion": .string("full")]),
             .object(["type": .string("advisor_20260301"), "name": .string("advisor"), "model": .string("advisor"), "max_tokens": .number(2048)]),
         ])

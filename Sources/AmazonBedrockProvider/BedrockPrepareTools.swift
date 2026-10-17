@@ -22,7 +22,7 @@ func prepareBedrockTools(
     toolChoice: LanguageModelV4ToolChoice?,
     modelId: String,
     modelFamily: BedrockChatModelSettings.ModelFamily? = nil,
-    reasoningBudgetTokens: Double? = nil,
+    reasoningBudgetTokens: Int? = nil,
     disableParallelToolUse: Bool? = nil,
     rejectsForcedToolUse: Bool = false
 ) async throws -> BedrockPreparedTools {

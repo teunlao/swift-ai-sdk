@@ -250,10 +250,18 @@ private func userFilePayload(_ part: LanguageModelV4FilePart, betas: inout Set<S
     if !isText && getTopLevelMediaType(part.mediaType) == "image" {
         return ["type": .string("image"), "source": try fileSource(part, text: false)]
     }
-    guard isText || part.mediaType == "application/pdf" || part.mediaType == "text/plain" else {
+    let mediaType: String
+    switch part.data {
+    case .data where getTopLevelMediaType(part.mediaType) == "application",
+         .base64 where getTopLevelMediaType(part.mediaType) == "application":
+        mediaType = try resolveFullMediaType(part: part)
+    default:
+        mediaType = part.mediaType
+    }
+    guard isText || mediaType == "application/pdf" || mediaType == "text/plain" else {
         throw UnsupportedFunctionalityError(functionality: "media type: \(part.mediaType)")
     }
-    if !isText && part.mediaType == "application/pdf" { betas.insert("pdfs-2024-09-25") }
+    if !isText && mediaType == "application/pdf" { betas.insert("pdfs-2024-09-25") }
     let options = try await parseProviderOptions(provider: "anthropic", providerOptions: part.providerOptions, schema: anthropicFilePartProviderOptionsSchema)
     var payload: [String: JSONValue] = [
         "type": .string("document"),

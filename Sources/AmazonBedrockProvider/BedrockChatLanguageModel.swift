@@ -244,8 +244,8 @@ public final class BedrockChatLanguageModel: LanguageModelV4 {
         if let value = options.stopSequences { inference["stopSequences"] = .array(value.map(JSONValue.string)) }
         if isAnthropic && thinkingEnabled {
             if thinkingType == .enabled, let budget = settings.reasoningConfig?.budgetTokens {
-                inference["maxTokens"] = .number(Double(options.maxOutputTokens ?? 4096) + budget)
-                additional["thinking"] = .object(["type": .string("enabled"), "budget_tokens": .number(budget)])
+                inference["maxTokens"] = .number(Double(options.maxOutputTokens ?? 4096) + Double(budget))
+                additional["thinking"] = .object(["type": .string("enabled"), "budget_tokens": .number(Double(budget))])
             } else if thinkingType == .adaptive {
                 var thinking: [String: JSONValue] = ["type": .string("adaptive")]
                 if let display = settings.reasoningConfig?.display { thinking["display"] = .string(display.rawValue) }
@@ -309,7 +309,7 @@ public final class BedrockChatLanguageModel: LanguageModelV4 {
                 config.type = config.type ?? .adaptive
                 config.maxReasoningEffort = config.maxReasoningEffort ?? portableEffort(reasoning, isNova: false, warnings: &warnings)
             } else {
-                let budget = config.budgetTokens ?? mapReasoningToProviderBudget(reasoning: reasoning, maxOutputTokens: capabilities.maxOutputTokens, maxReasoningBudget: capabilities.maxOutputTokens, warnings: &warnings).map(Double.init)
+                let budget = config.budgetTokens ?? mapReasoningToProviderBudget(reasoning: reasoning, maxOutputTokens: capabilities.maxOutputTokens, maxReasoningBudget: capabilities.maxOutputTokens, warnings: &warnings)
                 if let budget { config.type = config.type ?? .enabled; config.budgetTokens = budget }
             }
         } else if reasoning != .none {
@@ -373,10 +373,10 @@ private struct JsonObjectTextExtractor {
     private var escaped = false
     mutating func process(_ text: String) -> String {
         var result = ""
-        for character in text {
+        for character in text.unicodeScalars {
             if completed { break }
-            if !started { if character == "{" { started = true; depth = 1; result.append(character) }; continue }
-            result.append(character)
+            if !started { if character == "{" { started = true; depth = 1; result.unicodeScalars.append(character) }; continue }
+            result.unicodeScalars.append(character)
             if escaped { escaped = false; continue }
             if character == "\\" && inString { escaped = true; continue }
             if character == "\"" { inString.toggle(); continue }
@@ -422,8 +422,8 @@ private struct BedrockCacheDetail: Decodable, Sendable {
     }
 }
 private struct BedrockUsage: Codable, Sendable {
-    let inputTokens: Int
-    let outputTokens: Int
+    let inputTokens: Int?
+    let outputTokens: Int?
     let cacheReadInputTokens: Int?
     let cacheWriteInputTokens: Int?
     let cacheDetails: JSONValue?
@@ -432,19 +432,26 @@ private struct BedrockUsage: Codable, Sendable {
     init(from decoder: Decoder) throws {
         raw = try JSONValue(from: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-        outputTokens = try container.decode(Int.self, forKey: .outputTokens)
-        cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
-        cacheWriteInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheWriteInputTokens)
+        inputTokens = Int(exactly: try container.decode(Double.self, forKey: .inputTokens))
+        outputTokens = Int(exactly: try container.decode(Double.self, forKey: .outputTokens))
+        cacheReadInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheReadInputTokens).flatMap(Int.init(exactly:))
+        cacheWriteInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheWriteInputTokens).flatMap(Int.init(exactly:))
         cacheDetails = try container.decodeIfPresent([BedrockCacheDetail].self, forKey: .cacheDetails).map { .array($0.map(\.raw)) }
     }
     func encode(to encoder: Encoder) throws { try raw.encode(to: encoder) }
 }
 private func convertBedrockUsage(_ usage: BedrockUsage?) -> LanguageModelV4Usage {
     guard let usage else { return .init() }
-    let read = usage.cacheReadInputTokens ?? 0
-    let write = usage.cacheWriteInputTokens ?? 0
-    return .init(inputTokens: .init(total: usage.inputTokens + read + write, noCache: usage.inputTokens, cacheRead: read, cacheWrite: write), outputTokens: .init(total: usage.outputTokens, text: usage.outputTokens), raw: usage.raw)
+    let raw: [String: JSONValue]
+    if case .object(let object) = usage.raw { raw = object } else { raw = [:] }
+    let read = usage.cacheReadInputTokens ?? (raw["cacheReadInputTokens"] == nil || raw["cacheReadInputTokens"] == .null ? 0 : nil)
+    let write = usage.cacheWriteInputTokens ?? (raw["cacheWriteInputTokens"] == nil || raw["cacheWriteInputTokens"] == .null ? 0 : nil)
+    let total = [usage.inputTokens, read, write].reduce(Optional(0)) { total, count in
+        guard let total, let count else { return nil }
+        let sum = total.addingReportingOverflow(count)
+        return sum.overflow ? nil : sum.partialValue
+    }
+    return .init(inputTokens: .init(total: total, noCache: usage.inputTokens, cacheRead: read, cacheWrite: write), outputTokens: .init(total: usage.outputTokens, text: usage.outputTokens), raw: usage.raw)
 }
 private func metadataPayload(usage: BedrockUsage?, trace: JSONValue?, performanceConfig: BedrockPerformanceConfig?, serviceTier: BedrockServiceTierMetadata?, stream: Bool = false) -> [String: JSONValue]? {
     var payload: [String: JSONValue] = [:]

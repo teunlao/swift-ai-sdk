@@ -19,11 +19,11 @@ public enum BedrockServiceTier: String, Sendable, Codable { case reserved, prior
 
 public struct BedrockReasoningConfig: Sendable, Equatable, Codable {
     public var type: BedrockReasoningType?
-    public var budgetTokens: Double?
+    public var budgetTokens: Int?
     public var maxReasoningEffort: BedrockMaxReasoningEffort?
     public var display: BedrockThinkingDisplay?
 
-    public init(type: BedrockReasoningType? = nil, budgetTokens: Double? = nil, maxReasoningEffort: BedrockMaxReasoningEffort? = nil, display: BedrockThinkingDisplay? = nil) {
+    public init(type: BedrockReasoningType? = nil, budgetTokens: Int? = nil, maxReasoningEffort: BedrockMaxReasoningEffort? = nil, display: BedrockThinkingDisplay? = nil) {
         self.type = type
         self.budgetTokens = budgetTokens
         self.maxReasoningEffort = maxReasoningEffort
@@ -108,7 +108,7 @@ func parseBedrockOptions<T: Sendable>(providerOptions: SharedV4ProviderOptions?,
     try await parseProviderOptions(provider: providerOptions?["amazonBedrock"] != nil ? "amazonBedrock" : "bedrock", providerOptions: providerOptions, schema: schema)
 }
 
-func isBedrockAnthropicModel(_ modelId: String, modelFamily: BedrockChatModelSettings.ModelFamily? = nil, reasoningBudgetTokens: Double? = nil) -> Bool {
+func isBedrockAnthropicModel(_ modelId: String, modelFamily: BedrockChatModelSettings.ModelFamily? = nil, reasoningBudgetTokens: Int? = nil) -> Bool {
     modelFamily == .anthropic || modelId.contains("anthropic") || (modelId.contains(":application-inference-profile/") && reasoningBudgetTokens != nil)
 }
 

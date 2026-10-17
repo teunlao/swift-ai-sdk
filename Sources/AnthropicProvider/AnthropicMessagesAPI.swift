@@ -106,7 +106,7 @@ public struct AnthropicMessagesResponse: Codable, Sendable {
         inputTransformations = try container.decodeIfPresent([AnthropicInputTransformation].self, forKey: .inputTransformations)
         safeguardResults = try container.decodeIfPresent([AnthropicSafeguardResult].self, forKey: .safeguardResults)
         usage = try container.decode(AnthropicUsage.self, forKey: .usage)
-        guard usage.inputTokens != nil && usage.outputTokens != nil else {
+        guard case .number? = usage.raw?["input_tokens"], case .number? = usage.raw?["output_tokens"] else {
             throw DecodingError.dataCorruptedError(forKey: .usage, in: container, debugDescription: "Missing token usage")
         }
         self.container = try container.decodeIfPresent(AnthropicContainer.self, forKey: .container)
@@ -267,13 +267,19 @@ public struct AnthropicUsage: Codable, Sendable {
             case ephemeral5mInputTokens = "ephemeral_5m_input_tokens"
             case ephemeral1hInputTokens = "ephemeral_1h_input_tokens"
         }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            ephemeral5mInputTokens = try container.decodeIfPresent(Double.self, forKey: .ephemeral5mInputTokens).flatMap(Int.init(exactly:))
+            ephemeral1hInputTokens = try container.decodeIfPresent(Double.self, forKey: .ephemeral1hInputTokens).flatMap(Int.init(exactly:))
+        }
     }
 
     public struct Iteration: Codable, Sendable {
         public let type: String
         public let model: String?
-        public let inputTokens: Int
-        public let outputTokens: Int
+        public let inputTokens: Int?
+        public let outputTokens: Int?
         public let cacheCreationInputTokens: Int?
         public let cacheReadInputTokens: Int?
 
@@ -293,16 +299,21 @@ public struct AnthropicUsage: Codable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid usage iteration")
             }
             model = try container.decodeIfPresent(String.self, forKey: .model)
-            inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-            outputTokens = try container.decode(Int.self, forKey: .outputTokens)
-            cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens)
-            cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
+            inputTokens = Int(exactly: try container.decode(Double.self, forKey: .inputTokens))
+            outputTokens = Int(exactly: try container.decode(Double.self, forKey: .outputTokens))
+            cacheCreationInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheCreationInputTokens).flatMap(Int.init(exactly:))
+            cacheReadInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheReadInputTokens).flatMap(Int.init(exactly:))
         }
     }
 
     public struct OutputTokensDetails: Codable, Sendable {
         public let thinkingTokens: Int?
         enum CodingKeys: String, CodingKey { case thinkingTokens = "thinking_tokens" }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            thinkingTokens = try container.decodeIfPresent(Double.self, forKey: .thinkingTokens).flatMap(Int.init(exactly:))
+        }
     }
 
     public let inputTokens: Int?
@@ -340,11 +351,11 @@ public struct AnthropicUsage: Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        inputTokens = try container.decodeIfPresent(Int.self, forKey: .inputTokens)
-        outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens)
+        inputTokens = try container.decodeIfPresent(Double.self, forKey: .inputTokens).flatMap(Int.init(exactly:))
+        outputTokens = try container.decodeIfPresent(Double.self, forKey: .outputTokens).flatMap(Int.init(exactly:))
         outputTokensDetails = try container.decodeIfPresent(OutputTokensDetails.self, forKey: .outputTokensDetails)
-        cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens)
-        cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
+        cacheCreationInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheCreationInputTokens).flatMap(Int.init(exactly:))
+        cacheReadInputTokens = try container.decodeIfPresent(Double.self, forKey: .cacheReadInputTokens).flatMap(Int.init(exactly:))
         cacheCreation = try container.decodeIfPresent(CacheCreation.self, forKey: .cacheCreation)
         iterations = try container.decodeIfPresent([Iteration].self, forKey: .iterations)
         raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
@@ -1144,7 +1155,7 @@ public struct MessageStart: Codable, Sendable {
                 }
             }
             let value = try container.decode(AnthropicUsage.self, forKey: .usage)
-            guard value.inputTokens != nil else {
+            guard case .number? = value.raw?["input_tokens"] else {
                 throw DecodingError.dataCorruptedError(forKey: .usage, in: container, debugDescription: "Missing input token usage")
             }
             usage = value
@@ -1408,7 +1419,7 @@ public struct MessageDelta: Codable, Sendable {
         type = try container.decode(String.self, forKey: .type)
         delta = try container.decode(Delta.self, forKey: .delta)
         let value = try container.decode(AnthropicUsage.self, forKey: .usage)
-        guard value.outputTokens != nil else {
+        guard case .number? = value.raw?["output_tokens"] else {
             throw DecodingError.dataCorruptedError(forKey: .usage, in: container, debugDescription: "Missing output token usage")
         }
         usage = value

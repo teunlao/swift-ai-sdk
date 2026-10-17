@@ -98,7 +98,7 @@ private let computerToolsetInputSchema = FlexibleSchema(jsonSchema(.object([
         "duration": .object(["type": .string("number")]),
         "region": .object(["type": .string("array"), "items": .object(["type": .string("integer")]), "minItems": .number(4), "maxItems": .number(4)]),
         "repeat": .object(["type": .string("integer")]),
-        "scroll_amount": .object(["type": .string("number")]),
+        "scroll_amount": .object(["type": .string("integer")]),
         "scroll_direction": .object(["type": .string("string"), "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")])]),
         "start_coordinate": .object(["type": .string("array"), "items": .object(["type": .string("integer")]), "minItems": .number(2), "maxItems": .number(2)]),
         "text": .object(["type": .string("string")]),

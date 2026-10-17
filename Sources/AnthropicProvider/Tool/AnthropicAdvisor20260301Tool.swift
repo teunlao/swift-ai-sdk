@@ -23,13 +23,13 @@ public struct AnthropicAdvisor20260301Options: Codable, Sendable, Equatable {
     }
 
     public var model: String
-    public var maxUses: Double?
+    public var maxUses: Int?
     public var maxTokens: Int?
     public var caching: Caching?
 
     public init(
         model: String,
-        maxUses: Double? = nil,
+        maxUses: Int? = nil,
         maxTokens: Int? = nil,
         caching: Caching? = nil
     ) {
@@ -42,7 +42,7 @@ public struct AnthropicAdvisor20260301Options: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         model = try container.decode(String.self, forKey: .model)
-        maxUses = container.contains(.maxUses) ? try container.decode(Double.self, forKey: .maxUses) : nil
+        maxUses = container.contains(.maxUses) ? try container.decode(Int.self, forKey: .maxUses) : nil
         maxTokens = container.contains(.maxTokens) ? try container.decode(Int.self, forKey: .maxTokens) : nil
         caching = container.contains(.caching) ? try container.decode(Caching.self, forKey: .caching) : nil
         if let maxTokens, maxTokens < 1024 {
@@ -62,7 +62,7 @@ public let anthropicAdvisor20260301ArgsSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "model": .object(["type": .string("string")]),
-                "maxUses": .object(["type": .string("number")]),
+                "maxUses": .object(["type": .string("integer")]),
                 "maxTokens": .object(["type": .string("integer"), "minimum": .number(1024)]),
                 "caching": .object([
                     "type": .string("object"),

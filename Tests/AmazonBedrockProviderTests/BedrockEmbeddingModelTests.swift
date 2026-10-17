@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import AISDKProvider
+import AISDKProviderUtils
 import AmazonBedrockProvider
 
 @Suite("Bedrock embedding V4 contracts")
@@ -43,6 +44,27 @@ struct BedrockEmbeddingModelTests {
         #expect(result.embeddings == [[0.5]])
         #expect(result.usage?.tokens == 4)
         #expect(try await server.requestBody()["singleEmbeddingParams"] == .object(["embeddingPurpose": .string("GENERIC_INDEX"), "embeddingDimension": .number(384), "text": .object(["truncationMode": .string("END"), "value": .string("value")])]))
+    }
+
+    @Test("Nova usage falls back to the response header when the body omits it")
+    func novaHeaderUsage() async throws {
+        let server = try BedrockTestServer(json: .object(["embeddings": .array([.object(["embeddingType": .string("TEXT"), "embedding": .array([.number(0.5)])])])]), headers: ["x-amzn-bedrock-input-token-count": "12"])
+        let result = try await server.provider().embedding(modelId: "amazon.nova-2-multimodal-embeddings-v1:0").doEmbed(options: .init(values: ["text"]))
+        #expect(result.embeddings == [[0.5]])
+        #expect(result.usage?.tokens == 12)
+    }
+
+    @Test("Invalid body token counts remain unknown instead of using the header", arguments: [false, true])
+    func unknownUsage(_ nova: Bool) async throws {
+        let raw: JSONValue = nova
+            ? .object(["embeddings": .array([.object(["embeddingType": .string("TEXT"), "embedding": .array([.number(0.5)])])]), "inputTokenCount": .number(1e100)])
+            : .object(["embedding": .array([.number(0.5)]), "inputTextTokenCount": .number(1.5)])
+        let server = try BedrockTestServer(json: raw, headers: ["x-amzn-bedrock-input-token-count": "12"])
+        let model = server.provider().embedding(modelId: nova ? "amazon.nova-2-multimodal-embeddings-v1:0" : .amazonTitanEmbedTextV2)
+        let result = try await model.doEmbed(options: .init(values: ["text"]))
+        #expect(result.embeddings == [[0.5]])
+        #expect(result.usage == nil)
+        #expect(try jsonValue(from: #require(result.response?.body)) == raw)
     }
 
     @Test("Embedding limits and malformed response shapes fail at the model boundary")

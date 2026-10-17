@@ -27,12 +27,12 @@ private func cacheControlJSON(from cacheControl: AnthropicCacheControl?) -> JSON
     return payload.isEmpty ? nil : .object(payload)
 }
 
-private func numberValue(_ value: JSONValue?) -> Double? {
+private func integerValue(_ value: JSONValue?) throws -> Int? {
     guard let value else { return nil }
-    if case .number(let number) = value {
-        return number
+    guard case .number(let number) = value, let integer = Int(exactly: number) else {
+        throw TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "anthropic", issues: "Computer display values must be representable integers"))
     }
-    return nil
+    return integer
 }
 
 private func stringValue(_ value: JSONValue?) -> String? {
@@ -206,31 +206,31 @@ public func prepareAnthropicTools(
 
             case "anthropic.computer_20250124":
                 betas.insert("computer-use-2025-01-24")
-                let width = numberValue(providerTool.args["displayWidthPx"])
-                let height = numberValue(providerTool.args["displayHeightPx"])
+                let width = try integerValue(providerTool.args["displayWidthPx"])
+                let height = try integerValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20250124")
                 ]
-                if let width { payload["display_width_px"] = .number(width) }
-                if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
-                    payload["display_number"] = .number(displayNumber)
+                if let width { payload["display_width_px"] = .number(Double(width)) }
+                if let height { payload["display_height_px"] = .number(Double(height)) }
+                if let displayNumber = try integerValue(providerTool.args["displayNumber"]) {
+                    payload["display_number"] = .number(Double(displayNumber))
                 }
                 anthropicTools.append(.object(payload))
 
             case "anthropic.computer_20251124":
                 betas.insert("computer-use-2025-11-24")
-                let width = numberValue(providerTool.args["displayWidthPx"])
-                let height = numberValue(providerTool.args["displayHeightPx"])
+                let width = try integerValue(providerTool.args["displayWidthPx"])
+                let height = try integerValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20251124")
                 ]
-                if let width { payload["display_width_px"] = .number(width) }
-                if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
-                    payload["display_number"] = .number(displayNumber)
+                if let width { payload["display_width_px"] = .number(Double(width)) }
+                if let height { payload["display_height_px"] = .number(Double(height)) }
+                if let displayNumber = try integerValue(providerTool.args["displayNumber"]) {
+                    payload["display_number"] = .number(Double(displayNumber))
                 }
                 if let enableZoom = boolValue(providerTool.args["enableZoom"]) {
                     payload["enable_zoom"] = .bool(enableZoom)
@@ -239,16 +239,16 @@ public func prepareAnthropicTools(
 
             case "anthropic.computer_20241022":
                 betas.insert("computer-use-2024-10-22")
-                let width = numberValue(providerTool.args["displayWidthPx"])
-                let height = numberValue(providerTool.args["displayHeightPx"])
+                let width = try integerValue(providerTool.args["displayWidthPx"])
+                let height = try integerValue(providerTool.args["displayHeightPx"])
                 var payload: [String: JSONValue] = [
                     "name": .string("computer"),
                     "type": .string("computer_20241022")
                 ]
-                if let width { payload["display_width_px"] = .number(width) }
-                if let height { payload["display_height_px"] = .number(height) }
-                if let displayNumber = numberValue(providerTool.args["displayNumber"]) {
-                    payload["display_number"] = .number(displayNumber)
+                if let width { payload["display_width_px"] = .number(Double(width)) }
+                if let height { payload["display_height_px"] = .number(Double(height)) }
+                if let displayNumber = try integerValue(providerTool.args["displayNumber"]) {
+                    payload["display_number"] = .number(Double(displayNumber))
                 }
                 anthropicTools.append(.object(payload))
 
@@ -368,11 +368,11 @@ public func prepareAnthropicTools(
                     "type": .string("web_fetch_20260318"),
                     "name": .string("web_fetch"),
                 ]
-                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(maxUses) }
+                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(Double(maxUses)) }
                 if let domains = parsed.allowedDomains { payload["allowed_domains"] = .array(domains.map(JSONValue.string)) }
                 if let domains = parsed.blockedDomains { payload["blocked_domains"] = .array(domains.map(JSONValue.string)) }
                 if let citations = parsed.citations { payload["citations"] = .object(["enabled": .bool(citations.enabled)]) }
-                if let tokens = parsed.maxContentTokens { payload["max_content_tokens"] = .number(tokens) }
+                if let tokens = parsed.maxContentTokens { payload["max_content_tokens"] = .number(Double(tokens)) }
                 if let useCache = parsed.useCache { payload["use_cache"] = .bool(useCache) }
                 if let inclusion = parsed.responseInclusion { payload["response_inclusion"] = .string(inclusion.rawValue) }
                 anthropicTools.append(.object(payload))
@@ -463,7 +463,7 @@ public func prepareAnthropicTools(
                     "type": .string("web_search_20260318"),
                     "name": .string("web_search"),
                 ]
-                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(maxUses) }
+                if let maxUses = parsed.maxUses { payload["max_uses"] = .number(Double(maxUses)) }
                 if let domains = parsed.allowedDomains { payload["allowed_domains"] = .array(domains.map(JSONValue.string)) }
                 if let domains = parsed.blockedDomains { payload["blocked_domains"] = .array(domains.map(JSONValue.string)) }
                 if let location = parsed.userLocation {

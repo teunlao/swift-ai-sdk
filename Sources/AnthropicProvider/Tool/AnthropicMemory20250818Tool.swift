@@ -14,7 +14,7 @@ private let anthropicMemory20250818InputSchema = FlexibleSchema(
                         "path": .object(["type": .string("string")]),
                         "view_range": .object([
                             "type": .string("array"),
-                            "items": .object(["type": .string("number")]),
+                            "items": .object(["type": .string("integer")]),
                             "minItems": .number(2),
                             "maxItems": .number(2),
                         ]),
@@ -53,7 +53,7 @@ private let anthropicMemory20250818InputSchema = FlexibleSchema(
                     "properties": .object([
                         "command": .object(["const": .string("insert")]),
                         "path": .object(["type": .string("string")]),
-                        "insert_line": .object(["type": .string("number")]),
+                        "insert_line": .object(["type": .string("integer")]),
                         "insert_text": .object(["type": .string("string")]),
                     ]),
                     "required": .array([

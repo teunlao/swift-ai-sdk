@@ -6,6 +6,71 @@ import AmazonBedrockProvider
 
 @Suite("BedrockChatLanguageModel")
 struct BedrockChatLanguageModelTests {
+    @Test("Instruction JSON extraction preserves combining marks and braces across stream deltas")
+    func unicodeJSON() async throws {
+        let json = "{\"x\":\"\u{0301}}tail\"}"
+        let response = try BedrockTestServer(json: .object([
+            "output": .object(["message": .object(["role": .string("assistant"), "content": .array([.object(["text": .string("prefix " + json + " suffix")])])])]),
+            "stopReason": .string("end_turn"), "usage": .object(["inputTokens": .number(1), "outputTokens": .number(1), "totalTokens": .number(2)])
+        ]))
+        let options = LanguageModelV4CallOptions(prompt: [], responseFormat: .json(schema: .object(["type": .string("object")]), name: nil, description: nil))
+        let result = try await response.provider().chat(modelId: "anthropic.claude-sonnet-5-5").doGenerate(options: options)
+        #expect(result.content == [.text(.init(text: json))])
+        for deltas in [["prefix " + json + " suffix"], ["prefix {\"x\":\"", "\u{0301}}tail\"} suffix"]] {
+            let frames = try deltas.map { try BedrockTestEventStream.jsonMessage(eventType: "contentBlockDelta", payload: ["contentBlockIndex": 0, "delta": ["text": $0]]) }
+            let server = BedrockTestServer(data: frames.reduce(into: Data()) { $0.append($1) }, headers: ["content-type": "application/vnd.amazon.eventstream"])
+            let stream = try await server.provider().chat(modelId: "anthropic.claude-sonnet-5-5").doStream(options: options)
+            let parts = try await convertReadableStreamToArray(stream.stream)
+            let text = parts.compactMap { part -> String? in
+                if case .textDelta(_, let delta, _) = part { return delta }
+                return nil
+            }.joined()
+            #expect(text == json)
+        }
+    }
+
+    @Test("Invalid usage numbers remain raw in generated and streamed responses", arguments: [false, true])
+    func unknownUsage(_ streaming: Bool) async throws {
+        let raw: JSONValue = .object(["inputTokens": .number(1.5), "outputTokens": .number(1e100), "totalTokens": .number(1e100), "cacheReadInputTokens": .number(0.5), "cacheWriteInputTokens": .number(1e100)])
+        let usage: LanguageModelV4Usage
+        if streaming {
+            let frame = try BedrockTestEventStream.jsonMessage(eventType: "metadata", payload: ["usage": ["inputTokens": 1.5, "outputTokens": 1e100, "totalTokens": 1e100, "cacheReadInputTokens": 0.5, "cacheWriteInputTokens": 1e100]])
+            let server = BedrockTestServer(data: frame, headers: ["content-type": "application/vnd.amazon.eventstream"])
+            let result = try await server.provider().chat(modelId: "model").doStream(options: .init(prompt: []))
+            let parts = try await convertReadableStreamToArray(result.stream)
+            guard case .finish(_, let value, _)? = parts.last else { Issue.record("Expected finish"); return }
+            usage = value
+        } else {
+            let server = try BedrockTestServer(json: .object(["output": .object(["message": .object(["role": .string("assistant"), "content": .array([])])]), "stopReason": .string("end_turn"), "usage": raw]))
+            usage = try await server.provider().chat(modelId: "model").doGenerate(options: .init(prompt: [])).usage
+        }
+        #expect(usage.inputTokens.total == nil)
+        #expect(usage.inputTokens.noCache == nil)
+        #expect(usage.inputTokens.cacheRead == nil)
+        #expect(usage.inputTokens.cacheWrite == nil)
+        #expect(usage.outputTokens.total == nil)
+        #expect(usage.raw == raw)
+    }
+
+    @Test("Token budgets reject fractional and unrepresentable values", arguments: [1.5, 1e100])
+    func invalidThinkingBudget(_ budget: Double) async throws {
+        let server = try BedrockTestServer()
+        await #expect(throws: InvalidArgumentError.self) {
+            _ = try await server.provider().chat(modelId: "anthropic.claude-3-haiku").doGenerate(options: .init(prompt: [], providerOptions: ["amazonBedrock": ["reasoningConfig": .object(["type": .string("enabled"), "budgetTokens": .number(budget)])]]))
+        }
+    }
+
+    @Test("Usage sums exceeding Int remain unknown")
+    func usageOverflow() async throws {
+        let raw: JSONValue = .object(["inputTokens": .number(9e18), "outputTokens": .number(1), "totalTokens": .number(1.8e19), "cacheReadInputTokens": .number(9e18)])
+        let server = try BedrockTestServer(json: .object(["output": .object(["message": .object(["role": .string("assistant"), "content": .array([])])]), "stopReason": .string("end_turn"), "usage": raw]))
+        let usage = try await server.provider().chat(modelId: "model").doGenerate(options: .init(prompt: [])).usage
+        #expect(usage.inputTokens.total == nil)
+        #expect(usage.inputTokens.noCache == 9_000_000_000_000_000_000)
+        #expect(usage.outputTokens.total == 1)
+        #expect(usage.raw == raw)
+    }
+
     actor RequestCapture {
         private(set) var request: URLRequest?
         func store(_ request: URLRequest) { self.request = request }

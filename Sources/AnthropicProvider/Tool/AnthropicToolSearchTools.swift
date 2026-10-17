@@ -47,7 +47,7 @@ private let anthropicToolSearchRegex20251119InputSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "pattern": .object(["type": .string("string")]),
-                "limit": .object(["type": .string("number")]),
+                "limit": .object(["type": .string("integer")]),
             ]),
             "required": .array([.string("pattern")]),
             "additionalProperties": .bool(false),
@@ -61,7 +61,7 @@ private let anthropicToolSearchBm2520251119InputSchema = FlexibleSchema(
             "type": .string("object"),
             "properties": .object([
                 "query": .object(["type": .string("string")]),
-                "limit": .object(["type": .string("number")]),
+                "limit": .object(["type": .string("integer")]),
             ]),
             "required": .array([.string("query")]),
             "additionalProperties": .bool(false),

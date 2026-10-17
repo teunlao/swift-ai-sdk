@@ -81,10 +81,6 @@ public final class AmazonBedrockProvider: ProviderV4 {
         embedding(modelId: .init(rawValue: modelId), settings: settings)
     }
 
-    public func textEmbeddingModel(modelId: String) throws -> any EmbeddingModelV4 {
-        try embeddingModel(modelId: modelId)
-    }
-
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
         image(modelId: .init(rawValue: modelId))
     }
@@ -116,10 +112,6 @@ public final class AmazonBedrockProvider: ProviderV4 {
         ))
     }
 
-    public func textEmbedding(modelId: BedrockEmbeddingModelId) -> BedrockEmbeddingModel {
-        embedding(modelId: modelId)
-    }
-
     public func image(modelId: BedrockImageModelId) -> BedrockImageModel {
         BedrockImageModel(modelId: modelId, config: .init(
             baseURL: { try resolveBedrockBaseURL(settings: self.settings, service: "bedrock-runtime") },
@@ -144,7 +136,6 @@ public func createAmazonBedrock(settings: AmazonBedrockProviderSettings = .init(
 }
 
 public let amazonBedrock = createAmazonBedrock()
-public let bedrock = amazonBedrock
 
 func loadBedrockRegion(_ region: String?) throws -> String {
     try loadSetting(settingValue: region, environmentVariableName: "AWS_REGION", settingName: "region", description: "AWS region")
@@ -179,11 +170,7 @@ func bedrockHeaders(_ headers: [String: String]?) -> [String: String?] {
 }
 
 func makeBedrockFetchFunction(settings: AmazonBedrockProviderSettings, service: String = "bedrock", inheritSessionToken: Bool = false) -> FetchFunction {
-    let rawKey = loadOptionalSetting(settingValue: settings.apiKey, environmentVariableName: "AWS_BEARER_TOKEN_BEDROCK")
-    if let apiKey = rawKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
-        return createApiKeyFetchFunction(apiKey: apiKey, fetch: settings.fetch)
-    }
-    return createSigV4FetchFunction(getCredentials: {
+    let signedFetch = createSigV4FetchFunction(getCredentials: {
         let region = try loadBedrockRegion(settings.region)
         if let provider = settings.credentialProvider {
             do {
@@ -211,6 +198,13 @@ func makeBedrockFetchFunction(settings: AmazonBedrockProviderSettings, service: 
             throw error
         }
     }, fetch: settings.fetch, service: service)
+    return { request in
+        let rawKey = loadOptionalSetting(settingValue: settings.apiKey, environmentVariableName: "AWS_BEARER_TOKEN_BEDROCK")
+        if let apiKey = rawKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
+            return try await createApiKeyFetchFunction(apiKey: apiKey, fetch: settings.fetch)(request)
+        }
+        return try await signedFetch(request)
+    }
 }
 
 struct BedrockCredentialError: LocalizedError, Sendable {

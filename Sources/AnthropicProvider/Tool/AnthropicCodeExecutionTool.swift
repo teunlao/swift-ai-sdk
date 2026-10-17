@@ -23,7 +23,7 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
     public let type: String
     public let stdout: String
     public let stderr: String
-    public let returnCode: Double
+    public let returnCode: Int
     public let content: [OutputFile]
 
     public struct OutputFile: Codable, Equatable, Sendable {
@@ -58,7 +58,7 @@ public struct AnthropicCodeExecutionToolResult: Codable, Equatable, Sendable {
         type = try container.decode(String.self, forKey: .type)
         stdout = try container.decode(String.self, forKey: .stdout)
         stderr = try container.decode(String.self, forKey: .stderr)
-        returnCode = try container.decode(Double.self, forKey: .returnCode)
+        returnCode = try container.decode(Int.self, forKey: .returnCode)
         content = container.contains(.content) ? try container.decode([OutputFile].self, forKey: .content) : []
         guard type == "code_execution_result" else {
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected code_execution_result")
@@ -72,7 +72,7 @@ private let anthropicCodeExecution20250522OutputJSONSchema: JSONValue = .object(
         "type": .object(["const": .string("code_execution_result")]),
         "stdout": .object(["type": .string("string")]),
         "stderr": .object(["type": .string("string")]),
-        "return_code": .object(["type": .string("number")]),
+        "return_code": .object(["type": .string("integer")]),
         "content": .object([
             "type": .string("array"),
             "items": .object([
@@ -105,6 +105,11 @@ func codeExecutionSchema(_ definition: JSONValue) -> FlexibleSchema<JSONValue> {
         switch await schema.validate(value) {
         case .success(let value):
             guard case .object(var result) = value else { return .success(value: value) }
+            for key in ["return_code", "num_lines", "start_line", "total_lines", "new_lines", "new_start", "old_lines", "old_start"] {
+                if case .number(let number)? = result[key], Int(exactly: number) == nil {
+                    return .failure(error: TypeValidationError.wrap(value: value, cause: SchemaValidationIssuesError(vendor: "anthropic", issues: "\(key) must be a representable integer")))
+                }
+            }
             if result["content"] == nil,
                result["type"] == .string("code_execution_result") || result["type"] == .string("encrypted_code_execution_result") {
                 result["content"] = .array([])

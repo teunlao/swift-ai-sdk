@@ -9,21 +9,21 @@ import AISDKProviderUtils
  */
 public struct AnthropicComputerOptions: Sendable, Equatable {
     /// The width of the display being controlled by the model in pixels.
-    public var displayWidthPx: Double
+    public var displayWidthPx: Int
 
     /// The height of the display being controlled by the model in pixels.
-    public var displayHeightPx: Double
+    public var displayHeightPx: Int
 
     /// The display number to control (only relevant for X11 environments). If specified, the tool will be provided a display number in the tool definition.
-    public var displayNumber: Double?
+    public var displayNumber: Int?
 
     /// Enable zoom action (computer_20251124 only). Default: nil (provider default).
     public var enableZoom: Bool?
 
     public init(
-        displayWidthPx: Double,
-        displayHeightPx: Double,
-        displayNumber: Double? = nil,
+        displayWidthPx: Int,
+        displayHeightPx: Int,
+        displayNumber: Int? = nil,
         enableZoom: Bool? = nil
     ) {
         self.displayWidthPx = displayWidthPx
@@ -164,7 +164,7 @@ private let computer20250124InputSchema = FlexibleSchema(
                     "type": .string("number")
                 ]),
                 "scroll_amount": .object([
-                    "type": .string("number")
+                    "type": .string("integer")
                 ]),
                 "scroll_direction": .object([
                     "type": .string("string"),
@@ -298,7 +298,7 @@ private let computer20251124InputSchema = FlexibleSchema(
                     "maxItems": .number(4)
                 ]),
                 "scroll_amount": .object([
-                    "type": .string("number")
+                    "type": .string("integer")
                 ]),
                 "scroll_direction": .object([
                     "type": .string("string"),
