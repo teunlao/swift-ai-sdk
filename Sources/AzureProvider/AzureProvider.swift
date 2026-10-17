@@ -15,6 +15,7 @@ public struct AzureProviderSettings: Sendable {
     public var tokenProvider: (@Sendable () async throws -> String)?
     public var headers: [String: String]?
     public var fetch: FetchFunction?
+    public var webSocket: WebSocketConstructor?
     public var apiVersion: String?
     public var useDeploymentBasedUrls: Bool
 
@@ -27,6 +28,7 @@ public struct AzureProviderSettings: Sendable {
         tokenProvider: (@Sendable () async throws -> String)? = nil,
         headers: [String: String]? = nil,
         fetch: FetchFunction? = nil,
+        webSocket: WebSocketConstructor? = nil,
         apiVersion: String? = nil,
         useDeploymentBasedUrls: Bool = false
     ) {
@@ -38,6 +40,7 @@ public struct AzureProviderSettings: Sendable {
         self.tokenProvider = tokenProvider
         self.headers = headers
         self.fetch = fetch
+        self.webSocket = webSocket
         self.apiVersion = apiVersion
         self.useDeploymentBasedUrls = useDeploymentBasedUrls
     }
@@ -52,7 +55,7 @@ public final class AzureProvider: ProviderV4 {
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
     private let imageFactory: @Sendable (String) -> AzureImageModel
-    private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
+    private let transcriptionFactory: @Sendable (String) -> AzureTranscriptionModel
     private let speechFactory: @Sendable (String) -> AzureSpeechModel
     public let tools: AzureProviderTools
 
@@ -63,7 +66,7 @@ public final class AzureProvider: ProviderV4 {
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
         imageFactory: @escaping @Sendable (String) -> AzureImageModel,
-        transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
+        transcriptionFactory: @escaping @Sendable (String) -> AzureTranscriptionModel,
         speechFactory: @escaping @Sendable (String) -> AzureSpeechModel,
         tools: AzureProviderTools
     ) {
@@ -103,7 +106,7 @@ public final class AzureProvider: ProviderV4 {
     }
 
     public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
-        transcriptionFactory(OpenAITranscriptionModelId(rawValue: modelId))
+        transcriptionFactory(modelId)
     }
 
     public func speechModel(modelId: String) throws -> (any SpeechModelV4)? {
@@ -150,7 +153,11 @@ public final class AzureProvider: ProviderV4 {
         imageFactory(modelId)
     }
 
-    public func transcription(_ modelId: OpenAITranscriptionModelId) -> OpenAITranscriptionModel {
+    public func transcription(_ modelId: String) -> AzureTranscriptionModel {
+        transcriptionFactory(modelId)
+    }
+
+    public func transcriptionModel(_ modelId: String) -> AzureTranscriptionModel {
         transcriptionFactory(modelId)
     }
 
@@ -351,12 +358,14 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
+    let getMaiBaseURL: @Sendable () throws -> String = {
+        try withoutTrailingSlash(settings.maiBaseURL) ?? "https://\(getResourceName()).services.ai.azure.com/mai/v1"
+    }
+    let getSpeechBaseURL: @Sendable () throws -> String = {
+        try withoutTrailingSlash(settings.speechBaseURL) ?? "https://\(getResourceName()).cognitiveservices.azure.com"
+    }
     let maiImageConfig = AzureMaiImageConfig(
-        url: { path in
-            let base = try withoutTrailingSlash(settings.maiBaseURL)
-                ?? "https://\(getResourceName()).services.ai.azure.com/mai/v1"
-            return base + path
-        },
+        url: { try getMaiBaseURL() + $0 },
         headers: { try getHeaders(.mai) },
         fetch: fetch
     )
@@ -366,19 +375,28 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
             mai: AzureMaiImageModel(modelId: modelId, config: maiImageConfig))
     }
 
-    let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel = { modelId in
-        OpenAITranscriptionModel(
-            modelId: modelId,
-            config: transcriptionConfig
-        )
+    let speechTranscriptionConfig = AzureSpeechTranscriptionConfig(
+        url: { try getSpeechBaseURL() + "/speechtotext/transcriptions:transcribe?api-version=2025-10-15" },
+        headers: { try getHeaders(.speech) }, fetch: fetch
+    )
+    let maiTranscriptionConfig = AzureMaiTranscriptionConfig(
+        url: { try getMaiBaseURL() + "/realtime?intent=transcription" },
+        headers: {
+            if let tokenProvider = settings.tokenProvider {
+                return combineHeaders(["authorization": "Bearer \(try await tokenProvider())"], try getHeaders(.mai))
+            }
+            return try getHeaders(.mai)
+        }, webSocket: settings.webSocket
+    )
+    let transcriptionFactory: @Sendable (String) -> AzureTranscriptionModel = { modelId in
+        AzureTranscriptionModel(modelId: modelId,
+            openai: OpenAITranscriptionModel(modelId: .init(rawValue: modelId), config: transcriptionConfig),
+            speech: AzureSpeechTranscriptionModel(modelId: modelId, config: speechTranscriptionConfig),
+            mai: AzureMaiTranscriptionModel(modelId: modelId, config: maiTranscriptionConfig))
     }
 
     let speechAPIConfig = AzureSpeechSpeechConfig(
-        url: {
-            let base = try withoutTrailingSlash(settings.speechBaseURL)
-                ?? "https://\(getResourceName()).cognitiveservices.azure.com"
-            return base + "/tts/cognitiveservices/v1"
-        },
+        url: { try getSpeechBaseURL() + "/tts/cognitiveservices/v1" },
         headers: { try getHeaders(.speech) },
         fetch: fetch
     )

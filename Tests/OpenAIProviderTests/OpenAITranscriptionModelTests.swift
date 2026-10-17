@@ -31,7 +31,7 @@ final class TranscriptionAudioSource: @unchecked Sendable {
     var isCancelled: Bool { lock.withLock { cancelled } }
 }
 
-private final class Socket: WebSocketLike, @unchecked Sendable {
+final class TranscriptionSocket: WebSocketLike, @unchecked Sendable {
     let messages: AsyncThrowingStream<WebSocketMessage, Error>
     let sent: AsyncStream<JSONValue>
     let draining: AsyncStream<Void>
@@ -100,7 +100,11 @@ private final class Socket: WebSocketLike, @unchecked Sendable {
 
     func message(_ text: String) { incoming.yield(.text(text)) }
     func fail() { incoming.finish(throwing: SocketFailure.send) }
-    func remoteClose() { incoming.finish() }
+    func remoteClose(code: Int? = nil, reason: String? = nil) {
+        if code != nil || reason != nil { incoming.finish(throwing: WebSocketError.closed(code: code, reason: reason)) }
+        else { incoming.finish() }
+    }
+    func open() { openGate.yield(()); openGate.finish() }
     func releaseDrain() { drainGate.yield(()); drainGate.finish() }
     var frames: [JSONValue] { lock.withLock { values } }
     var request: URLRequest? { lock.withLock { requests.first } }
@@ -131,7 +135,7 @@ private func collect(_ stream: AsyncThrowingStream<TranscriptionModelV4StreamPar
     }
 }
 
-private func waitForCommit(_ socket: Socket) async throws {
+private func waitForCommit(_ socket: TranscriptionSocket) async throws {
     try await transcriptionDeadline {
         for await frame in socket.sent {
             if frame == .object(["type": .string("input_audio_buffer.commit")]) { return }
@@ -154,7 +158,7 @@ private func response(_ request: URLRequest, _ body: String, status: Int = 200) 
     )!)
 }
 
-private func streamModel(_ socket: Socket) -> OpenAITranscriptionModel {
+private func streamModel(_ socket: TranscriptionSocket) -> OpenAITranscriptionModel {
     OpenAITranscriptionModel(modelId: "gpt-realtime-whisper-2026-01-01", config: .init(
         provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" },
         headers: { ["aUtHoRiZaTiOn": "Bearer configured"] }, webSocket: socket.make,
@@ -282,7 +286,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test func websocketProtocolOrderingAndRawEvents() async throws {
-        let socket = Socket()
+        let socket = TranscriptionSocket()
         let audio = TranscriptionAudioSource(chunks: [.binary(Data([1, 2, 3])), .base64("BA==")], finished: true)
         let result = try await streamModel(socket).doStream(options: .init(
             audio: audio.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
@@ -323,7 +327,7 @@ struct OpenAITranscriptionModelTests {
 
     @Test(arguments: [nil, "Basic token", " Bearer token"] as [String?])
     func nonBearerHandshakePreservesHeaders(authorization: String?) async throws {
-        let socket = Socket()
+        let socket = TranscriptionSocket()
         let source = TranscriptionAudioSource(finished: true)
         let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
             provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" },
@@ -340,7 +344,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test func bufferDrainPrecedesNextAudioAndCommit() async throws {
-        let socket = Socket(blockDrain: true)
+        let socket = TranscriptionSocket(blockDrain: true)
         let source = TranscriptionAudioSource(chunks: [.binary(Data([1])), .binary(Data([2]))], finished: true)
         let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcmu")))
         try await transcriptionDeadline {
@@ -357,7 +361,7 @@ struct OpenAITranscriptionModelTests {
 
     @Test(arguments: ["creation", "send", "socket", "server", "audio", "close", "null"])
     func terminalPathsCancelRetainedAudio(mode: String) async throws {
-        let socket = Socket(failSend: mode == "send")
+        let socket = TranscriptionSocket(failSend: mode == "send")
         let source = TranscriptionAudioSource(chunks: mode == "send" ? [.binary(Data([1])), .binary(Data([2]))] : [])
         let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
             provider: "openai.transcription", url: { "https://api.openai.com/v1\($0.path)" }, webSocket: { request in
@@ -389,7 +393,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test(arguments: [false, true]) func abortCancelsIdleAudioAndSocket(beforeOpen: Bool) async throws {
-        let socket = Socket(open: !beforeOpen)
+        let socket = TranscriptionSocket(open: !beforeOpen)
         let source = TranscriptionAudioSource()
         let flag = AbortFlag()
         let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcma"), abortSignal: flag.read))
@@ -400,7 +404,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test(arguments: [false, true]) func consumerCancelReleasesAudio(beforeOpen: Bool) async throws {
-        let socket = Socket(open: !beforeOpen)
+        let socket = TranscriptionSocket(open: !beforeOpen)
         let source = TranscriptionAudioSource()
         let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
         let task = Task { try await collect(result.stream) }
@@ -415,7 +419,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test func completedWhileDrainingCancelsAudio() async throws {
-        let socket = Socket(blockDrain: true)
+        let socket = TranscriptionSocket(blockDrain: true)
         let source = TranscriptionAudioSource(chunks: [.binary(Data([1]))])
         let result = try await streamModel(socket).doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
         try await transcriptionDeadline {
@@ -430,7 +434,7 @@ struct OpenAITranscriptionModelTests {
     }
 
     @Test func unsupportedModesFailBeforeTransport() async throws {
-        let socket = Socket()
+        let socket = TranscriptionSocket()
         let model = streamModel(socket)
         await #expect(throws: UnsupportedFunctionalityError.self) {
             _ = try await model.doGenerate(options: .init(audio: .binary(Data()), mediaType: "audio/wav"))

@@ -4,6 +4,7 @@ import CryptoKit
 import Testing
 import AISDKProvider
 import OpenAIProvider
+import AzureProvider
 
 @Suite("OpenAI native transcription WebSocket")
 struct OpenAITranscriptionNativeTests {
@@ -42,13 +43,41 @@ struct OpenAITranscriptionNativeTests {
         try await transcriptionDeadline { for await _ in server.closed { return } }
     }
 
-    @Test func cancelDuringHandshakeReleasesPeerAndAudio() async throws {
+    @Test(arguments: [false, true])
+    func maiNativeHeadersAndSession(bearer: Bool) async throws {
+        let server = try await TranscriptionSocketServer(mode: .mai(bearer: bearer))
+        defer { server.stop() }
+        let source = TranscriptionAudioSource(chunks: [.binary(Data([1]))], finished: true)
+        let token: (@Sendable () async throws -> String)?
+        if bearer { token = { "mai-native-token" } } else { token = nil }
+        let provider = try createAzure(settings: .init(maiBaseURL: server.origin + "/mai/v1",
+            apiKey: bearer ? nil : "mai-native-key", tokenProvider: token))
+        let result = try await provider.transcription("MAI-Transcribe-2-Streaming").doStream(options: .init(
+            audio: source.stream, inputAudioFormat: .init(type: "audio/pcm")))
+        try await transcriptionDeadline {
+            var parts: [TranscriptionModelV4StreamPart] = []
+            for try await part in result.stream { parts.append(part) }
+            #expect(parts == [
+                .streamStart(warnings: []),
+                .transcriptFinal(id: "native", text: "done", startSecond: nil, endSecond: nil, channelIndex: nil, providerMetadata: nil),
+                .finish(text: "done", segments: [], language: nil, durationInSeconds: 1.0 / 48000, providerMetadata: nil)
+            ])
+        }
+        try await transcriptionDeadline { for await _ in server.closed { return } }
+    }
+
+    @Test(arguments: [false, true])
+    func cancelDuringHandshakeReleasesPeerAndAudio(azure: Bool) async throws {
         let server = try await TranscriptionSocketServer(mode: .pending)
         defer { server.stop() }
         let source = TranscriptionAudioSource()
-        let model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
-            provider: "openai.transcription", url: { "\(server.origin)\($0.path)" }
-        ))
+        let model: any TranscriptionModelV4
+        if azure {
+            model = try createAzure(settings: .init(maiBaseURL: server.origin + "/mai/v1", apiKey: "key")).transcription("mai-transcribe-2-streaming")
+        } else {
+            model = OpenAITranscriptionModel(modelId: "gpt-realtime-whisper", config: .init(
+                provider: "openai.transcription", url: { "\(server.origin)\($0.path)" }))
+        }
         let result = try await model.doStream(options: .init(audio: source.stream, inputAudioFormat: .init(type: "audio/pcm", rate: 24_000)))
         let consumer = Task {
             var iterator = result.stream.makeAsyncIterator()
@@ -64,7 +93,7 @@ struct OpenAITranscriptionNativeTests {
 }
 
 private final class TranscriptionSocketServer: @unchecked Sendable {
-    enum Mode: Sendable { case accept, refuse, pending }
+    enum Mode: Sendable, Equatable { case accept, refuse, pending, mai(bearer: Bool) }
     private var port: UInt16 = 0
     var origin: String { "http://127.0.0.1:\(port)" }
     let requested: AsyncStream<Void>
@@ -102,21 +131,36 @@ private final class TranscriptionSocketServer: @unchecked Sendable {
                         await peer.waitForClose()
                         return
                     }
-                    #expect(head.first?.hasPrefix("GET /realtime?intent=transcription ") == true)
+                    let mai: Bool
+                    if case .mai = mode { mai = true } else { mai = false }
+                    #expect(head.first?.hasPrefix(mai ? "GET /mai/v1/realtime?intent=transcription " : "GET /realtime?intent=transcription ") == true)
                     let headers = Dictionary(uniqueKeysWithValues: head.dropFirst().compactMap { line -> (String, String)? in
                         guard let colon = line.firstIndex(of: ":") else { return nil }
                         return (line[..<colon].lowercased(), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
                     })
-                    #expect(headers["authorization"] == nil)
-                    #expect(headers["sec-websocket-protocol"] == "realtime, openai-insecure-api-key.loopback-key")
+                    if case .mai(let bearer) = mode {
+                        #expect(headers["authorization"] == (bearer ? "Bearer mai-native-token" : nil))
+                        #expect(headers["api-key"] == (bearer ? nil : "mai-native-key"))
+                        #expect(headers["sec-websocket-protocol"] == nil)
+                    } else {
+                        #expect(headers["authorization"] == nil)
+                        #expect(headers["sec-websocket-protocol"] == "realtime, openai-insecure-api-key.loopback-key")
+                    }
                     let key = try #require(headers["sec-websocket-key"])
                     let digest = Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))
-                    try await peer.send(Data(("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: \(Data(digest).base64EncodedString())\r\nSec-WebSocket-Protocol: realtime\r\n\r\n").utf8))
+                    let protocolHeader = mai ? "" : "Sec-WebSocket-Protocol: realtime\r\n"
+                    try await peer.send(Data(("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: \(Data(digest).base64EncodedString())\r\n\(protocolHeader)\r\n").utf8))
+                    if mai { try await peer.event(#"{"type":"session.created"}"#) }
                     let update = try await peer.readFrame()
                     #expect(update["type"] as? String == "session.update")
+                    if mai { try await peer.event(#"{"type":"session.updated"}"#) }
                     let append = try await peer.readFrame()
                     #expect(append["type"] as? String == "input_audio_buffer.append")
                     #expect(append["audio"] as? String == "AQ==")
+                    if mai {
+                        let commit = try await peer.readFrame()
+                        #expect(commit["type"] as? String == "input_audio_buffer.commit")
+                    }
                     let text = Data(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"native","transcript":"done"}"#.utf8)
                     try await peer.send(Data([0x81, UInt8(text.count)]) + text)
                     try await peer.readClose()
@@ -188,6 +232,11 @@ private final class SocketPeer: @unchecked Sendable {
         let mask = try await read(4)
         let payload = try await read(length)
         return (head[0], Data(payload.enumerated().map { $0.element ^ mask[$0.offset % 4] }))
+    }
+
+    func event(_ text: String) async throws {
+        let data = Data(text.utf8)
+        try await send(Data([0x81, UInt8(data.count)]) + data)
     }
 
     func send(_ data: Data) async throws {

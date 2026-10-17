@@ -11,6 +11,9 @@ public struct WebSocketConnection: Sendable {
         state.observeAbort(abortSignal)
     }
 
+    public func waitUntilOpen() async throws { try await state.waitUntilOpen() }
+    public func waitForBufferDrain() async throws { try await state.waitForBufferDrain() }
+
     public func send(_ message: WebSocketMessage) async throws {
         try await state.send(message)
     }
@@ -96,6 +99,28 @@ private final class WebSocketConnectionState: @unchecked Sendable {
             return false
         }
         if stopped { monitor.cancel() }
+    }
+
+    func waitUntilOpen() async throws {
+        try requireActive()
+        try await withTaskCancellationHandler { try await socket.waitUntilOpen() }
+        onCancel: { self.finish(error: CancellationError()) }
+        try requireActive()
+    }
+
+    func waitForBufferDrain() async throws {
+        try requireActive()
+        try await withTaskCancellationHandler { try await socket.waitForBufferDrain() }
+        onCancel: { self.finish(error: CancellationError()) }
+        try requireActive()
+    }
+
+    private func requireActive() throws {
+        switch lock.withLock({ completion }) {
+        case .failed(let error): throw error
+        case .finished: throw WebSocketError.closed(code: nil, reason: nil)
+        case nil: break
+        }
     }
 
     func next() async throws -> String? {
