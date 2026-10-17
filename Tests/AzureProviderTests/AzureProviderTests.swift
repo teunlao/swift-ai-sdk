@@ -738,7 +738,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        _ = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -798,7 +798,7 @@ struct AzureProviderTests {
             apiVersion: "2025-04-01-preview"
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        _ = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -858,7 +858,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        _ = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024",
@@ -918,7 +918,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        _ = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -966,7 +966,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        let result = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        let result = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 1,
             size: "1024x1024"
@@ -1021,7 +1021,7 @@ struct AzureProviderTests {
             fetch: fetch
         ))
 
-        _ = try await provider.imageModel(.init(rawValue: "dalle-deployment")).doGenerate(options: ImageModelV4CallOptions(
+        _ = try await provider.imageModel("dalle-deployment").doGenerate(options: ImageModelV4CallOptions(
             prompt: "A cute baby sea otter",
             n: 2,
             size: "1024x1024",

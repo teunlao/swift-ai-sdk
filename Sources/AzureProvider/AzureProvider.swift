@@ -9,6 +9,7 @@ import DeepSeekProvider
 public struct AzureProviderSettings: Sendable {
     public var resourceName: String?
     public var baseURL: String?
+    public var maiBaseURL: String?
     public var apiKey: String?
     public var tokenProvider: (@Sendable () async throws -> String)?
     public var headers: [String: String]?
@@ -19,6 +20,7 @@ public struct AzureProviderSettings: Sendable {
     public init(
         resourceName: String? = nil,
         baseURL: String? = nil,
+        maiBaseURL: String? = nil,
         apiKey: String? = nil,
         tokenProvider: (@Sendable () async throws -> String)? = nil,
         headers: [String: String]? = nil,
@@ -28,6 +30,7 @@ public struct AzureProviderSettings: Sendable {
     ) {
         self.resourceName = resourceName
         self.baseURL = baseURL
+        self.maiBaseURL = maiBaseURL
         self.apiKey = apiKey
         self.tokenProvider = tokenProvider
         self.headers = headers
@@ -45,7 +48,7 @@ public final class AzureProvider: ProviderV4 {
     private let responsesFactory: @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel
     private let completionFactory: @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel
     private let embeddingFactory: @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel
-    private let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel
+    private let imageFactory: @Sendable (String) -> AzureImageModel
     private let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel
     private let speechFactory: @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel
     public let tools: AzureProviderTools
@@ -56,7 +59,7 @@ public final class AzureProvider: ProviderV4 {
         responsesFactory: @escaping @Sendable (OpenAIResponsesModelId) -> OpenAIResponsesLanguageModel,
         completionFactory: @escaping @Sendable (OpenAICompletionModelId) -> OpenAICompletionLanguageModel,
         embeddingFactory: @escaping @Sendable (OpenAIEmbeddingModelId) -> OpenAIEmbeddingModel,
-        imageFactory: @escaping @Sendable (OpenAIImageModelId) -> OpenAIImageModel,
+        imageFactory: @escaping @Sendable (String) -> AzureImageModel,
         transcriptionFactory: @escaping @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel,
         speechFactory: @escaping @Sendable (OpenAISpeechModelId) -> OpenAISpeechModel,
         tools: AzureProviderTools
@@ -93,7 +96,7 @@ public final class AzureProvider: ProviderV4 {
     }
 
     public func imageModel(modelId: String) throws -> any ImageModelV4 {
-        imageFactory(OpenAIImageModelId(rawValue: modelId))
+        imageFactory(modelId)
     }
 
     public func transcriptionModel(modelId: String) throws -> (any TranscriptionModelV4)? {
@@ -136,11 +139,11 @@ public final class AzureProvider: ProviderV4 {
         embeddingFactory(modelId)
     }
 
-    public func image(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
+    public func image(_ modelId: String) -> AzureImageModel {
         imageFactory(modelId)
     }
 
-    public func imageModel(_ modelId: OpenAIImageModelId) -> OpenAIImageModel {
+    public func imageModel(_ modelId: String) -> AzureImageModel {
         imageFactory(modelId)
     }
 
@@ -162,18 +165,20 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
     }
 
     let endpoint = try Endpoint(baseURL: settings.baseURL)
-    let headers: @Sendable () throws -> [String: String?] = {
+    let getHeaders: @Sendable (String) throws -> [String: String?] = { description in
         var authHeaders: [String: String?] = [:]
         if settings.tokenProvider == nil {
             authHeaders["api-key"] = try loadAPIKey(
                 apiKey: settings.apiKey,
                 environmentVariableName: "AZURE_API_KEY",
-                description: "Azure OpenAI"
+                description: description
             )
         }
         let combined = combineHeaders(authHeaders, settings.headers?.mapValues { Optional($0) })
         return withUserAgentSuffix(combined, "ai-sdk-azure/\(AZURE_PROVIDER_VERSION)").mapValues { Optional($0) }
     }
+
+    let headers: @Sendable () throws -> [String: String?] = { try getHeaders("Azure OpenAI") }
 
     let fetch: FetchFunction?
     if let tokenProvider = settings.tokenProvider {
@@ -189,24 +194,28 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         fetch = settings.fetch
     }
 
+    let getResourceName: @Sendable () throws -> String = {
+        let resourceName = try loadSetting(
+            settingValue: settings.resourceName,
+            environmentVariableName: "AZURE_RESOURCE_NAME",
+            settingName: "resourceName",
+            description: "Azure OpenAI resource name"
+        )
+        guard isValidHostnamePart(resourceName) else {
+            throw InvalidArgumentError(
+                argument: "resourceName",
+                message: "Invalid Azure resource name. Expected a single DNS label (letters, digits, and hyphens). Use `baseURL` for custom endpoints."
+            )
+        }
+        return resourceName
+    }
+
     let urlBuilder: @Sendable (OpenAIConfig.URLOptions) throws -> String = { options in
         let basePrefix: String
         if let baseURL = settings.baseURL {
             basePrefix = withoutTrailingSlash(baseURL) ?? baseURL
         } else {
-            let resourceName = try loadSetting(
-                settingValue: settings.resourceName,
-                environmentVariableName: "AZURE_RESOURCE_NAME",
-                settingName: "resourceName",
-                description: "Azure OpenAI resource name"
-            )
-            guard isValidHostnamePart(resourceName) else {
-                throw InvalidArgumentError(
-                    argument: "resourceName",
-                    message: "Invalid Azure resource name. Expected a single DNS label (letters, digits, and hyphens). Use `baseURL` for custom endpoints."
-                )
-            }
-            basePrefix = "https://\(resourceName).openai.azure.com/openai"
+            basePrefix = "https://\(try getResourceName()).openai.azure.com/openai"
         }
 
         let fullURL: String
@@ -335,11 +344,19 @@ public func createAzureProvider(settings: AzureProviderSettings = .init()) throw
         )
     }
 
-    let imageFactory: @Sendable (OpenAIImageModelId) -> OpenAIImageModel = { modelId in
-        OpenAIImageModel(
-            modelId: modelId,
-            config: imageConfig
-        )
+    let maiImageConfig = AzureMaiImageConfig(
+        url: { path in
+            let base = try withoutTrailingSlash(settings.maiBaseURL)
+                ?? "https://\(getResourceName()).services.ai.azure.com/mai/v1"
+            return base + path
+        },
+        headers: { try getHeaders("Azure MAI") },
+        fetch: fetch
+    )
+    let imageFactory: @Sendable (String) -> AzureImageModel = { modelId in
+        AzureImageModel(modelId: modelId,
+            openai: OpenAIImageModel(modelId: .init(rawValue: modelId), config: imageConfig),
+            mai: AzureMaiImageModel(modelId: modelId, config: maiImageConfig))
     }
 
     let transcriptionFactory: @Sendable (OpenAITranscriptionModelId) -> OpenAITranscriptionModel = { modelId in

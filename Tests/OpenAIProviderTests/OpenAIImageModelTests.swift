@@ -4,6 +4,7 @@ import Testing
 import AISDKProvider
 import AISDKProviderUtils
 import OpenAIProvider
+import AzureProvider
 
 private actor ImageRequests {
     private var requests: [URLRequest] = []
@@ -337,6 +338,82 @@ struct OpenAIImageModelTests {
             #expect(request.value(forHTTPHeaderField: "X-Image-Caller") == nil)
             #expect(request.value(forHTTPHeaderField: "User-Agent")?.isEmpty == false)
         }
+    }
+
+    @Test("Azure MAI downloads use the default transport and isolate same-origin credentials")
+    func azureDownloads() async throws {
+        let download = ImageDownload()
+        let transport = try ImageTransport(download)
+        defer { transport.close() }
+        try await transport.verify()
+        let model = try createAzure(settings: .init(
+            maiBaseURL: "https://93.184.216.34/mai/v1", tokenProvider: { "entra-secret" },
+            headers: ["X-Image-Secret": "secret-header", "X-Request-Id": "private-id"], fetch: { request in
+                #expect(request.url?.path == "/mai/v1/images/edits")
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer entra-secret")
+                #expect(request.value(forHTTPHeaderField: "X-Image-Secret") == "secret-header")
+                #expect(request.value(forHTTPHeaderField: "X-Image-Caller") == "caller-header")
+                let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+                #expect(body.contains("name=\"image\"; filename=\"image-1.png\"\r\nContent-Type: image/png"))
+                return imageResponse(request)
+            }
+        )).image("MAI-Image-2.6")
+        let operation = Task {
+            try await model.doGenerate(options: .init(n: 1,
+                files: [.url(url: "https://93.184.216.34/swift-ai-sdk-image/azure", providerOptions: nil)],
+                headers: ["X-Image-Caller": "caller-header", "Accept": "private-accept"]))
+        }
+        let watchdog = Task {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            operation.cancel()
+            download.started.continuation.finish()
+        }
+        defer { watchdog.cancel(); operation.cancel() }
+        let result = try await operation.value
+        #expect(result.images == .base64(["image"]))
+        var requests = download.started.stream.makeAsyncIterator()
+        let request = try #require(await requests.next())
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.value(forHTTPHeaderField: "api-key") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Image-Secret") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Image-Caller") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Request-Id") == nil)
+        #expect(request.value(forHTTPHeaderField: "Accept") != "private-accept")
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("ai-sdk-azure/") == true)
+    }
+
+    @Test("Cancelling an Azure MAI reference download releases it before any API request")
+    func azureAbortDownload() async throws {
+        let download = ImageDownload(hangs: true)
+        let transport = try ImageTransport(download)
+        defer { transport.close() }
+        try await transport.verify()
+        let aborted = ImageFlag()
+        let timedOut = ImageFlag()
+        let model = try createAzure(settings: .init(maiBaseURL: "https://example.com/mai/v1", apiKey: "key", fetch: { _ in
+            Issue.record("An aborted reference download must not reach the MAI API")
+            throw CancellationError()
+        })).image("MAI-Image-2.6")
+        let operation = Task {
+            try await model.doGenerate(options: .init(n: 1,
+                files: [.url(url: "https://93.184.216.34/swift-ai-sdk-image/hanging", providerOptions: nil)],
+                abortSignal: { aborted.value }))
+        }
+        let watchdog = Task {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            timedOut.set()
+            operation.cancel()
+            download.started.continuation.finish()
+            download.stopped.continuation.finish()
+        }
+        defer { watchdog.cancel(); operation.cancel() }
+        var started = download.started.stream.makeAsyncIterator()
+        _ = try #require(await started.next())
+        aborted.set()
+        _ = await #expect(throws: DownloadError.self) { try await operation.value }
+        #expect(!timedOut.value)
+        var stopped = download.stopped.stream.makeAsyncIterator()
+        _ = try #require(await stopped.next())
     }
 
     @Test("aborting a URL image or mask releases the active download", arguments: [false, true])
