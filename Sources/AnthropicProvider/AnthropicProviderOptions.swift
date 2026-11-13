@@ -30,6 +30,7 @@ public let anthropicMessagesModelIds: [AnthropicMessagesModelId] = [
     "claude-opus-5",
     "claude-haiku-5-5",
     "claude-fable-5-1",
+    "claude-fable-5-2",
     "claude-sonnet-5-5",
 ].map(AnthropicMessagesModelId.init(rawValue:))
 
