@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Anthropic: add Claude Fable 5.2 (`claude-fable-5-2`) to the known model IDs. It shares Claude Fable 5.1's capabilities, so a forced `tool_choice` (`required` or a named tool) is sent as `auto` with a warning instead of failing with a 400. Add the Bedrock `anthropic.`, `us.anthropic.`, and `global.anthropic.` `claude-fable-5-2` model IDs.
+
 ## [0.20.0] - 2026-10-17
 
 Upstream parity release against Vercel AI SDK commit `8a5233b15b1e69573d63faee6cd0014559252ee4` (`ai@7.0.142`). Migration notes below cover changes since `v0.19.0`.

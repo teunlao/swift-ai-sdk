@@ -79,6 +79,7 @@ struct AnthropicProviderV4Tests {
         for modelId in [
             "claude-sonnet-5",
             "claude-fable-5",
+            "claude-fable-5-2",
             "claude-opus-5-5",
             "claude-opus-4-8",
             "claude-opus-4-7",
@@ -102,6 +103,7 @@ struct AnthropicProviderV4Tests {
         for modelId in [
             "claude-sonnet-5",
             "claude-fable-5",
+            "claude-fable-5-2",
             "claude-opus-5-5",
             "claude-opus-4-8",
             "claude-opus-4-7",
@@ -127,6 +129,7 @@ struct AnthropicProviderV4Tests {
         for modelId in [
             "claude-sonnet-5",
             "claude-fable-5",
+            "claude-fable-5-2",
             "claude-opus-5-5",
             "claude-opus-4-8",
             "claude-opus-4-7",
@@ -205,6 +208,25 @@ struct AnthropicProviderV4Tests {
         let outputConfig = request?["output_config"] as? [String: Any]
         #expect(outputConfig?["effort"] as? String == "max")
         #expect(request?["thinking"] == nil)
+    }
+
+    @Test("Fable 5.1 and 5.2 reject forced tool choice, so it is sent as auto")
+    func fable5xRejectsForcedToolChoice() async throws {
+        for modelId in ["claude-fable-5-1", "claude-fable-5-2", "global.anthropic.claude-fable-5-2"] {
+            let capture = AnthropicV4RequestCapture()
+            let model = try makeAnthropicV4Model(modelId: modelId, capture: capture)
+
+            let result = try await model.doGenerate(options: .init(
+                prompt: anthropicV4TestPrompt,
+                tools: [.function(LanguageModelV4FunctionTool(name: "lookup", inputSchema: .object([:])))],
+                toolChoice: .required
+            ))
+
+            let request = decodeAnthropicV4Request(await capture.current())
+            let toolChoice = request?["tool_choice"] as? [String: Any]
+            #expect(toolChoice?["type"] as? String == "auto")
+            #expect(!result.warnings.isEmpty)
+        }
     }
 
     @Test("V4 Anthropic file references serialize as file sources")

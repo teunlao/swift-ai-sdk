@@ -66,7 +66,7 @@ public func getAnthropicModelCapabilities(modelId: String) -> AnthropicModelCapa
                      supportsAdaptiveThinking: true, rejectsSamplingParameters: true,
                      supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true)
     }
-    if modelId.contains("claude-fable-5-1") {
+    if modelId.contains("claude-fable-5-1") || modelId.contains("claude-fable-5-2") {
         return .init(maxOutputTokens: 128000, supportsStructuredOutput: true,
                      supportsAdaptiveThinking: true, rejectsSamplingParameters: true,
                      supportsXhighEffort: true, rejectsThinkingDisabled: true,
